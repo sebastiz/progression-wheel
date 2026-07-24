@@ -77,12 +77,13 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   harmonies. Melodies are stored as scale degrees, so they transpose with the key, and they are
   anchored to chords, so inserting/removing/swapping chords never wipes them. Changing to a
   different progression carries the melody over positionally.
-- **Move notes as a group** (**Draw / Move** switch on the Write tab) — in **✋ Move** mode, drag a
-  box across the grid to select a run of notes (or tap a single note), then drag the selection to a
-  new position: it shifts in time (columns) and pitch (scale degrees) together, with a live blue
-  preview. The arrow buttons nudge the selection ▲▼ by a scale step or ◀▶ in time, and **🗑** removes
-  it. **✎ Draw** mode keeps the original tap-to-add-or-remove behaviour. The move clamps to the grid,
-  so a selection never falls off the edge.
+- **Move notes as a group** (**Draw / Move** switch on the Write tab) — in **✋ Move** mode, **drag a
+  box** anywhere across the grid to select the notes inside it (or tap a single note to select it);
+  the chosen notes turn blue. Then **drag any selected (blue) note** to move the whole group — it
+  shifts in time (columns) and pitch (scale degrees) together, with a live preview. The arrow buttons
+  nudge the selection ▲▼ by a scale step or ◀▶ in time, and **🗑** removes it. **✎ Draw** mode keeps
+  the original tap-to-add-or-remove behaviour. The move clamps to the grid, so a selection never
+  falls off the edge.
 - **Suggested melodies** (**Suggest** tab) — pick a common melody shape and a starting scale note,
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear
   melody** empties the section. The 16 shapes cover chord-tone arpeggios (up / down / rolling, which

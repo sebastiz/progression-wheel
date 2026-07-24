@@ -1249,19 +1249,18 @@ export default function ProgressionWheel() {
     if (!el || el.dataset == null || el.dataset.mk === undefined) return null;
     return { key: el.dataset.mk, c: +el.dataset.c, deg: +el.dataset.deg };
   };
+  // Drag anywhere draws a selection box; drag a note that's ALREADY selected to move the group.
   const melDown = (e, key, c, deg, sec) => {
     if (!melMove) return;                                   // draw mode → onClick handles taps
     e.preventDefault();
     const on = noteOn(sec, c, deg);
-    const already = melSel.key === key && melSel.notes[nKey(c, deg)];
-    let mode = "marquee", base = null;
-    if (on) {
-      if (!already) setSelFrom(key, [{ c, deg }]);
-      base = already ? { ...melSel.notes } : { [nKey(c, deg)]: true };
-      mode = "move";
-    }
-    melDragRef.current = { key, startC: c, startDeg: deg, curC: c, curDeg: deg, mode, base, moved: false };
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    const already = melSel.key === key && !!melSel.notes[nKey(c, deg)];
+    const mode = (on && already) ? "move" : "marquee";
+    const base = mode === "move" ? { ...melSel.notes } : null;
+    melDragRef.current = { key, startC: c, startDeg: deg, curC: c, curDeg: deg, mode, base, moved: false, on };
+    window.addEventListener("pointermove", melDrag);
+    window.addEventListener("pointerup", melUp);
+    window.addEventListener("pointercancel", melUp);
     if (mode === "marquee") setMelBox({ key, c0: c, c1: c, d0: deg, d1: deg });
   };
   const melDrag = e => {
@@ -1278,8 +1277,15 @@ export default function ProgressionWheel() {
   const melUp = () => {
     const dr = melDragRef.current; if (!dr) return;
     melDragRef.current = null; setMelBox(null); setMelGhost(null);
+    window.removeEventListener("pointermove", melDrag);
+    window.removeEventListener("pointerup", melUp);
+    window.removeEventListener("pointercancel", melUp);
     if (dr.mode === "marquee") {
-      if (!dr.moved) { setMelSel({ key:"", notes:{} }); return; }   // tap on empty clears
+      if (!dr.moved) {                                        // a tap, not a drag
+        if (dr.on) setSelFrom(dr.key, [{ c: dr.startC, deg: dr.startDeg }]);  // select the note
+        else setMelSel({ key:"", notes:{} });                // tap on empty clears
+        return;
+      }
       const sec = secMelos[dr.key]; if (!sec) return;
       const c0 = Math.min(dr.startC, dr.curC), c1 = Math.max(dr.startC, dr.curC);
       const d0 = Math.min(dr.startDeg, dr.curDeg), d1 = Math.max(dr.startDeg, dr.curDeg);
@@ -1595,6 +1601,7 @@ export default function ProgressionWheel() {
         .mcell.b0 { border-left:2px solid #3A4656; }
         .mcell.bt { border-left:1px solid #2A3442; }
         .mcell.mv { touch-action:none; }
+        .mscroll.mvmode { user-select:none; -webkit-user-select:none; touch-action:none; }
         .mcell.msel { outline:2px solid #6EA8FF; outline-offset:-1px; box-shadow:inset 0 0 0 2px rgba(110,168,255,.35); }
         .mcell.mbox { background:rgba(110,168,255,.22); border-color:#6EA8FF; }
         .mcell.mghost { background:rgba(110,168,255,.5); border-color:#6EA8FF; }
@@ -2104,7 +2111,7 @@ export default function ProgressionWheel() {
                         {melMove && (() => {
                           const nSel = melSel.key === d.key ? Object.keys(melSel.notes).length : 0;
                           return (<>
-                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""}` : "drag a box, or a note"}</span>
+                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} — drag one, or nudge →` : "drag a box over notes to select"}</span>
                             <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Up a scale step">▲</button>
                             <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Down a scale step">▼</button>
                             <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Earlier">◀</button>
@@ -2115,7 +2122,7 @@ export default function ProgressionWheel() {
                       </div>
                     )}
 
-                    <div className="mscroll" onPointerMove={melDrag} onPointerUp={melUp} onPointerCancel={melUp}>
+                    <div className={"mscroll" + (melMove ? " mvmode" : "")}>
                       <div className="mline" style={{ gridTemplateColumns:`36px repeat(${cols}, minmax(15px,1fr))` }}>
                         <span />
                         {d.cs.map((c, b) => (
