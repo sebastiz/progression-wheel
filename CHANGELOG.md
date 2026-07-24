@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **Fix the piercing squeal when Real is on, for good.** Repitching a sample is asymmetric —
+  shifting it *down* just sounds lower and warmer, but shifting it *up* thins it into a squeal. The
+  single symmetric limit couldn't win: it had to be wide enough for a chord's octave-*down* bass
+  note, which then also permitted a squealing octave-*up* melody note. Split it into separate up/down
+  limits (a small up-shift, a generous down-shift) so chords keep their bass and high melody notes
+  fall back to the synth instead of squealing.
 - **Fix chords playing the wrong (synth) voice and harsh/distorted sound.** The previous release's
   sample-coverage guard was too strict: a chord's bass note sits an octave below the lowest sample
   anchor, which the guard mistook for an out-of-range note and so silently forced *every* chord onto

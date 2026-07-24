@@ -503,21 +503,21 @@ function makeSampler(ctx) {
     return loading[f];
   };
   const ready = k => !!done[gmKey(k)];
-  // nearest *decoded* anchor to a target note. But `done`/`ready` flips true after just one anchor
-  // decodes (so a part-loaded or partly-failed instrument still plays), which means early on the
-  // only loaded anchor can be *octaves* away — repitching it that far turns the sample into a
-  // piercing, over-loud squeal. Cap the shift and defer to the synth beyond it. NB the cap must
-  // still allow the intended voicings: a chord's bass note sits an octave (12 semitones) below the
-  // lowest anchor, so anything tighter than that silences every chord — keep a full-octave margin.
-  const MAX_SHIFT = 14;   // semitones; blocks the 2-octave+ squeal but allows the octave-down bass
+  // nearest usable anchor to a target note. Repitching is ASYMMETRIC: shifting a sample down just
+  // makes it lower and warmer, but shifting it up raises the pitch and thins it — past a little way
+  // it becomes the piercing squeal. So allow a big down-shift (a chord's bass note sits an octave
+  // below the lowest anchor) but only a small up-shift; notes needing more defer to the synth voice.
+  const MAX_UP = 7, MAX_DOWN = 16;   // semitones of repitch allowed above / below an anchor
   const nearest = (k, midi) => {
     const f = gmKey(k);
     let best = null;
     for (const m of anchorsFor(f)) {
       const buf = decoded[f + ":" + m]; if (!buf) continue;
-      const d = Math.abs(m - midi); if (!best || d < best.d) best = { m, d, buf };
+      const shift = midi - m;                              // + = repitch up (the squeal direction)
+      if (shift > MAX_UP || shift < -MAX_DOWN) continue;   // outside the safe range for this anchor
+      const d = Math.abs(shift); if (!best || d < best.d) best = { m, d, buf };
     }
-    return best && best.d <= MAX_SHIFT ? best : null;
+    return best;
   };
   const covers = (k, midi) => !!nearest(k, midi);
   const play = (k, t, midi, gain, dur, dest) => {
@@ -1935,7 +1935,7 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v4.2</div>
+        <div className="eyebrow">Songwriting sketchpad · v4.3</div>
         <h1>The Progression Wheel</h1>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
 
