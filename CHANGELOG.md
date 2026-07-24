@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Guitar tab now sits in first position.** The tab previously stacked the whole melody on the high
+  E string (often above the 12th fret, and dropping notes that ran past fret 14). It now transposes
+  the melody by a whole octave into the guitar's first position and spreads the notes across the
+  strings, keeping as many as possible within the first five frets.
 - **Fix the piercing squeal when Real is on, for good.** Repitching a sample is asymmetric —
   shifting it *down* just sounds lower and warmer, but shifting it *up* thins it into a squeal. The
   single symmetric limit couldn't win: it had to be wide enough for a chord's octave-*down* bass
