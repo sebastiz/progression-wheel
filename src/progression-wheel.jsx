@@ -1933,7 +1933,7 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v4.0</div>
+        <div className="eyebrow">Songwriting sketchpad · v4.1</div>
         <h1>The Progression Wheel</h1>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
 
