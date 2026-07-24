@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Fix chords playing the wrong (synth) voice and harsh/distorted sound.** The previous release's
+  sample-coverage guard was too strict: a chord's bass note sits an octave below the lowest sample
+  anchor, which the guard mistook for an out-of-range note and so silently forced *every* chord onto
+  the fallback synth — making the instrument dropdown appear to do nothing and stacking gritty
+  synth-pluck voices. The threshold now allows the intended octave repitch while still blocking the
+  genuine multi-octave squeal. The master limiter is also firmer (higher ratio, faster attack, lower
+  make-up gain) so stacked/ringing voices can't sum past full scale and clip into distortion.
 - **Beamed eighth-notes on the stave.** Consecutive eighth-notes within a beat are now joined with a
   beam instead of each carrying its own flag, as in real notation — much cleaner for busy melodies.
   Lone eighths still get a flag; quarter-notes and longer are unchanged. Bars are also a little wider

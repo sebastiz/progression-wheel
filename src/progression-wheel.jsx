@@ -503,13 +503,13 @@ function makeSampler(ctx) {
     return loading[f];
   };
   const ready = k => !!done[gmKey(k)];
-  // nearest *decoded* anchor to a target note. Anchors sit ~7 semitones apart, so once an
-  // instrument is fully loaded every note is within a few semitones of one. But `done`/`ready`
-  // flips true after just one anchor decodes (so a part-loaded or partly-failed instrument still
-  // plays), which means early on the only loaded anchor can be octaves away — repitching it that
-  // far turns the sample into a piercing, over-loud squeal. Cap the shift and let the caller fall
-  // back to the synth voice for notes no loaded anchor can cover cleanly.
-  const MAX_SHIFT = 7;   // semitones (one anchor gap); beyond this, defer to the synth
+  // nearest *decoded* anchor to a target note. But `done`/`ready` flips true after just one anchor
+  // decodes (so a part-loaded or partly-failed instrument still plays), which means early on the
+  // only loaded anchor can be *octaves* away — repitching it that far turns the sample into a
+  // piercing, over-loud squeal. Cap the shift and defer to the synth beyond it. NB the cap must
+  // still allow the intended voicings: a chord's bass note sits an octave (12 semitones) below the
+  // lowest anchor, so anything tighter than that silences every chord — keep a full-octave margin.
+  const MAX_SHIFT = 14;   // semitones; blocks the 2-octave+ squeal but allows the octave-down bass
   const nearest = (k, midi) => {
     const f = gmKey(k);
     let best = null;
@@ -1612,10 +1612,12 @@ export default function ProgressionWheel() {
     ug.gain.value = 0.0001; un.connect(ug).connect(ctx.destination);
     un.start(); un.stop(ctx.currentTime + 0.02);
     const limiter = ctx.createDynamicsCompressor();  // tame peaks so stacked samples don't clip
-    limiter.threshold.value = -6; limiter.knee.value = 6; limiter.ratio.value = 4;
-    limiter.attack.value = 0.004; limiter.release.value = 0.18;
+    // firm brick-wall limiting: a high ratio + short attack so stacked/ringing voices can't sum
+    // past 0 dBFS and clip into harsh digital distortion (ratio 4 was too gentle to catch peaks)
+    limiter.threshold.value = -5; limiter.knee.value = 3; limiter.ratio.value = 12;
+    limiter.attack.value = 0.002; limiter.release.value = 0.14;
     limiter.connect(ctx.destination);
-    const master = ctx.createGain(); master.gain.value = 0.8; master.connect(limiter);
+    const master = ctx.createGain(); master.gain.value = 0.65; master.connect(limiter);
     const music = makeReverb(ctx, master);           // reverb bus for pitched instruments + melody
     const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
     const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
@@ -1933,7 +1935,7 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v4.1</div>
+        <div className="eyebrow">Songwriting sketchpad · v4.2</div>
         <h1>The Progression Wheel</h1>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
 
