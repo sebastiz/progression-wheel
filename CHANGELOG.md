@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Loads more drum beats and melody ideas.** The Drums menu grows from 7 grooves to 32 — half-time,
+  funk, disco, boom-bap, breakbeat, R&B, Motown, reggae one-drop, ska, bossa, samba, tresillo, surf,
+  punk, new wave, anthem, stomp-clap, march, country two-step, ballad, plus jazz-waltz / 6-8 kits. The
+  melody-idea generator grows from 15 shapes to 38 — two-bar arch, zig-zag, skipping thirds, leap &
+  fill, pentatonic hook, high-to-low hook, repeated pairs, turn ornament, fanfare, chord-climb, bluesy
+  lick, off-beat syncopation, eighth-note riff, sparse, pickup, mirror, cascade, four-bar climb, and
+  more.
 - **Fix the piercing squeal at its real source: the plucked-string feedback loop.** The Karplus–Strong
   guitar/pluck voice (the default chord sound, and the offline fallback for any pluck instrument) fed
   its delay line back at a gain right up to 0.995. A real Web-Audio delay+filter loop carries a little
