@@ -743,14 +743,32 @@ const stepOfMidi = m => (Math.floor(m / 12) - 1) * 7 + SPELL[((m % 12) + 12) % 1
 const accOfMidi = m => SPELL[((m % 12) + 12) % 12][1];
 const noteName = m => LETTER[SPELL[((m % 12) + 12) % 12][0]] + ["𝄫","♭","","♯","𝄪"][accOfMidi(m) + 2];
 const GUITAR_OPEN = [64, 59, 55, 50, 45, 40];   // strings 1(high E)..6(low E), MIDI of open
-// pick a comfortable string/fret for a melody note: lowest fret in [0..14], preferring higher strings
-function tabFret(mid) {
-  let best = null;
+// pick a comfortable string/fret for a note, preferring the first five frets (open position) so the
+// line spreads across the strings instead of climbing the high E. `used` = strings already taken by
+// another note in the same onset. Falls back to the lowest playable fret if nothing sits in 0..5.
+function tabFret(mid, used) {
+  let low = null, any = null;
   GUITAR_OPEN.forEach((open, s) => {
+    if (used && used.has(s)) return;
     const fret = mid - open;
-    if (fret >= 0 && fret <= 14 && (!best || fret < best.fret)) best = { str: s, fret };
+    if (fret < 0 || fret > 14) return;
+    if (!any || fret < any.fret) any = { str: s, fret };
+    if (fret <= 5 && (!low || fret < low.fret)) low = { str: s, fret };
   });
-  return best;
+  return low || any;
+}
+// the whole melody sits an octave or two above the guitar's first position, so pick a single
+// octave transposition (applied to every note, preserving the tune's shape) that puts the most
+// notes within the first five frets. Ties prefer the smallest drop, staying closest to pitch.
+function tabOctaveShift(allMids) {
+  if (!allMids.length) return 0;
+  const inLowFrets = mid => GUITAR_OPEN.some((open, s) => { const f = mid - open; return f >= 0 && f <= 5; });
+  let bestShift = 0, bestScore = -1;
+  for (const sh of [0, -12, -24]) {
+    const score = allMids.filter(md => inLowFrets(md + sh)).length;
+    if (score > bestScore) { bestScore = score; bestShift = sh; }
+  }
+  return bestShift;
 }
 
 // One measure worth of notation. `mel` = [{on, dur, mids:[...]}] (onset eighth, duration in eighths).
@@ -860,6 +878,9 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
     return nodes;
   };
 
+  // one octave transposition for the whole tab, so the melody drops into first position
+  const tabShift = piano ? 0 : tabOctaveShift(measures.flatMap(mm => (mm.mel || []).flatMap(ev => ev.mids)));
+
   const systems = [];
   for (let sy = 0; sy < nSys; sy++) {
     const y0 = sy * sysH;
@@ -910,12 +931,7 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
           const x = inner + (ev.on / meloBeats) * span;
           const usedStr = new Set();                              // one fret per string within an onset
           ev.mids.forEach(mid => {
-            let pick = tabFret(mid);
-            if (pick && usedStr.has(pick.str)) {
-              pick = null;
-              GUITAR_OPEN.forEach((open, s) => { const f = mid - open;
-                if (!usedStr.has(s) && f >= 0 && f <= 14 && (!pick || f < pick.fret)) pick = { str: s, fret: f }; });
-            }
+            const pick = tabFret(mid + tabShift, usedStr);
             if (pick) { usedStr.add(pick.str); tab(pick, x); }
           });
         }); }
@@ -1935,7 +1951,7 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v4.3</div>
+        <div className="eyebrow">Songwriting sketchpad · v4.4</div>
         <h1>The Progression Wheel</h1>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
 
@@ -2238,7 +2254,7 @@ export default function ProgressionWheel() {
             <div className="hint" style={{ padding:"2px 10px 4px" }}>
               {scoreInstr === "piano"
                 ? <>Grand staff — right hand plays the melody{scoreHasMelody ? "" : " (add one in the melody grid below)"}, left hand holds the chord voicing. Chord symbols sit above each bar.</>
-                : <>Guitar lead sheet — chord symbols above, the melody on the treble staff (sounding an octave lower){scoreHasMelody ? ", with fret numbers on the tab below" : " — write a melody below and its tab appears here"}.</>}
+                : <>Guitar lead sheet — chord symbols above, the melody on the treble staff{scoreHasMelody ? ", with fret numbers on the tab below fingered low on the neck (first position, sounding lower)" : " — write a melody below and its tab appears here"}.</>}
               {structSel ? " Following the selected song structure." : " Following the loop."}
             </div>
           </>)}
