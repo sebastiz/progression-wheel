@@ -73,9 +73,13 @@ effect within about a tenth of a second, mid-playback.
   plucked-string guitar, a richer drum kit, and reverb on everything. Turn **Real** off to always use
   the synth voices — handy for a guaranteed-offline, zero-download session.
 
-Transport lives in two places: a sticky **Play** at the very top (with tempo) that's always in
-reach, and Play / MIDI on the Rhythm panel. **Sound** (the chord instrument) and **Lead** (the melody
-voice) are chosen above the wheel, next to the chord-colour menus.
+Transport: a sticky **Play** at the very top (with tempo), and MIDI export on the Rhythm panel.
+**Sound** (the chord instrument) and **Lead** (the melody voice) are chosen above the wheel, next to
+the chord-colour menus. Both offer the full **General MIDI palette — about 90 instruments grouped by
+category** (pianos, mallets, organs, guitars, basses, strings, ensemble & choir, brass, reeds, pipes,
+synth lead & pad, world). With **Real** on and a connection, each plays as a real recorded sample
+(downloaded only for the instrument you pick); offline, each falls back to a synth voice matched to
+its family. The Lead menu also keeps its original pure-synth voices under "Synth (no download)".
 
 No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
 

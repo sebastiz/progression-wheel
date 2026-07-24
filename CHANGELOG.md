@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.13
+- **~90 real instruments**, categorised. The **Sound** (chords) and **Lead** (melody) pickers now
+  offer the full General MIDI palette — pianos & keys, mallets & bells, organs & accordion, guitars,
+  basses, strings & harp, ensemble & choir, brass, reeds, pipes, synth lead & pad, and world
+  instruments — each grouped under an `<optgroup>` heading. Any of them plays as a real FluidR3
+  sample (loaded lazily only for what you pick), and offline each falls back to a synth voice chosen
+  by the instrument's family (plucked, keys, organ, sustained/bowed pad, mallet, or bass — including
+  a new sustained pad voice). The Lead menu keeps its original pure-synth voices in a separate
+  "Synth (no download)" group.
+
 ## 3.12
 - **Realistic instrument sound**: playback can now use **real recorded instruments** instead of pure
   synthesis. A **Real** toggle (Rhythm panel, on by default) loads FluidR3 soundfont samples from a
