@@ -339,27 +339,40 @@ function strumChord(ctx, t, chord, sym, dest) {
     ksPluck(ctx, tt, midiHz(mid), dur, vol, bright, dest);
   });
 }
+// sustained bowed/blown voice (strings, brass, reeds, pads) for the offline fallback
+function padVoice(ctx, t, mid, sym, slotDur, dest) {
+  const freq = midiHz(mid), vol = (sym === ">" ? 0.06 : 0.045);
+  const dur = Math.max(0.2, slotDur * 0.95);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.06);
+  g.gain.setValueAtTime(vol, t + Math.max(0.08, dur - 0.06));
+  g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.05);
+  const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 2400; f.Q.value = 0.5;
+  f.connect(g).connect(dest || ctx.destination);
+  [[1, 0.5, "sawtooth"], [1.004, 0.5, "sawtooth"], [2, 0.12, "sine"]].forEach(([mult, amp, type]) => {
+    const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq * mult;
+    const pg = ctx.createGain(); pg.gain.value = amp; o.connect(pg).connect(f);
+    o.start(t); o.stop(t + dur + 0.1);
+  });
+}
 function playHit(ctx, t, chord, sym, instr, slotDur, dest) {
-  if (instr === "guitar") return strumChord(ctx, t, chord, sym, dest);
+  const fam = gmFam(instr);
+  if (fam === "pluck") return strumChord(ctx, t, chord, sym, dest);
   const iv = chordIvs(chord.quality), rootMid = 48 + chord.root;
-  if (instr === "bass" || instr === "dbass") {
+  if (fam === "bass") {
     const o = ctx.createOscillator();
     o.frequency.value = midiHz(36 + chord.root + (sym === "U" ? 7 : 0));
-    let node;
-    if (instr === "bass") {
-      o.type = "sawtooth";
-      const f = ctx.createBiquadFilter();
-      f.type = "lowpass"; f.frequency.value = 420; f.Q.value = 1;
-      o.connect(f); node = f;
-    } else { o.type = "triangle"; node = o; }
-    const dec = instr === "dbass" ? 0.75 : 0.35;
-    node.connect(env(ctx, t, sym === ">" ? 0.30 : 0.20, instr === "dbass" ? 0.022 : 0.006, dec, true, dest));
-    o.start(t); o.stop(t + dec + 0.1);
+    o.type = "sawtooth";
+    const f = ctx.createBiquadFilter();
+    f.type = "lowpass"; f.frequency.value = 440; f.Q.value = 1;
+    o.connect(f); f.connect(env(ctx, t, sym === ">" ? 0.30 : 0.20, 0.008, 0.5, true, dest));
+    o.start(t); o.stop(t + 0.6);
     return;
   }
   const notes = sym === "U" ? iv.slice(1).map(x => rootMid + x) : [rootMid - 12, ...iv.map(x => rootMid + x)];
   notes.forEach((mid, j) => {
-    if (instr === "organ") {
+    if (fam === "organ") {
       [1, 2, 3].forEach((h, hi) => {
         const o = ctx.createOscillator(), g = ctx.createGain();
         o.type = "sine"; o.frequency.value = midiHz(mid) * h;
@@ -372,10 +385,12 @@ function playHit(ctx, t, chord, sym, instr, slotDur, dest) {
         o.connect(g).connect(dest || ctx.destination);
         o.start(t); o.stop(t + dur + 0.05);
       });
-    } else { // piano — fundamental + partials, hammer attack, longer sustain
+    } else if (fam === "pad") {
+      padVoice(ctx, t, mid, sym, slotDur, dest);
+    } else { // keys / mallet — fundamental + partials, hammer attack (mallet decays quicker)
       const freq = midiHz(mid);
       const vol = sym === ">" ? 0.10 : sym === "U" ? 0.055 : 0.08;
-      const tt = t + j * 0.003, dur = sym === ">" ? 1.1 : 0.8;
+      const tt = t + j * 0.003, dur = fam === "mallet" ? 0.45 : (sym === ">" ? 1.1 : 0.8);
       [[1, 1, "triangle"], [2, 0.28, "sine"], [4, 0.07, "sine"]].forEach(([h, hv, type]) => {
         const o = ctx.createOscillator();
         o.type = type; o.frequency.value = freq * h;
@@ -387,58 +402,112 @@ function playHit(ctx, t, chord, sym, instr, slotDur, dest) {
 }
 
 /* ===== realistic samples (real recorded instruments, loaded when online) ===== */
-// FluidR3 GM soundfont MP3s via jsDelivr (CORS-enabled). We fetch a few natural-note
-// anchors per instrument and pitch-shift to cover the rest, so downloads stay small;
-// the service worker caches them for offline use after the first play. Anything that
-// fails (offline, blocked) silently falls back to the synth voices above.
+// FluidR3 GM soundfont MP3s via jsDelivr (CORS-enabled). Every General MIDI instrument is
+// available; we fetch a few natural-note anchors per instrument and pitch-shift to cover the
+// rest, so downloads stay small (loaded lazily only for the instrument you pick) and the
+// service worker caches them for offline use. Anything that fails (offline / blocked) falls
+// back to a synth voice picked by the instrument's family.
 const SF_BASE = "https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@master/FluidR3_GM/";
-const SF_INSTR = { guitar:"acoustic_guitar_steel", piano:"acoustic_grand_piano",
-  organ:"drawbar_organ", bass:"acoustic_bass", dbass:"acoustic_bass",
-  // melody-lead voices that map to a real recorded instrument
-  l_flute:"flute", l_strings:"string_ensemble_1", l_brass:"brass_section", l_ep:"electric_piano_1",
-  l_organ:"drawbar_organ", l_voice:"choir_aahs", l_musicbox:"music_box", l_bell:"tinkle_bell",
-  l_pluck:"acoustic_guitar_nylon" };
-// which "Lead" dropdown voices play as real samples (the rest stay pure synth timbres)
-const LEAD_SF = { flute:"l_flute", strings:"l_strings", brass:"l_brass", ep:"l_ep",
-  organ:"l_organ", voice:"l_voice", musicbox:"l_musicbox", bell:"l_bell", pluck:"l_pluck" };
 const SF_NAT = { 0:"C", 2:"D", 4:"E", 5:"F", 7:"G", 9:"A", 11:"B" };
-const SF_LEAD_ANCHORS = [60,65,69,72,77,81];             // C4..A5 — the melody's range
-// anchor MIDI notes per instrument (all natural notes → simple filenames)
-const SF_ANCHORS = {
-  guitar: [48,53,57,60,65,69,72], piano: [36,41,45,48,53,57,60,65,69,72,77,81],
-  organ: [48,53,57,60,65,69,72], bass: [24,29,33,36,41,45,48], dbass: [24,29,33,36,41,45,48],
-  l_flute:SF_LEAD_ANCHORS, l_strings:SF_LEAD_ANCHORS, l_brass:SF_LEAD_ANCHORS, l_ep:SF_LEAD_ANCHORS,
-  l_organ:SF_LEAD_ANCHORS, l_voice:SF_LEAD_ANCHORS, l_musicbox:SF_LEAD_ANCHORS, l_bell:SF_LEAD_ANCHORS,
-  l_pluck:SF_LEAD_ANCHORS,
-};
+// The instrument catalogue, grouped for the dropdowns. Each entry: [GM folder key, label, synth-family].
+// families: pluck | keys | organ | bass | pad | mallet — used for the offline synth fallback.
+const GM_CATS = [
+  ["Pianos & keys", [
+    ["acoustic_grand_piano","Grand piano","keys"], ["bright_acoustic_piano","Bright piano","keys"],
+    ["electric_grand_piano","Electric grand","keys"], ["honkytonk_piano","Honky-tonk","keys"],
+    ["electric_piano_1","Electric piano","keys"], ["electric_piano_2","Electric piano 2","keys"],
+    ["harpsichord","Harpsichord","pluck"], ["clavinet","Clavinet","keys"]]],
+  ["Mallets & bells", [
+    ["celesta","Celesta","mallet"], ["glockenspiel","Glockenspiel","mallet"], ["music_box","Music box","mallet"],
+    ["vibraphone","Vibraphone","mallet"], ["marimba","Marimba","mallet"], ["xylophone","Xylophone","mallet"],
+    ["tubular_bells","Tubular bells","mallet"], ["dulcimer","Dulcimer","pluck"]]],
+  ["Organs & accordion", [
+    ["drawbar_organ","Drawbar organ","organ"], ["percussive_organ","Percussive organ","organ"],
+    ["rock_organ","Rock organ","organ"], ["church_organ","Church organ","organ"],
+    ["reed_organ","Reed organ","organ"], ["accordion","Accordion","organ"],
+    ["harmonica","Harmonica","organ"], ["tango_accordion","Tango accordion","organ"]]],
+  ["Guitars", [
+    ["acoustic_guitar_nylon","Nylon guitar","pluck"], ["acoustic_guitar_steel","Steel guitar","pluck"],
+    ["electric_guitar_jazz","Jazz guitar","pluck"], ["electric_guitar_clean","Clean electric","pluck"],
+    ["electric_guitar_muted","Muted electric","pluck"], ["overdriven_guitar","Overdrive guitar","pluck"],
+    ["distortion_guitar","Distortion guitar","pluck"]]],
+  ["Basses", [
+    ["acoustic_bass","Acoustic bass","bass"], ["electric_bass_finger","Finger bass","bass"],
+    ["electric_bass_pick","Pick bass","bass"], ["fretless_bass","Fretless bass","bass"],
+    ["slap_bass_1","Slap bass","bass"], ["synth_bass_1","Synth bass","bass"], ["contrabass","Double bass","bass"]]],
+  ["Strings & harp", [
+    ["violin","Violin","pad"], ["viola","Viola","pad"], ["cello","Cello","pad"],
+    ["tremolo_strings","Tremolo strings","pad"], ["pizzicato_strings","Pizzicato strings","pluck"],
+    ["orchestral_harp","Harp","pluck"], ["timpani","Timpani","mallet"]]],
+  ["Ensemble & choir", [
+    ["string_ensemble_1","String ensemble","pad"], ["string_ensemble_2","Slow strings","pad"],
+    ["synth_strings_1","Synth strings","pad"], ["choir_aahs","Choir “aahs”","pad"],
+    ["voice_oohs","Voice “oohs”","pad"], ["synth_choir","Synth voice","pad"], ["orchestra_hit","Orchestra hit","keys"]]],
+  ["Brass", [
+    ["trumpet","Trumpet","pad"], ["trombone","Trombone","pad"], ["tuba","Tuba","bass"],
+    ["muted_trumpet","Muted trumpet","pad"], ["french_horn","French horn","pad"],
+    ["brass_section","Brass section","pad"], ["synth_brass_1","Synth brass","pad"]]],
+  ["Reeds", [
+    ["soprano_sax","Soprano sax","pad"], ["alto_sax","Alto sax","pad"], ["tenor_sax","Tenor sax","pad"],
+    ["baritone_sax","Baritone sax","pad"], ["oboe","Oboe","pad"], ["english_horn","English horn","pad"],
+    ["bassoon","Bassoon","pad"], ["clarinet","Clarinet","pad"]]],
+  ["Pipes", [
+    ["piccolo","Piccolo","pad"], ["flute","Flute","pad"], ["recorder","Recorder","pad"],
+    ["pan_flute","Pan flute","pad"], ["whistle","Whistle","pad"], ["ocarina","Ocarina","pad"]]],
+  ["Synth lead & pad", [
+    ["lead_1_square","Square lead","keys"], ["lead_2_sawtooth","Saw lead","keys"],
+    ["lead_3_calliope","Calliope lead","pad"], ["lead_8_bass__lead","Bass+lead","keys"],
+    ["pad_1_new_age","New-age pad","pad"], ["pad_2_warm","Warm pad","pad"],
+    ["pad_4_choir","Choir pad","pad"], ["pad_7_halo","Halo pad","pad"]]],
+  ["World", [
+    ["sitar","Sitar","pluck"], ["banjo","Banjo","pluck"], ["shamisen","Shamisen","pluck"],
+    ["koto","Koto","pluck"], ["kalimba","Kalimba","mallet"], ["shanai","Shanai","pad"],
+    ["steel_drums","Steel drums","mallet"], ["agogo","Agogo","mallet"]]],
+];
+const GM_FAM = {}, GM_LABEL = {};
+GM_CATS.forEach(([, list]) => list.forEach(([k, label, fam]) => { GM_FAM[k] = fam; GM_LABEL[k] = label; }));
+const isGM = k => GM_FAM[k] !== undefined;
+// old sketch/state values → GM keys
+const LEGACY_INSTR = { guitar:"acoustic_guitar_steel", piano:"acoustic_grand_piano",
+  organ:"drawbar_organ", bass:"acoustic_bass", dbass:"contrabass" };
+const gmKey = k => LEGACY_INSTR[k] || k;
+const gmFam = k => GM_FAM[gmKey(k)] || "keys";
+// natural-note anchors: basses low, everything else spanning chord + melody range
+const anchorsFor = k => gmFam(k) === "bass" ? [24,31,36,43,48] : [48,55,62,69,76,81];
+// offline synth-family fallback for the melody lead → a LEAD_SPECS voice
+const FAM_LEAD = { pluck:"pluck", keys:"ep", organ:"organ", bass:"pluck", pad:"strings", mallet:"bell" };
+
 const sfName = m => SF_NAT[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
-const sfRawCache = {};                                    // "instr:midi" → Promise<ArrayBuffer>
-function sfFetch(instr, midi) {
-  const key = instr + ":" + midi;
-  if (sfRawCache[key]) return sfRawCache[key];
-  const url = SF_BASE + SF_INSTR[instr] + "-mp3/" + sfName(midi) + ".mp3";
-  sfRawCache[key] = fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status));
-  sfRawCache[key].catch(() => { delete sfRawCache[key]; });   // let a later attempt retry
-  return sfRawCache[key];
+const sfRawCache = {};                                    // "folder:midi" → Promise<ArrayBuffer>
+function sfFetch(folder, midi) {
+  const ck = folder + ":" + midi;
+  if (sfRawCache[ck]) return sfRawCache[ck];
+  const url = SF_BASE + folder + "-mp3/" + sfName(midi) + ".mp3";
+  sfRawCache[ck] = fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status));
+  sfRawCache[ck].catch(() => { delete sfRawCache[ck]; });   // let a later attempt retry
+  return sfRawCache[ck];
 }
-function sfPrefetch(instr) { if (SF_INSTR[instr]) SF_ANCHORS[instr].forEach(m => sfFetch(instr, m).catch(() => {})); }
+function sfPrefetch(k) { const f = gmKey(k); if (isGM(f)) anchorsFor(f).forEach(m => sfFetch(f, m).catch(() => {})); }
 // a sampler bound to one AudioContext: decodes the cached MP3s and plays the nearest anchor repitched
 function makeSampler(ctx) {
   const decoded = {}, done = {}, loading = {};
-  const load = instr => {
-    if (!SF_INSTR[instr] || done[instr]) return Promise.resolve();
-    if (loading[instr]) return loading[instr];
-    loading[instr] = Promise.all(SF_ANCHORS[instr].map(m =>
-      sfFetch(instr, m).then(ab => ctx.decodeAudioData(ab.slice(0)))
-        .then(buf => { decoded[instr + ":" + m] = buf; }).catch(() => {})
-    )).then(() => { done[instr] = SF_ANCHORS[instr].some(m => decoded[instr + ":" + m]); });
-    return loading[instr];
+  const load = k => {
+    const f = gmKey(k);
+    if (!isGM(f) || done[f]) return Promise.resolve();
+    if (loading[f]) return loading[f];
+    const anc = anchorsFor(f);
+    loading[f] = Promise.all(anc.map(m =>
+      sfFetch(f, m).then(ab => ctx.decodeAudioData(ab.slice(0)))
+        .then(buf => { decoded[f + ":" + m] = buf; }).catch(() => {})
+    )).then(() => { done[f] = anc.some(m => decoded[f + ":" + m]); });
+    return loading[f];
   };
-  const ready = instr => !!done[instr];
-  const play = (instr, t, midi, gain, dur, dest) => {
+  const ready = k => !!done[gmKey(k)];
+  const play = (k, t, midi, gain, dur, dest) => {
+    const f = gmKey(k);
     let best = null;
-    for (const m of SF_ANCHORS[instr]) {
-      const buf = decoded[instr + ":" + m]; if (!buf) continue;
+    for (const m of anchorsFor(f)) {
+      const buf = decoded[f + ":" + m]; if (!buf) continue;
       const d = Math.abs(m - midi); if (!best || d < best.d) best = { m, d, buf };
     }
     if (!best) return false;
@@ -454,27 +523,27 @@ function makeSampler(ctx) {
   };
   return { load, ready, play };
 }
-// note voicing for the sampler, mirroring the synth voicings above
-function sampleVoicing(chord, sym, instr) {
+// note voicing for the sampler, mirroring the synth voicings, by instrument family
+function sampleVoicing(chord, sym, fam) {
   const iv = chordIvs(chord.quality), root = chord.root;
-  if (instr === "bass" || instr === "dbass") return { notes: [36 + root + (sym === "U" ? 7 : 0)], roll: 0.03 };
+  if (fam === "bass") return { notes: [36 + root + (sym === "U" ? 7 : 0)], roll: 0.03 };
   const base = 48 + root;
   const notes = sym === "U" ? iv.slice(1).map(x => base + x) : [base - 12, ...iv.map(x => base + x)];
-  return { notes, roll: instr === "guitar" ? (sym === "U" ? 0.010 : 0.016) : 0.004 };
+  return { notes, roll: fam === "pluck" ? (sym === "U" ? 0.010 : 0.016) : 0.004 };
 }
 function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest) {
   if (!sampler || !sampler.ready(instr)) return false;
-  const { notes, roll } = sampleVoicing(chord, sym, instr);
+  const fam = gmFam(instr);
+  const { notes, roll } = sampleVoicing(chord, sym, fam);
   const g = sym === ">" ? 0.5 : sym === "U" ? 0.3 : 0.4;
-  const dur = sym === ">" ? 1.6 : instr === "guitar" ? 1.0 : Math.max(0.5, slotDur * 2.5);
+  const dur = sym === ">" ? 1.6 : fam === "pluck" ? 1.0 : Math.max(0.5, slotDur * 2.5);
   notes.forEach((mid, j) => sampler.play(instr, t + j * roll, mid, g, dur, dest));
   return true;
 }
-// play one melody note as a real sample if the chosen lead voice maps to one and it's loaded
+// play one melody note as a real sample if the chosen lead voice is a GM instrument that's loaded
 function playLeadSampled(sampler, kind, t, midi, dur, dest) {
-  const key = LEAD_SF[kind];
-  if (!sampler || !key || !sampler.ready(key)) return false;
-  sampler.play(key, t, midi, 0.55, dur, dest);
+  if (!sampler || !isGM(kind) || !sampler.ready(kind)) return false;
+  sampler.play(kind, t, midi, 0.55, dur, dest);
   return true;
 }
 // a convolution reverb bus: input node feeding a dry path + a wet (reverb) path
@@ -1014,8 +1083,8 @@ export default function ProgressionWheel() {
   const [curBar, setCurBar] = useState(-1);
   const [curLabel, setCurLabel] = useState(null);
   const [bpmSt, setBpmSt] = useState({ key:"", val:0 });
-  const [instr, setInstr] = useState("guitar");
-  const [melInstr, setMelInstr] = useState("synth");        // melody lead voice
+  const [instr, setInstr] = useState("acoustic_guitar_steel");   // chord instrument (GM key)
+  const [melInstr, setMelInstr] = useState("synth");        // melody lead voice (synth id or GM key)
   const [legato, setLegato] = useState(true);               // merge/flow melody notes
   const [patSel, setPatSel] = useState({ key:"", id:"" });
   const [drum, setDrum] = useState("off");
@@ -1490,7 +1559,7 @@ export default function ProgressionWheel() {
     const master = ctx.createGain(); master.gain.value = 0.8; master.connect(limiter);
     const music = makeReverb(ctx, master);           // reverb bus for pitched instruments + melody
     const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
-    const leadKey = LEAD_SF[(meloRef.current || {}).melInstr];
+    const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
     if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
     const m = { ctx, master, music, sampler, lastInstr: instrRef.current, lastLead: leadKey,
       step: from * (patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
@@ -1539,7 +1608,7 @@ export default function ProgressionWheel() {
           }
           const sec = sym && mel.bySym[sym];
           if (sec && sec.flat.length) {
-            const leadKey = LEAD_SF[mel.melInstr];              // real-sample lead voice, if any
+            const leadKey = isGM(mel.melInstr) ? mel.melInstr : null;   // real-sample lead voice, if any
             if (realRef.current && leadKey && leadKey !== m.lastLead) { m.sampler.load(leadKey); m.lastLead = leadKey; }
             const N = sec.flat.length;
             const col = (mb * L + i) % N;
@@ -1553,7 +1622,11 @@ export default function ProgressionWheel() {
               const midi = base + mel.scale[deg];
               const dur = held ? eighth * (run + 0.35) : eighth * 0.92;
               const sampled = realRef.current && playLeadSampled(m.sampler, mel.melInstr, t, midi, dur, m.music);
-              if (!sampled) leadNote(m.ctx, t, midi, dur, mel.melInstr, held, m.music);
+              if (!sampled) {
+                // GM instrument with no loaded sample → its family's synth voice; else the synth spec itself
+                const kind = isGM(mel.melInstr) ? FAM_LEAD[gmFam(mel.melInstr)] : mel.melInstr;
+                leadNote(m.ctx, t, midi, dur, kind, held, m.music);
+              }
             });
             const q = { sym, col };
             setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
@@ -1630,7 +1703,7 @@ export default function ProgressionWheel() {
   useEffect(() => { loadSketches(); }, []);   // eslint-disable-line
   // warm the sample cache for the chosen instrument + melody voice so the first Play is instant
   useEffect(() => { if (realSounds) sfPrefetch(instr); }, [instr, realSounds]);
-  useEffect(() => { if (realSounds && LEAD_SF[melInstr]) sfPrefetch(LEAD_SF[melInstr]); }, [melInstr, realSounds]);
+  useEffect(() => { if (realSounds && isGM(melInstr)) sfPrefetch(melInstr); }, [melInstr, realSounds]);
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
     const s = { name, progId, tonic, genre, emotion, colour, patId, drum, instr,
@@ -1913,19 +1986,26 @@ export default function ProgressionWheel() {
 
           <div className="selrow" style={{ marginTop:10 }}>
             <label className="selwrap">
-              <span className="lbl" style={{ margin:0 }}>Sound</span>
-              <select value={instr} onChange={e => setInstr(e.target.value)}>
-                <option value="guitar">Guitar</option>
-                <option value="piano">Piano</option>
-                <option value="organ">Organ</option>
-                <option value="bass">Bass</option>
-                <option value="dbass">Double bass</option>
+              <span className="lbl" style={{ margin:0 }}>Sound (chords)</span>
+              <select value={gmKey(instr)} onChange={e => setInstr(e.target.value)}>
+                {GM_CATS.map(([cat, list]) => (
+                  <optgroup key={cat} label={cat}>
+                    {list.map(([k, label]) => <option key={cat + k} value={k}>{label}</option>)}
+                  </optgroup>
+                ))}
               </select>
             </label>
             <label className="selwrap">
               <span className="lbl" style={{ margin:0 }}>Lead (melody)</span>
               <select value={melInstr} onChange={e => setMelInstr(e.target.value)}>
-                {LEAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}{LEAD_SF[id] ? " ◈" : ""}</option>)}
+                <optgroup label="Synth (no download)">
+                  {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                </optgroup>
+                {GM_CATS.map(([cat, list]) => (
+                  <optgroup key={cat} label={"◈ " + cat}>
+                    {list.map(([k, label]) => <option key={"l" + cat + k} value={k}>{label}</option>)}
+                  </optgroup>
+                ))}
               </select>
             </label>
           </div>
