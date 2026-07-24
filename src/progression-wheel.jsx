@@ -503,13 +503,25 @@ function makeSampler(ctx) {
     return loading[f];
   };
   const ready = k => !!done[gmKey(k)];
-  const play = (k, t, midi, gain, dur, dest) => {
+  // nearest *decoded* anchor to a target note. Anchors sit ~7 semitones apart, so once an
+  // instrument is fully loaded every note is within a few semitones of one. But `done`/`ready`
+  // flips true after just one anchor decodes (so a part-loaded or partly-failed instrument still
+  // plays), which means early on the only loaded anchor can be octaves away — repitching it that
+  // far turns the sample into a piercing, over-loud squeal. Cap the shift and let the caller fall
+  // back to the synth voice for notes no loaded anchor can cover cleanly.
+  const MAX_SHIFT = 7;   // semitones (one anchor gap); beyond this, defer to the synth
+  const nearest = (k, midi) => {
     const f = gmKey(k);
     let best = null;
     for (const m of anchorsFor(f)) {
       const buf = decoded[f + ":" + m]; if (!buf) continue;
       const d = Math.abs(m - midi); if (!best || d < best.d) best = { m, d, buf };
     }
+    return best && best.d <= MAX_SHIFT ? best : null;
+  };
+  const covers = (k, midi) => !!nearest(k, midi);
+  const play = (k, t, midi, gain, dur, dest) => {
+    const best = nearest(k, midi);
     if (!best) return false;
     const src = ctx.createBufferSource(); src.buffer = best.buf;
     src.playbackRate.value = Math.pow(2, (midi - best.m) / 12);
@@ -521,7 +533,7 @@ function makeSampler(ctx) {
     src.start(t); src.stop(end + 0.15);
     return true;
   };
-  return { load, ready, play };
+  return { load, ready, play, covers };
 }
 // note voicing for the sampler, mirroring the synth voicings, by instrument family
 function sampleVoicing(chord, sym, fam) {
@@ -535,6 +547,9 @@ function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest) {
   if (!sampler || !sampler.ready(instr)) return false;
   const fam = gmFam(instr);
   const { notes, roll } = sampleVoicing(chord, sym, fam);
+  // if any voiced note lacks a nearby loaded anchor (samples still loading), play the whole chord
+  // on the synth rather than repitching a distant anchor into a shrill artifact for part of it
+  if (!notes.every(mid => sampler.covers(instr, mid))) return false;
   const g = sym === ">" ? 0.5 : sym === "U" ? 0.3 : 0.4;
   const dur = sym === ">" ? 1.6 : fam === "pluck" ? 1.0 : Math.max(0.5, slotDur * 2.5);
   notes.forEach((mid, j) => sampler.play(instr, t + j * roll, mid, g, dur, dest));
@@ -543,8 +558,7 @@ function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest) {
 // play one melody note as a real sample if the chosen lead voice is a GM instrument that's loaded
 function playLeadSampled(sampler, kind, t, midi, dur, dest) {
   if (!sampler || !isGM(kind) || !sampler.ready(kind)) return false;
-  sampler.play(kind, t, midi, 0.55, dur, dest);
-  return true;
+  return sampler.play(kind, t, midi, 0.55, dur, dest);   // false if no loaded anchor is close → synth covers this note
 }
 // a convolution reverb bus: input node feeding a dry path + a wet (reverb) path
 function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16) {

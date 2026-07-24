@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- **Fix piercing squeal after turning Real on.** Real samples became "ready" the moment a single
+  note anchor finished downloading, so notes far from that one anchor were repitched by octaves into
+  a shrill, over-loud artifact until the rest loaded. Repitching is now capped to a nearby anchor;
+  any note without one falls back to the synth voice (per note for the melody, per chord for
+  harmony) until enough anchors have loaded.
+
 ## 3.13
 - **~90 real instruments**, categorised. The **Sound** (chords) and **Lead** (melody) pickers now
   offer the full General MIDI palette — pianos & keys, mallets & bells, organs & accordion, guitars,
