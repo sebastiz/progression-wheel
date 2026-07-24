@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Metronome click is now off by default, behind a new Click toggle.** A high square-wave tick was
+  playing on every beat during playback — piercing, and present from the first beat regardless of the
+  Real toggle or instrument. It is now silent unless you turn on the new **Click** toggle (Rhythm
+  panel), so normal playback is clean.
 - **Guitar tab now sits in first position.** The tab previously stacked the whole melody on the high
   E string (often above the 12th fret, and dropping notes that ran past fret 14). It now transposes
   the melody by a whole octave into the guitar's first position and spreads the notes across the

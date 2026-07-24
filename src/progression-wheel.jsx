@@ -1161,6 +1161,7 @@ export default function ProgressionWheel() {
   const [instr, setInstr] = useState("acoustic_guitar_steel");   // chord instrument (GM key)
   const [melInstr, setMelInstr] = useState("synth");        // melody lead voice (synth id or GM key)
   const [legato, setLegato] = useState(true);               // merge/flow melody notes
+  const [clickOn, setClickOn] = useState(false);            // metronome click on each hit (off by default)
   const [patSel, setPatSel] = useState({ key:"", id:"" });
   const [drum, setDrum] = useState("off");
   const [colour, setColour] = useState("triads");           // triads | sevenths
@@ -1191,6 +1192,7 @@ export default function ProgressionWheel() {
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(false);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
   const realRef = useRef(true);
+  const clickRef = useRef(false);
   const meloRef = useRef(null);
 
   // Emotion leads the ranking so changing it always changes the chords
@@ -1440,6 +1442,7 @@ export default function ProgressionWheel() {
   const effBpm = bpmSt.key === progId ? bpmSt.val : (BPM_DEFAULT[progId] || 96);
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = !!rhythm.swing;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
+  clickRef.current = clickOn;
   const meloBeats = rhythm.pattern.length;                  // eighths per bar (6 in waltz time)
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
   const chordId = (c, i) => c.inserted ? c.baseName
@@ -1664,7 +1667,7 @@ export default function ProgressionWheel() {
         const inst = instrRef.current;
         if (realRef.current && inst !== m.lastInstr) { m.sampler.load(inst); m.lastInstr = inst; }  // switched voice mid-play
         if (sym !== "-") {
-          clickSound(m.ctx, t, sym, m.master);
+          if (clickRef.current) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default
           if (chord) {
             const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.music);
             if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.music);
@@ -1951,7 +1954,7 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v4.4</div>
+        <div className="eyebrow">Songwriting sketchpad · v4.5</div>
         <h1>The Progression Wheel</h1>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
 
@@ -2291,6 +2294,10 @@ export default function ProgressionWheel() {
             <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ paddingBottom:6 }}
               title="Merge the melody notes into one flowing line — smoother, less stodgy">
               <div className="sw" /> Legato
+            </div>
+            <div className={"tog" + (clickOn ? " on" : "")} onClick={() => setClickOn(v => !v)} style={{ paddingBottom:6 }}
+              title="A metronome tick on each beat — off by default; turn on if you want a click track">
+              <div className="sw" /> Click
             </div>
           </div>
 
