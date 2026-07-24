@@ -309,8 +309,11 @@ function ksPluck(ctx, t, freq, dur, vol, bright, dest) {
   const damp = ctx.createBiquadFilter();
   damp.type = "lowpass"; damp.frequency.value = Math.min(7000, 1400 + bright); damp.Q.value = 0.2;
   const fb = ctx.createGain();
-  // feedback per round-trip, tuned so the string decays to silence over ~dur
-  fb.gain.value = Math.min(0.995, Math.pow(0.0008, period / Math.max(0.12, dur)));
+  // feedback per round-trip, tuned so the string decays to silence over ~dur. HARD CAP well below 1:
+  // a real Web-Audio delay+filter loop has a little excess gain (fractional-delay interpolation, the
+  // biquad), so a feedback near unity doesn't decay — it self-oscillates into a piercing squeal that
+  // the limiter then pins at full scale. Measured stable up to ~0.85; 0.8 keeps a safe margin.
+  fb.gain.value = Math.min(0.8, Math.pow(0.0008, period / Math.max(0.12, dur)));
   delay.connect(damp); damp.connect(fb); fb.connect(delay);
   const out = ctx.createGain();
   out.gain.setValueAtTime(vol, t);
@@ -1954,7 +1957,7 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v4.5</div>
+        <div className="eyebrow">Songwriting sketchpad · v4.6</div>
         <h1>The Progression Wheel</h1>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
 
