@@ -65,6 +65,13 @@ the **entire written-out song**, showing the current section and bar. The curren
 its landing-note row light up as it plays. All changes (pattern, drums, tempo, chord edits) take
 effect within about a tenth of a second, mid-playback.
 
+- **Real** (on by default) — plays real recorded instruments (guitar, piano, organ, bass) instead of
+  pure synthesis. The samples download from a CDN the first time you press Play and are then cached
+  for offline use. If you're offline before they've cached, or a download fails, playback falls back
+  to the built-in synth (an improved one: a Karplus–Strong plucked-string guitar and a reverb on
+  everything). Turn **Real** off to always use the synth voices — handy for a guaranteed-offline,
+  zero-download session.
+
 No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
 
 ## Melody notes

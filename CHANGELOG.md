@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.12
+- **Realistic instrument sound**: playback can now use **real recorded instruments** instead of pure
+  synthesis. A **Real** toggle (Rhythm panel, on by default) loads FluidR3 soundfont samples for the
+  guitar, piano, organ and bass from a CDN on first play, pitch-shifting a handful of note anchors to
+  cover the range so downloads stay small; the service worker caches them for offline use. When
+  offline or if a load fails, it falls back automatically to the built-in synth — now itself much
+  improved: the guitar uses **Karplus–Strong** plucked-string modelling (a real physical string
+  model, not a filtered sawtooth) and everything runs through a **convolution reverb** so the sounds
+  breathe instead of sounding dry and computer-like. Turn **Real** off to force the synth voices.
+
 ## 3.11
 - **Move melody notes as a group**: every melody grid has a **✎ Draw / ✋ Move** switch. In Move
   mode, drag a box anywhere across the grid to select the notes inside it (or tap a single note),
