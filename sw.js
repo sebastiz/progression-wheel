@@ -1,5 +1,5 @@
 // Progression Wheel service worker — cache-first so the app works offline
-const CACHE = "pw-v4.9";
+const CACHE = "pw-v4.10";
 const ASSETS = [
   ".", "index.html", "manifest.json", "icon-192.png", "icon-512.png", "apple-touch-icon.png",
   "https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js",
