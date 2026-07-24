@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Beamed eighth-notes on the stave.** Consecutive eighth-notes within a beat are now joined with a
+  beam instead of each carrying its own flag, as in real notation — much cleaner for busy melodies.
+  Lone eighths still get a flag; quarter-notes and longer are unchanged. Bars are also a little wider
+  so the notes have more breathing room.
 - **Fix piercing squeal after turning Real on.** Real samples became "ready" the moment a single
   note anchor finished downloading, so notes far from that one anchor were repitched by octaves into
   a shrill, over-loud artifact until the rest loaded. Repitching is now capped to a nearby anchor;
