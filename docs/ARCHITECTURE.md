@@ -69,14 +69,17 @@ Two layers, chosen by the **Real** toggle, both routed through a per-session con
   instrument fetched from jsDelivr (`SF_BASE`/`SF_ANCHORS`) and pitch-shifted (`playbackRate`) to the
   nearest anchor. Raw MP3s are cached module-side (`sfRawCache`) and decoded per AudioContext; the
   service worker's runtime caching makes them available offline after first play. `playSampled`
-  voices a chord (`sampleVoicing`) and rolls the strum.
+  voices a chord (`sampleVoicing`) and rolls the strum; melody leads that map to a GM instrument
+  (`LEAD_SF`) play through `playLeadSampled`.
 - **Synth** (fallback when samples aren't loaded / Real is off): the original oscillator voices, with
   the guitar replaced by `ksPluck` — Karplus–Strong (a noise burst into a tuned, damped feedback
-  delay line: the physical model of a plucked string). Feedback stays < 1 so it always decays.
+  delay line: the physical model of a plucked string; feedback stays < 1 so it always decays) — and a
+  richer `drumSound` (layered kick + click, two-tone snare + rattle, metallic hats).
 
-The scheduler calls `playSampled` first and falls back to `playHit` when it returns false, so a
-sample that hasn't finished loading simply plays as synth until it's ready. All voices take an
-optional `dest` node so they can be routed to the reverb bus.
+The scheduler calls `playSampled`/`playLeadSampled` first and falls back to `playHit`/`leadNote` when
+they return false, so a sample that hasn't finished loading simply plays as synth until it's ready.
+All voices take an optional `dest` node; pitched voices + melody route to the reverb bus, click and
+drums stay dry, and the whole mix passes through a `DynamicsCompressor` limiter before the output.
 
 ## Melody persistence
 

@@ -2,13 +2,21 @@
 
 ## 3.12
 - **Realistic instrument sound**: playback can now use **real recorded instruments** instead of pure
-  synthesis. A **Real** toggle (Rhythm panel, on by default) loads FluidR3 soundfont samples for the
-  guitar, piano, organ and bass from a CDN on first play, pitch-shifting a handful of note anchors to
-  cover the range so downloads stay small; the service worker caches them for offline use. When
-  offline or if a load fails, it falls back automatically to the built-in synth — now itself much
-  improved: the guitar uses **Karplus–Strong** plucked-string modelling (a real physical string
-  model, not a filtered sawtooth) and everything runs through a **convolution reverb** so the sounds
-  breathe instead of sounding dry and computer-like. Turn **Real** off to force the synth voices.
+  synthesis. A **Real** toggle (Rhythm panel, on by default) loads FluidR3 soundfont samples from a
+  CDN on first play, pitch-shifting a handful of note anchors to cover the range so downloads stay
+  small; the service worker caches them for offline use.
+  - **Chords**: guitar, piano, organ and bass play as samples.
+  - **Melody**: leads that map to a real instrument (Flute, Strings, Brass, Electric piano, Organ,
+    Voice, Music box, Bell, Pluck — marked **◈** in the Lead menu) play as samples too; the pure
+    electronic timbres (Synth lead, sine, saw, square, glass…) stay synth.
+  - **Fallback synth** (offline / load failed / Real off) is much improved: the guitar uses
+    **Karplus–Strong** plucked-string modelling, the **drum kit** is richer (layered kick with beater
+    click, two-tone snare with wire rattle, metallic hats), and everything runs through a
+    **convolution reverb** with a master **limiter** so nothing clips or sounds bone-dry.
+- **Layout**: a sticky **Play** button (with tempo) now sits at the top, always in reach. The
+  **Sound** and **Lead (melody)** pickers moved up next to the chord-colour menus, above the wheel.
+  The **Rhythm** and **Song & melody** panels have a lighter accent background so they stand out, and
+  the Rhythm panel's Real / Legato toggles share the row with Pattern and Drums.
 
 ## 3.11
 - **Move melody notes as a group**: every melody grid has a **✎ Draw / ✋ Move** switch. In Move

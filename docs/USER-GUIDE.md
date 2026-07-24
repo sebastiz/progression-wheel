@@ -65,12 +65,17 @@ the **entire written-out song**, showing the current section and bar. The curren
 its landing-note row light up as it plays. All changes (pattern, drums, tempo, chord edits) take
 effect within about a tenth of a second, mid-playback.
 
-- **Real** (on by default) — plays real recorded instruments (guitar, piano, organ, bass) instead of
-  pure synthesis. The samples download from a CDN the first time you press Play and are then cached
-  for offline use. If you're offline before they've cached, or a download fails, playback falls back
-  to the built-in synth (an improved one: a Karplus–Strong plucked-string guitar and a reverb on
-  everything). Turn **Real** off to always use the synth voices — handy for a guaranteed-offline,
-  zero-download session.
+- **Real** (on by default) — plays real recorded instruments instead of pure synthesis: the chords
+  (guitar / piano / organ / bass) and any melody **Lead** marked **◈** (Flute, Strings, Brass,
+  Electric piano, Organ, Voice, Music box, Bell, Pluck). The samples download from a CDN the first
+  time you press Play and are then cached for offline use. If you're offline before they've cached,
+  or a download fails, playback falls back to the built-in synth — an improved one: a Karplus–Strong
+  plucked-string guitar, a richer drum kit, and reverb on everything. Turn **Real** off to always use
+  the synth voices — handy for a guaranteed-offline, zero-download session.
+
+Transport lives in two places: a sticky **Play** at the very top (with tempo) that's always in
+reach, and Play / MIDI on the Rhythm panel. **Sound** (the chord instrument) and **Lead** (the melody
+voice) are chosen above the wheel, next to the chord-colour menus.
 
 No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
 
