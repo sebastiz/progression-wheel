@@ -23,7 +23,9 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   (a different progression for the chorus / bridge / verses)
 - **Rhythm section** — ~30 strumming patterns (including 3/4 and 6/8), five instrument voices,
   synthesized drum kits, swing, and a lookahead-scheduled metronome that plays through the loop or
-  the entire chosen structure
+  the entire chosen structure. A **Real** toggle plays actual recorded instruments (FluidR3
+  soundfont samples, cached for offline) for the guitar / piano / organ / bass, falling back to an
+  improved synth (Karplus–Strong plucked guitar, convolution reverb) when offline
 - **Melody grid** — eighth-note, polyphonic, spanning the whole progression, with per-chord landing
   notes and a scale/pentatonic reference; melodies persist through every edit and transpose with the
   key. A **Suggest** tab writes 16 common melody shapes (chord-tone arpeggios, scale runs, call &
@@ -55,7 +57,9 @@ npm run build   # rebuilds index.html from src/
 
 ## Notes
 
-- Audio is synthesized with the Web Audio API; on iPhone the ring/silent switch mutes web audio.
+- Audio uses the Web Audio API — real recorded-instrument samples (loaded from a CDN, cached for
+  offline) when **Real** is on, an improved synth otherwise. On iPhone the ring/silent switch mutes
+  web audio.
 - The app is an installable PWA: on iPhone, open the site in Safari and Add to Home Screen for a
   full-screen, offline-capable app. Sketches persist via localStorage on the web (window.storage
   inside Claude artifacts).

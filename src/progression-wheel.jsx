@@ -230,88 +230,130 @@ function makeNoise(ctx) {
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   return b;
 }
-function env(ctx, t, vol, attack, decay, exp = true) {
+function env(ctx, t, vol, attack, decay, exp = true, dest) {
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(vol, t + attack);
   if (exp) g.gain.exponentialRampToValueAtTime(0.0006, t + decay);
-  g.connect(ctx.destination);
+  g.connect(dest || ctx.destination);
   return g;
 }
-function clickSound(ctx, t, sym) {
+function clickSound(ctx, t, sym, dest) {
   const o = ctx.createOscillator();
   o.type = "square";
   o.frequency.value = sym === ">" ? 1660 : sym === "U" ? 830 : 1108;
-  o.connect(env(ctx, t, sym === ">" ? 0.09 : sym === "U" ? 0.035 : 0.055, 0.001, 0.05));
+  o.connect(env(ctx, t, sym === ">" ? 0.09 : sym === "U" ? 0.035 : 0.055, 0.001, 0.05, true, dest));
   o.start(t); o.stop(t + 0.06);
   if (sym === ">") {
     const o2 = ctx.createOscillator();
     o2.type = "sine";
     o2.frequency.setValueAtTime(160, t);
     o2.frequency.exponentialRampToValueAtTime(60, t + 0.09);
-    o2.connect(env(ctx, t, 0.22, 0.001, 0.12));
+    o2.connect(env(ctx, t, 0.22, 0.001, 0.12, true, dest));
     o2.start(t); o2.stop(t + 0.13);
   }
 }
-function drumSound(ctx, t, ch, noise) {
+function drumSound(ctx, t, ch, noise, dest) {
   if (ch === "K") {
+    // body: sine with a fast pitch drop; plus a short click transient for the beater
     const o = ctx.createOscillator();
     o.type = "sine";
-    o.frequency.setValueAtTime(130, t);
-    o.frequency.exponentialRampToValueAtTime(44, t + 0.1);
-    o.connect(env(ctx, t, 0.5, 0.001, 0.14));
-    o.start(t); o.stop(t + 0.15);
+    o.frequency.setValueAtTime(165, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.09);
+    o.connect(env(ctx, t, 0.62, 0.002, 0.22, true, dest));
+    o.start(t); o.stop(t + 0.24);
+    const click = ctx.createBufferSource(); click.buffer = noise;
+    const cf = ctx.createBiquadFilter(); cf.type = "lowpass"; cf.frequency.value = 3200;
+    click.connect(cf); cf.connect(env(ctx, t, 0.22, 0.001, 0.02, true, dest));
+    click.start(t); click.stop(t + 0.03);
   } else if (ch === "S") {
-    const n = ctx.createBufferSource(); n.buffer = noise;
-    const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1900; f.Q.value = 0.8;
-    n.connect(f); f.connect(env(ctx, t, 0.28, 0.001, 0.13));
-    n.start(t); n.stop(t + 0.14);
-    const o = ctx.createOscillator();
-    o.type = "triangle"; o.frequency.value = 190;
-    o.connect(env(ctx, t, 0.12, 0.001, 0.08));
-    o.start(t); o.stop(t + 0.09);
+    // two-tone shell + a bright noise crack + a slightly longer wire rattle
+    [175, 330].forEach((hz, k) => {
+      const o = ctx.createOscillator();
+      o.type = "triangle"; o.frequency.value = hz;
+      o.connect(env(ctx, t, k ? 0.09 : 0.14, 0.001, 0.09, true, dest));
+      o.start(t); o.stop(t + 0.1);
+    });
+    const crack = ctx.createBufferSource(); crack.buffer = noise;
+    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1600;
+    crack.connect(hp); hp.connect(env(ctx, t, 0.3, 0.001, 0.055, true, dest));
+    crack.start(t); crack.stop(t + 0.06);
+    const rattle = ctx.createBufferSource(); rattle.buffer = noise;
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 3200; bp.Q.value = 0.6;
+    rattle.connect(bp); bp.connect(env(ctx, t, 0.14, 0.002, 0.16, true, dest));
+    rattle.start(t); rattle.stop(t + 0.17);
   } else if (ch === "H") {
+    // metallic hat: high-passed noise + a ring of inharmonic square partials
     const n = ctx.createBufferSource(); n.buffer = noise;
-    const f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 6500;
-    n.connect(f); f.connect(env(ctx, t, 0.09, 0.001, 0.045));
+    const f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 7800;
+    n.connect(f); f.connect(env(ctx, t, 0.11, 0.001, 0.04, true, dest));
     n.start(t); n.stop(t + 0.05);
+    const ring = ctx.createGain(); ring.gain.value = 0.02;
+    const rhp = ctx.createBiquadFilter(); rhp.type = "highpass"; rhp.frequency.value = 8500;
+    ring.connect(rhp); rhp.connect(env(ctx, t, 0.5, 0.001, 0.035, true, dest));
+    [2400, 3000, 4700].forEach(hz => {
+      const o = ctx.createOscillator(); o.type = "square"; o.frequency.value = hz;
+      o.connect(ring); o.start(t); o.stop(t + 0.045);
+    });
   }
 }
 const chordIvs = q => ({ dom:[0,4,7,10], maj7:[0,4,7,11], m7:[0,3,7,10],
   maj9:[0,4,7,11,14], m9:[0,3,7,10,14], dom9:[0,4,7,10,14] }[q] || [0, q === "min" ? 3 : 4, 7]);
-function strumChord(ctx, t, chord, sym) {
+// Karplus–Strong plucked string: a short noise burst excites a tuned feedback
+// delay line with a damping low-pass — the physical model of a real plucked
+// string, far closer to an acoustic guitar than a filtered sawtooth.
+function ksPluck(ctx, t, freq, dur, vol, bright, dest) {
+  const period = 1 / freq;
+  const delay = ctx.createDelay(0.05);
+  delay.delayTime.value = period;
+  const damp = ctx.createBiquadFilter();
+  damp.type = "lowpass"; damp.frequency.value = Math.min(7000, 1400 + bright); damp.Q.value = 0.2;
+  const fb = ctx.createGain();
+  // feedback per round-trip, tuned so the string decays to silence over ~dur
+  fb.gain.value = Math.min(0.995, Math.pow(0.0008, period / Math.max(0.12, dur)));
+  delay.connect(damp); damp.connect(fb); fb.connect(delay);
+  const out = ctx.createGain();
+  out.gain.setValueAtTime(vol, t);
+  out.gain.setValueAtTime(vol, t + dur * 0.8);
+  out.gain.exponentialRampToValueAtTime(0.0004, t + dur + 0.12);
+  delay.connect(out); out.connect(dest || ctx.destination);
+  // excitation: a burst of noise one period long
+  const nlen = Math.max(2, Math.ceil(ctx.sampleRate * period));
+  const buf = ctx.createBuffer(1, nlen, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < nlen; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const ig = ctx.createGain(); ig.gain.value = 1;
+  src.connect(ig); ig.connect(delay);
+  src.start(t); src.stop(t + period + 0.02);
+}
+function strumChord(ctx, t, chord, sym, dest) {
   const base = 48 + chord.root;
   let notes = [base - 12, ...chordIvs(chord.quality).map(x => base + x)];
   if (sym === "U") notes = notes.slice(2).reverse();
-  const vol = sym === ">" ? 0.13 : sym === "U" ? 0.07 : 0.10;
-  const ring = sym === ">" ? 0.55 : 0.3;
+  const vol = sym === ">" ? 0.16 : sym === "U" ? 0.09 : 0.12;
+  const dur = sym === ">" ? 1.4 : 0.9;
+  const bright = sym === ">" ? 2600 : sym === "U" ? 1400 : 1900;
   notes.forEach((mid, j) => {
-    const o = ctx.createOscillator();
-    const f = ctx.createBiquadFilter();
-    f.type = "lowpass"; f.Q.value = 0.6;
-    f.frequency.setValueAtTime(2600, t);
-    f.frequency.exponentialRampToValueAtTime(900, t + ring);
-    o.type = "sawtooth"; o.frequency.value = midiHz(mid);
-    const tt = t + j * 0.014;
-    o.connect(f); f.connect(env(ctx, tt, vol, 0.006, ring));
-    o.start(tt); o.stop(tt + ring + 0.1);
+    const tt = t + j * (sym === "U" ? 0.010 : 0.016);   // roll the pick across the strings
+    ksPluck(ctx, tt, midiHz(mid), dur, vol, bright, dest);
   });
 }
-function playHit(ctx, t, chord, sym, instr, slotDur) {
-  if (instr === "guitar") return strumChord(ctx, t, chord, sym);
+function playHit(ctx, t, chord, sym, instr, slotDur, dest) {
+  if (instr === "guitar") return strumChord(ctx, t, chord, sym, dest);
   const iv = chordIvs(chord.quality), rootMid = 48 + chord.root;
   if (instr === "bass" || instr === "dbass") {
     const o = ctx.createOscillator();
     o.frequency.value = midiHz(36 + chord.root + (sym === "U" ? 7 : 0));
-    let dest;
+    let node;
     if (instr === "bass") {
       o.type = "sawtooth";
       const f = ctx.createBiquadFilter();
       f.type = "lowpass"; f.frequency.value = 420; f.Q.value = 1;
-      o.connect(f); dest = f;
-    } else { o.type = "triangle"; dest = o; }
+      o.connect(f); node = f;
+    } else { o.type = "triangle"; node = o; }
     const dec = instr === "dbass" ? 0.75 : 0.35;
-    dest.connect(env(ctx, t, sym === ">" ? 0.30 : 0.20, instr === "dbass" ? 0.022 : 0.006, dec));
+    node.connect(env(ctx, t, sym === ">" ? 0.30 : 0.20, instr === "dbass" ? 0.022 : 0.006, dec, true, dest));
     o.start(t); o.stop(t + dec + 0.1);
     return;
   }
@@ -327,7 +369,7 @@ function playHit(ctx, t, chord, sym, instr, slotDur) {
         g.gain.linearRampToValueAtTime(vol, t + 0.02);
         g.gain.setValueAtTime(vol, t + Math.max(0.05, dur - 0.04));
         g.gain.linearRampToValueAtTime(0.0001, t + dur);
-        o.connect(g).connect(ctx.destination);
+        o.connect(g).connect(dest || ctx.destination);
         o.start(t); o.stop(t + dur + 0.05);
       });
     } else { // piano — fundamental + partials, hammer attack, longer sustain
@@ -337,11 +379,118 @@ function playHit(ctx, t, chord, sym, instr, slotDur) {
       [[1, 1, "triangle"], [2, 0.28, "sine"], [4, 0.07, "sine"]].forEach(([h, hv, type]) => {
         const o = ctx.createOscillator();
         o.type = type; o.frequency.value = freq * h;
-        o.connect(env(ctx, tt, vol * hv, 0.004, dur / (h > 1 ? 2.5 : 1)));
+        o.connect(env(ctx, tt, vol * hv, 0.004, dur / (h > 1 ? 2.5 : 1), true, dest));
         o.start(tt); o.stop(tt + dur + 0.1);
       });
     }
   });
+}
+
+/* ===== realistic samples (real recorded instruments, loaded when online) ===== */
+// FluidR3 GM soundfont MP3s via jsDelivr (CORS-enabled). We fetch a few natural-note
+// anchors per instrument and pitch-shift to cover the rest, so downloads stay small;
+// the service worker caches them for offline use after the first play. Anything that
+// fails (offline, blocked) silently falls back to the synth voices above.
+const SF_BASE = "https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@master/FluidR3_GM/";
+const SF_INSTR = { guitar:"acoustic_guitar_steel", piano:"acoustic_grand_piano",
+  organ:"drawbar_organ", bass:"acoustic_bass", dbass:"acoustic_bass",
+  // melody-lead voices that map to a real recorded instrument
+  l_flute:"flute", l_strings:"string_ensemble_1", l_brass:"brass_section", l_ep:"electric_piano_1",
+  l_organ:"drawbar_organ", l_voice:"choir_aahs", l_musicbox:"music_box", l_bell:"tinkle_bell",
+  l_pluck:"acoustic_guitar_nylon" };
+// which "Lead" dropdown voices play as real samples (the rest stay pure synth timbres)
+const LEAD_SF = { flute:"l_flute", strings:"l_strings", brass:"l_brass", ep:"l_ep",
+  organ:"l_organ", voice:"l_voice", musicbox:"l_musicbox", bell:"l_bell", pluck:"l_pluck" };
+const SF_NAT = { 0:"C", 2:"D", 4:"E", 5:"F", 7:"G", 9:"A", 11:"B" };
+const SF_LEAD_ANCHORS = [60,65,69,72,77,81];             // C4..A5 — the melody's range
+// anchor MIDI notes per instrument (all natural notes → simple filenames)
+const SF_ANCHORS = {
+  guitar: [48,53,57,60,65,69,72], piano: [36,41,45,48,53,57,60,65,69,72,77,81],
+  organ: [48,53,57,60,65,69,72], bass: [24,29,33,36,41,45,48], dbass: [24,29,33,36,41,45,48],
+  l_flute:SF_LEAD_ANCHORS, l_strings:SF_LEAD_ANCHORS, l_brass:SF_LEAD_ANCHORS, l_ep:SF_LEAD_ANCHORS,
+  l_organ:SF_LEAD_ANCHORS, l_voice:SF_LEAD_ANCHORS, l_musicbox:SF_LEAD_ANCHORS, l_bell:SF_LEAD_ANCHORS,
+  l_pluck:SF_LEAD_ANCHORS,
+};
+const sfName = m => SF_NAT[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
+const sfRawCache = {};                                    // "instr:midi" → Promise<ArrayBuffer>
+function sfFetch(instr, midi) {
+  const key = instr + ":" + midi;
+  if (sfRawCache[key]) return sfRawCache[key];
+  const url = SF_BASE + SF_INSTR[instr] + "-mp3/" + sfName(midi) + ".mp3";
+  sfRawCache[key] = fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status));
+  sfRawCache[key].catch(() => { delete sfRawCache[key]; });   // let a later attempt retry
+  return sfRawCache[key];
+}
+function sfPrefetch(instr) { if (SF_INSTR[instr]) SF_ANCHORS[instr].forEach(m => sfFetch(instr, m).catch(() => {})); }
+// a sampler bound to one AudioContext: decodes the cached MP3s and plays the nearest anchor repitched
+function makeSampler(ctx) {
+  const decoded = {}, done = {}, loading = {};
+  const load = instr => {
+    if (!SF_INSTR[instr] || done[instr]) return Promise.resolve();
+    if (loading[instr]) return loading[instr];
+    loading[instr] = Promise.all(SF_ANCHORS[instr].map(m =>
+      sfFetch(instr, m).then(ab => ctx.decodeAudioData(ab.slice(0)))
+        .then(buf => { decoded[instr + ":" + m] = buf; }).catch(() => {})
+    )).then(() => { done[instr] = SF_ANCHORS[instr].some(m => decoded[instr + ":" + m]); });
+    return loading[instr];
+  };
+  const ready = instr => !!done[instr];
+  const play = (instr, t, midi, gain, dur, dest) => {
+    let best = null;
+    for (const m of SF_ANCHORS[instr]) {
+      const buf = decoded[instr + ":" + m]; if (!buf) continue;
+      const d = Math.abs(m - midi); if (!best || d < best.d) best = { m, d, buf };
+    }
+    if (!best) return false;
+    const src = ctx.createBufferSource(); src.buffer = best.buf;
+    src.playbackRate.value = Math.pow(2, (midi - best.m) / 12);
+    const g = ctx.createGain(); g.gain.setValueAtTime(gain, t);
+    const end = t + (dur || 1.2);
+    g.gain.setValueAtTime(gain, Math.max(t, end - 0.12));
+    g.gain.exponentialRampToValueAtTime(0.0006, end + 0.08);
+    src.connect(g).connect(dest || ctx.destination);
+    src.start(t); src.stop(end + 0.15);
+    return true;
+  };
+  return { load, ready, play };
+}
+// note voicing for the sampler, mirroring the synth voicings above
+function sampleVoicing(chord, sym, instr) {
+  const iv = chordIvs(chord.quality), root = chord.root;
+  if (instr === "bass" || instr === "dbass") return { notes: [36 + root + (sym === "U" ? 7 : 0)], roll: 0.03 };
+  const base = 48 + root;
+  const notes = sym === "U" ? iv.slice(1).map(x => base + x) : [base - 12, ...iv.map(x => base + x)];
+  return { notes, roll: instr === "guitar" ? (sym === "U" ? 0.010 : 0.016) : 0.004 };
+}
+function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest) {
+  if (!sampler || !sampler.ready(instr)) return false;
+  const { notes, roll } = sampleVoicing(chord, sym, instr);
+  const g = sym === ">" ? 0.5 : sym === "U" ? 0.3 : 0.4;
+  const dur = sym === ">" ? 1.6 : instr === "guitar" ? 1.0 : Math.max(0.5, slotDur * 2.5);
+  notes.forEach((mid, j) => sampler.play(instr, t + j * roll, mid, g, dur, dest));
+  return true;
+}
+// play one melody note as a real sample if the chosen lead voice maps to one and it's loaded
+function playLeadSampled(sampler, kind, t, midi, dur, dest) {
+  const key = LEAD_SF[kind];
+  if (!sampler || !key || !sampler.ready(key)) return false;
+  sampler.play(key, t, midi, 0.55, dur, dest);
+  return true;
+}
+// a convolution reverb bus: input node feeding a dry path + a wet (reverb) path
+function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16) {
+  const rate = ctx.sampleRate, len = Math.max(1, Math.floor(rate * seconds));
+  const ir = ctx.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+  }
+  const conv = ctx.createConvolver(); conv.buffer = ir;
+  const wet = ctx.createGain(); wet.gain.value = mix;
+  const input = ctx.createGain(); input.gain.value = 1;
+  input.connect(dest);                    // dry
+  input.connect(conv); conv.connect(wet); wet.connect(dest);   // wet
+  return input;
 }
 
 // Melody lead voices — chosen from the "Lead" dropdown. Each spec is a stack of
@@ -375,7 +524,7 @@ const LEAD_SPECS = {
 };
 // legato=true softens the attack and lets the note ring past its slot so a
 // moving line flows together instead of re-articulating on every eighth.
-function leadNote(ctx, t, midi, dur, kind = "synth", legato = false) {
+function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
   const V = LEAD_SPECS[kind] || LEAD_SPECS.synth;
   const hz = midiHz(midi);
   const atk = legato ? Math.max(V.atk, 0.03) : V.atk;
@@ -392,7 +541,7 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false) {
     g.gain.setValueAtTime(Math.max(0.0002, sus), t2);
   }
   g.gain.exponentialRampToValueAtTime(0.0006, t3);
-  g.connect(ctx.destination);
+  g.connect(dest || ctx.destination);
   let out = g;
   if (V.lp) {
     const f = ctx.createBiquadFilter();
@@ -888,6 +1037,7 @@ export default function ProgressionWheel() {
   const [pillSel, setPillSel] = useState([]);               // selected pill indices (reorder mode)
   const [scoreInstr, setScoreInstr] = useState("piano");    // notation: piano | guitar
   const [showScore, setShowScore] = useState(false);        // notation panel collapse
+  const [realSounds, setRealSounds] = useState(true);       // use real instrument samples when available
   const [melMove, setMelMove] = useState(false);            // melody grid: draw vs move mode
   const [melSel, setMelSel] = useState({ key:"", notes:{} }); // selected melody notes ("c:deg" → true)
   const [melBox, setMelBox] = useState(null);               // live marquee box while selecting
@@ -896,6 +1046,7 @@ export default function ProgressionWheel() {
   const metroRef = useRef(null);
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(false);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
+  const realRef = useRef(true);
   const meloRef = useRef(null);
 
   // Emotion leads the ranking so changing it always changes the chords
@@ -1144,7 +1295,7 @@ export default function ProgressionWheel() {
   const rhythm = PATTERNS[patId];
   const effBpm = bpmSt.key === progId ? bpmSt.val : (BPM_DEFAULT[progId] || 96);
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = !!rhythm.swing;
-  instrRef.current = instr; drumRef.current = DRUMS[drum].pattern;
+  instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
   const meloBeats = rhythm.pattern.length;                  // eighths per bar (6 in waltz time)
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
   const chordId = (c, i) => c.inserted ? c.baseName
@@ -1332,7 +1483,17 @@ export default function ProgressionWheel() {
     const un = ctx.createOscillator(), ug = ctx.createGain();
     ug.gain.value = 0.0001; un.connect(ug).connect(ctx.destination);
     un.start(); un.stop(ctx.currentTime + 0.02);
-    const m = { ctx, step: from * (patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
+    const limiter = ctx.createDynamicsCompressor();  // tame peaks so stacked samples don't clip
+    limiter.threshold.value = -6; limiter.knee.value = 6; limiter.ratio.value = 4;
+    limiter.attack.value = 0.004; limiter.release.value = 0.18;
+    limiter.connect(ctx.destination);
+    const master = ctx.createGain(); master.gain.value = 0.8; master.connect(limiter);
+    const music = makeReverb(ctx, master);           // reverb bus for pitched instruments + melody
+    const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
+    const leadKey = LEAD_SF[(meloRef.current || {}).melInstr];
+    if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
+    const m = { ctx, master, music, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+      step: from * (patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     m.timer = setInterval(() => {
       if (m.ctx.state === "suspended") m.ctx.resume();
       const eighth = 60 / bpmRef.current / 2;
@@ -1354,12 +1515,17 @@ export default function ProgressionWheel() {
         const sym = patRef.current[i] || "-";
         let t = m.nextTime;
         if (swingRef.current && i % 2 === 1) t += eighth * 0.33;
+        const inst = instrRef.current;
+        if (realRef.current && inst !== m.lastInstr) { m.sampler.load(inst); m.lastInstr = inst; }  // switched voice mid-play
         if (sym !== "-") {
-          clickSound(m.ctx, t, sym);
-          if (chord) playHit(m.ctx, t, chord, sym, instrRef.current, eighth);
+          clickSound(m.ctx, t, sym, m.master);
+          if (chord) {
+            const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.music);
+            if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.music);
+          }
         }
         const dpat = drumRef.current;
-        if (dpat && dpat[i]) for (const ch of dpat[i]) drumSound(m.ctx, t, ch, m.noise);
+        if (dpat && dpat[i]) for (const ch of dpat[i]) drumSound(m.ctx, t, ch, m.noise, m.master);
         const mel = meloRef.current;
         if (mel) {
           let sym = null, mb = 0;
@@ -1373,21 +1539,21 @@ export default function ProgressionWheel() {
           }
           const sec = sym && mel.bySym[sym];
           if (sec && sec.flat.length) {
+            const leadKey = LEAD_SF[mel.melInstr];              // real-sample lead voice, if any
+            if (realRef.current && leadKey && leadKey !== m.lastLead) { m.sampler.load(leadKey); m.lastLead = leadKey; }
             const N = sec.flat.length;
             const col = (mb * L + i) % N;
             const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
             (sec.flat[col] || []).forEach(deg => {
-              if (mel.legato) {
-                // merge a run of the same note into one held tone; extend a hair
-                // past the run so consecutive different notes connect too
-                const prev = sec.flat[col - 1] || [];
-                if (col > 0 && prev.includes(deg)) return;       // still ringing from last slot
-                let run = 1;
-                while (col + run < N && (sec.flat[col + run] || []).includes(deg)) run++;
-                leadNote(m.ctx, t, base + mel.scale[deg], eighth * (run + 0.35), mel.melInstr, true);
-              } else {
-                leadNote(m.ctx, t, base + mel.scale[deg], eighth * 0.92, mel.melInstr, false);
-              }
+              const held = mel.legato;
+              const prev = sec.flat[col - 1] || [];
+              if (held && col > 0 && prev.includes(deg)) return; // still ringing from last slot
+              let run = 1;
+              if (held) while (col + run < N && (sec.flat[col + run] || []).includes(deg)) run++;
+              const midi = base + mel.scale[deg];
+              const dur = held ? eighth * (run + 0.35) : eighth * 0.92;
+              const sampled = realRef.current && playLeadSampled(m.sampler, mel.melInstr, t, midi, dur, m.music);
+              if (!sampled) leadNote(m.ctx, t, midi, dur, mel.melInstr, held, m.music);
             });
             const q = { sym, col };
             setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
@@ -1462,6 +1628,9 @@ export default function ProgressionWheel() {
     setSketches([]);
   };
   useEffect(() => { loadSketches(); }, []);   // eslint-disable-line
+  // warm the sample cache for the chosen instrument + melody voice so the first Play is instant
+  useEffect(() => { if (realSounds) sfPrefetch(instr); }, [instr, realSounds]);
+  useEffect(() => { if (realSounds && LEAD_SF[melInstr]) sfPrefetch(LEAD_SF[melInstr]); }, [melInstr, realSounds]);
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
     const s = { name, progId, tonic, genre, emotion, colour, patId, drum, instr,
@@ -1512,6 +1681,17 @@ export default function ProgressionWheel() {
         .eyebrow { font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:#8B94A3; margin-bottom:6px; }
         .sub { color:#8B94A3; font-size:14px; margin:6px 0 18px; line-height:1.45; }
         .panel { background:#171E28; border:1px solid #232C3A; border-radius:16px; padding:14px; margin-bottom:14px; }
+        .panel.accent { background:#1C2A3B; border-color:#33475F; box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 4px 18px rgba(0,0,0,.22); }
+        .toptransport { position:sticky; top:0; z-index:6; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+          background:rgba(16,21,29,.9); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+          border:1px solid #232C3A; border-radius:14px; padding:10px 12px; margin-bottom:14px; }
+        .playbtn { background:${GOLD}; color:#1A130A; border:none; border-radius:11px; padding:10px 22px; font-size:15px;
+          font-weight:700; font-family:inherit; cursor:pointer; letter-spacing:.01em; box-shadow:0 2px 10px rgba(229,181,84,.28); }
+        .playbtn:hover { filter:brightness(1.06); }
+        .playbtn.on { background:#E06A55; color:#2A0F0B; box-shadow:0 2px 10px rgba(224,106,85,.3); }
+        .tplabel { font-size:13px; color:${GOLD}; font-weight:600; }
+        .tplabel.dim { color:#8B94A3; font-weight:500; }
+        .btn.on { border-color:#E06A55; color:#F2B8AC; }
         .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
         .lbl { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#8B94A3; margin:8px 0 6px; }
         select { background:#10151D; color:#EDE7DA; border:1px solid #2A3442; border-radius:10px; padding:8px 10px; font-family:inherit; font-size:14px; max-width:100%; }
@@ -1625,6 +1805,21 @@ export default function ProgressionWheel() {
         <h1>The Progression Wheel</h1>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
 
+        {/* top transport — always-reachable Play */}
+        <div className="toptransport">
+          <button className={"playbtn" + (playing ? " on" : "")} onClick={() => (playing ? stopMetro() : startMetro(0))}>
+            {playing ? "■ Stop" : "▶ Play"}
+          </button>
+          <div className="row" style={{ gap:7, alignItems:"center" }}>
+            <button className="mini" onClick={() => nudgeBpm(-5)}>−5</button>
+            <span className="bpmval">{effBpm} bpm</span>
+            <button className="mini" onClick={() => nudgeBpm(5)}>+5</button>
+          </div>
+          {playing && curLabel
+            ? <span className="tplabel">{curLabel}</span>
+            : <span className="tplabel dim">{keyLabel} · {prog.label}</span>}
+        </div>
+
         {/* controls */}
         <div className="panel">
           <div className="row" style={{ gap:"8px 12px", alignItems:"flex-end" }}>
@@ -1712,6 +1907,25 @@ export default function ProgressionWheel() {
                       {chordName(r, "dom")} for {u.name} — same tritone, chromatic bass</option>;
                   })}
                 </optgroup>
+              </select>
+            </label>
+          </div>
+
+          <div className="selrow" style={{ marginTop:10 }}>
+            <label className="selwrap">
+              <span className="lbl" style={{ margin:0 }}>Sound</span>
+              <select value={instr} onChange={e => setInstr(e.target.value)}>
+                <option value="guitar">Guitar</option>
+                <option value="piano">Piano</option>
+                <option value="organ">Organ</option>
+                <option value="bass">Bass</option>
+                <option value="dbass">Double bass</option>
+              </select>
+            </label>
+            <label className="selwrap">
+              <span className="lbl" style={{ margin:0 }}>Lead (melody)</span>
+              <select value={melInstr} onChange={e => setMelInstr(e.target.value)}>
+                {LEAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}{LEAD_SF[id] ? " ◈" : ""}</option>)}
               </select>
             </label>
           </div>
@@ -1890,26 +2104,14 @@ export default function ProgressionWheel() {
         </div>
 
         {/* rhythm */}
-        <div className="panel">
+        <div className="panel accent">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
             <div className="progtitle" style={{ fontSize:17 }}>Rhythm</div>
-            <div className="row" style={{ gap:7, alignItems:"center" }}>
-              <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)}
-                title="Merge the melody notes into one flowing line — smoother, less stodgy">
-                <div className="sw" /> Legato
-              </div>
-              <button className="mini" onClick={() => nudgeBpm(-5)}>−5</button>
-              <span className="bpmval">{effBpm} bpm</span>
-              <button className="mini" onClick={() => nudgeBpm(5)}>+5</button>
-              <button className="btn" style={{ padding:"5px 13px" }} onClick={() => (playing ? stopMetro() : startMetro(0))}>
-                {playing ? "■ Stop" : "▶ Play"}
-              </button>
-              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export MIDI">↓ MIDI</button>
-            </div>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export MIDI">↓ MIDI</button>
           </div>
 
-          <div className="selrow" style={{ marginTop:10 }}>
-            <label className="selwrap">
+          <div className="selrow" style={{ marginTop:10, alignItems:"flex-end", flexWrap:"wrap" }}>
+            <label className="selwrap" style={{ minWidth:150 }}>
               <span className="lbl" style={{ margin:0 }}>Pattern</span>
               <select value={patId} onChange={e => setPatSel({ key: progId, id: e.target.value })}>
                 {Object.entries(PATTERNS).map(([id, p]) => (
@@ -1919,28 +2121,20 @@ export default function ProgressionWheel() {
                 ))}
               </select>
             </label>
-            <label className="selwrap">
-              <span className="lbl" style={{ margin:0 }}>Sound</span>
-              <select value={instr} onChange={e => setInstr(e.target.value)}>
-                <option value="guitar">Guitar</option>
-                <option value="piano">Piano</option>
-                <option value="organ">Organ</option>
-                <option value="bass">Bass</option>
-                <option value="dbass">Double bass</option>
-              </select>
-            </label>
-            <label className="selwrap">
-              <span className="lbl" style={{ margin:0 }}>Lead</span>
-              <select value={melInstr} onChange={e => setMelInstr(e.target.value)}>
-                {LEAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            </label>
-            <label className="selwrap">
+            <label className="selwrap" style={{ minWidth:130 }}>
               <span className="lbl" style={{ margin:0 }}>Drums</span>
               <select value={drum} onChange={e => setDrum(e.target.value)}>
                 {Object.entries(DRUMS).map(([id, d]) => <option key={id} value={id}>{d.name}</option>)}
               </select>
             </label>
+            <div className={"tog" + (realSounds ? " on" : "")} onClick={() => setRealSounds(v => !v)} style={{ paddingBottom:6 }}
+              title="Play real recorded instruments (loads samples when online; falls back to the built-in synth offline)">
+              <div className="sw" /> Real
+            </div>
+            <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ paddingBottom:6 }}
+              title="Merge the melody notes into one flowing line — smoother, less stodgy">
+              <div className="sw" /> Legato
+            </div>
           </div>
 
           <div className="arrnote" style={{ marginTop:5 }}>
@@ -1966,7 +2160,7 @@ export default function ProgressionWheel() {
         </div>
 
         {/* song & melody */}
-        <div className="panel">
+        <div className="panel accent">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
             <div className="progtitle" style={{ fontSize:17 }}>Song & melody</div>
             <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => setSelStruct(e.target.value)}>
