@@ -503,13 +503,25 @@ function makeSampler(ctx) {
     return loading[f];
   };
   const ready = k => !!done[gmKey(k)];
-  const play = (k, t, midi, gain, dur, dest) => {
+  // nearest *decoded* anchor to a target note. Anchors sit ~7 semitones apart, so once an
+  // instrument is fully loaded every note is within a few semitones of one. But `done`/`ready`
+  // flips true after just one anchor decodes (so a part-loaded or partly-failed instrument still
+  // plays), which means early on the only loaded anchor can be octaves away — repitching it that
+  // far turns the sample into a piercing, over-loud squeal. Cap the shift and let the caller fall
+  // back to the synth voice for notes no loaded anchor can cover cleanly.
+  const MAX_SHIFT = 7;   // semitones (one anchor gap); beyond this, defer to the synth
+  const nearest = (k, midi) => {
     const f = gmKey(k);
     let best = null;
     for (const m of anchorsFor(f)) {
       const buf = decoded[f + ":" + m]; if (!buf) continue;
       const d = Math.abs(m - midi); if (!best || d < best.d) best = { m, d, buf };
     }
+    return best && best.d <= MAX_SHIFT ? best : null;
+  };
+  const covers = (k, midi) => !!nearest(k, midi);
+  const play = (k, t, midi, gain, dur, dest) => {
+    const best = nearest(k, midi);
     if (!best) return false;
     const src = ctx.createBufferSource(); src.buffer = best.buf;
     src.playbackRate.value = Math.pow(2, (midi - best.m) / 12);
@@ -521,7 +533,7 @@ function makeSampler(ctx) {
     src.start(t); src.stop(end + 0.15);
     return true;
   };
-  return { load, ready, play };
+  return { load, ready, play, covers };
 }
 // note voicing for the sampler, mirroring the synth voicings, by instrument family
 function sampleVoicing(chord, sym, fam) {
@@ -535,6 +547,9 @@ function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest) {
   if (!sampler || !sampler.ready(instr)) return false;
   const fam = gmFam(instr);
   const { notes, roll } = sampleVoicing(chord, sym, fam);
+  // if any voiced note lacks a nearby loaded anchor (samples still loading), play the whole chord
+  // on the synth rather than repitching a distant anchor into a shrill artifact for part of it
+  if (!notes.every(mid => sampler.covers(instr, mid))) return false;
   const g = sym === ">" ? 0.5 : sym === "U" ? 0.3 : 0.4;
   const dur = sym === ">" ? 1.6 : fam === "pluck" ? 1.0 : Math.max(0.5, slotDur * 2.5);
   notes.forEach((mid, j) => sampler.play(instr, t + j * roll, mid, g, dur, dest));
@@ -543,8 +558,7 @@ function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest) {
 // play one melody note as a real sample if the chosen lead voice is a GM instrument that's loaded
 function playLeadSampled(sampler, kind, t, midi, dur, dest) {
   if (!sampler || !isGM(kind) || !sampler.ready(kind)) return false;
-  sampler.play(kind, t, midi, 0.55, dur, dest);
-  return true;
+  return sampler.play(kind, t, midi, 0.55, dur, dest);   // false if no loaded anchor is close → synth covers this note
 }
 // a convolution reverb bus: input node feeding a dry path + a wet (reverb) path
 function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16) {
@@ -744,7 +758,7 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
   const INK = "#EDE7DA", FAINT = "#3A4453", SYM = "#EAE2CC";
   const LG = 9;                                   // staff line gap
   const staffH = 4 * LG;
-  const clefW = 34, barW = 150, padL = 8, padTop = 26;
+  const clefW = 34, barW = 178, padL = 8, padTop = 26;   // wider bars so notes aren't cramped
   const sysW = clefW + perSystem * barW + padL;
   const piano = instr === "piano";
   // vertical layout within a system
@@ -761,24 +775,25 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
   const nSys = Math.ceil(measures.length / perSystem) || 1;
   const totalH = nSys * sysH + 10;
 
-  // draw a single notehead (+ stem/flag/accidental/ledgers) on a clef, return svg nodes
+  // notehead geometry, shared by the single-note and beamed-group drawers
   let uid = 0;
-  const drawNotes = (mids, x, dur, clef) => {
+  const rx = LG * 0.6, ry = LG * 0.5;
+  const STEM = 3.3 * LG;                                       // stem length
+  const stemUpFor = (steps, clef) => {                         // low notes → stem up
+    const midStep = clef === "bass" ? 22 : 34;
+    return steps.reduce((a, b) => a + b, 0) / steps.length <= midStep;
+  };
+  // draw just the noteheads (+ accidentals + ledgers) for one onset; return nodes + geometry
+  const drawHeads = (mids, x, dur, clef) => {
     const nodes = [];
     const yFn = clef === "bass" ? yBass : yTreble;
     const topLine = clef === "bass" ? 26 : 38, botLine = clef === "bass" ? 18 : 30;
     const open = dur >= 4;                                     // half/whole = hollow head
     const filled = !open;
-    const rx = LG * 0.62, ry = LG * 0.52;
-    const steps = mids.map(stepOfMidi);
-    const midStep = clef === "bass" ? 22 : 34;
-    const avg = steps.reduce((a, b) => a + b, 0) / steps.length;
-    const stemUp = avg <= midStep;                            // low notes → stem up
     let minY = Infinity, maxY = -Infinity;
     mids.forEach(m => {
       const s = stepOfMidi(m), cy = yFn(s), acc = accOfMidi(m);
       minY = Math.min(minY, cy); maxY = Math.max(maxY, cy);
-      // ledger lines
       for (let k = topLine + 2; k <= s; k += 2) nodes.push(<line key={"lg"+uid++} x1={x - 9} y1={yFn(k)} x2={x + 9} y2={yFn(k)} stroke={INK} strokeWidth="1" />);
       for (let k = botLine - 2; k >= s; k -= 2) nodes.push(<line key={"lg"+uid++} x1={x - 9} y1={yFn(k)} x2={x + 9} y2={yFn(k)} stroke={INK} strokeWidth="1" />);
       nodes.push(<ellipse key={"nh"+uid++} cx={x} cy={cy} rx={rx} ry={ry} transform={`rotate(-18 ${x} ${cy})`}
@@ -786,14 +801,62 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
       if (dur >= 8) nodes.push(<ellipse key={"nw"+uid++} cx={x} cy={cy} rx={rx * 0.5} ry={ry * 0.85} fill="#171E28" />);
       if (acc) nodes.push(<text key={"ac"+uid++} x={x - rx - 4} y={cy + 4} textAnchor="end" fill={INK} fontSize="14" fontFamily="serif">{acc < 0 ? "♭" : "♯"}</text>);
     });
-    // stem (skip for whole notes)
-    if (dur < 8) {
-      const sx = stemUp ? x + rx - 0.5 : x - rx + 0.5;
-      const y1 = stemUp ? minY : maxY, y2 = stemUp ? maxY - 3.3 * LG : minY + 3.3 * LG;
+    return { nodes, minY, maxY, steps: mids.map(stepOfMidi), x };
+  };
+  // single onset with its own stem + flag (used for lone notes and non-melody stacks)
+  const drawNotes = (mids, x, dur, clef) => {
+    const g = drawHeads(mids, x, dur, clef);
+    const nodes = g.nodes;
+    if (dur < 8) {                                            // stem (skip whole notes)
+      const up = stemUpFor(g.steps, clef);
+      const sx = up ? x + rx - 0.5 : x - rx + 0.5;
+      const y1 = up ? g.minY : g.maxY, y2 = up ? g.maxY - STEM : g.minY + STEM;
       nodes.push(<line key={"st"+uid++} x1={sx} y1={y1} x2={sx} y2={y2} stroke={INK} strokeWidth="1.4" />);
-      if (dur < 2) nodes.push(<path key={"fl"+uid++} d={stemUp
+      if (dur < 2) nodes.push(<path key={"fl"+uid++} d={up                       // lone eighth → flag
         ? `M ${sx} ${y2} q 8 3 6 12` : `M ${sx} ${y2} q 8 -3 6 -12`} fill="none" stroke={INK} strokeWidth="1.6" />);
     }
+    return nodes;
+  };
+  // a whole bar of melody, beaming consecutive eighth-notes within a beat instead of flagging each
+  const drawMelody = (events, inner, span, clef) => {
+    const nodes = [];
+    if (!events || !events.length) return nodes;
+    const xOf = on => inner + (on / meloBeats) * span;
+    const geo = events.map(ev => ({ g: drawHeads(ev.mids, xOf(ev.on), ev.dur, clef), ev }));
+    geo.forEach(e => nodes.push(...e.g.nodes));
+    // beam groups: an eighth on a beat (even eighth index) + the eighth on its off-beat, both dur 1
+    const byOn = {}; geo.forEach((e, i) => { byOn[e.ev.on] = i; });
+    const beamed = new Set();
+    const groups = [];
+    for (let k = 0; 2 * k + 1 < meloBeats; k++) {
+      const a = byOn[2 * k], b = byOn[2 * k + 1];
+      if (a != null && b != null && geo[a].ev.dur === 1 && geo[b].ev.dur === 1) {
+        groups.push([a, b]); beamed.add(a); beamed.add(b);
+      }
+    }
+    // lone notes: own stem + flag
+    geo.forEach((e, i) => {
+      if (beamed.has(i) || e.ev.dur >= 8) return;
+      const up = stemUpFor(e.g.steps, clef);
+      const sx = up ? e.g.x + rx - 0.5 : e.g.x - rx + 0.5;
+      const y1 = up ? e.g.minY : e.g.maxY, y2 = up ? e.g.maxY - STEM : e.g.minY + STEM;
+      nodes.push(<line key={"st"+uid++} x1={sx} y1={y1} x2={sx} y2={y2} stroke={INK} strokeWidth="1.4" />);
+      if (e.ev.dur < 2) nodes.push(<path key={"fl"+uid++} d={up
+        ? `M ${sx} ${y2} q 8 3 6 12` : `M ${sx} ${y2} q 8 -3 6 -12`} fill="none" stroke={INK} strokeWidth="1.6" />);
+    });
+    // beams: one shared stem direction per group, stems run to a level beam bar
+    groups.forEach(idxs => {
+      const gs = idxs.map(i => geo[i].g);
+      const up = stemUpFor(gs.flatMap(g => g.steps), clef);
+      const beamY = up ? Math.min(...gs.map(g => g.minY)) - STEM
+                       : Math.max(...gs.map(g => g.maxY)) + STEM;
+      const sxs = gs.map(g => up ? g.x + rx - 0.5 : g.x - rx + 0.5);
+      gs.forEach((g, j) => {
+        const yNote = up ? g.maxY : g.minY;                   // stem meets the far notehead
+        nodes.push(<line key={"bs"+uid++} x1={sxs[j]} y1={yNote} x2={sxs[j]} y2={beamY} stroke={INK} strokeWidth="1.4" />);
+      });
+      nodes.push(<line key={"bm"+uid++} x1={sxs[0]} y1={beamY} x2={sxs[sxs.length - 1]} y2={beamY} stroke={INK} strokeWidth={LG * 0.5} strokeLinecap="butt" />);
+    });
     return nodes;
   };
 
@@ -835,10 +898,7 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
         // LH: chord voicing as a whole note stack on the bass staff
         const lh = [36 + m.chord.root, ...chordIvs(m.chord.quality).slice(1, 3).map(iv => 48 + m.chord.root + iv)];
         parts.push(...drawNotes(lh.filter(n => n <= 59), inner, 8, "bass"));
-        if (hasMel) m.mel.forEach(ev => {
-          const x = inner + (ev.on / meloBeats) * span;
-          parts.push(...drawNotes(ev.mids, x, ev.dur, "treble"));
-        });
+        if (hasMel) parts.push(...drawMelody(m.mel, inner, span, "treble"));
         else parts.push(...drawNotes(chordIvs(m.chord.quality).map(iv => 60 + m.chord.root + iv).filter(n => n <= 84), inner, 8, "treble"));
       } else {
         const tab = (t, x) => parts.push(
@@ -846,9 +906,8 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
             <rect x={x - 6} y={tabY(t.str) - 6} width={12} height={12} fill="#171E28" />
             <text x={x} y={tabY(t.str) + 4} textAnchor="middle" fill={GOLD} fontSize="11" fontWeight="700" fontFamily="Archivo">{t.fret}</text>
           </g>);
-        if (hasMel) m.mel.forEach(ev => {
+        if (hasMel) { parts.push(...drawMelody(m.mel, inner, span, "treble")); m.mel.forEach(ev => {
           const x = inner + (ev.on / meloBeats) * span;
-          parts.push(...drawNotes(ev.mids, x, ev.dur, "treble"));
           const usedStr = new Set();                              // one fret per string within an onset
           ev.mids.forEach(mid => {
             let pick = tabFret(mid);
@@ -859,7 +918,7 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
             }
             if (pick) { usedStr.add(pick.str); tab(pick, x); }
           });
-        });
+        }); }
         else {
           // no melody — show the chord voicing as a whole-note stack on the staff
           // (tab is reserved for the single-line melody; use the fingering card for chord shapes)
