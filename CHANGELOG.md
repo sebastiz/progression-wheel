@@ -2,10 +2,11 @@
 
 ## 3.11
 - **Move melody notes as a group**: every melody grid has a **✎ Draw / ✋ Move** switch. In Move
-  mode, drag a box across the grid to select notes, or tap a single note, then drag the selection to
-  a new spot — it shifts in time and pitch together (a live blue preview shows where it lands). Arrow
-  buttons nudge the selection by a step or a scale degree and **🗑** deletes it. Draw mode keeps the
-  original tap-to-add behaviour.
+  mode, drag a box anywhere across the grid to select the notes inside it (or tap a single note),
+  then drag any selected (blue) note to move the whole group — it shifts in time and pitch together
+  (a live preview shows where it lands). Arrow buttons nudge the selection by a step or a scale
+  degree and **🗑** deletes it. Works with mouse and touch. Draw mode keeps the original tap-to-add
+  behaviour.
 - **Group reorder**: the chord strip has a **⇄ Reorder** mode. Tap several chords to select them,
   then **◀ Move / Move ▶** shifts the whole selection as a block; **↺ Straighten** restores the
   original order. The new order flows through everything downstream — playback, melody and the
