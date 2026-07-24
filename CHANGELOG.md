@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Fix the piercing squeal at its real source: the plucked-string feedback loop.** The Karplus–Strong
+  guitar/pluck voice (the default chord sound, and the offline fallback for any pluck instrument) fed
+  its delay line back at a gain right up to 0.995. A real Web-Audio delay+filter loop carries a little
+  excess gain, so a feedback that near unity doesn't decay — it self-oscillates and builds into a
+  runaway squeal that the limiter then holds at full scale. This fired on the very first strum, with
+  Real on or off, which is why it survived every earlier fix. The feedback is now hard-capped at 0.8
+  (measured stable, verified by offline rendering), so plucks decay cleanly instead of squealing.
 - **Metronome click is now off by default, behind a new Click toggle.** A high square-wave tick was
   playing on every beat during playback — piercing, and present from the first beat regardless of the
   Real toggle or instrument. It is now silent unless you turn on the new **Click** toggle (Rhythm
