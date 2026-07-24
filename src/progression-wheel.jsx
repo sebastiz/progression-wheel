@@ -2107,12 +2107,7 @@ export default function ProgressionWheel() {
         <div className="panel accent">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
             <div className="progtitle" style={{ fontSize:17 }}>Rhythm</div>
-            <div className="row" style={{ gap:7, alignItems:"center" }}>
-              <button className={"btn" + (playing ? " on" : "")} style={{ padding:"5px 13px" }} onClick={() => (playing ? stopMetro() : startMetro(0))}>
-                {playing ? "■ Stop" : "▶ Play"}
-              </button>
-              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export MIDI">↓ MIDI</button>
-            </div>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export MIDI">↓ MIDI</button>
           </div>
 
           <div className="selrow" style={{ marginTop:10, alignItems:"flex-end", flexWrap:"wrap" }}>
