@@ -503,8 +503,10 @@ const LEGACY_INSTR = { guitar:"acoustic_guitar_steel", piano:"acoustic_grand_pia
   organ:"drawbar_organ", bass:"acoustic_bass", dbass:"contrabass" };
 const gmKey = k => LEGACY_INSTR[k] || k;
 const gmFam = k => GM_FAM[gmKey(k)] || "keys";
-// natural-note anchors: basses low, everything else spanning chord + melody range
-const anchorsFor = k => gmFam(k) === "bass" ? [24,31,36,43,48] : [48,55,62,69,76,81];
+// natural-note anchors: basses low, everything else spanning chord + melody range. Denser than a
+// bare octave grid (gaps of ~3-5 semitones, not ~7) so notes are pitch-shifted only a little from
+// the nearest real sample — the less a sample is stretched, the more natural the instrument sounds.
+const anchorsFor = k => gmFam(k) === "bass" ? [24,31,36,41,45,48] : [43,48,53,57,62,67,72,76,81,84];
 // offline synth-family fallback for the melody lead → a LEAD_SPECS voice
 const FAM_LEAD = { pluck:"pluck", keys:"ep", organ:"organ", bass:"pluck", pad:"strings", mallet:"bell" };
 
@@ -1292,7 +1294,7 @@ export default function ProgressionWheel() {
   const [curLabel, setCurLabel] = useState(null);
   const [bpmSt, setBpmSt] = useState({ key:"", val:0 });
   const [instr, setInstr] = useState("acoustic_guitar_steel");   // chord instrument (GM key)
-  const [melInstr, setMelInstr] = useState("synth");        // melody lead voice (synth id or GM key)
+  const [melInstr, setMelInstr] = useState("flute");        // melody lead voice — a real sampled instrument by default (synth id or GM key)
   const [legato, setLegato] = useState(true);               // merge/flow melody notes
   const [clickOn, setClickOn] = useState(false);            // metronome click on each hit (off by default)
   const [patSel, setPatSel] = useState({ key:"", id:"" });
@@ -2087,7 +2089,7 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v4.7</div>
+        <div className="eyebrow">Songwriting sketchpad · v4.8</div>
         <h1>The Progression Wheel</h1>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
 

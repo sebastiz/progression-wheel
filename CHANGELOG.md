@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **More realistic instruments.** The melody lead now defaults to a real sampled **Flute** instead of
+  the pure synth, so both the chords and the tune are real instruments out of the box. Sample anchors
+  are also denser (gaps of ~3–5 semitones instead of ~7, extended up to C6), so notes are pitch-shifted
+  far less from the nearest recorded sample — the less a sample is stretched, the more natural it
+  sounds. (Offline, or if samples can't load, both still fall back to the built-in synth voices.)
 - **Loads more drum beats and melody ideas.** The Drums menu grows from 7 grooves to 32 — half-time,
   funk, disco, boom-bap, breakbeat, R&B, Motown, reggae one-drop, ska, bossa, samba, tresillo, surf,
   punk, new wave, anthem, stomp-clap, march, country two-step, ballad, plus jazz-waltz / 6-8 kits. The
