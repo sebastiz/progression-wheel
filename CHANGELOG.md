@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **The modes arrive.** Four new progression flavours join Mixolydian rock so the church modes are now
+  first-class: **Dorian groove** (`i–IV` — the minor key with a bright major IV), **Lydian bright**
+  (`I–II` — major with the raised-4th supertonic), **Phrygian dark** (`i–♭II` — the flamenco/metal
+  flat-2), and the **Aeolian cadence** (`i–♭VI–♭VII` — natural-minor's signature climb home). Each
+  carries its own reference songs, default groove and tempo, and is reachable from the wheel, the dice,
+  and new picker entries (Genres: Funk / R&B, Metal, Cinematic; Emotions: Dreamy, Melancholic).
+- **A fuller borrowed-chord palette.** The *Borrowed (mode mixture)* menu gains the modal minor
+  dominant **v** and the Lydian **II** in major keys, and the Dorian **VI**, harmonic-minor **V** in
+  minor keys; the *Chromatic mediants* menu fills out the minor side with **III** and **VI**. Every
+  borrowed chord now resolves to its true tonic/subdominant/dominant colour on the wheel.
 - **More realistic instruments.** The melody lead now defaults to a real sampled **Flute** instead of
   the pure synth, so both the chords and the tune are real instruments out of the box. Sample anchors
   are also denser (gaps of ~3–5 semitones instead of ~7, extended up to C6), so notes are pitch-shifted

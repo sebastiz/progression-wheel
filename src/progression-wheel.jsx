@@ -5,11 +5,11 @@ import { useState, useMemo, useRef, useEffect } from "react";
 const SEMI_NAME = { 0:"C",1:"D♭",2:"D",3:"E♭",4:"E",5:"F",6:"F♯",7:"G",8:"A♭",9:"A",10:"B♭",11:"B" };
 const posOf = s => (s * 7) % 12;
 const MAJOR_NUM = { I:[0,"maj"], ii:[2,"min"], iii:[4,"min"], IV:[5,"maj"], V:[7,"maj"], vi:[9,"min"],
-  bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"],
+  II:[2,"maj"], v:[7,"min"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"],
   I7:[0,"dom"], II7:[2,"dom"], III7:[4,"dom"], IV7:[5,"dom"], V7:[7,"dom"], VI7:[9,"dom"] };
-const MINOR_NUM = { i:[0,"min"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
-const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", IV:"S", IV7:"S", bVI:"S", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
-const FUNC_MINOR = { i:"T", bIII:"T", iv:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
+const MINOR_NUM = { i:[0,"min"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], VI:[9,"maj"], bII:[1,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
+const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", II:"S", IV:"S", IV7:"S", bVI:"S", v:"D", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
+const FUNC_MINOR = { i:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
 const QSUF = { maj:"", min:"m", dom:"7", maj7:"maj7", m7:"m7", maj9:"maj9", m9:"m9", dom9:"9" };
 const chordName = (r, q) => SEMI_NAME[r] + (QSUF[q] || "");
 const famMin = q => q === "min" || q === "m7" || q === "m9";
@@ -35,6 +35,14 @@ const PROGRESSIONS = {};
  ["Hit the Road Jack — Ray Charles","Runaway — Del Shannon (verse)","Sultans of Swing — Dire Straits (verse)","Smooth — Santana ft. Rob Thomas","Happy Together — The Turtles (verse)","Stray Cat Strut — Stray Cats","Good Vibrations — The Beach Boys (verse)","Walk, Don't Run — The Ventures","Babe I'm Gonna Leave You — Led Zeppelin","California Dreamin' — The Mamas & the Papas (verse)"]],
 ["pachelbel","The Pachelbel sequence","major","I V vi iii IV I IV V",
  ["Canon in D — Pachelbel","Basket Case — Green Day (verse)","Don't Look Back in Anger — Oasis","Memories — Maroon 5","Go West — Pet Shop Boys","Streets of London — Ralph McTell","Graduation (Friends Forever) — Vitamin C","C U When U Get There — Coolio","Cryin' — Aerosmith (verse)","Hook — Blues Traveler"]],
+["dorian","Dorian groove","minor","i IV",
+ ["Oye Como Va — Santana","So What — Miles Davis","Evil Ways — Santana","Mad World — Tears for Fears","Another Brick in the Wall — Pink Floyd","Get Lucky — Daft Punk","Moondance — Van Morrison","Riders on the Storm — The Doors","Who Will Save Your Soul — Jewel","Scarborough Fair — traditional"]],
+["lydian","Lydian bright","major","I II",
+ ["Flying in a Blue Dream — Joe Satriani","Man on the Moon — R.E.M. (chorus)","Jane — Jefferson Starship","Freewill — Rush","Here Comes My Girl — Tom Petty","Dreams — Fleetwood Mac","Blue Jay Way — The Beatles","Possibly Maybe — Björk","Theme from The Simpsons — Danny Elfman","Yoda's Theme — John Williams"]],
+["phrygian","Phrygian dark","minor","i bII",
+ ["Wherever I May Roam — Metallica","Sails of Charon — Scorpions","Symphony of Destruction — Megadeth","War — Joe Satriani","Pyramid Song — Radiohead","Remember Tomorrow — Iron Maiden","Space Truckin' — Deep Purple","White Rabbit — Jefferson Airplane","Entre Dos Aguas — Paco de Lucía","Duel of the Fates — John Williams"]],
+["aeolian","Aeolian cadence","minor","i bVI bVII",
+ ["All Along the Watchtower — Bob Dylan","Stairway to Heaven — Led Zeppelin (ascent)","My Heart Will Go On — Céline Dion","Somebody That I Used to Know — Gotye","Boulevard of Broken Dreams — Green Day","Californication — Red Hot Chili Peppers","Self Esteem — The Offspring","The Passenger — Iggy Pop","Runaway Train — Soul Asylum","Mad World — Gary Jules"]],
 ].forEach(([id, label, mode, nums, songs]) =>
   PROGRESSIONS[id] = { label, mode, numerals: nums.split(" "), songs });
 
@@ -50,16 +58,21 @@ const CATEGORIES = [
     { name:"Rock", progs:["three","mixo","axis"] },
     { name:"Blues", progs:["blues","three"] },
     { name:"Jazz", progs:["jazz","doowop"] },
-    { name:"Folk / Country", progs:["three","axis","doowop"] },
-    { name:"Punk", progs:["three","axis"] } ]},
+    { name:"Folk / Country", progs:["three","axis","doowop","dorian"] },
+    { name:"Punk", progs:["three","axis"] },
+    { name:"Funk / R&B", progs:["dorian","axis","mixo"] },
+    { name:"Metal", progs:["phrygian","axisMinor","mixo"] },
+    { name:"Cinematic", progs:["lydian","aeolian","pachelbel"] } ]},
   { group:"Emotion", items:[
     { name:"Happy", progs:["axis","three","doowop"] },
     { name:"Sad", progs:["axisMinor","andalusian"] },
     { name:"Nostalgic", progs:["doowop","pachelbel"] },
-    { name:"Hopeful", progs:["pachelbel","axis"] },
-    { name:"Dark / Tense", progs:["andalusian","axisMinor"] },
+    { name:"Hopeful", progs:["pachelbel","axis","lydian"] },
+    { name:"Dark / Tense", progs:["andalusian","axisMinor","phrygian"] },
     { name:"Epic", progs:["mixo","axisMinor","pachelbel"] },
-    { name:"Romantic", progs:["jazz","doowop"] } ]},
+    { name:"Romantic", progs:["jazz","doowop"] },
+    { name:"Dreamy", progs:["lydian","dorian","pachelbel"] },
+    { name:"Melancholic", progs:["aeolian","andalusian","axisMinor"] } ]},
 ];
 
 /* ===== colour-move songs ===== */
@@ -205,9 +218,11 @@ const PATTERNS = {};
   PATTERNS[id] = { name, pattern: pat.split(""), desc, swing: !!swing });
 
 const PATTERN_DEFAULT = { axis:"pop", axisMinor:"drive", three:"rock8", blues:"shuffle",
-  doowop:"sway12", jazz:"fourbar", mixo:"push", andalusian:"latin", pachelbel:"arp" };
+  doowop:"sway12", jazz:"fourbar", mixo:"push", andalusian:"latin", pachelbel:"arp",
+  dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop" };
 const BPM_DEFAULT = { axis:96, axisMinor:84, three:140, blues:92, doowop:66, jazz:120,
-  mixo:112, andalusian:104, pachelbel:72 };
+  mixo:112, andalusian:104, pachelbel:72,
+  dorian:100, lydian:84, phrygian:128, aeolian:92 };
 
 const DRUMS = {};
 [
@@ -1061,11 +1076,12 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols) {
 // borrowed + mediant menus: [tag, semitone offset, quality, where] — where: 0 = before the tonic's
 // return (end-of-loop colour), 1 = right after the tonic (the mediant jump)
 const BORROWED = {
-  major: [["iv",5,"min",0],["bVI",8,"maj",0],["bVII",10,"maj",0],["bIII",3,"maj",0],["bII",1,"maj",0]],
-  minor: [["bII",1,"maj",0],["IV (dorian)",5,"maj",0]],
+  major: [["iv",5,"min",0],["bVI",8,"maj",0],["bVII",10,"maj",0],["bIII",3,"maj",0],["bII",1,"maj",0],
+    ["v (modal)",7,"min",0],["II (lydian)",2,"maj",0]],
+  minor: [["bII",1,"maj",0],["IV (dorian)",5,"maj",0],["VI (dorian)",9,"maj",0],["V (harmonic)",7,"maj",0]],
 };
 const MEDIANTS = { major: [["III",4,"maj",1],["VI",9,"maj",1],["bVI",8,"maj",1],["bIII",3,"maj",1]],
-  minor: [["V of bIII",10,"maj",1]] };
+  minor: [["V of bIII",10,"maj",1],["III",4,"maj",1],["VI",9,"maj",1]] };
 
 /* ===== suggested melody patterns =====
    Each generator returns an array of `nBars` bars; every bar is an array of
