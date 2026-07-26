@@ -9,6 +9,10 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
 
 ## Features
 
+- **The Tune Transcriber** — a companion app (`transcribe.html`, linked from the header) that records a
+  hummed or sung tune (or an uploaded audio file), tracks the pitch in-browser, writes it onto a stave,
+  and exports it as MIDI or hands it straight to the wheel's melody grid. See
+  [the transcriber guide](docs/TUNE-TRANSCRIBER.md).
 - **The wheel** — progressions drawn on the circle of fifths, colour-coded tonic / subdominant /
   dominant, animated path, tap-to-swap chords, tappable overlays for parallel chords and secondary
   dominants. The chord strip has a **reorder** mode: multi-select chords and shift them as a group
@@ -47,12 +51,13 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
 
 ## Development
 
-`src/progression-wheel.jsx` is the source of truth — a single-file React component.
-`index.html` is the pre-compiled build (React from CDN + minified app); this is what gets deployed.
+`src/progression-wheel.jsx` and `src/tune-transcriber.jsx` are the sources of truth — one single-file
+React component each. `index.html` and `transcribe.html` are the pre-compiled builds (React from CDN +
+minified app); these are what get deployed.
 
 ```bash
 npm install
-npm run build   # rebuilds index.html from src/
+npm run build   # rebuilds index.html and transcribe.html from src/
 ```
 
 ## Notes

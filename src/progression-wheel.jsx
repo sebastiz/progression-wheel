@@ -1072,6 +1072,67 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols) {
     ...(drumPat ? trk(drumsT) : []), ...(hasMelo ? trk(meloT) : [])]);
 }
 
+/* ===== midi import ===== */
+// Parse a standard MIDI file and pull out the single most melodic track as a list
+// of { midi, startE, durE } where positions are in eighth-notes. Chooses a track
+// named "Melody" if present (the Tune Transcriber tags its line that way),
+// otherwise the non-drum track with the most notes. Returns null on a bad file.
+function parseMidiMelody(buf) {
+  const d = new DataView(buf);
+  let p = 0;
+  const u32 = () => { const v = d.getUint32(p); p += 4; return v; };
+  const u16 = () => { const v = d.getUint16(p); p += 2; return v; };
+  const u8 = () => d.getUint8(p++);
+  if (u32() !== 0x4d546864) return null;                 // "MThd"
+  u32();                                                  // header length
+  u16();                                                  // format
+  const ntrk = u16();
+  const ppq = u16();
+  if (ppq <= 0) return null;                              // SMPTE division unsupported
+  const tracks = [];
+  for (let t = 0; t < ntrk && p < buf.byteLength; t++) {
+    if (u32() !== 0x4d54726b) break;                     // "MTrk"
+    const len = u32();
+    const end = p + len;
+    let tick = 0, status = 0, name = "";
+    const open = {};                                       // "note" → startTick
+    const notes = [];
+    while (p < end) {
+      let dt = 0, b;
+      do { b = u8(); dt = (dt << 7) | (b & 0x7f); } while (b & 0x80);
+      tick += dt;
+      let ev = u8();
+      if (ev < 0x80) { ev = status; p--; } else status = ev;
+      const hi = ev & 0xf0, ch = ev & 0x0f;
+      if (ev === 0xff) {                                   // meta
+        const type = u8(); let ml = 0, mb;
+        do { mb = u8(); ml = (ml << 7) | (mb & 0x7f); } while (mb & 0x80);
+        if (type === 0x03) { let s = ""; for (let i = 0; i < ml; i++) s += String.fromCharCode(u8()); name = s; }
+        else p += ml;
+      } else if (ev === 0xf0 || ev === 0xf7) {             // sysex
+        let sl = 0, sb; do { sb = u8(); sl = (sl << 7) | (sb & 0x7f); } while (sb & 0x80); p += sl;
+      } else if (hi === 0x90 || hi === 0x80) {
+        const note = u8(), vel = u8();
+        if (hi === 0x90 && vel > 0) { if (open[note] == null) open[note] = tick; }
+        else { const st = open[note]; if (st != null) { notes.push({ midi: note, startTick: st, durTick: Math.max(1, tick - st) }); delete open[note]; } }
+      } else if (hi === 0xa0 || hi === 0xb0 || hi === 0xe0) { p += 2; }
+      else if (hi === 0xc0 || hi === 0xd0) { p += 1; }
+      else p = end;                                        // unknown — bail this track
+    }
+    p = end;
+    tracks.push({ name, notes, drums: notes.length === 0 });
+  }
+  const named = tracks.find(t => /melody/i.test(t.name) && t.notes.length);
+  const cand = named || tracks.filter(t => t.notes.length).sort((a, b) => b.notes.length - a.notes.length)[0];
+  if (!cand || !cand.notes.length) return null;
+  const eighth = ppq / 2;
+  return cand.notes.map(n => ({
+    midi: n.midi,
+    startE: Math.round(n.startTick / eighth),
+    durE: Math.max(1, Math.round(n.durTick / eighth)),
+  })).sort((a, b) => a.startE - b.startE);
+}
+
 /* ===== discovery tools ===== */
 // borrowed + mediant menus: [tag, semitone offset, quality, where] — where: 0 = before the tonic's
 // return (end-of-loop colour), 1 = right after the tonic (the mediant jump)
@@ -1921,6 +1982,61 @@ export default function ProgressionWheel() {
     } catch (e) { setIoNote("Export failed in this viewer — try on desktop."); }
   };
 
+  /* ---- melody import (from the Tune Transcriber: a hummed line as MIDI or a direct hand-off) ---- */
+  // events: [{ midi, startE, durE }] positioned in eighth-notes. Writes them onto the
+  // first section's melody grid, snapping each pitch to the nearest scale degree.
+  const applyImportedMelody = events => {
+    const sec = sections.insts[0];
+    if (!sec) { setIoNote("Add a progression first, then import a melody."); return; }
+    if (!events || !events.length) { setIoNote("No melody notes found in that file."); return; }
+    const nBars = sec.cs.length, totalCols = nBars * meloBeats;
+    const bars = blankBars(nBars, meloBeats);
+    const degOf = midi => {                                // nearest scale degree (0..len-1)
+      const pc = ((midi % 12) + 12) % 12;
+      let best = 0, bd = 99;
+      scaleNotes.forEach((sn, i) => {
+        const dist = Math.min((sn - pc + 12) % 12, (pc - sn + 12) % 12);
+        if (dist < bd) { bd = dist; best = i; }
+      });
+      return best;
+    };
+    let placed = 0, dropped = 0;
+    events.forEach(ev => {
+      const deg = degOf(ev.midi);
+      for (let c = ev.startE; c < ev.startE + ev.durE; c++) {
+        if (c >= totalCols) { dropped++; break; }
+        bars[Math.floor(c / meloBeats)][c % meloBeats] = [deg];  // monophonic
+        if (c === ev.startE) placed++;
+      }
+    });
+    const ids = sec.cs.map(chordId);
+    setMelos({ progId, secs: { ...(melos.progId === progId ? melos.secs : {}), [sec.key]: { ids, bars } } });
+    setOpenSecs(o => ({ ...o, [sec.key]: true }));
+    setIoNote(`Imported ${placed} note${placed === 1 ? "" : "s"} onto ${sec.key} (${sec.word})`
+      + (dropped ? ` — ${dropped} ran past the section and were dropped.` : ". Snapped to the key; tidy on the grid below."));
+  };
+  const importMidiFile = async e => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try { applyImportedMelody(parseMidiMelody(await file.arrayBuffer())); }
+    catch (err) { setIoNote("Couldn't read that MIDI file."); }
+  };
+  const loadHummedMelody = () => {
+    try {
+      const raw = hasLocal && window.localStorage.getItem("pw-transcribed-melody");
+      if (!raw) { setIoNote("Nothing waiting — record a tune in the Tune Transcriber and press “Send to Progression Wheel” first."); return; }
+      const d = JSON.parse(raw);
+      const U = d.U || 2;
+      const events = (d.notes || []).map(n => ({
+        midi: n.midi,
+        startE: Math.round((n.startU / U) * 2),
+        durE: Math.max(1, Math.round((n.durU / U) * 2)),
+      }));
+      applyImportedMelody(events);
+    } catch (e) { setIoNote("Couldn't read the hummed melody hand-off."); }
+  };
+
   /* ---- sketches (persistent, via window.storage) ---- */
   const hasStore = typeof window !== "undefined" && window.storage;
   const hasLocal = typeof window !== "undefined" && (() => { try { return !!window.localStorage; } catch (e) { return false; } })();
@@ -2107,7 +2223,8 @@ export default function ProgressionWheel() {
       <div className="wrap">
         <div className="eyebrow">Songwriting sketchpad · v4.8</div>
         <h1>The Progression Wheel</h1>
-        <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.</p>
+        <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.
+          {" "}<a href="transcribe.html" style={{ color:GOLD, textDecoration:"none", whiteSpace:"nowrap" }}>🎤 Hum a tune →</a></p>
 
         {/* top transport — always-reachable Play */}
         <div className="toptransport">
@@ -2418,7 +2535,14 @@ export default function ProgressionWheel() {
         <div className="panel accent">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
             <div className="progtitle" style={{ fontSize:17 }}>Rhythm</div>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export MIDI">↓ MIDI</button>
+            <div className="row" style={{ gap:6 }}>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody}
+                title="Load the tune you hummed in the Tune Transcriber">🎤 Hum</button>
+              <label className="btn" style={{ padding:"5px 11px", cursor:"pointer" }} title="Import a melody from a MIDI file">↑ MIDI
+                <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} hidden />
+              </label>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export MIDI">↓ MIDI</button>
+            </div>
           </div>
 
           <div className="selrow" style={{ marginTop:10, alignItems:"flex-end", flexWrap:"wrap" }}>
