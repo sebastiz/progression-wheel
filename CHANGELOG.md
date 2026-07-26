@@ -9,7 +9,8 @@
   audibly distinct). Both layers play back together with their own voices, and MIDI export writes each
   layer as its own track. The 🗑 B button removes the second layer.
 - **The app version is shown in the header.** The eyebrow now reads the real version from `package.json`
-  at build time (e.g. `v3.15.0`) instead of a hardcoded string that drifted out of date.
+  at build time (e.g. `v4.11.0`) instead of a hardcoded string that drifted out of date. The version is
+  realigned onto the visible 4.x line (4.8 → 4.11) so `package.json`, the header and the changelog agree.
 - **The Tune Transcriber — hum a melody onto a stave.** A companion app (`transcribe.html`, reachable
   from the "🎤 Hum a tune" link in the header) records your microphone — or an uploaded audio file —
   tracks the pitch in-browser with the McLeod / NSDF autocorrelation method, segments it into notes,
