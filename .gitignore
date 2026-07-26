@@ -1,6 +1,8 @@
 node_modules/
 package-lock.json
 
-# build intermediates (scripts/build.mjs emits these before writing index.html)
+# build intermediates (scripts/build.mjs emits these before writing the HTML pages)
 scripts/.app.jsx
 scripts/.app.min.js
+scripts/.tt.jsx
+scripts/.tt.min.js

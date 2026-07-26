@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **The Tune Transcriber — hum a melody onto a stave.** A companion app (`transcribe.html`, reachable
+  from the "🎤 Hum a tune" link in the header) records your microphone — or an uploaded audio file —
+  tracks the pitch in-browser with the McLeod / NSDF autocorrelation method, segments it into notes,
+  quantises them to a tempo grid, guesses the key, and draws the result on a treble stave in the same
+  visual language as the wheel. A live pitch readout shows what it's hearing while you sing. Export a
+  standard **MIDI** melody, or hand it straight over to the Progression Wheel. Nothing leaves the device.
+- **Melody import into the wheel.** The Rhythm panel gains **🎤 Hum** (loads the tune you just sent from
+  the Tune Transcriber) and **↑ MIDI** (imports a melody from any MIDI file) next to the existing
+  **↓ MIDI** export. Imported notes are snapped to the current key's scale and written onto the first
+  section's melody grid, ready to nudge and reharmonise — closing the loop from a hummed idea to a full
+  arrangement.
 - **The modes arrive.** Four new progression flavours join Mixolydian rock so the church modes are now
   first-class: **Dorian groove** (`i–IV` — the minor key with a bright major IV), **Lydian bright**
   (`I–II` — major with the raised-4th supertonic), **Phrygian dark** (`i–♭II` — the flamenco/metal
