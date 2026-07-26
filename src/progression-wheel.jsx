@@ -850,8 +850,10 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
     const midStep = clef === "bass" ? 22 : 34;
     return steps.reduce((a, b) => a + b, 0) / steps.length <= midStep;
   };
-  // draw just the noteheads (+ accidentals + ledgers) for one onset; return nodes + geometry
-  const drawHeads = (mids, x, dur, clef) => {
+  const LAY = LAV;                                             // 2nd-melody (layer B) colour
+  // draw just the noteheads (+ accidentals + ledgers) for one onset; return nodes + geometry.
+  // colOf(midi) picks the ink per note (layer B → violet); stemCol colours stems/beams/flags.
+  const drawHeads = (mids, x, dur, clef, colOf = () => INK) => {
     const nodes = [];
     const yFn = clef === "bass" ? yBass : yTreble;
     const topLine = clef === "bass" ? 26 : 38, botLine = clef === "bass" ? 18 : 30;
@@ -859,28 +861,28 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
     const filled = !open;
     let minY = Infinity, maxY = -Infinity;
     mids.forEach(m => {
-      const s = stepOfMidi(m), cy = yFn(s), acc = accOfMidi(m);
+      const s = stepOfMidi(m), cy = yFn(s), acc = accOfMidi(m), col = colOf(m);
       minY = Math.min(minY, cy); maxY = Math.max(maxY, cy);
-      for (let k = topLine + 2; k <= s; k += 2) nodes.push(<line key={"lg"+uid++} x1={x - 9} y1={yFn(k)} x2={x + 9} y2={yFn(k)} stroke={INK} strokeWidth="1" />);
-      for (let k = botLine - 2; k >= s; k -= 2) nodes.push(<line key={"lg"+uid++} x1={x - 9} y1={yFn(k)} x2={x + 9} y2={yFn(k)} stroke={INK} strokeWidth="1" />);
+      for (let k = topLine + 2; k <= s; k += 2) nodes.push(<line key={"lg"+uid++} x1={x - 9} y1={yFn(k)} x2={x + 9} y2={yFn(k)} stroke={col} strokeWidth="1" />);
+      for (let k = botLine - 2; k >= s; k -= 2) nodes.push(<line key={"lg"+uid++} x1={x - 9} y1={yFn(k)} x2={x + 9} y2={yFn(k)} stroke={col} strokeWidth="1" />);
       nodes.push(<ellipse key={"nh"+uid++} cx={x} cy={cy} rx={rx} ry={ry} transform={`rotate(-18 ${x} ${cy})`}
-        fill={filled ? INK : "none"} stroke={INK} strokeWidth={open ? 1.5 : 0} />);
+        fill={filled ? col : "none"} stroke={col} strokeWidth={open ? 1.5 : 0} />);
       if (dur >= 8) nodes.push(<ellipse key={"nw"+uid++} cx={x} cy={cy} rx={rx * 0.5} ry={ry * 0.85} fill="#171E28" />);
-      if (acc) nodes.push(<text key={"ac"+uid++} x={x - rx - 4} y={cy + 4} textAnchor="end" fill={INK} fontSize="14" fontFamily="serif">{acc < 0 ? "♭" : "♯"}</text>);
+      if (acc) nodes.push(<text key={"ac"+uid++} x={x - rx - 4} y={cy + 4} textAnchor="end" fill={col} fontSize="14" fontFamily="serif">{acc < 0 ? "♭" : "♯"}</text>);
     });
     return { nodes, minY, maxY, steps: mids.map(stepOfMidi), x };
   };
   // single onset with its own stem + flag (used for lone notes and non-melody stacks)
-  const drawNotes = (mids, x, dur, clef) => {
-    const g = drawHeads(mids, x, dur, clef);
+  const drawNotes = (mids, x, dur, clef, colOf = () => INK, stemCol = INK) => {
+    const g = drawHeads(mids, x, dur, clef, colOf);
     const nodes = g.nodes;
     if (dur < 8) {                                            // stem (skip whole notes)
       const up = stemUpFor(g.steps, clef);
       const sx = up ? x + rx - 0.5 : x - rx + 0.5;
       const y1 = up ? g.minY : g.maxY, y2 = up ? g.maxY - STEM : g.minY + STEM;
-      nodes.push(<line key={"st"+uid++} x1={sx} y1={y1} x2={sx} y2={y2} stroke={INK} strokeWidth="1.4" />);
+      nodes.push(<line key={"st"+uid++} x1={sx} y1={y1} x2={sx} y2={y2} stroke={stemCol} strokeWidth="1.4" />);
       if (dur < 2) nodes.push(<path key={"fl"+uid++} d={up                       // lone eighth → flag
-        ? `M ${sx} ${y2} q 8 3 6 12` : `M ${sx} ${y2} q 8 -3 6 -12`} fill="none" stroke={INK} strokeWidth="1.6" />);
+        ? `M ${sx} ${y2} q 8 3 6 12` : `M ${sx} ${y2} q 8 -3 6 -12`} fill="none" stroke={stemCol} strokeWidth="1.6" />);
     }
     return nodes;
   };
@@ -889,7 +891,9 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
     const nodes = [];
     if (!events || !events.length) return nodes;
     const xOf = on => inner + (on / meloBeats) * span;
-    const geo = events.map(ev => ({ g: drawHeads(ev.mids, xOf(ev.on), ev.dur, clef), ev }));
+    const colOf = ev => m => (ev.bMids && ev.bMids.has(m)) ? LAY : INK;   // per-note ink
+    const evCol = ev => (ev.mids.length && ev.mids.every(m => ev.bMids && ev.bMids.has(m))) ? LAY : INK;
+    const geo = events.map(ev => ({ g: drawHeads(ev.mids, xOf(ev.on), ev.dur, clef, colOf(ev)), ev }));
     geo.forEach(e => nodes.push(...e.g.nodes));
     // beam groups: an eighth on a beat (even eighth index) + the eighth on its off-beat, both dur 1
     const byOn = {}; geo.forEach((e, i) => { byOn[e.ev.on] = i; });
@@ -901,28 +905,29 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
         groups.push([a, b]); beamed.add(a); beamed.add(b);
       }
     }
-    // lone notes: own stem + flag
+    // lone notes: own stem + flag (violet when the note is 2nd-melody only)
     geo.forEach((e, i) => {
       if (beamed.has(i) || e.ev.dur >= 8) return;
-      const up = stemUpFor(e.g.steps, clef);
+      const up = stemUpFor(e.g.steps, clef), sc = evCol(e.ev);
       const sx = up ? e.g.x + rx - 0.5 : e.g.x - rx + 0.5;
       const y1 = up ? e.g.minY : e.g.maxY, y2 = up ? e.g.maxY - STEM : e.g.minY + STEM;
-      nodes.push(<line key={"st"+uid++} x1={sx} y1={y1} x2={sx} y2={y2} stroke={INK} strokeWidth="1.4" />);
+      nodes.push(<line key={"st"+uid++} x1={sx} y1={y1} x2={sx} y2={y2} stroke={sc} strokeWidth="1.4" />);
       if (e.ev.dur < 2) nodes.push(<path key={"fl"+uid++} d={up
-        ? `M ${sx} ${y2} q 8 3 6 12` : `M ${sx} ${y2} q 8 -3 6 -12`} fill="none" stroke={INK} strokeWidth="1.6" />);
+        ? `M ${sx} ${y2} q 8 3 6 12` : `M ${sx} ${y2} q 8 -3 6 -12`} fill="none" stroke={sc} strokeWidth="1.6" />);
     });
     // beams: one shared stem direction per group, stems run to a level beam bar
     groups.forEach(idxs => {
       const gs = idxs.map(i => geo[i].g);
+      const sc = idxs.every(i => evCol(geo[i].ev) === LAY) ? LAY : INK;   // all-B group → violet
       const up = stemUpFor(gs.flatMap(g => g.steps), clef);
       const beamY = up ? Math.min(...gs.map(g => g.minY)) - STEM
                        : Math.max(...gs.map(g => g.maxY)) + STEM;
       const sxs = gs.map(g => up ? g.x + rx - 0.5 : g.x - rx + 0.5);
       gs.forEach((g, j) => {
         const yNote = up ? g.maxY : g.minY;                   // stem meets the far notehead
-        nodes.push(<line key={"bs"+uid++} x1={sxs[j]} y1={yNote} x2={sxs[j]} y2={beamY} stroke={INK} strokeWidth="1.4" />);
+        nodes.push(<line key={"bs"+uid++} x1={sxs[j]} y1={yNote} x2={sxs[j]} y2={beamY} stroke={sc} strokeWidth="1.4" />);
       });
-      nodes.push(<line key={"bm"+uid++} x1={sxs[0]} y1={beamY} x2={sxs[sxs.length - 1]} y2={beamY} stroke={INK} strokeWidth={LG * 0.5} strokeLinecap="butt" />);
+      nodes.push(<line key={"bm"+uid++} x1={sxs[0]} y1={beamY} x2={sxs[sxs.length - 1]} y2={beamY} stroke={sc} strokeWidth={LG * 0.5} strokeLinecap="butt" />);
     });
     return nodes;
   };
@@ -971,17 +976,17 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
         if (hasMel) parts.push(...drawMelody(m.mel, inner, span, "treble"));
         else parts.push(...drawNotes(chordIvs(m.chord.quality).map(iv => 60 + m.chord.root + iv).filter(n => n <= 84), inner, 8, "treble"));
       } else {
-        const tab = (t, x) => parts.push(
+        const tab = (t, x, col) => parts.push(
           <g key={"tf"+uid++}>
             <rect x={x - 6} y={tabY(t.str) - 6} width={12} height={12} fill="#171E28" />
-            <text x={x} y={tabY(t.str) + 4} textAnchor="middle" fill={GOLD} fontSize="11" fontWeight="700" fontFamily="Archivo">{t.fret}</text>
+            <text x={x} y={tabY(t.str) + 4} textAnchor="middle" fill={col} fontSize="11" fontWeight="700" fontFamily="Archivo">{t.fret}</text>
           </g>);
         if (hasMel) { parts.push(...drawMelody(m.mel, inner, span, "treble")); m.mel.forEach(ev => {
           const x = inner + (ev.on / meloBeats) * span;
           const usedStr = new Set();                              // one fret per string within an onset
           ev.mids.forEach(mid => {
             const pick = tabFret(mid + tabShift, usedStr);
-            if (pick) { usedStr.add(pick.str); tab(pick, x); }
+            if (pick) { usedStr.add(pick.str); tab(pick, x, (ev.bMids && ev.bMids.has(mid)) ? LAV : GOLD); }
           });
         }); }
         else {
@@ -1700,23 +1705,40 @@ export default function ProgressionWheel() {
     const bars = (structBars && structBars.length) ? structBars : chords.map(c => ({ chord: c }));
     const melBase = (tonic > 6 ? 60 : 72) + tonic;
     const loopSec = secMelos.L1 || Object.values(secMelos)[0];
+    // pull every note of one layer out independently by its own onset + held length
+    const extract = cols => {
+      if (!cols) return [];
+      const on = (i, d) => (cols[i] || []).includes(d);
+      const out = [];
+      for (let i = 0; i < meloBeats; i++) for (const d of (cols[i] || [])) {
+        if (i > 0 && on(i - 1, d)) continue;                    // only at the note's onset
+        let run = 1; while (i + run < meloBeats && on(i + run, d)) run++;
+        out.push({ on: i, dur: run, midi: melBase + scaleSemis[d] });
+      }
+      return out;
+    };
     return bars.map((b, bi) => {
       const secm = b.inst != null ? secMelos[b.inst] : loopSec;
-      const barCols = secm && secm.bars[b.inst != null ? b.mb : bi % (secm.bars.length || 1)];
-      const at = (i, deg) => (barCols && barCols[i] || []).includes(deg);
-      const mel = [];
-      for (let i = 0; i < meloBeats; i++) {
-        const degs = (barCols && barCols[i]) || [];
-        const fresh = degs.filter(d => !(i > 0 && at(i - 1, d)));
-        if (!fresh.length) continue;
-        let run = 1;
-        while (i + run < meloBeats && fresh.every(d => at(i + run, d))) run++;
-        mel.push({ on: i, dur: run, mids: fresh.slice().sort((a, c) => a - c).map(d => melBase + scaleSemis[d]) });
-      }
+      const idx = b.inst != null ? b.mb : bi % ((secm && secm.bars.length) || 1);
+      // BOTH melody layers (A + the optional 2nd melody B) land on the same stave
+      const evA = extract(secm && secm.bars[idx]);
+      const evB = extract(secm && secm.barsB && secm.barsB[idx]);
+      // notes that share an onset AND length become one clean chord; differing rhythms stay separate
+      const groups = {};
+      const add = (e, layer) => { const k = e.on + "_" + e.dur;
+        const g = groups[k] = groups[k] || { on: e.on, dur: e.dur, a: new Set(), b: new Set() };
+        g[layer].add(e.midi); };
+      evA.forEach(e => add(e, "a")); evB.forEach(e => add(e, "b"));
+      const mel = Object.values(groups).sort((a, c) => a.on - c.on || a.dur - c.dur).map(g => ({
+        on: g.on, dur: g.dur,
+        mids: [...new Set([...g.a, ...g.b])].sort((x, y) => x - y),
+        bMids: new Set([...g.b].filter(m => !g.a.has(m))),   // notes that are 2nd-melody only → violet
+      }));
       return { chord: b.chord, name: b.chord.name, word: b.inst != null ? (b.mb === 0 ? b.word : null) : null, mel };
     });
   }, [structBars, chords, secMelos, tonic, meloBeats, scaleSemis]);
   const scoreHasMelody = scoreMeasures.some(m => m.mel.length);
+  const scoreHasB = scoreMeasures.some(m => m.mel.some(ev => ev.bMids && ev.bMids.size));
 
   const dupBars = b => (b ? b.map(bar => bar.map(a => [...a])) : null);
   const barsOf = (sec, L) => (L ? sec.barsB : sec.bars);
@@ -2591,6 +2613,7 @@ export default function ProgressionWheel() {
                 ? <>Grand staff — right hand plays the melody{scoreHasMelody ? "" : " (add one in the melody grid below)"}, left hand holds the chord voicing. Chord symbols sit above each bar.</>
                 : <>Guitar lead sheet — chord symbols above, the melody on the treble staff{scoreHasMelody ? ", with fret numbers on the tab below fingered low on the neck (first position, sounding lower)" : " — write a melody below and its tab appears here"}.</>}
               {structSel ? " Following the selected song structure." : " Following the loop."}
+              {scoreHasB && <> The <b style={{ color:LAV }}>2nd melody</b> is shown in violet.</>}
             </div>
           </>)}
         </div>
