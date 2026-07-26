@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Double-time / half-time a melody selection.** In the melody grid's **✋ Move** mode, select some
+  notes (drag a box, or tap one) and the toolbar now offers **½× time** (double-time — packs the
+  selection into half the space so it plays twice as fast) and **2× time** (half-time — stretches it
+  over twice the space). Works on either melody layer, alongside the existing nudge (▲▼◀▶) and delete.
 - **The second melody now appears on the stave, in violet.** The notation only ever read melody layer
   A, so the 2nd melody (layer B) was silent on the score even though it played back and exported to
   MIDI. Both layers are now drawn together on the same stave — the piano grand staff (right hand) and

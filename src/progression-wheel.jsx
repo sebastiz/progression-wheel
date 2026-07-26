@@ -1820,6 +1820,27 @@ export default function ProgressionWheel() {
     putSec(key, layer ? { barsB: bars } : { bars });
     setMelSel({ key:"", layer:0, notes:{} });
   };
+  // time-scale the selection about its first note: factor 0.5 = double-time (pack into half the
+  // space, plays twice as fast), factor 2 = half-time (stretch over twice the space)
+  const timeMel = factor => {
+    const key = melSel.key, layer = melSel.layer, sec = secMelos[key];
+    const notes = selNotesList();
+    if (!sec || !notes.length) return;
+    const srcBars = barsOf(sec, layer); if (!srcBars) return;
+    const cols = flatOf(sec, layer).length;
+    const minC = Math.min(...notes.map(n => n.c));
+    const bars = dupBars(srcBars);
+    const colOf = c => bars[Math.floor(c / meloBeats)][c % meloBeats];
+    notes.forEach(n => { const cell = colOf(n.c); const at = cell.indexOf(n.deg); if (at >= 0) cell.splice(at, 1); });
+    const placed = [];
+    notes.forEach(n => {
+      const nc = Math.max(0, Math.min(cols - 1, minC + Math.round((n.c - minC) * factor)));
+      const cell = colOf(nc); if (!cell.includes(n.deg)) cell.push(n.deg);
+      placed.push({ c: nc, deg: n.deg });
+    });
+    putSec(key, layer ? { barsB: bars } : { bars });
+    setSelFrom(key, layer, placed);
+  };
   const cellFromPoint = (x, y) => {
     const el = typeof document !== "undefined" && document.elementFromPoint(x, y);
     if (!el || el.dataset == null || el.dataset.mk === undefined) return null;
@@ -2869,6 +2890,8 @@ export default function ProgressionWheel() {
                             <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Down a scale step">▼</button>
                             <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Earlier">◀</button>
                             <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Later">▶</button>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
                             <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
                           </>);
                         })()}
