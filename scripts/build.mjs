@@ -4,8 +4,11 @@
 import { build } from "esbuild";
 import { readFileSync, writeFileSync } from "fs";
 
+const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+
 async function compile({ src, component, tmp, title, extraHead = "", boot = "Tuning up…" }) {
   let code = readFileSync(src, "utf8");
+  code = code.replace('const APP_VERSION = "dev";', `const APP_VERSION = ${JSON.stringify(pkg.version)};`);
   code = code.replace(/import \{[^}]*\} from "react";/,
     "const { useState, useMemo, useRef, useEffect } = React;");
   code = code.replace(`export default function ${component}(`, `function ${component}(`);
