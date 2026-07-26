@@ -1700,19 +1700,30 @@ export default function ProgressionWheel() {
     const bars = (structBars && structBars.length) ? structBars : chords.map(c => ({ chord: c }));
     const melBase = (tonic > 6 ? 60 : 72) + tonic;
     const loopSec = secMelos.L1 || Object.values(secMelos)[0];
+    // pull every note of one layer out independently by its own onset + held length
+    const extract = cols => {
+      if (!cols) return [];
+      const on = (i, d) => (cols[i] || []).includes(d);
+      const out = [];
+      for (let i = 0; i < meloBeats; i++) for (const d of (cols[i] || [])) {
+        if (i > 0 && on(i - 1, d)) continue;                    // only at the note's onset
+        let run = 1; while (i + run < meloBeats && on(i + run, d)) run++;
+        out.push({ on: i, dur: run, midi: melBase + scaleSemis[d] });
+      }
+      return out;
+    };
     return bars.map((b, bi) => {
       const secm = b.inst != null ? secMelos[b.inst] : loopSec;
-      const barCols = secm && secm.bars[b.inst != null ? b.mb : bi % (secm.bars.length || 1)];
-      const at = (i, deg) => (barCols && barCols[i] || []).includes(deg);
-      const mel = [];
-      for (let i = 0; i < meloBeats; i++) {
-        const degs = (barCols && barCols[i]) || [];
-        const fresh = degs.filter(d => !(i > 0 && at(i - 1, d)));
-        if (!fresh.length) continue;
-        let run = 1;
-        while (i + run < meloBeats && fresh.every(d => at(i + run, d))) run++;
-        mel.push({ on: i, dur: run, mids: fresh.slice().sort((a, c) => a - c).map(d => melBase + scaleSemis[d]) });
-      }
+      const idx = b.inst != null ? b.mb : bi % ((secm && secm.bars.length) || 1);
+      // BOTH melody layers (A + the optional 2nd melody B) land on the same stave
+      const evs = [...extract(secm && secm.bars[idx]),
+                   ...extract(secm && secm.barsB && secm.barsB[idx])];
+      // notes that share an onset AND length become one clean chord; differing rhythms stay separate
+      const groups = {};
+      evs.forEach(e => { const k = e.on + "_" + e.dur;
+        (groups[k] = groups[k] || { on: e.on, dur: e.dur, set: new Set() }).set.add(e.midi); });
+      const mel = Object.values(groups).sort((a, c) => a.on - c.on || a.dur - c.dur)
+        .map(g => ({ on: g.on, dur: g.dur, mids: [...g.set].sort((a, c) => a - c) }));
       return { chord: b.chord, name: b.chord.name, word: b.inst != null ? (b.mb === 0 ? b.word : null) : null, mel };
     });
   }, [structBars, chords, secMelos, tonic, meloBeats, scaleSemis]);

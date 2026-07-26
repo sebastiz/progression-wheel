@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **The second melody now appears on the stave.** The notation only ever read melody layer A, so the
+  2nd melody (layer B) was silent on the score even though it played back and exported to MIDI. Both
+  layers are now drawn together on the same stave — on the piano grand staff (right hand) and the
+  guitar staff + tab alike. Note extraction was also rewritten per-note, so two voices with different
+  rhythms keep their own correct durations instead of the longer note being clipped to the shorter,
+  and the score keeps redrawing live on every melody edit.
 - **Two melodies per section, each with its own instrument.** Every song-structure block can now carry
   a second melody layer. Open a section's melody grid and hit **＋ 2nd melody**: layer **B** draws in
   violet pills over layer **A**'s teal, and an **A / B** switch chooses which layer your drawing,
