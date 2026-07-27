@@ -60,15 +60,25 @@ function buildSpelling(tonicPc, mode) {
   return { spell, fifths };
 }
 
+/* ===== input source profiles =====
+   Voice and a plucked guitar behave differently: a guitar note decays (so its tail
+   dips below a voice-tuned gate and can split into spurious re-onsets), reaches lower
+   than most singing, and stays cleanly on one pitch. Each profile tunes the RMS gate,
+   the shortest kept note, and the trusted frequency window accordingly. */
+const SOURCES = {
+  voice:  { gate: 0.006, minNoteMs: 70, loHz: 65, hiHz: 1400 },
+  guitar: { gate: 0.004, minNoteMs: 95, loHz: 70, hiHz: 1320 },
+};
+
 /* ===== pitch detection — McLeod Pitch Method (NSDF) ===== */
 // returns { hz, clarity } or null for unvoiced / too quiet
-function detectPitch(buf, sampleRate) {
+function detectPitch(buf, sampleRate, prof = SOURCES.voice) {
   const SIZE = buf.length;
   // RMS gate
   let rms = 0;
   for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
   rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.006) return null;                         // silence
+  if (rms < prof.gate) return null;                     // silence
 
   const maxLag = Math.floor(SIZE / 2);
   const nsdf = new Float32Array(maxLag);
@@ -107,19 +117,20 @@ function detectPitch(buf, sampleRate) {
   const shift = denom !== 0 ? (0.5 * (a - c)) / denom : 0;
   const trueLag = x + shift;
   const hz = sampleRate / trueLag;
-  if (hz < 65 || hz > 1400) return null;                // out of singing range
+  if (hz < prof.loHz || hz > prof.hiHz) return null;    // out of the source's range
   return { hz, clarity: chosen.val, rms };
 }
 
 /* ===== pitch track → raw notes ===== */
 // samples: Float32Array; returns [{ midi, t0, t1, conf }] in seconds
-function tracktoNotes(samples, sampleRate, minNoteMs = 70) {
+function tracktoNotes(samples, sampleRate, prof = SOURCES.voice) {
+  const minNoteMs = prof.minNoteMs;
   const WIN = 2048;
   const HOP = Math.round(sampleRate * 0.011);           // ~11 ms
   const frames = [];
   for (let start = 0; start + WIN <= samples.length; start += HOP) {
     const slice = samples.subarray(start, start + WIN);
-    const p = detectPitch(slice, sampleRate);
+    const p = detectPitch(slice, sampleRate, prof);
     frames.push({
       t: (start + WIN / 2) / sampleRate,
       midi: p ? hzToMidi(p.hz) : null,
@@ -515,6 +526,7 @@ export default function TuneTranscriber() {
   const [key, setKey] = useState({ tonic: 0, mode: "major" });
   const [keyLocked, setKeyLocked] = useState(false);
   const [snap, setSnap] = useState(true);
+  const [source, setSource] = useState("voice");         // voice | guitar — tunes pitch detection
   const [level, setLevel] = useState(0);                 // live mic level
   const [liveHz, setLiveHz] = useState(null);
   const [ioNote, setIoNote] = useState("");
@@ -559,7 +571,7 @@ export default function TuneTranscriber() {
         analyser.getFloatTimeDomainData(buf);
         let rms = 0; for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
         setLevel(Math.min(1, Math.sqrt(rms / buf.length) * 6));
-        const p = detectPitch(buf, ctx.sampleRate);
+        const p = detectPitch(buf, ctx.sampleRate, SOURCES[source] || SOURCES.voice);
         setLiveHz(p ? p.hz : null);
         rafRef.current = requestAnimationFrame(tick);
       };
@@ -601,8 +613,13 @@ export default function TuneTranscriber() {
   const analyse = (samples, sampleRate) => {
     setPhase("analysing");
     setTimeout(() => {
-      const notes = tracktoNotes(samples, sampleRate);
-      if (!notes.length) { setError("No clear pitch found — try humming louder and steadier."); setPhase("idle"); return; }
+      const notes = tracktoNotes(samples, sampleRate, SOURCES[source] || SOURCES.voice);
+      if (!notes.length) {
+        setError(source === "guitar"
+          ? "No clear pitch found — play single notes, close to the mic, letting each ring."
+          : "No clear pitch found — try humming louder and steadier.");
+        setPhase("idle"); return;
+      }
       // shift so the first note starts at time 0
       const t0 = notes[0].t0;
       const shifted = notes.map(n => ({ ...n, t0: n.t0 - t0, t1: n.t1 - t0 }));
@@ -653,7 +670,7 @@ export default function TuneTranscriber() {
     try {
       const payload = { notes: qnotes.map(n => ({ midi: n.midi, startU: n.startU, durU: n.durU })), U: grid, bpm, key };
       window.localStorage.setItem("pw-transcribed-melody", JSON.stringify(payload));
-      setIoNote("Sent to the Progression Wheel — open it and choose “Load hummed melody”.");
+      setIoNote("Sent to the Progression Wheel — open it, choose a section on the Rhythm panel, and press “🎤 Hum”.");
     } catch (e) { setIoNote("Couldn’t hand off directly; use Export MIDI instead."); }
   };
 
@@ -667,9 +684,9 @@ export default function TuneTranscriber() {
       <style>{CSS}</style>
       <header className="top">
         <div>
-          <div className="eyebrow">Sing it · sketch it · v1.0</div>
+          <div className="eyebrow">Sing it · play it · sketch it · v1.0</div>
           <h1>The Tune Transcriber</h1>
-          <p className="sub">Hum or sing a tune — get it on a stave, then send it to the Progression Wheel.</p>
+          <p className="sub">Hum, sing or play a tune on your guitar — get it on a stave, then send it to the Progression Wheel.</p>
         </div>
         <a className="navlink" href="index.html">← Progression Wheel</a>
       </header>
@@ -677,12 +694,18 @@ export default function TuneTranscriber() {
       <section className="card">
         {phase === "idle" && (
           <div className="capture">
-            <button className="rec" onClick={startRec}>● Record a hum</button>
+            <div className="srcpick" role="group" aria-label="Input source">
+              <button className={"srcbtn" + (source === "voice" ? " on" : "")} onClick={() => setSource("voice")}>🎤 Voice</button>
+              <button className={"srcbtn" + (source === "guitar" ? " on" : "")} onClick={() => setSource("guitar")}>🎸 Guitar</button>
+            </div>
+            <button className="rec" onClick={startRec}>● Record {source === "guitar" ? "a riff" : "a hum"}</button>
             <span className="or">or</span>
             <label className="upl">↑ Upload audio
               <input type="file" accept="audio/*" onChange={onFile} hidden />
             </label>
-            <p className="hint">Sing “la” or hum steadily. A short, clear phrase works best — one note at a time.</p>
+            <p className="hint">{source === "guitar"
+              ? "Play a single-note line — one note at a time, close to the mic, letting each note ring. Clean picking transcribes best; chords won’t."
+              : "Sing “la” or hum steadily. A short, clear phrase works best — one note at a time."}</p>
           </div>
         )}
 
@@ -773,6 +796,9 @@ h1{ font-family:Fraunces,Georgia,serif; font-weight:650; font-size:30px; margin:
 .navlink:hover{ color:var(--ink); border-color:var(--dim); }
 .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:14px; }
 .capture{ display:flex; flex-wrap:wrap; align-items:center; gap:14px; }
+.srcpick{ display:inline-flex; border:1px solid var(--line); border-radius:11px; overflow:hidden; flex-basis:100%; max-width:260px; }
+.srcbtn{ flex:1; background:transparent; color:var(--dim); border:none; padding:10px 14px; font-size:14px; font-weight:600; cursor:pointer; }
+.srcbtn.on{ background:var(--green); color:#08201A; }
 .rec{ background:#E06A55; color:#fff; border:none; border-radius:11px; padding:14px 22px; font-size:16px;
   font-weight:700; cursor:pointer; }
 .rec:hover{ filter:brightness(1.08); }

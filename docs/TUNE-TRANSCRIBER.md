@@ -6,10 +6,12 @@ again from the transcriber's header). Everything runs in the browser — no audi
 
 ## The workflow
 
-1. **Record or upload.** Press **● Record a hum** and sing a short, clear phrase — "la la la" or a
-   steady hum, one note at a time. A live pitch readout and level meter show what the app is hearing.
-   Press **■ Stop & transcribe** when you're done. Alternatively **↑ Upload audio** feeds in any audio
-   file (`.wav`, `.mp3`, `.m4a`, …).
+1. **Record or upload.** Choose your **source** — **🎤 Voice** or **🎸 Guitar** — then press **● Record**
+   and sing or play a short, clear phrase, one note at a time. A live pitch readout and level meter show
+   what the app is hearing. Press **■ Stop & transcribe** when you're done. Alternatively **↑ Upload
+   audio** feeds in any audio file (`.wav`, `.mp3`, `.m4a`, …). The Guitar source retunes the pitch
+   tracker for a plucked, decaying note — a lower noise gate, a wider low range, and a longer minimum
+   note so a decaying tail doesn't split into phantom notes. Play single notes; chords won't transcribe.
 2. **Read it back.** The tune appears on a treble stave, with the detected key, tempo and note count.
    Press **▶ Play** to hear the transcription (a simple synth) and compare it to what you sang.
 3. **Tidy it.** Adjust the **tempo** slider, switch the **rhythm grid** between eighths and sixteenths,
@@ -48,9 +50,15 @@ The wheel accepts a melody two ways, both on the Rhythm panel:
   track with the most notes.
 
 Either way the notes are quantised to the wheel's eighth-note columns and snapped to the current key's
-scale, then written onto the first section's melody grid — where you can nudge, reharmonise, and play them
-back with the full rhythm section. Because the grid is a single-octave diatonic sketch, the import
-approximates the tune's shape rather than reproducing exact octaves; treat it as a starting point.
+scale, then written onto a section's melody grid — where you can nudge, reharmonise, and play them
+back with the full rhythm section. The **"Add imported / recorded melody to:"** picker on the Rhythm
+panel chooses *which* section receives them (default: the first). Because the grid is a single-octave
+diatonic sketch, the import approximates the tune's shape rather than reproducing exact octaves; treat it
+as a starting point.
+
+The wheel can also **record straight onto a section** without the transcriber at all: each section in
+the **Song & melody** list has a **● Rec** button that captures a mic line (guitar or voice) with the
+same pitch tracker and writes it onto that section's grid. See the user guide.
 
 ## Development
 

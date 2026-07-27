@@ -1167,6 +1167,123 @@ const MEDIANTS = { major: [["III",4,"maj",1],["VI",9,"maj",1],["bVI",8,"maj",1],
      u.chordDegs — per-bar diatonic degree of the bar's chord root (null if the
                    chord is chromatic / outside the key) — used by the arpeggios */
 const wrap7 = d => ((d % 7) + 7) % 7;
+
+/* ===== in-app pitch tracking (guitar / voice → notes) =====
+   A compact McLeod-Pitch-Method transcriber, mirroring the Tune Transcriber's DSP, so a line
+   played into the mic can be dropped straight onto a section's melody grid. Source profiles
+   tune the RMS gate, shortest kept note and trusted frequency window: a plucked guitar decays
+   (its tail would split into spurious re-onsets under a voice gate) and reaches lower than most
+   singing. Output notes are quantised to an eighth-note grid so they map onto grid columns. */
+const REC_SOURCES = {
+  voice:  { gate: 0.006, minNoteMs: 70, loHz: 65, hiHz: 1400 },
+  guitar: { gate: 0.004, minNoteMs: 95, loHz: 70, hiHz: 1320 },
+};
+const hzToMidiF = hz => 69 + 12 * Math.log2(hz / 440);
+function recDetectPitch(buf, sampleRate, prof) {
+  const SIZE = buf.length;
+  let rms = 0;
+  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < prof.gate) return null;
+  const maxLag = Math.floor(SIZE / 2);
+  const nsdf = new Float32Array(maxLag);
+  for (let lag = 0; lag < maxLag; lag++) {
+    let ac = 0, m = 0;
+    for (let i = 0; i < SIZE - lag; i++) {
+      ac += buf[i] * buf[i + lag];
+      m += buf[i] * buf[i] + buf[i + lag] * buf[i + lag];
+    }
+    nsdf[lag] = m > 0 ? (2 * ac) / m : 0;
+  }
+  const maxima = [];
+  let lag = 1;
+  while (lag < maxLag - 1 && nsdf[lag] > 0) lag++;      // skip the lag-0 hump
+  while (lag < maxLag - 1) {
+    if (nsdf[lag] > 0) {
+      let best = lag, bestV = nsdf[lag];
+      while (lag < maxLag - 1 && nsdf[lag] > 0) { if (nsdf[lag] > bestV) { bestV = nsdf[lag]; best = lag; } lag++; }
+      maxima.push({ lag: best, val: bestV });
+    } else lag++;
+  }
+  if (!maxima.length) return null;
+  const peak = Math.max(...maxima.map(m => m.val));
+  const chosen = maxima.find(m => m.val >= 0.62 * peak) || maxima[0];
+  if (chosen.val < 0.45) return null;
+  const x = chosen.lag, a = nsdf[x - 1], b = nsdf[x], c = nsdf[x + 1];
+  const denom = a - 2 * b + c, shift = denom !== 0 ? (0.5 * (a - c)) / denom : 0;
+  const hz = sampleRate / (x + shift);
+  if (hz < prof.loHz || hz > prof.hiHz) return null;
+  return { hz, clarity: chosen.val };
+}
+// samples → notes [{midi,t0,t1}] in seconds
+function recTrackNotes(samples, sampleRate, prof) {
+  const WIN = 2048, HOP = Math.round(sampleRate * 0.011);
+  const frames = [];
+  for (let start = 0; start + WIN <= samples.length; start += HOP) {
+    const p = recDetectPitch(samples.subarray(start, start + WIN), sampleRate, prof);
+    frames.push({ t: (start + WIN / 2) / sampleRate, midi: p ? hzToMidiF(p.hz) : null, conf: p ? p.clarity : 0 });
+  }
+  const W = 2;
+  const sm = frames.map((f, i) => {
+    if (f.midi == null) return null;
+    const vals = [];
+    for (let k = -W; k <= W; k++) { const g = frames[i + k]; if (g && g.midi != null) vals.push(g.midi); }
+    vals.sort((a, b) => a - b);
+    return vals.length ? vals[Math.floor(vals.length / 2)] : f.midi;
+  });
+  const notes = [];
+  let cur = null;
+  const flush = () => {
+    if (!cur) return;
+    if ((cur.tEnd - cur.tStart) * 1000 >= prof.minNoteMs && cur.pitches.length) {
+      const rounded = cur.pitches.map(Math.round).sort((a, b) => a - b);
+      notes.push({ midi: rounded[Math.floor(rounded.length / 2)], t0: cur.tStart, t1: cur.tEnd });
+    }
+    cur = null;
+  };
+  for (let i = 0; i < frames.length; i++) {
+    const m = sm[i];
+    if (m == null) { flush(); continue; }
+    const r = Math.round(m);
+    if (cur && Math.abs(r - cur.ref) < 0.5) { cur.tEnd = frames[i].t; cur.pitches.push(m); }
+    else { flush(); cur = { ref: r, tStart: frames[i].t, tEnd: frames[i].t, pitches: [m] }; }
+  }
+  flush();
+  return notes;
+}
+// crude auto-tempo: BPM whose eighth-note grid best fits the onsets
+function recEstimateTempo(notes) {
+  if (notes.length < 3) return 100;
+  let best = 100, bestErr = Infinity;
+  for (let bpm = 60; bpm <= 180; bpm++) {
+    const step = 60 / bpm / 2;
+    let err = 0;
+    for (const n of notes) { const q = n.t0 / step; err += Math.abs(q - Math.round(q)); }
+    err /= notes.length;
+    if (err < bestErr) { bestErr = err; best = bpm; }
+  }
+  return best;
+}
+// notes → eighth-note grid events [{ midi, startE, durE }], time 0 = first onset
+function recToEvents(notes) {
+  if (!notes.length) return [];
+  const t0 = notes[0].t0;
+  const shifted = notes.map(n => ({ midi: n.midi, t0: n.t0 - t0, t1: n.t1 - t0 }));
+  const bpm = recEstimateTempo(shifted);
+  const step = 60 / bpm / 2;                             // eighth-note
+  const out = shifted.map(n => {
+    const s = Math.max(0, Math.round(n.t0 / step));
+    const e = Math.max(s + 1, Math.round(n.t1 / step));
+    return { midi: n.midi, startE: s, durE: e - s };
+  });
+  out.sort((a, b) => a.startE - b.startE);
+  for (let i = 0; i < out.length - 1; i++) {             // keep it monophonic
+    const end = out[i].startE + out[i].durE;
+    if (end > out[i + 1].startE) out[i].durE = Math.max(1, out[i + 1].startE - out[i].startE);
+  }
+  return out;
+}
+
 // the "strong" beat columns of a bar (every other eighth): [0,2,4,6] in 4/4
 const qbeats = B => Array.from({ length: Math.ceil(B / 2) }, (_, i) => i * 2).filter(x => x < B);
 const blankBars = (nBars, B) => Array.from({ length: nBars }, () => Array.from({ length: B }, () => []));
@@ -1411,6 +1528,12 @@ export default function ProgressionWheel() {
   const [melSel, setMelSel] = useState({ key:"", layer:0, notes:{} }); // selected melody notes ("c:deg" → true)
   const [melBox, setMelBox] = useState(null);               // live marquee box while selecting
   const [melGhost, setMelGhost] = useState(null);           // live {key,dc,dd} while dragging a group
+  const [impSec, setImpSec] = useState("");                 // target section key for Hum / MIDI import ("" = first)
+  const [recSource, setRecSource] = useState("guitar");     // in-app recorder input: guitar | voice
+  const [recSec, setRecSec] = useState(null);               // section key currently being recorded into (or null)
+  const [recLevel, setRecLevel] = useState(0);              // live mic level while recording
+  const [recHz, setRecHz] = useState(null);                 // live detected pitch while recording
+  const recRef = useRef(null);                              // { ctx, stream, node, src, analyser, chunks, raf }
   const melDragRef = useRef(null);
   const metroRef = useRef(null);
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(false);
@@ -2082,13 +2205,21 @@ export default function ProgressionWheel() {
     } catch (e) { setIoNote("Export failed in this viewer — try on desktop."); }
   };
 
-  /* ---- melody import (from the Tune Transcriber: a hummed line as MIDI or a direct hand-off) ---- */
-  // events: [{ midi, startE, durE }] positioned in eighth-notes. Writes them onto the
-  // first section's melody grid, snapping each pitch to the nearest scale degree.
-  const applyImportedMelody = events => {
-    const sec = sections.insts[0];
+  /* ---- melody import (a hummed/played line from the Tune Transcriber, a MIDI file, or the
+         in-app recorder) ---- */
+  // events: [{ midi, startE, durE }] positioned in eighth-notes. Writes them onto the chosen
+  // section's melody grid (falling back to the first), snapping each pitch to the nearest scale
+  // degree. targetKey defaults to the import-target picker; verb tunes the status wording.
+  const applyImportedMelody = (events, targetKey, verb = "Imported") => {
+    const wantKey = targetKey || impSec;
+    const sec = sections.insts.find(s => s.key === wantKey) || sections.insts[0];
     if (!sec) { setIoNote("Add a progression first, then import a melody."); return; }
-    if (!events || !events.length) { setIoNote("No melody notes found in that file."); return; }
+    if (!events || !events.length) {
+      setIoNote(verb === "Recorded"
+        ? "No clear notes found — play single notes close to the mic, letting each ring."
+        : "No melody notes found in that file.");
+      return;
+    }
     const nBars = sec.cs.length, totalCols = nBars * meloBeats;
     const bars = blankBars(nBars, meloBeats);
     const degOf = midi => {                                // nearest scale degree (0..len-1)
@@ -2109,10 +2240,9 @@ export default function ProgressionWheel() {
         if (c === ev.startE) placed++;
       }
     });
-    const ids = sec.cs.map(chordId);
-    setMelos({ progId, secs: { ...(melos.progId === progId ? melos.secs : {}), [sec.key]: { ids, bars } } });
+    putSec(sec.key, { bars });                            // preserves the 2nd layer + instrument choices
     setOpenSecs(o => ({ ...o, [sec.key]: true }));
-    setIoNote(`Imported ${placed} note${placed === 1 ? "" : "s"} onto ${sec.key} (${sec.word})`
+    setIoNote(`${verb} ${placed} note${placed === 1 ? "" : "s"} onto ${sec.key} (${sec.word})`
       + (dropped ? ` — ${dropped} ran past the section and were dropped.` : ". Snapped to the key; tidy on the grid below."));
   };
   const importMidiFile = async e => {
@@ -2136,6 +2266,63 @@ export default function ProgressionWheel() {
       applyImportedMelody(events);
     } catch (e) { setIoNote("Couldn't read the hummed melody hand-off."); }
   };
+
+  /* ---- in-app recorder: capture a guitar/voice line straight onto a section's grid ---- */
+  const startSecRec = async secKey => {
+    if (recSec) return;                                   // one recording at a time
+    setIoNote(null);
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AC();
+      if (ctx.state === "suspended") await ctx.resume();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      const src = ctx.createMediaStreamSource(stream);
+      const node = ctx.createScriptProcessor(4096, 1, 1);
+      const analyser = ctx.createAnalyser(); analyser.fftSize = 2048;
+      const chunks = [];
+      node.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      src.connect(analyser); src.connect(node); node.connect(ctx.destination);
+      const prof = REC_SOURCES[recSource] || REC_SOURCES.guitar;
+      const buf = new Float32Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getFloatTimeDomainData(buf);
+        let rms = 0; for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+        setRecLevel(Math.min(1, Math.sqrt(rms / buf.length) * 6));
+        const p = recDetectPitch(buf, ctx.sampleRate, prof);
+        setRecHz(p ? p.hz : null);
+        recRef.current && (recRef.current.raf = requestAnimationFrame(tick));
+      };
+      recRef.current = { ctx, stream, node, src, analyser, chunks, raf: 0 };
+      setRecSec(secKey);
+      tick();
+    } catch (err) {
+      setIoNote("Microphone unavailable — check permissions, or use the Tune Transcriber / ↑ MIDI instead.");
+    }
+  };
+  const stopSecRec = () => {
+    const r = recRef.current; if (!r) { setRecSec(null); return; }
+    const secKey = recSec;
+    cancelAnimationFrame(r.raf);
+    try { r.node.disconnect(); r.src.disconnect(); r.node.onaudioprocess = null; } catch (e) {}
+    try { r.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    const sr = r.ctx.sampleRate;
+    const total = r.chunks.reduce((a, c) => a + c.length, 0);
+    const samples = new Float32Array(total);
+    let o = 0; for (const c of r.chunks) { samples.set(c, o); o += c.length; }
+    try { r.ctx.close(); } catch (e) {}
+    recRef.current = null;
+    setRecSec(null); setRecLevel(0); setRecHz(null);
+    const prof = REC_SOURCES[recSource] || REC_SOURCES.guitar;
+    const events = recToEvents(recTrackNotes(samples, sr, prof));
+    applyImportedMelody(events, secKey, "Recorded");
+  };
+  // stop any live recording if the component unmounts
+  useEffect(() => () => { const r = recRef.current; if (r) {
+    try { cancelAnimationFrame(r.raf); r.node.disconnect(); r.src.disconnect();
+      r.stream.getTracks().forEach(t => t.stop()); r.ctx.close(); } catch (e) {}
+    recRef.current = null;
+  } }, []);
 
   /* ---- sketches (persistent, via window.storage) ---- */
   const hasStore = typeof window !== "undefined" && window.storage;
@@ -2273,6 +2460,12 @@ export default function ProgressionWheel() {
         .arrreps { color:${GOLD}; letter-spacing:0; text-transform:none; }
         .arrch { font-family:'Fraunces',serif; font-size:17px; font-weight:650; color:#EAE2CC; margin-top:3px; line-height:1.55; }
         .arrnote { font-size:12.5px; color:#8B94A3; font-style:italic; margin-top:2px; line-height:1.4; }
+        .mini.recstop { border-color:#E06A55; color:#F2B8AC; }
+        .recbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-top:7px; padding:7px 9px;
+          background:#0C1119; border:1px solid #33475F; border-radius:10px; }
+        .recmeter { flex:1; min-width:80px; height:8px; border-radius:999px; background:#232C3A; overflow:hidden; }
+        .recfill { height:100%; background:${GOLD}; border-radius:999px; transition:width .06s linear; }
+        .rechz { font-size:12.5px; color:${GOLD}; font-weight:600; min-width:78px; font-variant-numeric:tabular-nums; }
         .sym { color:#EAE2CC; font-size:13px; letter-spacing:0; }
         .formline { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:14px; border-top:1px solid #232C3A; padding-top:12px; }
         .formtok { font-family:'Fraunces',serif; font-weight:650; font-size:21px; color:#EAE2CC; background:#10151D; border:1px solid #2A3442; border-radius:9px; padding:3px 11px; }
@@ -2653,6 +2846,21 @@ export default function ProgressionWheel() {
             </div>
           </div>
 
+          <div className="row" style={{ marginTop:8, gap:8, alignItems:"center" }}>
+            <span className="keytag" style={{ marginRight:2 }}>Add imported / recorded melody to:</span>
+            <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""}
+              onChange={e => setImpSec(e.target.value)}
+              title="Which section a hummed / played tune, MIDI import, or in-app recording lands on">
+              <option value="">First section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
+              {sections.insts.map(s => <option key={s.key} value={s.key}>{s.key} · {s.word}</option>)}
+            </select>
+            <span className="keytag" style={{ fontStyle:"italic" }}>— or press ● Rec on any section below</span>
+            <span className="seg" title="What the ● Rec button listens for — tunes pitch detection">
+              <button className={recSource === "guitar" ? "on" : ""} onClick={() => setRecSource("guitar")} disabled={!!recSec}>🎸 Guitar</button>
+              <button className={recSource === "voice" ? "on" : ""} onClick={() => setRecSource("voice")} disabled={!!recSec}>🎤 Voice</button>
+            </span>
+          </div>
+
           <div className="selrow" style={{ marginTop:10, alignItems:"flex-end", flexWrap:"wrap" }}>
             <label className="selwrap" style={{ minWidth:150 }}>
               <span className="lbl" style={{ margin:0 }}>Pattern</span>
@@ -2794,11 +3002,22 @@ export default function ProgressionWheel() {
                   <div className="row" style={{ gap:5 }}>
                     <button className="mini" onClick={() => startMetro(d.startBar)} title="Play from here">▶</button>
                     {donor && <button className="mini" onClick={() => copyMelody(donor.key, d.key)}>copy {donor.key}</button>}
+                    {recSec === d.key
+                      ? <button className="mini recstop" onClick={stopSecRec} title="Stop & transcribe onto this section">■ Stop</button>
+                      : <button className="mini" onClick={() => startSecRec(d.key)} disabled={!!recSec}
+                          title={`Record a ${recSource} line straight onto ${d.key}'s melody grid (overwrites it)`}>● Rec</button>}
                     <button className="mini" onClick={() => setOpenSecs({ ...openSecs, [d.key]: !open })}>
                       {open ? "▾" : "▸"} melody{has ? " ●" : ""}
                     </button>
                   </div>
                 </div>
+                {recSec === d.key && (
+                  <div className="recbar">
+                    <div className="recmeter"><div className="recfill" style={{ width: (recLevel * 100) + "%" }} /></div>
+                    <span className="rechz">{recHz ? SEMI_NAME[((Math.round(hzToMidiF(recHz)) % 12) + 12) % 12] + " · " + Math.round(recHz) + " Hz" : "listening…"}</span>
+                    <span className="keytag">Play {recSource === "guitar" ? "a single-note line" : "your tune"}, one note at a time · press ■ Stop when done</span>
+                  </div>
+                )}
                 <div className="arrch">{d.str}</div>
                 {d.note && <div className="arrnote">{d.note}</div>}
                 {open && (() => {
