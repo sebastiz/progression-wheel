@@ -1175,16 +1175,17 @@ const wrap7 = d => ((d % 7) + 7) % 7;
    (its tail would split into spurious re-onsets under a voice gate) and reaches lower than most
    singing. Output notes are quantised to an eighth-note grid so they map onto grid columns. */
 const REC_SOURCES = {
-  voice:  { gate: 0.006, minNoteMs: 70, loHz: 65, hiHz: 1400 },
-  guitar: { gate: 0.004, minNoteMs: 95, loHz: 70, hiHz: 1320 },
+  voice:  { gate: 0.006, minNoteMs: 70, loHz: 65, hiHz: 1400, clarityFrac: 0.62, clarityMin: 0.45 },
+  guitar: { gate: 0.004, minNoteMs: 85, loHz: 70, hiHz: 1320, clarityFrac: 0.55, clarityMin: 0.34 },
 };
 const hzToMidiF = hz => 69 + 12 * Math.log2(hz / 440);
-function recDetectPitch(buf, sampleRate, prof) {
+// gate override lets the caller pass an adaptive per-recording threshold
+function recDetectPitch(buf, sampleRate, prof, gate) {
   const SIZE = buf.length;
   let rms = 0;
   for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
   rms = Math.sqrt(rms / SIZE);
-  if (rms < prof.gate) return null;
+  if (rms < (gate != null ? gate : prof.gate)) return null;
   const maxLag = Math.floor(SIZE / 2);
   const nsdf = new Float32Array(maxLag);
   for (let lag = 0; lag < maxLag; lag++) {
@@ -1207,22 +1208,41 @@ function recDetectPitch(buf, sampleRate, prof) {
   }
   if (!maxima.length) return null;
   const peak = Math.max(...maxima.map(m => m.val));
-  const chosen = maxima.find(m => m.val >= 0.62 * peak) || maxima[0];
-  if (chosen.val < 0.45) return null;
+  const chosen = maxima.find(m => m.val >= (prof.clarityFrac || 0.62) * peak) || maxima[0];
+  if (chosen.val < (prof.clarityMin || 0.45)) return null;
   const x = chosen.lag, a = nsdf[x - 1], b = nsdf[x], c = nsdf[x + 1];
   const denom = a - 2 * b + c, shift = denom !== 0 ? (0.5 * (a - c)) / denom : 0;
   const hz = sampleRate / (x + shift);
   if (hz < prof.loHz || hz > prof.hiHz) return null;
-  return { hz, clarity: chosen.val };
+  return { hz, clarity: chosen.val, rms };
 }
-// samples → notes [{midi,t0,t1}] in seconds
+// samples → notes [{midi,t0,t1}] in seconds. Normalises level, gates against the recording's own
+// noise floor, and bridges short dropouts so a decaying guitar note stays one note.
 function recTrackNotes(samples, sampleRate, prof) {
-  const WIN = 2048, HOP = Math.round(sampleRate * 0.011);
-  const frames = [];
-  for (let start = 0; start + WIN <= samples.length; start += HOP) {
-    const p = recDetectPitch(samples.subarray(start, start + WIN), sampleRate, prof);
-    frames.push({ t: (start + WIN / 2) / sampleRate, midi: p ? hzToMidiF(p.hz) : null, conf: p ? p.clarity : 0 });
+  // normalise to ~0.95 peak so a quiet take is treated the same as a loud one
+  let pk = 0;
+  for (let i = 0; i < samples.length; i++) { const a = samples[i] < 0 ? -samples[i] : samples[i]; if (a > pk) pk = a; }
+  if (pk > 1e-4 && pk < 0.95) {
+    const g = 0.95 / pk, s2 = new Float32Array(samples.length);
+    for (let i = 0; i < samples.length; i++) s2[i] = samples[i] * g;
+    samples = s2;
   }
+  const WIN = 2048, HOP = Math.round(sampleRate * 0.011);
+  // pass 1 (cheap): per-frame RMS → an adaptive gate a little above the noise floor
+  const starts = [], rmsArr = [];
+  for (let start = 0; start + WIN <= samples.length; start += HOP) {
+    let r = 0; for (let i = 0; i < WIN; i++) { const v = samples[start + i]; r += v * v; }
+    starts.push(start); rmsArr.push(Math.sqrt(r / WIN));
+  }
+  const sorted = [...rmsArr].sort((a, b) => a - b);
+  const noise = sorted.length ? sorted[Math.floor(sorted.length * 0.2)] : 0;   // 20th-percentile ≈ quiet floor
+  const gate = Math.max(prof.gate, noise * 2.2);
+  // pass 2: detect pitch only where the frame clears the gate
+  const frames = starts.map((start, k) => {
+    if (rmsArr[k] < gate) return { t: (start + WIN / 2) / sampleRate, midi: null, conf: 0 };
+    const p = recDetectPitch(samples.subarray(start, start + WIN), sampleRate, prof, gate);
+    return { t: (start + WIN / 2) / sampleRate, midi: p ? hzToMidiF(p.hz) : null, conf: p ? p.clarity : 0 };
+  });
   const W = 2;
   const sm = frames.map((f, i) => {
     if (f.midi == null) return null;
@@ -1241,12 +1261,17 @@ function recTrackNotes(samples, sampleRate, prof) {
     }
     cur = null;
   };
+  const maxGap = Math.max(2, Math.round(0.07 / (HOP / sampleRate)));   // bridge dropouts up to ~70 ms
+  let gap = 0;
   for (let i = 0; i < frames.length; i++) {
     const m = sm[i];
-    if (m == null) { flush(); continue; }
+    if (m == null) {
+      if (cur && gap < maxGap) { gap++; continue; }   // a brief dropout inside a ringing note
+      flush(); gap = 0; continue;
+    }
     const r = Math.round(m);
-    if (cur && Math.abs(r - cur.ref) < 0.5) { cur.tEnd = frames[i].t; cur.pitches.push(m); }
-    else { flush(); cur = { ref: r, tStart: frames[i].t, tEnd: frames[i].t, pitches: [m] }; }
+    if (cur && Math.abs(r - cur.ref) < 0.5) { cur.tEnd = frames[i].t; cur.pitches.push(m); gap = 0; }
+    else { flush(); cur = { ref: r, tStart: frames[i].t, tEnd: frames[i].t, pitches: [m] }; gap = 0; }
   }
   flush();
   return notes;
@@ -2299,24 +2324,27 @@ export default function ProgressionWheel() {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       const src = ctx.createMediaStreamSource(stream);
-      const node = ctx.createScriptProcessor(4096, 1, 1);
+      // ScriptProcessor.onaudioprocess runs on the MAIN thread; a big buffer + a lightweight monitor
+      // (below) keep it from being starved by React renders, which would drop input and record only
+      // intermittently. The callback does nothing but copy the samples out.
+      const node = ctx.createScriptProcessor(8192, 1, 1);
       const analyser = ctx.createAnalyser(); analyser.fftSize = 2048;
       const chunks = [];
       node.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
       src.connect(analyser); src.connect(node); node.connect(ctx.destination);
       const prof = REC_SOURCES[recSource] || REC_SOURCES.guitar;
       const buf = new Float32Array(analyser.fftSize);
-      const tick = () => {
+      // live meter + pitch readout at ~10 Hz (NOT per animation frame) — full pitch detection is
+      // expensive, and running it 60×/s here was stealing CPU from the audio capture callback.
+      const monitor = setInterval(() => {
         analyser.getFloatTimeDomainData(buf);
         let rms = 0; for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
         setRecLevel(Math.min(1, Math.sqrt(rms / buf.length) * 6));
         const p = recDetectPitch(buf, ctx.sampleRate, prof);
         setRecHz(p ? p.hz : null);
-        recRef.current && (recRef.current.raf = requestAnimationFrame(tick));
-      };
-      recRef.current = { ctx, stream, node, src, analyser, chunks, raf: 0 };
+      }, 100);
+      recRef.current = { ctx, stream, node, src, analyser, chunks, monitor };
       setRecSec(secKey);
-      tick();
     } catch (err) {
       setIoNote("Microphone unavailable — check permissions, or use the Tune Transcriber / ↑ MIDI instead.");
     }
@@ -2324,7 +2352,7 @@ export default function ProgressionWheel() {
   const stopSecRec = () => {
     const r = recRef.current; if (!r) { setRecSec(null); return; }
     const secKey = recSec;
-    cancelAnimationFrame(r.raf);
+    clearInterval(r.monitor);
     try { r.node.disconnect(); r.src.disconnect(); r.node.onaudioprocess = null; } catch (e) {}
     try { r.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
     const sr = r.ctx.sampleRate;
@@ -2340,7 +2368,7 @@ export default function ProgressionWheel() {
   };
   // stop any live recording if the component unmounts
   useEffect(() => () => { const r = recRef.current; if (r) {
-    try { cancelAnimationFrame(r.raf); r.node.disconnect(); r.src.disconnect();
+    try { clearInterval(r.monitor); r.node.disconnect(); r.src.disconnect();
       r.stream.getTracks().forEach(t => t.stop()); r.ctx.close(); } catch (e) {}
     recRef.current = null;
   } }, []);
