@@ -59,3 +59,9 @@ writeFileSync("transcribe.html", await compile({
   extraHead: FONTS, boot: "Warming up…",
 }));
 console.log("built transcribe.html");
+
+// stamp the service-worker cache with the app version so every release invalidates the old cache
+// (installed PWAs re-fetch instead of serving a stale index.html forever)
+const sw = readFileSync("sw.js", "utf8").replace(/const CACHE = "[^"]*";/, `const CACHE = "pw-v${pkg.version}";`);
+writeFileSync("sw.js", sw);
+console.log(`stamped sw.js cache → pw-v${pkg.version}`);
