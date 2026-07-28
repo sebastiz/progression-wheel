@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **More reliable section recording.** The in-app **🎸 Rec** was capturing only intermittently. Two
+  fixes: (1) the live meter/pitch readout no longer runs a full pitch-detection pass 60×/second on the
+  main thread — that was starving the (main-thread) audio-capture callback and dropping input; it now
+  samples at ~10 Hz and the capture buffer is larger, so nothing gets dropped. (2) The note tracker now
+  normalises the take, gates against the recording's *own* noise floor instead of a fixed threshold,
+  and bridges brief dropouts — so a quiet or decaying guitar note is caught and stays a single note
+  instead of vanishing or fragmenting. The guitar profile also detects slightly shorter notes and
+  tolerates the lower clarity of a harmonically rich, decaying pluck.
 - **Loop a single section.** Every section in the **Song & melody** list gains a **🔁** toggle: turn it
   on and playback confines to that section and repeats it (starting playback from there if nothing is
   playing) — for drilling a chorus, jamming over the bridge, or recording a part to a loop. Tap it again
