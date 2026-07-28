@@ -10,9 +10,13 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
 ## Features
 
 - **The Tune Transcriber** — a companion app (`transcribe.html`, linked from the header) that records a
-  hummed or sung tune (or an uploaded audio file), tracks the pitch in-browser, writes it onto a stave,
-  and exports it as MIDI or hands it straight to the wheel's melody grid. See
+  hummed, sung or **guitar-played** tune (or an uploaded audio file), tracks the pitch in-browser, writes
+  it onto a stave, and exports it as MIDI or hands it straight to the wheel's melody grid. A Voice / Guitar
+  source toggle retunes the pitch tracker for a plucked note. See
   [the transcriber guide](docs/TUNE-TRANSCRIBER.md).
+- **Record onto a section** — every section in the song list has a **● Rec** button: play a single-note
+  guitar or vocal line into the mic and it's pitch-tracked straight onto *that* section's melody grid.
+  Imported and recorded melodies land on a section you pick, not just the first.
 - **The wheel** — progressions drawn on the circle of fifths, colour-coded tonic / subdominant /
   dominant, animated path, tap-to-swap chords, tappable overlays for parallel chords and secondary
   dominants. The chord strip has a **reorder** mode: multi-select chords and shift them as a group

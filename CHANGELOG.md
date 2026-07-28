@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+- **Record a melody onto any section — including guitar.** You can now capture a played or sung line
+  straight into the arrangement. Every section in the **Song & melody** list gains a **● Rec** button:
+  press it, play a single-note line into the mic (a live level meter and pitch readout show what it's
+  hearing), press **■ Stop**, and the notes are pitch-tracked in-browser and written onto *that*
+  section's melody grid — snapped to the key, ready to tidy. A **🎸 Guitar / 🎤 Voice** switch on the
+  Rhythm panel tunes the pitch detection for each source (a plucked guitar note decays and reaches
+  lower than singing, so the guitar profile lowers the noise gate, widens the low range, and lengthens
+  the shortest kept note to stop decaying tails from splitting into phantom notes).
+- **Choose which section an imported melody lands on.** The Rhythm panel's **🎤 Hum** and **↑ MIDI**
+  imports (and the new recorder) previously always wrote onto the *first* section. A new
+  **"Add imported / recorded melody to:"** picker lets you send the tune to any section — the chorus,
+  the bridge, a specific verse — instead. Imports now also preserve a section's 2nd melody layer and
+  instrument choices instead of overwriting them.
+- **The Tune Transcriber plays nice with guitars.** The companion transcriber (`transcribe.html`) adds
+  a **🎤 Voice / 🎸 Guitar** source toggle that retunes its pitch detection the same way, so a clean
+  single-note guitar part transcribes as well as a hum. Copy and hints updated throughout.
 - **Double-time / half-time a melody selection.** In the melody grid's **✋ Move** mode, select some
   notes (drag a box, or tap one) and the toolbar now offers **½× time** (double-time — packs the
   selection into half the space so it plays twice as fast) and **2× time** (half-time — stretches it

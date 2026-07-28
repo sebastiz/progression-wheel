@@ -117,6 +117,18 @@ melody through the whole song. With no structure selected, a single Loop entry c
 strip and a collapsible landing-notes reference sit at the top of the panel. Melodies are stored as
 scale degrees anchored to chords, so they survive edits and transpose with the key.
 
+**Record a melody onto a section.** Each section entry has a **● Rec** button. Press it, play (or sing)
+a single-note line into your device's mic — a live level meter and pitch readout show what it's hearing
+— then press **■ Stop**. The line is pitch-tracked in the browser and written straight onto that
+section's melody grid, snapped to the current key. Use the **🎸 Guitar / 🎤 Voice** switch on the Rhythm
+panel to tell it what it's listening to (this retunes the noise gate, pitch range and note-splitting for
+a plucked, decaying guitar note versus a sung one). Nothing leaves the device. It's a sketch aid — play
+clean single notes, one at a time; chords and heavy distortion won't transcribe.
+
+**Send an imported tune to a chosen section.** The Rhythm panel's **🎤 Hum**, **↑ MIDI** and the recorder
+all obey the **"Add imported / recorded melody to:"** picker there — pick the chorus, the bridge or a
+particular verse and that's where the notes land (default: the first section).
+
 ## Song structure (details)
 
 Choose a form (progression-specific ones plus five universal forms) and the whole song writes out:
