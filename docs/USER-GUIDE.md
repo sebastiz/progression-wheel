@@ -117,7 +117,11 @@ melody through the whole song. With no structure selected, a single Loop entry c
 strip and a collapsible landing-notes reference sit at the top of the panel. Melodies are stored as
 scale degrees anchored to chords, so they survive edits and transpose with the key.
 
-**Record a melody onto a section.** Each section entry has a **● Rec** button. Press it, play (or sing)
+**Loop one section.** Each section entry has a **🔁** toggle. Turn it on and playback confines to that
+section and repeats it (and starts from there if nothing's playing) — handy for drilling a chorus or
+recording a part against a loop. Tap it again to release and let the whole song play through.
+
+**Record a melody onto a section.** Each section entry has a **🎸 Rec** (or **🎤 Rec**) button. Press it, play (or sing)
 a single-note line into your device's mic — a live level meter and pitch readout show what it's hearing
 — then press **■ Stop**. The line is pitch-tracked in the browser and written straight onto that
 section's melody grid, snapped to the current key. Use the **🎸 Guitar / 🎤 Voice** switch on the Rhythm
