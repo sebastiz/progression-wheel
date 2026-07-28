@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Loop a single section.** Every section in the **Song & melody** list gains a **🔁** toggle: turn it
+  on and playback confines to that section and repeats it (starting playback from there if nothing is
+  playing) — for drilling a chorus, jamming over the bridge, or recording a part to a loop. Tap it again
+  to release and let the song play on. The loop window follows the section as you edit the structure.
 - **Record a melody onto any section — including guitar.** You can now capture a played or sung line
   straight into the arrangement. Every section in the **Song & melody** list gains a **● Rec** button:
   press it, play a single-note line into the mic (a live level meter and pitch readout show what it's

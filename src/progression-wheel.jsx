@@ -1533,7 +1533,9 @@ export default function ProgressionWheel() {
   const [recSec, setRecSec] = useState(null);               // section key currently being recorded into (or null)
   const [recLevel, setRecLevel] = useState(0);              // live mic level while recording
   const [recHz, setRecHz] = useState(null);                 // live detected pitch while recording
+  const [loopSec, setLoopSec] = useState(null);             // section key to loop during playback (or null)
   const recRef = useRef(null);                              // { ctx, stream, node, src, analyser, chunks, raf }
+  const loopRef = useRef(null);                             // { from, len } bar window the scheduler confines to
   const melDragRef = useRef(null);
   const metroRef = useRef(null);
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(false);
@@ -2035,6 +2037,9 @@ export default function ProgressionWheel() {
   {
     const idx = chords.map((_, i) => i);
     chordsRef.current = { list: chords, seq: idx.length % 2 ? [...idx, idx.length - 1] : idx, struct: structBars };
+    // the loop window follows the toggled section's current position (it moves as the structure is edited)
+    const ld = loopSec ? sections.insts.find(s => s.key === loopSec) : null;
+    loopRef.current = ld ? { from: ld.startBar, len: ld.nbars } : null;
   }
   const nudgeBpm = d => setBpmSt({ key: progId, val: Math.max(40, Math.min(220, effBpm + d)) });
 
@@ -2072,12 +2077,20 @@ export default function ProgressionWheel() {
       while (m.nextTime < m.ctx.currentTime + 0.1) {
         const L = patRef.current.length || 8, i = m.step % L;
         const { list, seq, struct } = chordsRef.current;
-        let chord, pillIdx = -1, label = null, instNow = "L1";
+        const loop = loopRef.current;
+        let chord, pillIdx = -1, label = null, instNow = "L1", structBar = -1;
         if (struct && struct.length) {
-          const bar = Math.floor(m.step / L) % struct.length, e = struct[bar];
+          // confine to the toggled section's bar window when a loop is active
+          const useLoop = loop && loop.len > 0 && loop.from + loop.len <= struct.length;
+          structBar = useLoop
+            ? loop.from + (Math.floor(m.step / L) % loop.len)
+            : Math.floor(m.step / L) % struct.length;
+          const e = struct[structBar];
           chord = e.chord;
           pillIdx = list.findIndex(c => c.name === e.chord.name);
-          label = `${e.inst} ${e.word} · bar ${bar + 1} of ${struct.length}`;
+          const lb = useLoop ? structBar - loop.from : structBar;
+          const tb = useLoop ? loop.len : struct.length;
+          label = `${e.inst} ${e.word} · bar ${lb + 1} of ${tb}${useLoop ? " · 🔁 loop" : ""}`;
           instNow = e.inst;
         } else {
           const bar = seq.length ? Math.floor(m.step / L) % seq.length : 0;
@@ -2102,7 +2115,7 @@ export default function ProgressionWheel() {
         if (mel) {
           let sym = null, mb = 0;
           if (struct && struct.length) {
-            const e = struct[Math.floor(m.step / L) % struct.length];
+            const e = struct[structBar];   // same bar the chord engine chose (honours the loop window)
             sym = e.inst; mb = e.mb;
           } else if (mel.bySym.L1) {
             sym = "L1";
@@ -2149,6 +2162,14 @@ export default function ProgressionWheel() {
     }, 20);
     metroRef.current = m;
     setPlaying(true);
+  };
+  // toggle a single-section loop: while on, all playback confines to this section and repeats.
+  // Turning it on also starts playback from the section if nothing is playing.
+  const toggleLoopSec = d => {
+    const on = loopSec !== d.key;
+    loopRef.current = on ? { from: d.startBar, len: d.nbars } : null;  // take effect on the very next tick
+    setLoopSec(on ? d.key : null);
+    if (on && !playing) startMetro(d.startBar);
   };
 
   /* ---- dice ---- */
@@ -2461,6 +2482,9 @@ export default function ProgressionWheel() {
         .arrch { font-family:'Fraunces',serif; font-size:17px; font-weight:650; color:#EAE2CC; margin-top:3px; line-height:1.55; }
         .arrnote { font-size:12.5px; color:#8B94A3; font-style:italic; margin-top:2px; line-height:1.4; }
         .mini.recstop { border-color:#E06A55; color:#F2B8AC; }
+        .mini.recbtn { border-color:#7A4A44; color:#E9B3AB; }
+        .mini.recbtn:hover { border-color:#E06A55; }
+        .mini.loopon { border-color:#6EA8FF; color:#BcD6FF; background:rgba(110,168,255,.12); }
         .recbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-top:7px; padding:7px 9px;
           background:#0C1119; border:1px solid #33475F; border-radius:10px; }
         .recmeter { flex:1; min-width:80px; height:8px; border-radius:999px; background:#232C3A; overflow:hidden; }
@@ -2970,6 +2994,11 @@ export default function ProgressionWheel() {
             </div>
           )}
 
+          <p className="keytag" style={{ marginTop:8 }}>
+            On each section: <b>▶</b> play from here · <b>🔁</b> loop just this section ·
+            <b> {recSource === "guitar" ? "🎸" : "🎤"} Rec</b> record a {recSource} line straight onto its
+            melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> on the Rhythm panel above.
+          </p>
           {(() => {
             const groups = [];
             sections.insts.forEach(d => {
@@ -3001,11 +3030,16 @@ export default function ProgressionWheel() {
                     <span className="arrreps"> · {d.nbars} bar{d.nbars > 1 ? "s" : ""}{d.usedC ? " · ②" : ""}</span></div>
                   <div className="row" style={{ gap:5 }}>
                     <button className="mini" onClick={() => startMetro(d.startBar)} title="Play from here">▶</button>
+                    <button className={"mini" + (loopSec === d.key ? " loopon" : "")} onClick={() => toggleLoopSec(d)}
+                      title={loopSec === d.key ? "Looping this section — tap to stop" : "Loop just this section on playback"}>
+                      🔁{loopSec === d.key ? " on" : ""}
+                    </button>
                     {donor && <button className="mini" onClick={() => copyMelody(donor.key, d.key)}>copy {donor.key}</button>}
                     {recSec === d.key
                       ? <button className="mini recstop" onClick={stopSecRec} title="Stop & transcribe onto this section">■ Stop</button>
-                      : <button className="mini" onClick={() => startSecRec(d.key)} disabled={!!recSec}
-                          title={`Record a ${recSource} line straight onto ${d.key}'s melody grid (overwrites it)`}>● Rec</button>}
+                      : <button className="mini recbtn" onClick={() => startSecRec(d.key)} disabled={!!recSec}
+                          title={`Record a ${recSource} line straight onto ${d.key}'s melody grid (overwrites it)`}>
+                          {recSource === "guitar" ? "🎸" : "🎤"} Rec</button>}
                     <button className="mini" onClick={() => setOpenSecs({ ...openSecs, [d.key]: !open })}>
                       {open ? "▾" : "▸"} melody{has ? " ●" : ""}
                     </button>
