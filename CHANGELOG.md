@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **Installed app now updates.** The PWA service worker was cache-first with a hand-set cache name, so
+  an installed Home-Screen app served a stale `index.html` forever — new versions never appeared. HTML
+  is now fetched **network-first** (falling back to cache offline), so a new build shows up on the next
+  online launch, and the build **stamps the cache name with the app version** automatically, so each
+  release invalidates the old cache. Static assets (React, icons) stay cache-first for speed and offline
+  use. Version bumped to 4.16.0.
 - **More reliable section recording.** The in-app **🎸 Rec** was capturing only intermittently. Two
   fixes: (1) the live meter/pitch readout no longer runs a full pitch-detection pass 60×/second on the
   main thread — that was starving the (main-thread) audio-capture callback and dropping input; it now
