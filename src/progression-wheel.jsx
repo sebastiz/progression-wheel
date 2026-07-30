@@ -11,9 +11,10 @@ const MAJOR_NUM = { I:[0,"maj"], ii:[2,"min"], iii:[4,"min"], IV:[5,"maj"], V:[7
 const MINOR_NUM = { i:[0,"min"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], VI:[9,"maj"], bII:[1,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
 const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", II:"S", IV:"S", IV7:"S", bVI:"S", v:"D", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
 const FUNC_MINOR = { i:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
-const QSUF = { maj:"", min:"m", dom:"7", maj7:"maj7", m7:"m7", maj9:"maj9", m9:"m9", dom9:"9" };
+const QSUF = { maj:"", min:"m", dom:"7", maj7:"maj7", m7:"m7", maj9:"maj9", m9:"m9", dom9:"9",
+  add9:"add9", madd9:"m(add9)", six:"6", m6:"m6", sus2:"sus2", sus4:"sus4", dom7sus4:"7sus4" };
 const chordName = (r, q) => SEMI_NAME[r] + (QSUF[q] || "");
-const famMin = q => q === "min" || q === "m7" || q === "m9";
+const famMin = q => q === "min" || q === "m7" || q === "m9" || q === "madd9" || q === "m6";
 
 /* ===== progressions ===== */
 const PROGRESSIONS = {};
@@ -342,7 +343,9 @@ function drumSound(ctx, t, ch, noise, dest) {
   }
 }
 const chordIvs = q => ({ dom:[0,4,7,10], maj7:[0,4,7,11], m7:[0,3,7,10],
-  maj9:[0,4,7,11,14], m9:[0,3,7,10,14], dom9:[0,4,7,10,14] }[q] || [0, q === "min" ? 3 : 4, 7]);
+  maj9:[0,4,7,11,14], m9:[0,3,7,10,14], dom9:[0,4,7,10,14],
+  add9:[0,4,7,14], madd9:[0,3,7,14], six:[0,4,7,9], m6:[0,3,7,9],
+  sus2:[0,2,7], sus4:[0,5,7], dom7sus4:[0,5,7,10] }[q] || [0, q === "min" ? 3 : 4, 7]);
 // Karplus–Strong plucked string: a short noise burst excites a tuned feedback
 // delay line with a damping low-pass — the physical model of a real plucked
 // string, far closer to an acoustic guitar than a filtered sawtooth.
@@ -711,8 +714,15 @@ const OPEN_SHAPES = {
   "9m7":[[-1,0,2,0,1,0],[0,0,2,0,1,0]], "11m7":[[-1,2,0,2,0,2],[0,2,0,3,0,4]],
 };
 function guitarShape(root, quality) {
+  // 9ths keep their explicit "add the 9th (note)" caption
   const q7 = { maj9:"maj7", m9:"m7", dom9:"dom" }[quality];
   if (q7) return { ...guitarShape(root, q7), add9: SEMI_NAME[(root + 2) % 12] };
+  // other extensions/alterations render on the nearest playable base shape with a how-to caption,
+  // rather than hand-authoring a voicing for every one (fine for a sketchpad; keeps the fretboard real)
+  const EXT = { add9:["maj","add the 9th"], madd9:["min","add the 9th"], six:["maj","add the 6th"],
+    m6:["min","add the 6th"], sus2:["maj","2nd replaces the 3rd"], sus4:["maj","4th replaces the 3rd"],
+    dom7sus4:["dom","4th replaces the 3rd"] }[quality];
+  if (EXT) return { ...guitarShape(root, EXT[0]), cap: EXT[1] };
   const open = OPEN_SHAPES[root + quality];
   if (open) return { frets: open[0], fingers: open[1], barre: null };
   const fe = ((root - 4 + 12) % 12) || 12, fa = ((root - 9 + 12) % 12) || 12;
@@ -753,7 +763,7 @@ function GuitarDiagram({ root, quality }) {
         );
       })}
       <text x={(sx(0) + sx(5)) / 2} y={H - 6} textAnchor="middle" fill="#8B94A3" fontSize="11" fontFamily="Archivo">
-        {sh.add9 ? `guitar · 7th shape — add the 9th (${sh.add9})` : "guitar"}</text>
+        {sh.add9 ? `guitar · 7th shape — add the 9th (${sh.add9})` : sh.cap ? `guitar · ${sh.cap}` : "guitar"}</text>
     </svg>
   );
 }
@@ -1515,8 +1525,10 @@ export default function ProgressionWheel() {
   const [selStruct, setSelStruct] = useState("");
   const [selSong, setSelSong] = useState("");
   const [sel, setSel] = useState(null);                       // baseName of chord being swapped
-  const [edits, setEdits] = useState({ key:"", map:{} });     // chord overrides
-  const [inserts, setInserts] = useState({ key:"", list:[] }); // inserted secondary dominants
+  const [edits, setEdits] = useState({ key:"", map:{} });     // chord root/quality swaps
+  const [inserts, setInserts] = useState({ key:"", list:[] }); // inserted / duplicated chords
+  const [quals, setQuals] = useState({ key:"", map:{} });     // per-chord quality override (beats the global colour)
+  const [removed, setRemoved] = useState({ key:"", list:[] }); // chord keys removed from the progression
   const [fingerIdx, setFingerIdx] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [curStep, setCurStep] = useState(-1);
@@ -1588,6 +1600,8 @@ export default function ProgressionWheel() {
   const editKey = progId + ":" + tonic;
   const ovMap = edits.key === editKey ? edits.map : {};
   const insList = inserts.key === editKey ? inserts.list : [];
+  const qmap = quals.key === editKey ? quals.map : {};
+  const remList = removed.key === editKey ? removed.list : [];
 
   // colour transform: sevenths mode re-voices every chord by rule
   const seventh = (q0, numeral) => {
@@ -1603,39 +1617,46 @@ export default function ProgressionWheel() {
     const base = prog.numerals.map((n, bi) => {
       const [off, q0] = numDefs[n];
       const root = (tonic + off) % 12, baseName = chordName(root, q0);
-      const ov = ovMap[baseName];
+      const ov = ovMap[baseName], qov = qmap[baseName];   // per-chord version override beats the colour rule
       if (!ov) {
-        const q = seventh(q0, n);
+        const q = qov || seventh(q0, n);
         return { numeral: n, root, quality: q, name: chordName(root, q), baseName, bi, func: fnMap[n] || "T" };
       }
       const offv = (ov.root - tonic + 12) % 12;
       const rn = Object.entries(numDefs).find(([, v]) => v[0] === offv && v[1] === ov.quality);
-      const q = seventh(ov.quality, rn ? rn[0] : null);
+      const q = qov || seventh(ov.quality, rn ? rn[0] : null);
       return { numeral: rn ? rn[0] : "•", root: ov.root, quality: q,
         name: chordName(ov.root, q), baseName, bi,
         func: rn ? (fnMap[rn[0]] || "T") : (ov.quality === "dom" ? "D" : "T") };
     });
     const out = [];
+    const emitInsert = (x, i) => {
+      const bn = "+" + x.tag + ":" + i, qov = qmap[bn];
+      const offv = (x.root - tonic + 12) % 12;
+      const rn = Object.entries(numDefs).find(([, v]) => v[0] === offv && v[1] === x.quality);
+      const q = qov || seventh(x.quality, rn ? rn[0] : null);
+      out.push({ numeral: x.tag, root: x.root, quality: q, name: chordName(x.root, q),
+        baseName: bn, inserted: true, insBefore: i, insRoot: x.root,
+        func: x.quality === "dom" ? "D" : (rn ? (fnMap[rn[0]] || "S") : "S") });
+    };
     base.forEach((c, i) => {
-      insList.filter(x => x.before === i).forEach(x => {
-        const offv = (x.root - tonic + 12) % 12;
-        const rn = Object.entries(numDefs).find(([, v]) => v[0] === offv && v[1] === x.quality);
-        const q = seventh(x.quality, rn ? rn[0] : null);
-        out.push({ numeral: x.tag, root: x.root, quality: q, name: chordName(x.root, q),
-          baseName: "+" + x.tag + ":" + i, inserted: true, insBefore: i, insRoot: x.root,
-          func: x.quality === "dom" ? "D" : (rn ? (fnMap[rn[0]] || "S") : "S") });
-      });
+      insList.filter(x => x.before === i).forEach(x => emitInsert(x, i));
       out.push(c);
     });
+    // trailing inserts (a chord duplicated/added after the last one) append at the end
+    insList.filter(x => x.before >= base.length).forEach(x => emitInsert(x, base.length));
+    // removed chords drop out (but never leave the progression empty)
+    let kept = out.filter(c => !remList.includes(chordKeyOf(c)));
+    if (!kept.length) kept = out;
     // user reordering: apply a saved permutation when its key set still matches
     const ord = order.key === editKey ? order.list : null;
-    if (ord && ord.length === out.length) {
-      const byKey = new Map(out.map(c => [chordKeyOf(c), c]));
+    if (ord && ord.length === kept.length) {
+      const byKey = new Map(kept.map(c => [chordKeyOf(c), c]));
       if (ord.every(k => byKey.has(k)) && new Set(ord).size === ord.length)
         return ord.map(k => byKey.get(k));
     }
-    return out;
-  }, [progId, tonic, edits, inserts, colour, order]);
+    return kept;
+  }, [progId, tonic, edits, inserts, quals, removed, colour, order]);
 
   const baseNames = useMemo(() => prog.numerals.map(n => {
     const [off, q] = numDefs[n];
@@ -1665,7 +1686,40 @@ export default function ProgressionWheel() {
     if (before >= 0) applyInsert(before, s.root, "dom", "V/" + String(s.target.numeral).replace(/7$/, ""));
   };
   const resetEdits = () => { setEdits({ key:"", map:{} }); setInserts({ key:"", list:[] }); setSel(null);
+    setQuals({ key:"", map:{} }); setRemoved({ key:"", list:[] });
     setOrder({ key:"", list:null }); setPillSel([]); };
+
+  /* ---- per-chord version (7th / add9 / sus / …), remove and duplicate ---- */
+  // version options for a chord, by family — [label, quality]
+  const versionsFor = c => {
+    const q = c.quality;
+    if (q === "dom" || q === "dom9" || q === "dom7sus4")
+      return [["7","dom"],["9","dom9"],["7sus4","dom7sus4"],["sus4","sus4"],["sus2","sus2"]];
+    if (famMin(q))
+      return [["min","min"],["m6","m6"],["m7","m7"],["m(add9)","madd9"],["m9","m9"],["sus2","sus2"],["sus4","sus4"]];
+    return [["maj","maj"],["6","six"],["maj7","maj7"],["7","dom"],["add9","add9"],["maj9","maj9"],["sus2","sus2"],["sus4","sus4"]];
+  };
+  const setChordQuality = (c, quality) => {
+    const next = { ...qmap };
+    if (qmap[c.baseName] === quality) delete next[c.baseName];   // tap the active one again → back to the colour rule
+    else next[c.baseName] = quality;
+    setQuals({ key: editKey, map: next });
+  };
+  const removeChord = c => {
+    const key = chordKeyOf(c);
+    if (chords.length <= 1) return;                               // keep at least one chord
+    if (c.inserted) {   // an inserted/duplicated chord: drop it from the insert list outright
+      setInserts({ key: editKey, list: insList.filter(x => !(x.before === c.insBefore && x.root === c.insRoot && x.tag === c.numeral)) });
+    } else {
+      setRemoved({ key: editKey, list: remList.includes(key) ? remList : [...remList, key] });
+    }
+    setFingerIdx(null);
+  };
+  const duplicateChord = c => {   // add a copy right after — makes the progression longer
+    const before = c.inserted ? c.insBefore : c.bi + 1;
+    setInserts({ key: editKey, list: [...insList, { before, root: c.root, quality: c.quality, tag: c.name }] });
+    setFingerIdx(null);
+  };
 
   /* ---- pill reorder: select several chords and move them as a group ---- */
   const togglePillSel = i => setPillSel(s => s.includes(i) ? s.filter(x => x !== i) : [...s, i].sort((a, b) => a - b));
@@ -2391,6 +2445,7 @@ export default function ProgressionWheel() {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
     const s = { name, progId, tonic, genre, emotion, colour, patId, drum, instr,
       bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
+      quals: qmap, removed: remList,
       order: order.key === editKey ? order.list : null };
     const list = [...(sketches || []).filter(x => x.name !== name), s];
     setSketches(list); setSketchName("");
@@ -2407,6 +2462,7 @@ export default function ProgressionWheel() {
     setSelStruct(s.selStruct || ""); setContrast(s.contrast || { id:"", sec:"C" });
     const eKey = s.progId + ":" + s.tonic;
     setEdits({ key:eKey, map:s.edits || {} }); setInserts({ key:eKey, list:s.inserts || [] });
+    setQuals({ key:eKey, map:s.quals || {} }); setRemoved({ key:eKey, list:s.removed || [] });
     setOrder(s.order ? { key:eKey, list:s.order } : { key:"", list:null }); setPillSel([]);
     setIoNote("Loaded “" + s.name + "”.");
   };
@@ -2493,6 +2549,11 @@ export default function ProgressionWheel() {
         .scoreempty { font-size:12.5px; color:#8B94A3; padding:8px 10px; }
         .pill i { font-style:normal; font-weight:600; font-size:10px; opacity:.65; margin-right:4px; }
         .fingcard { margin:10px 10px 4px; padding:10px 12px; background:#10151D; border:1px solid #2A3442; border-radius:12px; }
+        .verrow { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:9px 0 5px; }
+        .verlbl { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#8B94A3; margin-right:2px; }
+        .verbtn { background:transparent; border:1px solid #4A5668; color:#EDE7DA; border-radius:8px; padding:3px 10px; font-size:12.5px; cursor:pointer; font-family:inherit; }
+        .verbtn:hover { border-color:#EAE2CC; }
+        .verbtn.on { background:#EAE2CC; color:#171E28; font-weight:600; border-color:#EAE2CC; }
         .fingtitle { font-family:'Fraunces',serif; font-weight:650; font-size:18px; color:#EAE2CC; margin-bottom:2px; }
         .fingrow { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
         .legend { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:#8B94A3; margin-top:10px; }
@@ -2802,7 +2863,7 @@ export default function ProgressionWheel() {
           <div className="hint">
             {sel
               ? <>Tap any note on the wheel to replace <b>{(uniques.find(u => u.baseName === sel) || {}).name || sel}</b> — or tap it again to cancel.</>
-              : (Object.keys(ovMap).length || insList.length)
+              : (Object.keys(ovMap).length || insList.length || Object.keys(qmap).length || remList.length)
                 ? <>Progression edited. <button className="mini" onClick={resetEdits}>Reset</button></>
                 : <>Tap a chord to swap it. Tap a <b style={{ color:GOLD }}>gold</b> or <b style={{ color:LAV }}>lavender</b> node to pull it into the progression.</>}
           </div>
@@ -2833,16 +2894,39 @@ export default function ProgressionWheel() {
                 <button className="mini" onClick={straightenPills} title="Restore the original order">↺ Straighten</button>}
             </div>
           )}
-
-          {fingerIdx != null && chords[fingerIdx] && (
-            <div className="fingcard">
-              <div className="fingtitle">{chords[fingerIdx].name}</div>
-              <div className="fingrow">
-                <GuitarDiagram root={chords[fingerIdx].root} quality={chords[fingerIdx].quality} />
-                <PianoDiagram root={chords[fingerIdx].root} quality={chords[fingerIdx].quality} />
-              </div>
+          {!reorder && fingerIdx == null && (
+            <div className="hint" style={{ padding:"2px 10px 4px" }}>
+              Tap a chord above for its shapes and to change its <b>version</b> (7th · add9 · sus…),
+              <b> duplicate</b> it (longer) or <b>remove</b> it (shorter).
             </div>
           )}
+
+          {fingerIdx != null && chords[fingerIdx] && (() => {
+            const fc = chords[fingerIdx];
+            return (
+            <div className="fingcard">
+              <div className="row" style={{ justifyContent:"space-between", alignItems:"baseline", gap:8 }}>
+                <div className="fingtitle">{fc.name} <span style={{ color:"#8B94A3", fontSize:12, fontWeight:400 }}>{fc.numeral}</span></div>
+                <div className="row" style={{ gap:5 }}>
+                  <button className="mini" onClick={() => duplicateChord(fc)} title="Add a copy of this chord right after it — makes the progression longer">＋ Duplicate</button>
+                  <button className="mini" onClick={() => removeChord(fc)} disabled={chords.length <= 1}
+                    title="Remove this chord from the progression — makes it shorter">🗑 Remove</button>
+                </div>
+              </div>
+              <div className="verrow">
+                <span className="verlbl">Version</span>
+                {versionsFor(fc).map(([lbl, q]) => (
+                  <button key={q} className={"verbtn" + (fc.quality === q ? " on" : "")}
+                    onClick={() => setChordQuality(fc, q)} title={`Make this chord ${chordName(fc.root, q)}`}>{lbl}</button>
+                ))}
+              </div>
+              <div className="fingrow">
+                <GuitarDiagram root={fc.root} quality={fc.quality} />
+                <PianoDiagram root={fc.root} quality={fc.quality} />
+              </div>
+            </div>
+            );
+          })()}
 
           <div className="legend" style={{ padding:"0 10px 8px" }}>
             <span><i className="dot" style={{ background: FN_COLOR.T }} /> tonic</span>

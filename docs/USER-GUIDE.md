@@ -37,6 +37,13 @@ path with the loop order numbered above each chord.
 - **Reset** appears in the hint line whenever the progression has been edited.
 - **The pill strip** below shows the loop; tap a pill for guitar and piano fingerings (open shapes
   where they exist, barre shapes elsewhere; 9th chords show the 7th shape plus which note to add).
+- **Per-chord version.** That same card has a **Version** row that re-voices *just that chord* — the
+  triad, 6, 7 / maj7, add9, 9, sus2 / sus4 (minor chords offer m6 / m7 / m(add9) / m9; dominants
+  7 / 9 / 7sus4). The choice overrides the global Triads/7ths/9ths colour for that one chord and
+  carries through the name, wheel, playback, stave and MIDI. Tap the active version again to hand the
+  chord back to the global colour rule.
+- **Remove / duplicate a chord.** The card's **🗑 Remove** drops the chord (shorter progression) and
+  **＋ Duplicate** adds a copy right after it (longer). Both save with the sketch and clear on Reset.
 - **Reorder a group** — tap **⇄ Reorder** to switch the strip into selection mode. Tap several
   chords to select them, then **◀ Move / Move ▶** shifts the whole selection one step at a time (a
   non-adjacent selection collapses into a block at its destination). **↺ Straighten** restores the
