@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **Per-chord versions, plus remove and duplicate.** Tapping a chord in the strip still opens its
+  guitar + piano shapes, and now also lets you re-voice **that one chord** without touching the rest: a
+  **Version** row offers, by family, the triad, 6, 7 / maj7, add9, 9, and sus2 / sus4 (minor chords get
+  m6 / m7 / m(add9) / m9; dominants get 7 / 9 / 7sus4). The pick beats the global Triads/7ths/9ths
+  colour for that chord, and flows through the name, the wheel, playback, notation and MIDI. The card
+  also has **🗑 Remove** (drop the chord — makes the progression shorter) and **＋ Duplicate** (add a
+  copy right after — makes it longer), so you can shape the length chord by chord. New chord qualities
+  (add9, 6, m6, m(add9), sus2, sus4, 7sus4) are first-class across audio, the stave and fingerings; the
+  guitar diagram shows the nearest playable shape with a short "how to extend it" caption. Edits persist
+  in sketches and clear with Reset. Version bumped to 4.17.0.
 - **Installed app now updates.** The PWA service worker was cache-first with a hand-set cache name, so
   an installed Home-Screen app served a stale `index.html` forever — new versions never appeared. HTML
   is now fetched **network-first** (falling back to cache offline), so a new build shows up on the next
