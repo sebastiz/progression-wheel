@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **See every suggested progression for a genre, and pick a chord version from a dropdown.** Two
+  changes to make the sketchpad clearer. (1) A new **Suggested progressions** panel sits above the wheel
+  and lists *all* the classic loops behind the chosen Genre / Emotion — not just the one the app happened
+  to load — each as a tappable card showing its chords in the current key plus the Roman-numeral shape.
+  The loop on the wheel is highlighted; tap another card to load it. Before, the genre only silently
+  chose the top loop and the rest were invisible. (2) The per-chord **Version** control is now a
+  **dropdown** listing the modifications for that chord (7th · maj7 · 6 · add9 · 9 · sus2 · sus4, with the
+  minor and dominant families offering their own), keyed off the chord's base family so the list no
+  longer shifts under you when you pick one. Choosing a version updates the name, the wheel, playback,
+  notation, MIDI **and the guitar + piano fingering diagrams** live, and a **Reset** returns the chord to
+  the colour default. Version bumped to 4.18.0.
 - **Per-chord versions, plus remove and duplicate.** Tapping a chord in the strip still opens its
   guitar + piano shapes, and now also lets you re-voice **that one chord** without touching the rest: a
   **Version** row offers, by family, the triad, 6, 7 / maj7, add9, 9, and sus2 / sus4 (minor chords get
