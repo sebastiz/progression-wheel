@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+- **A Mode chooser, all 12 keys spelled properly, and a live diatonic-chord readout.** The **Key** box
+  now spells every key the way it's written — sharps in sharp keys (E, B, F♯…), flats in flat keys — and
+  a new **Mode** selector beside it sets the scale you write against: Ionian (major), Dorian, Phrygian,
+  Lydian, Mixolydian, Aeolian (minor) and Locrian. It defaults to **Auto**, following the loaded
+  progression's own mode, and the modes are grouped into "fits this progression" and "cross-family — adds
+  tension" so you can borrow colour deliberately. The chosen mode drives the **scale**, the pentatonic
+  highlight, the **wheel labels**, the melody grid, the landing-note guidance and the key label, all
+  correctly spelled. A new **Chords in <key>** row shows the mode's seven diatonic triads with their
+  Roman numerals — and their qualities shift from mode to mode (IV is major in Dorian, minor in Aeolian),
+  so you can see how a mode re-colours the harmony. Each classic progression now declares its true mode,
+  which fixes a long-standing quirk where modal loops (Dorian groove, Lydian bright, Phrygian dark,
+  Mixolydian rock) showed a plain major/minor scale instead of their own. The Mode override is saved with
+  sketches and resets to Auto when you pick a new progression. Note: chord *symbols* keep their existing
+  spelling; this pass fixes the key, scale and melody read-outs. Version bumped to 4.19.0.
 - **See every suggested progression for a genre, and pick a chord version from a dropdown.** Two
   changes to make the sketchpad clearer. (1) A new **Suggested progressions** panel sits above the wheel
   and lists *all* the classic loops behind the chosen Genre / Emotion — not just the one the app happened

@@ -12,9 +12,37 @@ const MINOR_NUM = { i:[0,"min"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,
 const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", II:"S", IV:"S", IV7:"S", bVI:"S", v:"D", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
 const FUNC_MINOR = { i:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
 const QSUF = { maj:"", min:"m", dom:"7", maj7:"maj7", m7:"m7", maj9:"maj9", m9:"m9", dom9:"9",
-  add9:"add9", madd9:"m(add9)", six:"6", m6:"m6", sus2:"sus2", sus4:"sus4", dom7sus4:"7sus4" };
+  add9:"add9", madd9:"m(add9)", six:"6", m6:"m6", sus2:"sus2", sus4:"sus4", dom7sus4:"7sus4", dim:"°", aug:"+" };
 const chordName = (r, q) => SEMI_NAME[r] + (QSUF[q] || "");
 const famMin = q => q === "min" || q === "m7" || q === "m9" || q === "madd9" || q === "m6";
+
+/* ===== modes ===== */
+// the seven diatonic modes: interval pattern from the tonic, a pentatonic subset for melody,
+// the major/minor *family* (which numeral map + function colours a progression uses), a short label,
+// and `rel` — the semitones from this mode's tonic up to its parent (relative-Ionian) major root.
+const MODES = {
+  ionian:     { label:"Major (Ionian)",  short:"major",      semis:[0,2,4,5,7,9,11], pent:[0,2,4,7,9],  family:"major", rel:0 },
+  dorian:     { label:"Dorian",          short:"Dorian",     semis:[0,2,3,5,7,9,10], pent:[0,3,5,7,10], family:"minor", rel:10 },
+  phrygian:   { label:"Phrygian",        short:"Phrygian",   semis:[0,1,3,5,7,8,10], pent:[0,3,5,7,10], family:"minor", rel:8 },
+  lydian:     { label:"Lydian",          short:"Lydian",     semis:[0,2,4,6,7,9,11], pent:[0,2,4,7,9],  family:"major", rel:7 },
+  mixolydian: { label:"Mixolydian",      short:"Mixolydian", semis:[0,2,4,5,7,9,10], pent:[0,2,4,7,9],  family:"major", rel:5 },
+  aeolian:    { label:"Minor (Aeolian)", short:"minor",      semis:[0,2,3,5,7,8,10], pent:[0,3,5,7,10], family:"minor", rel:3 },
+  locrian:    { label:"Locrian",         short:"Locrian",    semis:[0,1,3,5,6,8,10], pent:[0,3,5,8,10], family:"minor", rel:1 },
+};
+const MODE_IDS = Object.keys(MODES);
+// legacy progressions stored "major"/"minor"; map anything to a real mode id
+const modeId = m => MODES[m] ? m : (m === "minor" ? "aeolian" : "ionian");
+const modeFamily = m => MODES[modeId(m)].family;
+
+/* ===== note spelling ===== */
+// key-signature accidentals for each major key (>=0 sharps, <0 flats), picking the simpler enharmonic
+const MAJOR_SIG = { 0:0, 7:1, 2:2, 9:3, 4:4, 11:5, 6:6, 5:-1, 10:-2, 3:-3, 8:-4, 1:-5 };
+const SHARP_NAMES = ["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];
+const FLAT_NAMES  = ["C","D♭","D","E♭","E","F","G♭","G","A♭","A","B♭","B"];
+// does the key (tonic + mode) sit on the sharp side of the circle of fifths?
+const keyIsSharp = (tonic, mode) => (MAJOR_SIG[((tonic + MODES[modeId(mode)].rel) % 12 + 12) % 12] ?? 0) >= 0;
+// spell a pitch class the way this key would write it (sharps in sharp keys, flats in flat keys)
+const spell = (pc, tonic, mode) => (keyIsSharp(tonic, mode) ? SHARP_NAMES : FLAT_NAMES)[((pc % 12) + 12) % 12];
 
 /* ===== progressions ===== */
 const PROGRESSIONS = {};
@@ -31,17 +59,17 @@ const PROGRESSIONS = {};
  ["Stand by Me — Ben E. King","Earth Angel — The Penguins","Every Breath You Take — The Police","Unchained Melody — The Righteous Brothers","Blue Moon — The Marcels","Duke of Earl — Gene Chandler","Perfect — Ed Sheeran","Crocodile Rock — Elton John (verse)","Baby — Justin Bieber","Please Mr. Postman — The Marvelettes"]],
 ["jazz","The ii–V–I turnaround","major","ii V I vi",
  ["Fly Me to the Moon — Frank Sinatra","Autumn Leaves — jazz standard","Satin Doll — Duke Ellington","Blue Bossa — Kenny Dorham","All the Things You Are — Jerome Kern","Tune Up — Miles Davis","There Will Never Be Another You — standard","Honeysuckle Rose — Fats Waller","Perdido — Juan Tizol","I Got Rhythm — Gershwin (A section)"]],
-["mixo","Mixolydian rock","major","I bVII IV",
+["mixo","Mixolydian rock","mixolydian","I bVII IV",
  ["Sweet Home Alabama — Lynyrd Skynyrd","Sweet Child O' Mine — Guns N' Roses (verse)","Sympathy for the Devil — The Rolling Stones","Fortunate Son — CCR","Takin' Care of Business — BTO","Hey Jude — The Beatles (outro)","Gimme Some Lovin' — Spencer Davis Group","Won't Get Fooled Again — The Who","Cinnamon Girl — Neil Young","Tush — ZZ Top (chorus)"]],
 ["andalusian","The Andalusian descent","minor","i bVII bVI V",
  ["Hit the Road Jack — Ray Charles","Runaway — Del Shannon (verse)","Sultans of Swing — Dire Straits (verse)","Smooth — Santana ft. Rob Thomas","Happy Together — The Turtles (verse)","Stray Cat Strut — Stray Cats","Good Vibrations — The Beach Boys (verse)","Walk, Don't Run — The Ventures","Babe I'm Gonna Leave You — Led Zeppelin","California Dreamin' — The Mamas & the Papas (verse)"]],
 ["pachelbel","The Pachelbel sequence","major","I V vi iii IV I IV V",
  ["Canon in D — Pachelbel","Basket Case — Green Day (verse)","Don't Look Back in Anger — Oasis","Memories — Maroon 5","Go West — Pet Shop Boys","Streets of London — Ralph McTell","Graduation (Friends Forever) — Vitamin C","C U When U Get There — Coolio","Cryin' — Aerosmith (verse)","Hook — Blues Traveler"]],
-["dorian","Dorian groove","minor","i IV",
+["dorian","Dorian groove","dorian","i IV",
  ["Oye Como Va — Santana","So What — Miles Davis","Evil Ways — Santana","Mad World — Tears for Fears","Another Brick in the Wall — Pink Floyd","Get Lucky — Daft Punk","Moondance — Van Morrison","Riders on the Storm — The Doors","Who Will Save Your Soul — Jewel","Scarborough Fair — traditional"]],
-["lydian","Lydian bright","major","I II",
+["lydian","Lydian bright","lydian","I II",
  ["Flying in a Blue Dream — Joe Satriani","Man on the Moon — R.E.M. (chorus)","Jane — Jefferson Starship","Freewill — Rush","Here Comes My Girl — Tom Petty","Dreams — Fleetwood Mac","Blue Jay Way — The Beatles","Possibly Maybe — Björk","Theme from The Simpsons — Danny Elfman","Yoda's Theme — John Williams"]],
-["phrygian","Phrygian dark","minor","i bII",
+["phrygian","Phrygian dark","phrygian","i bII",
  ["Wherever I May Roam — Metallica","Sails of Charon — Scorpions","Symphony of Destruction — Megadeth","War — Joe Satriani","Pyramid Song — Radiohead","Remember Tomorrow — Iron Maiden","Space Truckin' — Deep Purple","White Rabbit — Jefferson Airplane","Entre Dos Aguas — Paco de Lucía","Duel of the Fates — John Williams"]],
 ["aeolian","Aeolian cadence","minor","i bVI bVII",
  ["All Along the Watchtower — Bob Dylan","Stairway to Heaven — Led Zeppelin (ascent)","My Heart Will Go On — Céline Dion","Somebody That I Used to Know — Gotye","Boulevard of Broken Dreams — Green Day","Californication — Red Hot Chili Peppers","Self Esteem — The Offspring","The Passenger — Iggy Pop","Runaway Train — Soul Asylum","Mad World — Gary Jules"]],
@@ -1520,6 +1548,7 @@ export default function ProgressionWheel() {
   const [tonic, setTonic] = useState(0);
   const [genre, setGenre] = useState("Pop");
   const [emotion, setEmotion] = useState(null);
+  const [mode, setMode] = useState(null);   // null = follow the loaded progression's own mode; else an override
   const [showPar, setShowPar] = useState(false);
   const [showSec, setShowSec] = useState(false);
   const [selStruct, setSelStruct] = useState("");
@@ -1595,8 +1624,10 @@ export default function ProgressionWheel() {
 
   const progId = force && PROGRESSIONS[force] ? force : progList[0];
   const prog = PROGRESSIONS[progId];
-  const numDefs = prog.mode === "minor" ? MINOR_NUM : MAJOR_NUM;
-  const fnMap = prog.mode === "minor" ? FUNC_MINOR : FUNC_MAJOR;
+  const numDefs = modeFamily(prog.mode) === "minor" ? MINOR_NUM : MAJOR_NUM;
+  const fnMap = modeFamily(prog.mode) === "minor" ? FUNC_MINOR : FUNC_MAJOR;
+  // the scale/tonal context — follows the progression's own mode unless the Mode selector overrides it
+  const effMode = mode || modeId(prog.mode);
   const editKey = progId + ":" + tonic;
   const ovMap = edits.key === editKey ? edits.map : {};
   const insList = inserts.key === editKey ? inserts.list : [];
@@ -1796,7 +1827,7 @@ export default function ProgressionWheel() {
     return moves;
   }, [insList, edits, baseNames, progId, tonic]);
 
-  const keyLabel = `${SEMI_NAME[tonic]} ${prog.mode === "minor" ? "minor" : "major"}`;
+  const keyLabel = `${spell(tonic, tonic, effMode)} ${MODES[effMode].short}`;
 
   /* ---- selected structure ---- */
   const structSel = useMemo(() => {
@@ -1814,8 +1845,8 @@ export default function ProgressionWheel() {
   const chords2 = useMemo(() => {
     if (!contrast.id || !PROGRESSIONS[contrast.id]) return null;
     const p2 = PROGRESSIONS[contrast.id];
-    const nd2 = p2.mode === "minor" ? MINOR_NUM : MAJOR_NUM;
-    const fn2 = p2.mode === "minor" ? FUNC_MINOR : FUNC_MAJOR;
+    const nd2 = modeFamily(p2.mode) === "minor" ? MINOR_NUM : MAJOR_NUM;
+    const fn2 = modeFamily(p2.mode) === "minor" ? FUNC_MINOR : FUNC_MAJOR;
     return p2.numerals.map((n, bi) => {
       const [off, q0] = nd2[n], r = (tonic + off) % 12, q = seventh(q0, n);
       return { numeral:n, root:r, quality:q, name:chordName(r, q), bi, c2:true, func:fn2[n] || "T" };
@@ -1865,9 +1896,23 @@ export default function ProgressionWheel() {
   const structBars = sections.bars;
 
   /* ---- melody scale + targets ---- */
-  const scaleSemis = prog.mode === "minor" ? [0,2,3,5,7,8,10] : [0,2,4,5,7,9,11];
+  const scaleSemis = MODES[effMode].semis;
   const scaleNotes = scaleSemis.map(s => (tonic + s) % 12);
-  const pentSemis = prog.mode === "minor" ? [0,3,5,7,10] : [0,2,4,7,9];
+  const pentSemis = MODES[effMode].pent;
+  // the diatonic triads of the current mode — their qualities shift from mode to mode (this is where a
+  // mode "redefines the chords": e.g. IV is major in Dorian but minor in Aeolian)
+  const modeTriads = useMemo(() => {
+    const sc = MODES[effMode].semis, RN = ["I","II","III","IV","V","VI","VII"];
+    return sc.map((s, i) => {
+      const third = ((sc[(i + 2) % 7] - s) % 12 + 12) % 12;
+      const fifth = ((sc[(i + 4) % 7] - s) % 12 + 12) % 12;
+      const q = third === 3 && fifth === 6 ? "dim" : third === 4 && fifth === 8 ? "aug"
+        : third === 3 ? "min" : "maj";
+      const rn = q === "min" ? RN[i].toLowerCase() : q === "dim" ? RN[i].toLowerCase() + "°"
+        : q === "aug" ? RN[i] + "+" : RN[i];
+      return { root: (tonic + s) % 12, q, rn };
+    });
+  }, [effMode, tonic]);
 
   /* ---- rhythm / metronome ---- */
   const patId = patSel.key === progId && PATTERNS[patSel.id] ? patSel.id : (PATTERN_DEFAULT[progId] || "pop");
@@ -2261,11 +2306,11 @@ export default function ProgressionWheel() {
     const ids = Object.keys(PROGRESSIONS);
     const id = ids[Math.floor(Math.random() * ids.length)];
     const key = Math.floor(Math.random() * 12);
-    setForce(id); setTonic(key); setGenre(null); setEmotion(null);
+    setForce(id); setTonic(key); setGenre(null); setEmotion(null); setMode(null);
     setEdits({ key:"", map:{} }); setSelStruct(""); setSelSong("");
     const eKey = id + ":" + key, p = PROGRESSIONS[id];
     if (Math.random() < 0.6 && p.numerals.length > 1) {   // sprinkle one secondary dominant
-      const nd = p.mode === "minor" ? MINOR_NUM : MAJOR_NUM;
+      const nd = modeFamily(p.mode) === "minor" ? MINOR_NUM : MAJOR_NUM;
       const idx = 1 + Math.floor(Math.random() * (p.numerals.length - 1));
       const [off] = nd[p.numerals[idx]];
       setInserts({ key:eKey, list:[{ before:idx, root:((key + off + 7) % 12), quality:"dom",
@@ -2448,7 +2493,7 @@ export default function ProgressionWheel() {
   useEffect(() => { if (realSounds && isGM(melInstr)) sfPrefetch(melInstr); }, [melInstr, realSounds]);
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
-    const s = { name, progId, tonic, genre, emotion, colour, patId, drum, instr,
+    const s = { name, progId, tonic, genre, emotion, mode, colour, patId, drum, instr,
       bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
       quals: qmap, removed: remList,
       order: order.key === editKey ? order.list : null };
@@ -2461,7 +2506,7 @@ export default function ProgressionWheel() {
     } catch (e) { setIoNote("Saved for this session only."); }
   };
   const loadSketch = s => {
-    setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion);
+    setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
     setColour(s.colour || "triads"); setInstr(s.instr); setDrum(s.drum);
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
     setSelStruct(s.selStruct || ""); setContrast(s.contrast || { id:"", sec:"C" });
@@ -2477,8 +2522,8 @@ export default function ProgressionWheel() {
   for (let p = 0; p < 12; p++) {
     const M = slotXY(p, R_MAJ), m = slotXY(p, R_MIN), maj = POS_MAJ[p], min = (maj + 9) % 12;
     dimLabels.push(
-      <text key={"M"+p} x={M.x} y={M.y+5} textAnchor="middle" className="dimlbl">{SEMI_NAME[maj]}</text>,
-      <text key={"m"+p} x={m.x} y={m.y+4} textAnchor="middle" className="dimlbl sm">{SEMI_NAME[min]}m</text>
+      <text key={"M"+p} x={M.x} y={M.y+5} textAnchor="middle" className="dimlbl">{spell(maj, tonic, effMode)}</text>,
+      <text key={"m"+p} x={m.x} y={m.y+4} textAnchor="middle" className="dimlbl sm">{spell(min, tonic, effMode)}m</text>
     );
   }
   const pathSegs = chords.slice(0, -1).map((c, i) => {
@@ -2672,22 +2717,37 @@ export default function ProgressionWheel() {
         {/* controls */}
         <div className="panel">
           <div className="row" style={{ gap:"8px 12px", alignItems:"flex-end" }}>
-            <label className="selwrap" style={{ flex:"0 0 66px" }}>
+            <label className="selwrap" style={{ flex:"0 0 62px" }}>
               <span className="lbl" style={{ margin:0 }}>Key</span>
               <select value={tonic} onChange={e => setTonic(+e.target.value)}>
-                {Object.entries(SEMI_NAME).map(([s, n]) => <option key={s} value={s}>{n}</option>)}
+                {Array.from({ length: 12 }, (_, s) => <option key={s} value={s}>{spell(s, s, effMode)}</option>)}
               </select>
             </label>
-            <label className="selwrap" style={{ flex:"1 1 96px" }}>
+            <label className="selwrap" style={{ flex:"1 1 108px" }}>
+              <span className="lbl" style={{ margin:0 }}>Mode</span>
+              <select value={mode || ""} onChange={e => setMode(e.target.value || null)}
+                title="The scale you write your melody against. Auto follows the loaded progression's own mode; cross-family modes recolour the scale and add tension against the chords.">
+                <option value="">Auto — {MODES[modeId(prog.mode)].short}</option>
+                <optgroup label="Fits this progression">
+                  {MODE_IDS.filter(id => MODES[id].family === modeFamily(prog.mode))
+                    .map(id => <option key={id} value={id}>{MODES[id].label}</option>)}
+                </optgroup>
+                <optgroup label="Cross-family — adds tension">
+                  {MODE_IDS.filter(id => MODES[id].family !== modeFamily(prog.mode))
+                    .map(id => <option key={id} value={id}>{MODES[id].label}</option>)}
+                </optgroup>
+              </select>
+            </label>
+            <label className="selwrap" style={{ flex:"1 1 88px" }}>
               <span className="lbl" style={{ margin:0 }}>Genre</span>
-              <select value={genre || ""} onChange={e => { setGenre(e.target.value || null); setForce(null); }}>
+              <select value={genre || ""} onChange={e => { setGenre(e.target.value || null); setForce(null); setMode(null); }}>
                 <option value="">Any</option>
                 {CATEGORIES[0].items.map(it => <option key={it.name} value={it.name}>{it.name}</option>)}
               </select>
             </label>
-            <label className="selwrap" style={{ flex:"1 1 96px" }}>
+            <label className="selwrap" style={{ flex:"1 1 88px" }}>
               <span className="lbl" style={{ margin:0 }}>Emotion</span>
-              <select value={emotion || ""} onChange={e => { setEmotion(e.target.value || null); setForce(null); }}>
+              <select value={emotion || ""} onChange={e => { setEmotion(e.target.value || null); setForce(null); setMode(null); }}>
                 <option value="">Any</option>
                 {CATEGORIES[1].items.map(it => <option key={it.name} value={it.name}>{it.name}</option>)}
               </select>
@@ -2736,14 +2796,14 @@ export default function ProgressionWheel() {
               }}>
                 <option value="">Choose…</option>
                 <optgroup label="Borrowed (mode mixture)">
-                  {(BORROWED[prog.mode] || []).map(([tag, off, q, where], i) => {
+                  {(BORROWED[modeFamily(prog.mode)] || []).map(([tag, off, q, where], i) => {
                     const r = (tonic + off) % 12;
                     return <option key={"b"+i} value={`ins~${Math.min(where, prog.numerals.length-1)}~${r}~${q},${tag}`}>
                       {chordName(r, q)} ({tag}) — before the loop restarts</option>;
                   })}
                 </optgroup>
                 <optgroup label="Chromatic mediants (common-tone jumps)">
-                  {(MEDIANTS[prog.mode] || []).map(([tag, off, q, where], i) => {
+                  {(MEDIANTS[modeFamily(prog.mode)] || []).map(([tag, off, q, where], i) => {
                     const r = (tonic + off) % 12;
                     return <option key={"m"+i} value={`ins~${Math.min(where, prog.numerals.length-1)}~${r}~${q},${tag}`}>
                       {chordName(r, q)} ({tag}) — right after the tonic</option>;
@@ -2813,15 +2873,15 @@ export default function ProgressionWheel() {
           <div className="progchips">
             {progList.map(id => {
               const p = PROGRESSIONS[id];
-              const defs = p.mode === "minor" ? MINOR_NUM : MAJOR_NUM;
+              const defs = modeFamily(p.mode) === "minor" ? MINOR_NUM : MAJOR_NUM;
               const names = p.numerals.map(n => { const [off, q] = defs[n]; return chordName((tonic + off) % 12, q); });
               return (
                 <button key={id} className={"progchip" + (id === progId ? " on" : "")}
-                  onClick={() => { setForce(id); setFingerIdx(null); setSel(null); }}
+                  onClick={() => { setForce(id); setMode(null); setFingerIdx(null); setSel(null); }}
                   title={`Load "${p.label}" — ${p.numerals.join(" ")}`}>
                   <span className="pcname">{p.label}</span>
                   <span className="pcnums">{names.join(" · ")}</span>
-                  <span className="pcrn">{p.numerals.join(" ")} · {p.mode}</span>
+                  <span className="pcrn">{p.numerals.join(" ")} · {MODES[modeId(p.mode)].short}</span>
                 </button>
               );
             })}
@@ -3138,9 +3198,18 @@ export default function ProgressionWheel() {
           <div className="row" style={{ marginTop:10, gap:6, alignItems:"center" }}>
             <span className="keytag" style={{ marginRight:2 }}>Scale ({keyLabel}):</span>
             {scaleSemis.map((s, i) => (
-              <span key={i} className={"npill nsm" + (pentSemis.includes(s) ? " npent" : "")}>{SEMI_NAME[(tonic + s) % 12]}</span>
+              <span key={i} className={"npill nsm" + (pentSemis.includes(s) ? " npent" : "")}>{spell((tonic + s) % 12, tonic, effMode)}</span>
             ))}
             <button className="mini" onClick={() => setShowLand(v => !v)}>{showLand ? "Hide" : "Landing notes"}</button>
+          </div>
+
+          <div className="row" style={{ marginTop:8, gap:6, alignItems:"center" }}>
+            <span className="keytag" style={{ marginRight:2 }}>Chords in {keyLabel}:</span>
+            {modeTriads.map((t, i) => (
+              <span key={i} className="npill nsm" title={`${t.rn} — ${chordName(t.root, t.q)}`}>
+                <b style={{ color:GOLD }}>{t.rn}</b> {spell(t.root, tonic, effMode)}{QSUF[t.q]}
+              </span>
+            ))}
           </div>
           {showLand && (
             <div style={{ marginTop:4 }}>
@@ -3150,7 +3219,7 @@ export default function ProgressionWheel() {
                 return (
                   <div key={i} className="mrow">
                     <span className="pill" style={{ background: FN_COLOR[c.func], color: FN_TEXT[c.func] }}>{c.name}</span>
-                    {tones.map((t, j) => <span key={j} className={"npill nsm" + (!scaleNotes.includes(t) ? " nchrom" : "")}>{SEMI_NAME[t]}</span>)}
+                    {tones.map((t, j) => <span key={j} className={"npill nsm" + (!scaleNotes.includes(t) ? " nchrom" : "")}>{spell(t, tonic, effMode)}</span>)}
                     {chrom && <span className="keytag" style={{ color:GOLD }}>chromatic</span>}
                   </div>
                 );
@@ -3283,7 +3352,7 @@ export default function ProgressionWheel() {
                             <select value={pick.start}
                               onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, start:+e.target.value } })}>
                               {scaleSemis.map((s, i) => (
-                                <option key={i} value={i}>{SEMI_NAME[(tonic + s) % 12]} · degree {i + 1}</option>
+                                <option key={i} value={i}>{spell((tonic + s) % 12, tonic, effMode)} · degree {i + 1}</option>
                               ))}
                             </select>
                           </div>
@@ -3329,7 +3398,7 @@ export default function ProgressionWheel() {
                       </div>
                       {[...scaleSemis.keys()].reverse().map(deg => (
                         <div key={deg} className="mline" style={{ gridTemplateColumns:`36px repeat(${cols}, minmax(15px,1fr))` }}>
-                          <span className="mnote">{SEMI_NAME[(tonic + scaleSemis[deg]) % 12]}</span>
+                          <span className="mnote">{spell((tonic + scaleSemis[deg]) % 12, tonic, effMode)}</span>
                           {Array.from({ length: cols }, (_, c) => {
                             const onA = (sec.flat[c] || []).includes(deg);
                             const onB = !!(sec.flatB && (sec.flatB[c] || []).includes(deg));
@@ -3414,7 +3483,7 @@ export default function ProgressionWheel() {
               <div className="struct" style={{ borderTop:"none", marginTop:6, paddingTop:2 }}>
                 <div className="stname">{prog.songs[i]}</div>
                 {line && <div className="arrch" style={{ marginTop:4 }}>{line}</div>}
-                {k != null && <div className="arrnote">in {SEMI_NAME[k]} {prog.mode === "minor" ? "minor" : "major"} —
+                {k != null && <div className="arrnote">in {spell(k, k, prog.mode)} {MODES[modeId(prog.mode)].short} —
                   key follows the most common recording or transcription; some originals sit between keys or use altered tunings.</div>}
               </div>
             );
