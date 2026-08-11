@@ -1619,25 +1619,28 @@ export default function ProgressionWheel() {
       const root = (tonic + off) % 12, baseName = chordName(root, q0);
       const ov = ovMap[baseName], qov = qmap[baseName];   // per-chord version override beats the colour rule
       if (!ov) {
-        const q = qov || seventh(q0, n);
-        return { numeral: n, root, quality: q, name: chordName(root, q), baseName, bi, func: fnMap[n] || "T" };
+        const defQ = seventh(q0, n);            // quality with no per-chord override (the colour-rule default)
+        const q = qov || defQ;
+        return { numeral: n, root, quality: q, name: chordName(root, q), baseName, bi, func: fnMap[n] || "T", fam: q0, defQ };
       }
       const offv = (ov.root - tonic + 12) % 12;
       const rn = Object.entries(numDefs).find(([, v]) => v[0] === offv && v[1] === ov.quality);
-      const q = qov || seventh(ov.quality, rn ? rn[0] : null);
+      const defQ = seventh(ov.quality, rn ? rn[0] : null);
+      const q = qov || defQ;
       return { numeral: rn ? rn[0] : "•", root: ov.root, quality: q,
         name: chordName(ov.root, q), baseName, bi,
-        func: rn ? (fnMap[rn[0]] || "T") : (ov.quality === "dom" ? "D" : "T") };
+        func: rn ? (fnMap[rn[0]] || "T") : (ov.quality === "dom" ? "D" : "T"), fam: ov.quality, defQ };
     });
     const out = [];
     const emitInsert = (x, i) => {
       const bn = "+" + x.tag + ":" + i, qov = qmap[bn];
       const offv = (x.root - tonic + 12) % 12;
       const rn = Object.entries(numDefs).find(([, v]) => v[0] === offv && v[1] === x.quality);
-      const q = qov || seventh(x.quality, rn ? rn[0] : null);
+      const defQ = seventh(x.quality, rn ? rn[0] : null);
+      const q = qov || defQ;
       out.push({ numeral: x.tag, root: x.root, quality: q, name: chordName(x.root, q),
         baseName: bn, inserted: true, insBefore: i, insRoot: x.root,
-        func: x.quality === "dom" ? "D" : (rn ? (fnMap[rn[0]] || "S") : "S") });
+        func: x.quality === "dom" ? "D" : (rn ? (fnMap[rn[0]] || "S") : "S"), fam: x.quality, defQ });
     };
     base.forEach((c, i) => {
       insList.filter(x => x.before === i).forEach(x => emitInsert(x, i));
@@ -1690,19 +1693,21 @@ export default function ProgressionWheel() {
     setOrder({ key:"", list:null }); setPillSel([]); };
 
   /* ---- per-chord version (7th / add9 / sus / …), remove and duplicate ---- */
-  // version options for a chord, by family — [label, quality]
+  // the modifications offered for a chord, keyed off its stable base family (major / minor / dominant)
+  // so the list never shifts under the user when they pick a version — see the Version dropdown below
   const versionsFor = c => {
-    const q = c.quality;
-    if (q === "dom" || q === "dom9" || q === "dom7sus4")
-      return [["7","dom"],["9","dom9"],["7sus4","dom7sus4"],["sus4","sus4"],["sus2","sus2"]];
+    const q = c.fam || c.quality;
+    if (q === "dom")
+      return [["7 (dominant)","dom"],["9","dom9"],["7sus4","dom7sus4"],["sus4","sus4"],["sus2","sus2"]];
     if (famMin(q))
-      return [["min","min"],["m6","m6"],["m7","m7"],["m(add9)","madd9"],["m9","m9"],["sus2","sus2"],["sus4","sus4"]];
-    return [["maj","maj"],["6","six"],["maj7","maj7"],["7","dom"],["add9","add9"],["maj9","maj9"],["sus2","sus2"],["sus4","sus4"]];
+      return [["min (triad)","min"],["m6","m6"],["m7","m7"],["m(add9)","madd9"],["m9","m9"],["sus2","sus2"],["sus4","sus4"]];
+    return [["maj (triad)","maj"],["6","six"],["maj7","maj7"],["7","dom"],["add9","add9"],["maj9","maj9"],["sus2","sus2"],["sus4","sus4"]];
   };
-  const setChordQuality = (c, quality) => {
-    const next = { ...qmap };
-    if (qmap[c.baseName] === quality) delete next[c.baseName];   // tap the active one again → back to the colour rule
-    else next[c.baseName] = quality;
+  // set an explicit per-chord version (beats the global colour rule); clearing returns to the colour default
+  const setChordQuality = (c, quality) =>
+    setQuals({ key: editKey, map: { ...qmap, [c.baseName]: quality } });
+  const clearChordQuality = c => {
+    const next = { ...qmap }; delete next[c.baseName];
     setQuals({ key: editKey, map: next });
   };
   const removeChord = c => {
@@ -2554,6 +2559,8 @@ export default function ProgressionWheel() {
         .verbtn { background:transparent; border:1px solid #4A5668; color:#EDE7DA; border-radius:8px; padding:3px 10px; font-size:12.5px; cursor:pointer; font-family:inherit; }
         .verbtn:hover { border-color:#EAE2CC; }
         .verbtn.on { background:#EAE2CC; color:#171E28; font-weight:600; border-color:#EAE2CC; }
+        .versel { background:#171E28; border:1px solid #4A5668; color:#EDE7DA; border-radius:8px; padding:4px 8px; font-size:13px; font-family:inherit; cursor:pointer; min-width:160px; }
+        .versel:hover { border-color:#EAE2CC; }
         .fingtitle { font-family:'Fraunces',serif; font-weight:650; font-size:18px; color:#EAE2CC; margin-bottom:2px; }
         .fingrow { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
         .legend { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:#8B94A3; margin-top:10px; }
@@ -2629,6 +2636,14 @@ export default function ProgressionWheel() {
         .sgrplbl { font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; margin-top:7px; }
         .mbar { font-size:11px; font-weight:700; border-radius:6px; text-align:center; padding:2px 0; margin:0 1px 2px; white-space:nowrap; overflow:hidden; }
         .sug { border-top:1px solid #232C3A; padding:10px 2px 8px; margin-top:8px; }
+        .progchips { display:flex; flex-wrap:wrap; gap:8px; }
+        .progchip { flex:1 1 150px; text-align:left; background:#171E28; border:1px solid #2A3442; border-radius:12px;
+          padding:8px 11px; cursor:pointer; font-family:inherit; color:#EDE7DA; display:flex; flex-direction:column; gap:2px; }
+        .progchip:hover { border-color:#4A5668; }
+        .progchip.on { border-color:#EAE2CC; background:#1E2632; box-shadow:inset 0 0 0 1px #EAE2CC55; }
+        .progchip .pcname { font-size:13.5px; font-weight:600; }
+        .progchip .pcnums { font-size:12.5px; color:#EAE2CC; }
+        .progchip .pcrn { font-size:11px; color:#8B94A3; letter-spacing:.03em; }
         .sugname { font-size:14px; font-weight:600; line-height:1.35; }
         .sugsongs { font-size:12.5px; color:#B9C0CC; margin-top:4px; line-height:1.5; }
       `}</style>
@@ -2785,6 +2800,34 @@ export default function ProgressionWheel() {
           </div>
         </div>
 
+        {/* suggested chord progressions for the chosen genre / feeling */}
+        <div className="panel">
+          <div className="progtitle" style={{ fontSize:17 }}>
+            Suggested progressions{genre ? ` · ${genre}` : ""}{emotion ? ` · ${emotion}` : ""}
+          </div>
+          <p className="keytag" style={{ margin:"3px 0 8px" }}>
+            {genre || emotion
+              ? "The classic loops behind this style — tap one to load it onto the wheel. The top pick is showing now."
+              : "Pick a genre or a feeling above to narrow these, or tap any loop to load it."}
+          </p>
+          <div className="progchips">
+            {progList.map(id => {
+              const p = PROGRESSIONS[id];
+              const defs = p.mode === "minor" ? MINOR_NUM : MAJOR_NUM;
+              const names = p.numerals.map(n => { const [off, q] = defs[n]; return chordName((tonic + off) % 12, q); });
+              return (
+                <button key={id} className={"progchip" + (id === progId ? " on" : "")}
+                  onClick={() => { setForce(id); setFingerIdx(null); setSel(null); }}
+                  title={`Load "${p.label}" — ${p.numerals.join(" ")}`}>
+                  <span className="pcname">{p.label}</span>
+                  <span className="pcnums">{names.join(" · ")}</span>
+                  <span className="pcrn">{p.numerals.join(" ")} · {p.mode}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* the wheel */}
         <div className="panel" style={{ padding:6 }}>
           <svg className="wheelsvg" viewBox="0 0 640 640" key={svgKey}>
@@ -2913,13 +2956,26 @@ export default function ProgressionWheel() {
                     title="Remove this chord from the progression — makes it shorter">🗑 Remove</button>
                 </div>
               </div>
-              <div className="verrow">
-                <span className="verlbl">Version</span>
-                {versionsFor(fc).map(([lbl, q]) => (
-                  <button key={q} className={"verbtn" + (fc.quality === q ? " on" : "")}
-                    onClick={() => setChordQuality(fc, q)} title={`Make this chord ${chordName(fc.root, q)}`}>{lbl}</button>
-                ))}
-              </div>
+              {(() => {
+                const opts = versionsFor(fc);
+                const overridden = qmap[fc.baseName] != null;
+                // if a saved override sits outside this family's list, keep it selectable
+                const extra = overridden && !opts.some(([, q]) => q === fc.quality)
+                  ? [[QSUF[fc.quality] || fc.quality, fc.quality]] : [];
+                return (
+                  <div className="verrow">
+                    <span className="verlbl">Version</span>
+                    <select className="versel" value={overridden ? fc.quality : "__def"}
+                      onChange={e => e.target.value === "__def" ? clearChordQuality(fc) : setChordQuality(fc, e.target.value)}>
+                      <option value="__def">Default — {chordName(fc.root, fc.defQ || fc.quality)}</option>
+                      {[...opts, ...extra].map(([lbl, q]) => (
+                        <option key={q} value={q}>{lbl} — {chordName(fc.root, q)}</option>
+                      ))}
+                    </select>
+                    {overridden && <button className="mini" onClick={() => clearChordQuality(fc)}>Reset</button>}
+                  </div>
+                );
+              })()}
               <div className="fingrow">
                 <GuitarDiagram root={fc.root} quality={fc.quality} />
                 <PianoDiagram root={fc.root} quality={fc.quality} />
