@@ -2901,6 +2901,20 @@ export default function ProgressionWheel() {
             </defs>
             <circle cx={CX} cy={CY} r={R_MAJ} fill="none" stroke="#232C3A" strokeWidth="1.2" />
             <circle cx={CX} cy={CY} r={R_MIN} fill="none" stroke="#232C3A" strokeWidth="1.2" />
+            {/* the current mode's diatonic chords, haloed on the wheel — this set shifts as the Mode changes */}
+            {modeTriads.map((t, i) => {
+              const minorish = t.q === "min" || t.q === "dim";
+              const n = minorish ? slotXY(posOf((t.root + 3) % 12), R_MIN) : slotXY(posOf(t.root), R_MAJ);
+              const tonicNode = i === 0;
+              return (
+                <g key={"scn"+i}>
+                  <circle cx={n.x} cy={n.y} r={minorish ? 20 : 25}
+                    fill={tonicNode ? GOLD : "#EAE2CC"} opacity={tonicNode ? 0.20 : 0.09} />
+                  {tonicNode && <circle cx={n.x} cy={n.y} r={minorish ? 20 : 25}
+                    fill="none" stroke={GOLD} strokeWidth="1.6" opacity="0.85" />}
+                </g>
+              );
+            })}
             {dimLabels}
             {Array.from({ length:12 }, (_, p) => {
               const maj = POS_MAJ[p], min = (maj + 9) % 12;
@@ -3048,6 +3062,7 @@ export default function ProgressionWheel() {
             <span><i className="dot" style={{ background: FN_COLOR.T }} /> tonic</span>
             <span><i className="dot" style={{ background: FN_COLOR.S }} /> subdominant</span>
             <span><i className="dot" style={{ background: FN_COLOR.D }} /> dominant</span>
+            <span style={{ color:GOLD }}><i className="dot" style={{ background: GOLD, opacity:0.5 }} /> chords in {keyLabel}</span>
             {showPar && <span style={{ color:LAV }}><i className="dash" /> parallel</span>}
             {showSec && <span style={{ color:GOLD }}><i className="dash" /> secondary dominant</span>}
             <span>numbers = order in the loop</span>
