@@ -12,8 +12,10 @@
   Roman numerals — and their qualities shift from mode to mode (IV is major in Dorian, minor in Aeolian),
   so you can see how a mode re-colours the harmony. Each classic progression now declares its true mode,
   which fixes a long-standing quirk where modal loops (Dorian groove, Lydian bright, Phrygian dark,
-  Mixolydian rock) showed a plain major/minor scale instead of their own. The Mode override is saved with
-  sketches and resets to Auto when you pick a new progression. Note: chord *symbols* keep their existing
+  Mixolydian rock) showed a plain major/minor scale instead of their own. The **circle of fifths now
+  haloes the mode's seven diatonic chords** (the tonic ringed in gold), so changing the Mode visibly
+  lights up a different set of chords on the wheel — not just the read-outs below it. The Mode override is
+  saved with sketches and resets to Auto when you pick a new progression. Note: chord *symbols* keep their existing
   spelling; this pass fixes the key, scale and melody read-outs. Version bumped to 4.19.0.
 - **See every suggested progression for a genre, and pick a chord version from a dropdown.** Two
   changes to make the sketchpad clearer. (1) A new **Suggested progressions** panel sits above the wheel
