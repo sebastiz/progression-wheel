@@ -1913,6 +1913,19 @@ export default function ProgressionWheel() {
       return { root: (tonic + s) % 12, q, rn };
     });
   }, [effMode, tonic]);
+  // is a chord part of the current mode's diatonic palette? (root in the scale AND its major/minor
+  // triad matches the mode's chord on that degree) — used to flag borrowed / chromatic chords
+  const modeChordQ = useMemo(() => {
+    const m = {}; modeTriads.forEach(t => { m[t.root] = t.q; }); return m;
+  }, [modeTriads]);
+  const triadFamily = q => famMin(q) ? "min" : q === "dim" ? "dim" : q === "aug" ? "aug"
+    : (q === "sus2" || q === "sus4" || q === "dom7sus4") ? "sus" : "maj";
+  const chordInMode = c => {
+    const dq = modeChordQ[((c.root % 12) + 12) % 12];
+    if (dq == null) return false;              // root sits outside the scale entirely
+    const fam = triadFamily(c.quality);
+    return fam === "sus" ? true : fam === dq;  // a sus chord has no 3rd — in-key if its root is
+  };
 
   /* ---- rhythm / metronome ---- */
   const patId = patSel.key === progId && PATTERNS[patSel.id] ? patSel.id : (PATTERN_DEFAULT[progId] || "pop");
@@ -2589,6 +2602,8 @@ export default function ProgressionWheel() {
         .pill { border-radius:8px; padding:3px 9px; font-size:13.5px; font-weight:700; line-height:1.3; cursor:pointer; }
         .pill.pillon { outline:2px dashed #FFFFFF; outline-offset:2px; }
         .pill.pillplay { outline:2px solid ${GOLD}; outline-offset:2px; }
+        .pill.pillout { box-shadow: inset 0 0 0 1.5px ${GOLD}; }
+        .pill .outmark { color:${GOLD}; font-size:10px; vertical-align:super; margin-left:2px; -webkit-text-stroke:0.4px #10151D; }
         .pill.pillsel { outline:2px solid #6EA8FF; outline-offset:2px; box-shadow:0 0 0 4px rgba(110,168,255,.18); }
         .mini.miniOn { border-color:#6EA8FF; color:#BcD6FF; }
         .mini:disabled { opacity:.4; cursor:default; }
@@ -2972,6 +2987,10 @@ export default function ProgressionWheel() {
                   <text x={n.x} y={n.y+5} textAnchor="middle" fill={FN_TEXT[c.func]} fontSize={c.name.length > 3 ? 11 : famMin(c.quality) ? 14 : 16}
                     fontWeight="700" fontFamily="Archivo" style={{ pointerEvents:"none" }}>{c.name}</text>
                   <text x={n.x} y={n.y - r - 7} textAnchor="middle" fill="#8B94A3" fontSize="11" fontFamily="Archivo">{c.steps.join("·")}</text>
+                  {!chordInMode(c) && <>
+                    <circle cx={n.x + r * 0.72} cy={n.y - r * 0.72} r={6} fill={GOLD} stroke="#10151D" strokeWidth="1.6" />
+                    <title>{c.name} sits outside {keyLabel} — borrowed / chromatic colour</title>
+                  </>}
                 </g>
               );
             })}
@@ -2987,14 +3006,19 @@ export default function ProgressionWheel() {
 
           <div className="stripline">
             <span className="strippills">
-              {chords.map((c, i) => (
+              {chords.map((c, i) => {
+                const outside = !chordInMode(c);
+                return (
                 <span key={i} className={"pill" + (!reorder && fingerIdx === i ? " pillon" : "")
-                    + (reorder && pillSel.includes(i) ? " pillsel" : "") + (playing && curBar === i ? " pillplay" : "")}
+                    + (reorder && pillSel.includes(i) ? " pillsel" : "") + (playing && curBar === i ? " pillplay" : "")
+                    + (outside ? " pillout" : "")}
                   style={{ background: FN_COLOR[c.func], color: FN_TEXT[c.func] }}
+                  title={outside ? `${c.name} sits outside ${keyLabel} — borrowed / chromatic colour` : undefined}
                   onClick={() => reorder ? togglePillSel(i) : setFingerIdx(fingerIdx === i ? null : i)}>
-                  <i>{c.numeral}</i>{c.name}
+                  <i>{c.numeral}</i>{c.name}{outside && <b className="outmark">✦</b>}
                 </span>
-              ))}
+                );
+              })}
             </span>
             <button className={"mini" + (reorder ? " miniOn" : "")} style={{ marginLeft:"auto" }}
               onClick={toggleReorder} title="Select several chords and shift them as a group">
@@ -3063,6 +3087,7 @@ export default function ProgressionWheel() {
             <span><i className="dot" style={{ background: FN_COLOR.S }} /> subdominant</span>
             <span><i className="dot" style={{ background: FN_COLOR.D }} /> dominant</span>
             <span style={{ color:GOLD }}><i className="dot" style={{ background: GOLD, opacity:0.5 }} /> chords in {keyLabel}</span>
+            <span style={{ color:GOLD }}><b style={{ fontSize:11 }}>✦</b> outside the key</span>
             {showPar && <span style={{ color:LAV }}><i className="dash" /> parallel</span>}
             {showSec && <span style={{ color:GOLD }}><i className="dash" /> secondary dominant</span>}
             <span>numbers = order in the loop</span>

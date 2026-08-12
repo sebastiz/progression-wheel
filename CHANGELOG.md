@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **See the mode on the wheel, and spot chords that leave the key.** Two changes make the Mode selector
+  visible where you're actually looking — the circle of fifths. (1) The wheel now **haloes the mode's
+  seven diatonic chords**, with the tonic ringed in gold, so switching Mode visibly relights a different
+  set of chords on the wheel instead of only changing the read-outs below it. (2) Any chord in your loop
+  that falls **outside the current mode's palette** is flagged — a gold **✦** on its chord pill and a gold
+  badge on its wheel node (both with a "sits outside <key>" tooltip). Diatonic loops show no flags;
+  borrowed chords, secondary dominants, or a deliberately cross-family Mode light up so the tension is
+  visible rather than implied. A legend ties the halo and the ✦ to the current key. Version bumped to 4.20.0.
 - **A Mode chooser, all 12 keys spelled properly, and a live diatonic-chord readout.** The **Key** box
   now spells every key the way it's written — sharps in sharp keys (E, B, F♯…), flats in flat keys — and
   a new **Mode** selector beside it sets the scale you write against: Ionian (major), Dorian, Phrygian,
@@ -12,9 +20,7 @@
   Roman numerals — and their qualities shift from mode to mode (IV is major in Dorian, minor in Aeolian),
   so you can see how a mode re-colours the harmony. Each classic progression now declares its true mode,
   which fixes a long-standing quirk where modal loops (Dorian groove, Lydian bright, Phrygian dark,
-  Mixolydian rock) showed a plain major/minor scale instead of their own. The **circle of fifths now
-  haloes the mode's seven diatonic chords** (the tonic ringed in gold), so changing the Mode visibly
-  lights up a different set of chords on the wheel — not just the read-outs below it. The Mode override is
+  Mixolydian rock) showed a plain major/minor scale instead of their own. The Mode override is
   saved with sketches and resets to Auto when you pick a new progression. Note: chord *symbols* keep their existing
   spelling; this pass fixes the key, scale and melody read-outs. Version bumped to 4.19.0.
 - **See every suggested progression for a genre, and pick a chord version from a dropdown.** Two
