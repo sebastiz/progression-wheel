@@ -28,6 +28,10 @@ const MODES = {
   mixolydian: { label:"Mixolydian",      short:"Mixolydian", semis:[0,2,4,5,7,9,10], pent:[0,2,4,7,9],  family:"major", rel:5 },
   aeolian:    { label:"Minor (Aeolian)", short:"minor",      semis:[0,2,3,5,7,8,10], pent:[0,3,5,7,10], family:"minor", rel:3 },
   locrian:    { label:"Locrian",         short:"Locrian",    semis:[0,1,3,5,6,8,10], pent:[0,3,5,8,10], family:"minor", rel:1 },
+  // Phrygian dominant — the flamenco / "Spanish" scale (Phrygian with a major 3rd): 1 ♭2 3 4 5 ♭6 ♭7.
+  // Not a mode of the major scale (it's the 5th mode of harmonic minor); spelled off the Phrygian parent.
+  flamenco:   { label:"Phrygian dominant (Flamenco)", short:"Flamenco", semis:[0,1,4,5,7,8,10], pent:[0,1,4,5,7], family:"minor", rel:8,
+    hint:"The classic flamenco loop is the Andalusian cadence (i–♭VII–♭VI–V). Load “The Andalusian descent” from the Suggested progressions (Emotion → Sad or Dark / Tense), or build one by tapping the gold-haloed chords." },
 };
 const MODE_IDS = Object.keys(MODES);
 // legacy progressions stored "major"/"minor"; map anything to a real mode id
@@ -2926,7 +2930,8 @@ export default function ProgressionWheel() {
               </div>
             ) : (
               <p className="keytag" style={{ margin:"6px 0 0" }}>
-                No catalogue loop for {MODES[effMode].short} yet — build one by tapping the gold-haloed chords on the wheel.
+                {MODES[effMode].hint
+                  || `No catalogue loop for ${MODES[effMode].short} yet — build one by tapping the gold-haloed chords on the wheel.`}
               </p>
             )}
           </div>
