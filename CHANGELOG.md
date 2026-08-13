@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **Dance and Latin genres get progressions that actually move.** Many of the new dance/EDM genres were
+  defaulting to bare two-chord modal vamps (House → `i–IV`, etc.) or all landing on the same loop — so
+  they read as "no chord changes." Five new progressions with real movement fix that: **The EDM anthem**
+  (vi–IV–I–V), **Deep-house groove** (i–iv–♭VII–♭III), **The festival lift** (i–♭VII–♭VI–♭VII),
+  **Future-bass swell** (IV–V–iii–vi) and **Latin montuno** (i–iv–V). Every Dance & Electronic and Latin
+  genre is re-mapped so its default loop has three or four chords and neighbouring genres differ (House →
+  EDM anthem, Deep House → Deep-house groove, Trance → festival lift, Techno → Aeolian cadence, Future
+  Bass → future-bass swell, Salsa/Latin → montuno, and so on). The short modal vamps are still available
+  as secondary picks for genres that genuinely stay static (minimal techno, ambient). Version bumped to
+  4.24.0.
 - **A much bigger genre list.** The Genre picker grows from 9 to **106 genres**, organised into nine
   families shown as labelled groups in the dropdown: **Pop & Rock** (15 — Pop, Classic/Hard/Arena Rock,
   Alternative, Grunge, Britpop, Punk, Pop-Punk, Emo, Shoegaze, Post-Rock, Psychedelic, Surf), **Metal &
