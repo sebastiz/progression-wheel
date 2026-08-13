@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Picking a Mode now offers a matching progression for the wheel.** Choosing a Mode set the scale and
+  the haloed chord palette, but it never gave you an actual *progression* to start from — the loop on the
+  circle of fifths stayed whatever you had. Now, when the Mode you pick doesn't match the loop on the
+  wheel, a suggestion appears: the catalogue's characteristic loop(s) for that mode (e.g. Lydian →
+  **Lydian bright**, Dorian → **Dorian groove**), each a one-tap button that loads the loop onto the wheel
+  and snaps the Mode back to Auto so chords and scale line up. Modes with no catalogue loop yet (Locrian)
+  say so and point you at the haloed chords to build your own. Version bumped to 4.21.0.
 - **See the mode on the wheel, and spot chords that leave the key.** Two changes make the Mode selector
   visible where you're actually looking — the circle of fifths. (1) The wheel now **haloes the mode's
   seven diatonic chords**, with the tonic ringed in gold, so switching Mode visibly relights a different

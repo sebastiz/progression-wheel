@@ -1628,6 +1628,9 @@ export default function ProgressionWheel() {
   const fnMap = modeFamily(prog.mode) === "minor" ? FUNC_MINOR : FUNC_MAJOR;
   // the scale/tonal context — follows the progression's own mode unless the Mode selector overrides it
   const effMode = mode || modeId(prog.mode);
+  // catalogue loops whose own mode is the chosen one — offered when the wheel's loop doesn't match the mode
+  const modeMatchProgs = Object.keys(PROGRESSIONS).filter(id => modeId(PROGRESSIONS[id].mode) === effMode);
+  const loadedMatchesMode = modeId(prog.mode) === effMode;
   const editKey = progId + ":" + tonic;
   const ovMap = edits.key === editKey ? edits.map : {};
   const insList = inserts.key === editKey ? inserts.list : [];
@@ -2696,6 +2699,7 @@ export default function ProgressionWheel() {
         .sgrplbl { font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; margin-top:7px; }
         .mbar { font-size:11px; font-weight:700; border-radius:6px; text-align:center; padding:2px 0; margin:0 1px 2px; white-space:nowrap; overflow:hidden; }
         .sug { border-top:1px solid #232C3A; padding:10px 2px 8px; margin-top:8px; }
+        .modehint { margin:10px 0 0; padding:10px 12px; border:1px solid ${GOLD}55; background:#1B2130; border-radius:12px; }
         .progchips { display:flex; flex-wrap:wrap; gap:8px; }
         .progchip { flex:1 1 150px; text-align:left; background:#171E28; border:1px solid #2A3442; border-radius:12px;
           padding:8px 11px; cursor:pointer; font-family:inherit; color:#EDE7DA; display:flex; flex-direction:column; gap:2px; }
@@ -2902,6 +2906,31 @@ export default function ProgressionWheel() {
             })}
           </div>
         </div>
+
+        {/* when a Mode override doesn't match the loop on the wheel, offer a progression for that mode */}
+        {mode && !loadedMatchesMode && (
+          <div className="modehint">
+            <span className="keytag" style={{ color:GOLD }}>
+              You picked <b>{MODES[effMode].short}</b>, but the loop on the wheel is <b>{MODES[modeId(prog.mode)].short}</b>.
+            </span>
+            {modeMatchProgs.length ? (
+              <div className="row" style={{ gap:6, marginTop:6, alignItems:"center", flexWrap:"wrap" }}>
+                <span className="keytag">Load a {MODES[effMode].short} progression onto the wheel:</span>
+                {modeMatchProgs.map(id => (
+                  <button key={id} className="verbtn"
+                    onClick={() => { setForce(id); setMode(null); setFingerIdx(null); setSel(null); }}
+                    title={`${PROGRESSIONS[id].label} — ${PROGRESSIONS[id].numerals.join(" ")}`}>
+                    {PROGRESSIONS[id].label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="keytag" style={{ margin:"6px 0 0" }}>
+                No catalogue loop for {MODES[effMode].short} yet — build one by tapping the gold-haloed chords on the wheel.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* the wheel */}
         <div className="panel" style={{ padding:6 }}>
