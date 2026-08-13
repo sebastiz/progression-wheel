@@ -6,9 +6,12 @@
   scale, the pentatonic highlight, the melody grid, the landing notes and the key label, and lists the
   mode's diatonic chords (a major tonic **I**, the ♭II major, a ♭VI **augmented**, and so on) both in the
   "Chords in <key>" row and as gold halos on the circle of fifths — all correctly spelled (E Flamenco →
-  E F G♯ A B C D). It has no preset loop of its own, so its suggestion points you at the **Andalusian
-  cadence** (i–♭VII–♭VI–V), the classic flamenco progression already in the catalogue. Version bumped to
-  4.22.0.
+  E F G♯ A B C D). It ships with a dedicated **Flamenco cadence** loop — the Andalusian descent resolving
+  to a major Phrygian tonic, **iv–♭III–♭II–I** (Am–G–F–E in E) — so picking the mode offers it as a
+  one-tap load onto the wheel, just like the other modal loops. True to the style, the ♭III (G major,
+  with its natural 3rd) is marked as sitting *outside* the strict Phrygian-dominant scale: that's
+  flamenco's signature modal mixture, not a mistake. The loop is also filed under Metal, Cinematic and
+  Dark / Tense for discovery. Version bumped to 4.22.0.
 - **Picking a Mode now offers a matching progression for the wheel.** Choosing a Mode set the scale and
   the haloed chord palette, but it never gave you an actual *progression* to start from — the loop on the
   circle of fifths stayed whatever you had. Now, when the Mode you pick doesn't match the loop on the

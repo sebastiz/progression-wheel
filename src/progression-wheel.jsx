@@ -8,9 +8,9 @@ const posOf = s => (s * 7) % 12;
 const MAJOR_NUM = { I:[0,"maj"], ii:[2,"min"], iii:[4,"min"], IV:[5,"maj"], V:[7,"maj"], vi:[9,"min"],
   II:[2,"maj"], v:[7,"min"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"],
   I7:[0,"dom"], II7:[2,"dom"], III7:[4,"dom"], IV7:[5,"dom"], V7:[7,"dom"], VI7:[9,"dom"] };
-const MINOR_NUM = { i:[0,"min"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], VI:[9,"maj"], bII:[1,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
+const MINOR_NUM = { i:[0,"min"], I:[0,"maj"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], VI:[9,"maj"], bII:[1,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
 const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", II:"S", IV:"S", IV7:"S", bVI:"S", v:"D", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
-const FUNC_MINOR = { i:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
+const FUNC_MINOR = { i:"T", I:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
 const QSUF = { maj:"", min:"m", dom:"7", maj7:"maj7", m7:"m7", maj9:"maj9", m9:"m9", dom9:"9",
   add9:"add9", madd9:"m(add9)", six:"6", m6:"m6", sus2:"sus2", sus4:"sus4", dom7sus4:"7sus4", dim:"°", aug:"+" };
 const chordName = (r, q) => SEMI_NAME[r] + (QSUF[q] || "");
@@ -67,6 +67,8 @@ const PROGRESSIONS = {};
  ["Sweet Home Alabama — Lynyrd Skynyrd","Sweet Child O' Mine — Guns N' Roses (verse)","Sympathy for the Devil — The Rolling Stones","Fortunate Son — CCR","Takin' Care of Business — BTO","Hey Jude — The Beatles (outro)","Gimme Some Lovin' — Spencer Davis Group","Won't Get Fooled Again — The Who","Cinnamon Girl — Neil Young","Tush — ZZ Top (chorus)"]],
 ["andalusian","The Andalusian descent","minor","i bVII bVI V",
  ["Hit the Road Jack — Ray Charles","Runaway — Del Shannon (verse)","Sultans of Swing — Dire Straits (verse)","Smooth — Santana ft. Rob Thomas","Happy Together — The Turtles (verse)","Stray Cat Strut — Stray Cats","Good Vibrations — The Beach Boys (verse)","Walk, Don't Run — The Ventures","Babe I'm Gonna Leave You — Led Zeppelin","California Dreamin' — The Mamas & the Papas (verse)"]],
+["flamenco","Flamenco cadence","flamenco","iv bIII bII I",
+ ["Bamboléo — Gipsy Kings","Djobi Djoba — Gipsy Kings","Baila Me — Gipsy Kings","Entre Dos Aguas — Paco de Lucía","Malagueña — Ernesto Lecuona","Asturias (Leyenda) — Isaac Albéniz","Misirlou — Dick Dale","Hava Nagila — traditional","Ojos Así — Shakira","Concierto de Aranjuez — Joaquín Rodrigo"]],
 ["pachelbel","The Pachelbel sequence","major","I V vi iii IV I IV V",
  ["Canon in D — Pachelbel","Basket Case — Green Day (verse)","Don't Look Back in Anger — Oasis","Memories — Maroon 5","Go West — Pet Shop Boys","Streets of London — Ralph McTell","Graduation (Friends Forever) — Vitamin C","C U When U Get There — Coolio","Cryin' — Aerosmith (verse)","Hook — Blues Traveler"]],
 ["dorian","Dorian groove","dorian","i IV",
@@ -95,14 +97,14 @@ const CATEGORIES = [
     { name:"Folk / Country", progs:["three","axis","doowop","dorian"] },
     { name:"Punk", progs:["three","axis"] },
     { name:"Funk / R&B", progs:["dorian","axis","mixo"] },
-    { name:"Metal", progs:["phrygian","axisMinor","mixo"] },
-    { name:"Cinematic", progs:["lydian","aeolian","pachelbel"] } ]},
+    { name:"Metal", progs:["phrygian","axisMinor","mixo","flamenco"] },
+    { name:"Cinematic", progs:["lydian","aeolian","pachelbel","flamenco"] } ]},
   { group:"Emotion", items:[
     { name:"Happy", progs:["axis","three","doowop"] },
     { name:"Sad", progs:["axisMinor","andalusian"] },
     { name:"Nostalgic", progs:["doowop","pachelbel"] },
     { name:"Hopeful", progs:["pachelbel","axis","lydian"] },
-    { name:"Dark / Tense", progs:["andalusian","axisMinor","phrygian"] },
+    { name:"Dark / Tense", progs:["andalusian","axisMinor","phrygian","flamenco"] },
     { name:"Epic", progs:["mixo","axisMinor","pachelbel"] },
     { name:"Romantic", progs:["jazz","doowop"] },
     { name:"Dreamy", progs:["lydian","dorian","pachelbel"] },
