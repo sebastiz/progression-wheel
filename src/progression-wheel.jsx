@@ -88,17 +88,97 @@ const SONG_KEYS = {
   mixo:[2,2,4,7,0,5,4,9,2,7], andalusian:[9,10,2,9,6,0,2,9,9,1], pachelbel:[2,3,0,11,0,0,0,0,9,9],
 };
 
+// genres are curated, ordered picks from the progression catalogue, grouped into families so the
+// dropdown stays navigable (rendered as <optgroup>s). progList[0] — the first id — is the default pick.
+const GENRE_GROUPS = [
+  ["Pop & Rock", [
+    ["Pop", ["axis","doowop","axisMinor","pachelbel"]],
+    ["Rock", ["three","mixo","axis"]],
+    ["Classic Rock", ["three","mixo","blues"]],
+    ["Hard Rock", ["three","mixo","axisMinor"]],
+    ["Arena Rock", ["axis","three","pachelbel"]],
+    ["Alternative / Indie", ["axis","axisMinor","mixo"]],
+    ["Grunge", ["axisMinor","mixo","three"]],
+    ["Britpop", ["axis","pachelbel","mixo"]],
+    ["Punk", ["three","axis"]],
+    ["Pop-Punk", ["axis","three","doowop"]],
+    ["Emo", ["axis","axisMinor","pachelbel"]],
+    ["Shoegaze", ["aeolian","lydian","dorian"]],
+    ["Post-Rock", ["lydian","aeolian","pachelbel"]],
+    ["Psychedelic", ["mixo","dorian","lydian"]],
+    ["Surf Rock", ["three","andalusian","mixo"]],
+  ]],
+  ["Metal & Heavy", [
+    ["Metal", ["phrygian","axisMinor","mixo","flamenco"]],
+    ["Heavy Metal", ["phrygian","aeolian","mixo"]],
+    ["Thrash Metal", ["phrygian","aeolian","axisMinor"]],
+    ["Doom / Sludge", ["aeolian","axisMinor","phrygian"]],
+    ["Power Metal", ["axisMinor","mixo","pachelbel"]],
+    ["Prog Metal", ["dorian","phrygian","lydian"]],
+    ["Nu-Metal", ["phrygian","aeolian","dorian"]],
+  ]],
+  ["Blues, Soul & Funk", [
+    ["Blues", ["blues","three"]],
+    ["Rhythm & Blues", ["blues","doowop","axis"]],
+    ["Soul", ["doowop","jazz","axis"]],
+    ["Motown", ["doowop","axis","jazz"]],
+    ["Funk", ["dorian","mixo","axis"]],
+    ["Disco", ["axis","dorian","doowop"]],
+    ["Gospel", ["doowop","blues","jazz"]],
+    ["Neo-Soul", ["jazz","dorian","doowop"]],
+  ]],
+  ["Jazz & Standards", [
+    ["Jazz", ["jazz","doowop"]],
+    ["Swing", ["jazz","blues"]],
+    ["Bebop", ["jazz"]],
+    ["Bossa Nova", ["jazz","dorian"]],
+    ["Cool Jazz", ["jazz","dorian"]],
+    ["Ragtime", ["blues","three","jazz"]],
+    ["Lounge", ["jazz","doowop","pachelbel"]],
+  ]],
+  ["Folk, Country & Roots", [
+    ["Folk", ["three","axis","dorian","doowop"]],
+    ["Country", ["three","axis","doowop"]],
+    ["Bluegrass", ["three","blues","axis"]],
+    ["Americana", ["three","axis","mixo"]],
+    ["Rockabilly", ["blues","three","doowop"]],
+    ["Celtic", ["dorian","mixo","aeolian"]],
+    ["Singer-Songwriter", ["axis","pachelbel","doowop"]],
+  ]],
+  ["Electronic", [
+    ["EDM / Dance", ["axis","axisMinor","dorian"]],
+    ["House", ["dorian","axis","aeolian"]],
+    ["Techno", ["aeolian","dorian","phrygian"]],
+    ["Trance", ["axis","aeolian","pachelbel"]],
+    ["Synthwave", ["axisMinor","aeolian","mixo"]],
+    ["Ambient", ["lydian","aeolian","dorian"]],
+    ["Lo-Fi / Chillhop", ["jazz","dorian","doowop"]],
+    ["Hip-Hop", ["dorian","aeolian","jazz"]],
+    ["Trap", ["aeolian","phrygian","axisMinor"]],
+    ["Drum & Bass", ["dorian","aeolian","phrygian"]],
+  ]],
+  ["World & Modal", [
+    ["Flamenco", ["flamenco","andalusian","phrygian"]],
+    ["Latin", ["andalusian","jazz","dorian"]],
+    ["Salsa", ["jazz","dorian","andalusian"]],
+    ["Reggae", ["axis","dorian","three"]],
+    ["Ska", ["three","axis","blues"]],
+    ["Afrobeat", ["dorian","mixo","axis"]],
+    ["Middle Eastern", ["phrygian","flamenco","andalusian"]],
+    ["Klezmer", ["flamenco","phrygian","andalusian"]],
+    ["Bollywood", ["mixo","dorian","andalusian"]],
+  ]],
+  ["Cinematic & Classical", [
+    ["Cinematic / Film", ["lydian","aeolian","pachelbel"]],
+    ["Epic / Trailer", ["axisMinor","aeolian","mixo"]],
+    ["Horror / Tension", ["phrygian","aeolian","andalusian"]],
+    ["Classical", ["pachelbel","three","jazz"]],
+    ["Baroque", ["pachelbel","jazz"]],
+    ["Dreamscore", ["lydian","dorian","pachelbel"]],
+  ]],
+];
 const CATEGORIES = [
-  { group:"Genre", items:[
-    { name:"Pop", progs:["axis","doowop","axisMinor","pachelbel"] },
-    { name:"Rock", progs:["three","mixo","axis"] },
-    { name:"Blues", progs:["blues","three"] },
-    { name:"Jazz", progs:["jazz","doowop"] },
-    { name:"Folk / Country", progs:["three","axis","doowop","dorian"] },
-    { name:"Punk", progs:["three","axis"] },
-    { name:"Funk / R&B", progs:["dorian","axis","mixo"] },
-    { name:"Metal", progs:["phrygian","axisMinor","mixo","flamenco"] },
-    { name:"Cinematic", progs:["lydian","aeolian","pachelbel","flamenco"] } ]},
+  { group:"Genre", items: GENRE_GROUPS.flatMap(([, list]) => list.map(([name, progs]) => ({ name, progs }))) },
   { group:"Emotion", items:[
     { name:"Happy", progs:["axis","three","doowop"] },
     { name:"Sad", progs:["axisMinor","andalusian"] },
@@ -2767,7 +2847,11 @@ export default function ProgressionWheel() {
               <span className="lbl" style={{ margin:0 }}>Genre</span>
               <select value={genre || ""} onChange={e => { setGenre(e.target.value || null); setForce(null); setMode(null); }}>
                 <option value="">Any</option>
-                {CATEGORIES[0].items.map(it => <option key={it.name} value={it.name}>{it.name}</option>)}
+                {GENRE_GROUPS.map(([cat, list]) => (
+                  <optgroup key={cat} label={cat}>
+                    {list.map(([name]) => <option key={name} value={name}>{name}</option>)}
+                  </optgroup>
+                ))}
               </select>
             </label>
             <label className="selwrap" style={{ flex:"1 1 88px" }}>
