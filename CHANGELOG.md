@@ -1,17 +1,21 @@
 # Changelog
 
 ## Unreleased
-- **A much bigger genre list.** The Genre picker grows from 9 to **69 genres**, organised into eight
-  families shown as labelled groups in the dropdown: **Pop & Rock** (Pop, Classic/Hard/Arena Rock,
+- **A much bigger genre list.** The Genre picker grows from 9 to **106 genres**, organised into nine
+  families shown as labelled groups in the dropdown: **Pop & Rock** (15 — Pop, Classic/Hard/Arena Rock,
   Alternative, Grunge, Britpop, Punk, Pop-Punk, Emo, Shoegaze, Post-Rock, Psychedelic, Surf), **Metal &
   Heavy** (Heavy/Thrash/Doom/Power/Prog/Nu-Metal), **Blues, Soul & Funk** (R&B, Soul, Motown, Funk,
   Disco, Gospel, Neo-Soul), **Jazz & Standards** (Swing, Bebop, Bossa Nova, Cool Jazz, Ragtime, Lounge),
   **Folk, Country & Roots** (Country, Bluegrass, Americana, Rockabilly, Celtic, Singer-Songwriter),
-  **Electronic** (EDM, House, Techno, Trance, Synthwave, Ambient, Lo-Fi, Hip-Hop, Trap, D&B), **World &
-  Modal** (Flamenco, Latin, Salsa, Reggae, Ska, Afrobeat, Middle Eastern, Klezmer, Bollywood) and
-  **Cinematic & Classical** (Film, Trailer, Horror, Classical, Baroque, Dreamscore). Each genre is a
-  curated, ordered set of the catalogue's progressions, so the wheel and the Suggested progressions panel
-  reflect the style you pick. Version bumped to 4.23.0.
+  **Dance & Electronic** (29 — EDM, House + Deep/Tech/Progressive/Future/Tropical House, Nu-Disco, Techno,
+  Minimal, Trance, Psytrance, Big Room, Electro House, Dubstep, Future Bass, Drum & Bass, Jungle, UK
+  Garage, Breakbeat, Hardstyle, Eurodance, Synthwave, Ambient, Downtempo/Trip-Hop, IDM, Lo-Fi, Hip-Hop,
+  Trap), **Latin** (20 — Salsa, Son Cubano, Mambo, Cha-Cha-Chá, Rumba, Timba, Latin Jazz, Samba, Bossa
+  Nova, Bachata, Merengue, Cumbia, Reggaetón, Latin Pop, Tango, Bolero, Mariachi, Norteño, Forró), **World
+  & Modal** (Flamenco, Reggae, Ska, Afrobeat, Middle Eastern, Klezmer, Bollywood) and **Cinematic &
+  Classical** (Film, Trailer, Horror, Classical, Baroque, Dreamscore). Each genre is a curated, ordered
+  set of the catalogue's progressions, so the wheel and the Suggested progressions panel reflect the
+  style you pick. Version bumped to 4.23.0.
 - **Flamenco mode (Phrygian dominant).** The Mode selector gains the **Phrygian dominant** scale — the
   flamenco / "Spanish" sound: 1 ♭2 3 4 5 ♭6 ♭7 (Phrygian with a major 3rd). Selecting it re-colours the
   scale, the pentatonic highlight, the melody grid, the landing notes and the key label, and lists the
