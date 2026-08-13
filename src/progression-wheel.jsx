@@ -8,9 +8,9 @@ const posOf = s => (s * 7) % 12;
 const MAJOR_NUM = { I:[0,"maj"], ii:[2,"min"], iii:[4,"min"], IV:[5,"maj"], V:[7,"maj"], vi:[9,"min"],
   II:[2,"maj"], v:[7,"min"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"],
   I7:[0,"dom"], II7:[2,"dom"], III7:[4,"dom"], IV7:[5,"dom"], V7:[7,"dom"], VI7:[9,"dom"] };
-const MINOR_NUM = { i:[0,"min"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], VI:[9,"maj"], bII:[1,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
+const MINOR_NUM = { i:[0,"min"], I:[0,"maj"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], VI:[9,"maj"], bII:[1,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
 const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", II:"S", IV:"S", IV7:"S", bVI:"S", v:"D", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
-const FUNC_MINOR = { i:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
+const FUNC_MINOR = { i:"T", I:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
 const QSUF = { maj:"", min:"m", dom:"7", maj7:"maj7", m7:"m7", maj9:"maj9", m9:"m9", dom9:"9",
   add9:"add9", madd9:"m(add9)", six:"6", m6:"m6", sus2:"sus2", sus4:"sus4", dom7sus4:"7sus4", dim:"°", aug:"+" };
 const chordName = (r, q) => SEMI_NAME[r] + (QSUF[q] || "");
@@ -28,6 +28,10 @@ const MODES = {
   mixolydian: { label:"Mixolydian",      short:"Mixolydian", semis:[0,2,4,5,7,9,10], pent:[0,2,4,7,9],  family:"major", rel:5 },
   aeolian:    { label:"Minor (Aeolian)", short:"minor",      semis:[0,2,3,5,7,8,10], pent:[0,3,5,7,10], family:"minor", rel:3 },
   locrian:    { label:"Locrian",         short:"Locrian",    semis:[0,1,3,5,6,8,10], pent:[0,3,5,8,10], family:"minor", rel:1 },
+  // Phrygian dominant — the flamenco / "Spanish" scale (Phrygian with a major 3rd): 1 ♭2 3 4 5 ♭6 ♭7.
+  // Not a mode of the major scale (it's the 5th mode of harmonic minor); spelled off the Phrygian parent.
+  flamenco:   { label:"Phrygian dominant (Flamenco)", short:"Flamenco", semis:[0,1,4,5,7,8,10], pent:[0,1,4,5,7], family:"minor", rel:8,
+    hint:"The classic flamenco loop is the Andalusian cadence (i–♭VII–♭VI–V). Load “The Andalusian descent” from the Suggested progressions (Emotion → Sad or Dark / Tense), or build one by tapping the gold-haloed chords." },
 };
 const MODE_IDS = Object.keys(MODES);
 // legacy progressions stored "major"/"minor"; map anything to a real mode id
@@ -63,6 +67,8 @@ const PROGRESSIONS = {};
  ["Sweet Home Alabama — Lynyrd Skynyrd","Sweet Child O' Mine — Guns N' Roses (verse)","Sympathy for the Devil — The Rolling Stones","Fortunate Son — CCR","Takin' Care of Business — BTO","Hey Jude — The Beatles (outro)","Gimme Some Lovin' — Spencer Davis Group","Won't Get Fooled Again — The Who","Cinnamon Girl — Neil Young","Tush — ZZ Top (chorus)"]],
 ["andalusian","The Andalusian descent","minor","i bVII bVI V",
  ["Hit the Road Jack — Ray Charles","Runaway — Del Shannon (verse)","Sultans of Swing — Dire Straits (verse)","Smooth — Santana ft. Rob Thomas","Happy Together — The Turtles (verse)","Stray Cat Strut — Stray Cats","Good Vibrations — The Beach Boys (verse)","Walk, Don't Run — The Ventures","Babe I'm Gonna Leave You — Led Zeppelin","California Dreamin' — The Mamas & the Papas (verse)"]],
+["flamenco","Flamenco cadence","flamenco","iv bIII bII I",
+ ["Bamboléo — Gipsy Kings","Djobi Djoba — Gipsy Kings","Baila Me — Gipsy Kings","Entre Dos Aguas — Paco de Lucía","Malagueña — Ernesto Lecuona","Asturias (Leyenda) — Isaac Albéniz","Misirlou — Dick Dale","Hava Nagila — traditional","Ojos Así — Shakira","Concierto de Aranjuez — Joaquín Rodrigo"]],
 ["pachelbel","The Pachelbel sequence","major","I V vi iii IV I IV V",
  ["Canon in D — Pachelbel","Basket Case — Green Day (verse)","Don't Look Back in Anger — Oasis","Memories — Maroon 5","Go West — Pet Shop Boys","Streets of London — Ralph McTell","Graduation (Friends Forever) — Vitamin C","C U When U Get There — Coolio","Cryin' — Aerosmith (verse)","Hook — Blues Traveler"]],
 ["dorian","Dorian groove","dorian","i IV",
@@ -82,23 +88,142 @@ const SONG_KEYS = {
   mixo:[2,2,4,7,0,5,4,9,2,7], andalusian:[9,10,2,9,6,0,2,9,9,1], pachelbel:[2,3,0,11,0,0,0,0,9,9],
 };
 
+// genres are curated, ordered picks from the progression catalogue, grouped into families so the
+// dropdown stays navigable (rendered as <optgroup>s). progList[0] — the first id — is the default pick.
+const GENRE_GROUPS = [
+  ["Pop & Rock", [
+    ["Pop", ["axis","doowop","axisMinor","pachelbel"]],
+    ["Rock", ["three","mixo","axis"]],
+    ["Classic Rock", ["three","mixo","blues"]],
+    ["Hard Rock", ["three","mixo","axisMinor"]],
+    ["Arena Rock", ["axis","three","pachelbel"]],
+    ["Alternative / Indie", ["axis","axisMinor","mixo"]],
+    ["Grunge", ["axisMinor","mixo","three"]],
+    ["Britpop", ["axis","pachelbel","mixo"]],
+    ["Punk", ["three","axis"]],
+    ["Pop-Punk", ["axis","three","doowop"]],
+    ["Emo", ["axis","axisMinor","pachelbel"]],
+    ["Shoegaze", ["aeolian","lydian","dorian"]],
+    ["Post-Rock", ["lydian","aeolian","pachelbel"]],
+    ["Psychedelic", ["mixo","dorian","lydian"]],
+    ["Surf Rock", ["three","andalusian","mixo"]],
+  ]],
+  ["Metal & Heavy", [
+    ["Metal", ["phrygian","axisMinor","mixo","flamenco"]],
+    ["Heavy Metal", ["phrygian","aeolian","mixo"]],
+    ["Thrash Metal", ["phrygian","aeolian","axisMinor"]],
+    ["Doom / Sludge", ["aeolian","axisMinor","phrygian"]],
+    ["Power Metal", ["axisMinor","mixo","pachelbel"]],
+    ["Prog Metal", ["dorian","phrygian","lydian"]],
+    ["Nu-Metal", ["phrygian","aeolian","dorian"]],
+  ]],
+  ["Blues, Soul & Funk", [
+    ["Blues", ["blues","three"]],
+    ["Rhythm & Blues", ["blues","doowop","axis"]],
+    ["Soul", ["doowop","jazz","axis"]],
+    ["Motown", ["doowop","axis","jazz"]],
+    ["Funk", ["dorian","mixo","axis"]],
+    ["Disco", ["axis","dorian","doowop"]],
+    ["Gospel", ["doowop","blues","jazz"]],
+    ["Neo-Soul", ["jazz","dorian","doowop"]],
+  ]],
+  ["Jazz & Standards", [
+    ["Jazz", ["jazz","doowop"]],
+    ["Swing", ["jazz","blues"]],
+    ["Bebop", ["jazz"]],
+    ["Bossa Nova", ["jazz","dorian"]],
+    ["Cool Jazz", ["jazz","dorian"]],
+    ["Ragtime", ["blues","three","jazz"]],
+    ["Lounge", ["jazz","doowop","pachelbel"]],
+  ]],
+  ["Folk, Country & Roots", [
+    ["Folk", ["three","axis","dorian","doowop"]],
+    ["Country", ["three","axis","doowop"]],
+    ["Bluegrass", ["three","blues","axis"]],
+    ["Americana", ["three","axis","mixo"]],
+    ["Rockabilly", ["blues","three","doowop"]],
+    ["Celtic", ["dorian","mixo","aeolian"]],
+    ["Singer-Songwriter", ["axis","pachelbel","doowop"]],
+  ]],
+  ["Dance & Electronic", [
+    ["EDM / Dance", ["axis","axisMinor","dorian"]],
+    ["House", ["dorian","axis","aeolian"]],
+    ["Deep House", ["dorian","aeolian","axis"]],
+    ["Tech House", ["dorian","aeolian","phrygian"]],
+    ["Progressive House", ["axis","aeolian","pachelbel"]],
+    ["Future House", ["axis","dorian","aeolian"]],
+    ["Tropical House", ["axis","mixo","dorian"]],
+    ["Nu-Disco", ["axis","dorian","doowop"]],
+    ["Techno", ["aeolian","dorian","phrygian"]],
+    ["Minimal Techno", ["aeolian","dorian","phrygian"]],
+    ["Trance", ["axis","aeolian","pachelbel"]],
+    ["Psytrance", ["phrygian","aeolian","dorian"]],
+    ["Big Room", ["axisMinor","aeolian","axis"]],
+    ["Electro House", ["axis","axisMinor","dorian"]],
+    ["Dubstep", ["aeolian","phrygian","axisMinor"]],
+    ["Future Bass", ["axis","lydian","aeolian"]],
+    ["Drum & Bass", ["dorian","aeolian","phrygian"]],
+    ["Jungle", ["aeolian","dorian","phrygian"]],
+    ["UK Garage", ["dorian","aeolian","jazz"]],
+    ["Breakbeat", ["dorian","mixo","aeolian"]],
+    ["Hardstyle", ["axisMinor","phrygian","aeolian"]],
+    ["Eurodance", ["axis","axisMinor","dorian"]],
+    ["Synthwave", ["axisMinor","aeolian","mixo"]],
+    ["Ambient", ["lydian","aeolian","dorian"]],
+    ["Downtempo / Trip-Hop", ["aeolian","dorian","jazz"]],
+    ["IDM", ["lydian","dorian","aeolian"]],
+    ["Lo-Fi / Chillhop", ["jazz","dorian","doowop"]],
+    ["Hip-Hop", ["dorian","aeolian","jazz"]],
+    ["Trap", ["aeolian","phrygian","axisMinor"]],
+  ]],
+  ["Latin", [
+    ["Latin", ["andalusian","jazz","dorian"]],
+    ["Salsa", ["jazz","dorian","andalusian"]],
+    ["Son Cubano", ["jazz","dorian","andalusian"]],
+    ["Mambo", ["jazz","dorian","mixo"]],
+    ["Cha-Cha-Chá", ["jazz","dorian","axis"]],
+    ["Rumba", ["andalusian","jazz","dorian"]],
+    ["Timba", ["jazz","dorian","andalusian"]],
+    ["Latin Jazz", ["jazz","dorian","andalusian"]],
+    ["Samba", ["jazz","dorian","axis"]],
+    ["Bossa Nova (Latin)", ["jazz","dorian","axis"]],
+    ["Bachata", ["axis","doowop","andalusian"]],
+    ["Merengue", ["three","axis","mixo"]],
+    ["Cumbia", ["axis","three","dorian"]],
+    ["Reggaetón", ["axisMinor","aeolian","dorian"]],
+    ["Latin Pop", ["axis","doowop","axisMinor"]],
+    ["Tango", ["andalusian","jazz","phrygian"]],
+    ["Bolero", ["jazz","doowop","andalusian"]],
+    ["Mariachi", ["three","axis","andalusian"]],
+    ["Norteño", ["three","axis","doowop"]],
+    ["Forró", ["three","mixo","dorian"]],
+  ]],
+  ["World & Modal", [
+    ["Flamenco", ["flamenco","andalusian","phrygian"]],
+    ["Reggae", ["axis","dorian","three"]],
+    ["Ska", ["three","axis","blues"]],
+    ["Afrobeat", ["dorian","mixo","axis"]],
+    ["Middle Eastern", ["phrygian","flamenco","andalusian"]],
+    ["Klezmer", ["flamenco","phrygian","andalusian"]],
+    ["Bollywood", ["mixo","dorian","andalusian"]],
+  ]],
+  ["Cinematic & Classical", [
+    ["Cinematic / Film", ["lydian","aeolian","pachelbel"]],
+    ["Epic / Trailer", ["axisMinor","aeolian","mixo"]],
+    ["Horror / Tension", ["phrygian","aeolian","andalusian"]],
+    ["Classical", ["pachelbel","three","jazz"]],
+    ["Baroque", ["pachelbel","jazz"]],
+    ["Dreamscore", ["lydian","dorian","pachelbel"]],
+  ]],
+];
 const CATEGORIES = [
-  { group:"Genre", items:[
-    { name:"Pop", progs:["axis","doowop","axisMinor","pachelbel"] },
-    { name:"Rock", progs:["three","mixo","axis"] },
-    { name:"Blues", progs:["blues","three"] },
-    { name:"Jazz", progs:["jazz","doowop"] },
-    { name:"Folk / Country", progs:["three","axis","doowop","dorian"] },
-    { name:"Punk", progs:["three","axis"] },
-    { name:"Funk / R&B", progs:["dorian","axis","mixo"] },
-    { name:"Metal", progs:["phrygian","axisMinor","mixo"] },
-    { name:"Cinematic", progs:["lydian","aeolian","pachelbel"] } ]},
+  { group:"Genre", items: GENRE_GROUPS.flatMap(([, list]) => list.map(([name, progs]) => ({ name, progs }))) },
   { group:"Emotion", items:[
     { name:"Happy", progs:["axis","three","doowop"] },
     { name:"Sad", progs:["axisMinor","andalusian"] },
     { name:"Nostalgic", progs:["doowop","pachelbel"] },
     { name:"Hopeful", progs:["pachelbel","axis","lydian"] },
-    { name:"Dark / Tense", progs:["andalusian","axisMinor","phrygian"] },
+    { name:"Dark / Tense", progs:["andalusian","axisMinor","phrygian","flamenco"] },
     { name:"Epic", progs:["mixo","axisMinor","pachelbel"] },
     { name:"Romantic", progs:["jazz","doowop"] },
     { name:"Dreamy", progs:["lydian","dorian","pachelbel"] },
@@ -2761,7 +2886,11 @@ export default function ProgressionWheel() {
               <span className="lbl" style={{ margin:0 }}>Genre</span>
               <select value={genre || ""} onChange={e => { setGenre(e.target.value || null); setForce(null); setMode(null); }}>
                 <option value="">Any</option>
-                {CATEGORIES[0].items.map(it => <option key={it.name} value={it.name}>{it.name}</option>)}
+                {GENRE_GROUPS.map(([cat, list]) => (
+                  <optgroup key={cat} label={cat}>
+                    {list.map(([name]) => <option key={name} value={name}>{name}</option>)}
+                  </optgroup>
+                ))}
               </select>
             </label>
             <label className="selwrap" style={{ flex:"1 1 88px" }}>
@@ -2926,7 +3055,8 @@ export default function ProgressionWheel() {
               </div>
             ) : (
               <p className="keytag" style={{ margin:"6px 0 0" }}>
-                No catalogue loop for {MODES[effMode].short} yet — build one by tapping the gold-haloed chords on the wheel.
+                {MODES[effMode].hint
+                  || `No catalogue loop for ${MODES[effMode].short} yet — build one by tapping the gold-haloed chords on the wheel.`}
               </p>
             )}
           </div>

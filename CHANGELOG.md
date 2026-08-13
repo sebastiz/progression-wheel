@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+- **A much bigger genre list.** The Genre picker grows from 9 to **106 genres**, organised into nine
+  families shown as labelled groups in the dropdown: **Pop & Rock** (15 — Pop, Classic/Hard/Arena Rock,
+  Alternative, Grunge, Britpop, Punk, Pop-Punk, Emo, Shoegaze, Post-Rock, Psychedelic, Surf), **Metal &
+  Heavy** (Heavy/Thrash/Doom/Power/Prog/Nu-Metal), **Blues, Soul & Funk** (R&B, Soul, Motown, Funk,
+  Disco, Gospel, Neo-Soul), **Jazz & Standards** (Swing, Bebop, Bossa Nova, Cool Jazz, Ragtime, Lounge),
+  **Folk, Country & Roots** (Country, Bluegrass, Americana, Rockabilly, Celtic, Singer-Songwriter),
+  **Dance & Electronic** (29 — EDM, House + Deep/Tech/Progressive/Future/Tropical House, Nu-Disco, Techno,
+  Minimal, Trance, Psytrance, Big Room, Electro House, Dubstep, Future Bass, Drum & Bass, Jungle, UK
+  Garage, Breakbeat, Hardstyle, Eurodance, Synthwave, Ambient, Downtempo/Trip-Hop, IDM, Lo-Fi, Hip-Hop,
+  Trap), **Latin** (20 — Salsa, Son Cubano, Mambo, Cha-Cha-Chá, Rumba, Timba, Latin Jazz, Samba, Bossa
+  Nova, Bachata, Merengue, Cumbia, Reggaetón, Latin Pop, Tango, Bolero, Mariachi, Norteño, Forró), **World
+  & Modal** (Flamenco, Reggae, Ska, Afrobeat, Middle Eastern, Klezmer, Bollywood) and **Cinematic &
+  Classical** (Film, Trailer, Horror, Classical, Baroque, Dreamscore). Each genre is a curated, ordered
+  set of the catalogue's progressions, so the wheel and the Suggested progressions panel reflect the
+  style you pick. Version bumped to 4.23.0.
+- **Flamenco mode (Phrygian dominant).** The Mode selector gains the **Phrygian dominant** scale — the
+  flamenco / "Spanish" sound: 1 ♭2 3 4 5 ♭6 ♭7 (Phrygian with a major 3rd). Selecting it re-colours the
+  scale, the pentatonic highlight, the melody grid, the landing notes and the key label, and lists the
+  mode's diatonic chords (a major tonic **I**, the ♭II major, a ♭VI **augmented**, and so on) both in the
+  "Chords in <key>" row and as gold halos on the circle of fifths — all correctly spelled (E Flamenco →
+  E F G♯ A B C D). It ships with a dedicated **Flamenco cadence** loop — the Andalusian descent resolving
+  to a major Phrygian tonic, **iv–♭III–♭II–I** (Am–G–F–E in E) — so picking the mode offers it as a
+  one-tap load onto the wheel, just like the other modal loops. True to the style, the ♭III (G major,
+  with its natural 3rd) is marked as sitting *outside* the strict Phrygian-dominant scale: that's
+  flamenco's signature modal mixture, not a mistake. The loop is also filed under Metal, Cinematic and
+  Dark / Tense for discovery. Version bumped to 4.22.0.
 - **Picking a Mode now offers a matching progression for the wheel.** Choosing a Mode set the scale and
   the haloed chord palette, but it never gave you an actual *progression* to start from — the loop on the
   circle of fifths stayed whatever you had. Now, when the Mode you pick doesn't match the loop on the
