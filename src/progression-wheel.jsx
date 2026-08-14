@@ -1702,6 +1702,7 @@ export default function ProgressionWheel() {
   const [emotion, setEmotion] = useState(null);
   const [mode, setMode] = useState(null);   // null = follow the loaded progression's own mode; else an override
   const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
+  const [adv, setAdv] = useState(false);    // reveal the advanced harmony controls (secondary doms, etc.)
   const [showPar, setShowPar] = useState(false);
   const [showSec, setShowSec] = useState(false);
   const [selStruct, setSelStruct] = useState("");
@@ -2937,18 +2938,27 @@ export default function ProgressionWheel() {
                 {CATEGORIES[1].items.map(it => <option key={it.name} value={it.name}>{it.name}</option>)}
               </select>
             </label>
-            <div className={"tog lav" + (showPar ? " on" : "")} onClick={() => setShowPar(v => !v)} style={{ paddingBottom:6 }}>
-              <div className="sw" /> Par
-            </div>
-            <div className={"tog gold" + (showSec ? " on" : "")} onClick={() => setShowSec(v => !v)} style={{ paddingBottom:6 }}>
-              <div className="sw" /> Sec
-            </div>
             <div className="seg" style={{ marginBottom:2 }}>
               <button className={colour === "triads" ? "on" : ""} onClick={() => setColour("triads")}>Triads</button>
               <button className={colour === "sevenths" ? "on" : ""} onClick={() => setColour("sevenths")}>7ths</button>
               <button className={colour === "extended" ? "on" : ""} onClick={() => setColour("extended")}>9ths</button>
             </div>
             <button className="btn" style={{ padding:"5px 11px", marginBottom:2 }} onClick={rollDice} title="Surprise me">🎲</button>
+            <button className={"btn" + (adv ? " on" : "")} style={{ padding:"5px 11px", marginBottom:2 }}
+              onClick={() => setAdv(v => !v)} title="Secondary dominants, parallel chords and borrowed colour">
+              {adv ? "− Advanced" : "＋ Advanced"}
+            </button>
+          </div>
+
+          {adv && (<>
+          <div className="row" style={{ gap:14, marginTop:12, alignItems:"center" }}>
+            <div className={"tog lav" + (showPar ? " on" : "")} onClick={() => setShowPar(v => !v)}>
+              <div className="sw" /> Par
+            </div>
+            <div className={"tog gold" + (showSec ? " on" : "")} onClick={() => setShowSec(v => !v)}>
+              <div className="sw" /> Sec
+            </div>
+            {tips && <span className="keytag">dashed lines on the wheel: parallel chords &amp; secondary dominants</span>}
           </div>
 
           <div className="selrow" style={{ marginTop:12 }}>
@@ -3004,6 +3014,7 @@ export default function ProgressionWheel() {
               </select>
             </label>
           </div>
+          </>)}
 
           <div className="selrow" style={{ marginTop:10 }}>
             <label className="selwrap">

@@ -6,7 +6,11 @@
   longer guidance paragraphs — the chord-card how-to, the stave and section explainers, the landing-note
   and structure notes, the song-key caveats — leaving clean panels with just the controls and results.
   Flip **Tips** on to bring the guidance back. Contextual, in-the-moment hints (what a tap will do, what's
-  currently playing, recording instructions) stay visible either way. Version bumped to 4.26.0.
+  currently playing, recording instructions) stay visible either way. The controls panel is also
+  decluttered: the power-user harmony controls — the **secondary-dominant**, **parallel-chord** and
+  **borrowed-colour** menus plus the **Par / Sec** wheel overlays — now sit behind a **＋ Advanced**
+  disclosure (collapsed by default), so the everyday row is just Key · Mode · Genre · Emotion · colour ·
+  dice. Version bumped to 4.26.0.
 - **Signature grooves and tempos for the new loops.** The eleven new progressions (the five dance loops,
   six jazz/Latin/soul loops) now each carry their own default rhythm pattern and tempo instead of falling
   back to the generic pop strum — so a Bossa pick brushes a bossa, Salsa and Son ride a tresillo/clave,
