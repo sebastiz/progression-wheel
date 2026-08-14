@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- **Neater interface — the explanatory text is now opt-in.** The app had grown a lot of always-on helper
+  prose, which made it feel cluttered. A new **Tips** toggle in the header (off by default) hides the
+  longer guidance paragraphs — the chord-card how-to, the stave and section explainers, the landing-note
+  and structure notes, the song-key caveats — leaving clean panels with just the controls and results.
+  Flip **Tips** on to bring the guidance back. Contextual, in-the-moment hints (what a tap will do, what's
+  currently playing, recording instructions) stay visible either way. Version bumped to 4.26.0.
+- **Signature grooves and tempos for the new loops.** The eleven new progressions (the five dance loops,
+  six jazz/Latin/soul loops) now each carry their own default rhythm pattern and tempo instead of falling
+  back to the generic pop strum — so a Bossa pick brushes a bossa, Salsa and Son ride a tresillo/clave,
+  EDM and House stomp four-on-the-floor, the festival lift and future-bass swell get their tempos, gospel
+  sways in 12/8, and neo-soul sits back on a funk scratch. Flamenco also gets its groove. Version bumped
+  to 4.26.0.
 - **A wider progression library so same-family genres pull distinct loops.** Six more authentic
   progressions join the catalogue (now 25 in all): **Rhythm changes** (I–VI7–ii–V7, the jazz/bebop
   standard), **Bossa nova turnaround** (I–II7–ii–V7), **Son guajira** (I–IV–V–IV, the Cuban son vamp),

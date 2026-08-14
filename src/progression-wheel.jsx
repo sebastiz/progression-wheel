@@ -396,10 +396,15 @@ const PATTERNS = {};
 
 const PATTERN_DEFAULT = { axis:"pop", axisMinor:"drive", three:"rock8", blues:"shuffle",
   doowop:"sway12", jazz:"fourbar", mixo:"push", andalusian:"latin", pachelbel:"arp",
-  dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop" };
+  dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop",
+  flamenco:"latin", edm:"stomp", deepHouse:"stomp", festival:"stomp", futureBass:"halftime",
+  montuno:"tresillo", rhythm:"charleston", bossa:"bossa", guajira:"tresillo", bolero:"arp",
+  gospel:"sway12", neoSoul:"funk" };
 const BPM_DEFAULT = { axis:96, axisMinor:84, three:140, blues:92, doowop:66, jazz:120,
   mixo:112, andalusian:104, pachelbel:72,
-  dorian:100, lydian:84, phrygian:128, aeolian:92 };
+  dorian:100, lydian:84, phrygian:128, aeolian:92,
+  flamenco:120, edm:128, deepHouse:122, festival:138, futureBass:150,
+  montuno:96, rhythm:160, bossa:132, guajira:100, bolero:76, gospel:76, neoSoul:88 };
 
 const DRUMS = {};
 [
@@ -1696,6 +1701,7 @@ export default function ProgressionWheel() {
   const [genre, setGenre] = useState("Pop");
   const [emotion, setEmotion] = useState(null);
   const [mode, setMode] = useState(null);   // null = follow the loaded progression's own mode; else an override
+  const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
   const [showPar, setShowPar] = useState(false);
   const [showSec, setShowSec] = useState(false);
   const [selStruct, setSelStruct] = useState("");
@@ -2705,6 +2711,8 @@ export default function ProgressionWheel() {
         h1 { font-family:'Fraunces',serif; font-weight:650; font-size:clamp(26px,5vw,36px); margin:0; letter-spacing:.01em; }
         .eyebrow { font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:#8B94A3; margin-bottom:6px; }
         .sub { color:#8B94A3; font-size:14px; margin:6px 0 18px; line-height:1.45; }
+        .hdr { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+        .hdr .tog { margin-top:6px; }
         .panel { background:#171E28; border:1px solid #232C3A; border-radius:16px; padding:14px; margin-bottom:14px; }
         .panel.accent { background:#1C2A3B; border-color:#33475F; box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 4px 18px rgba(0,0,0,.22); }
         .toptransport { position:sticky; top:0; z-index:6; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
@@ -2860,8 +2868,15 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v{APP_VERSION}</div>
-        <h1>The Progression Wheel</h1>
+        <div className="hdr">
+          <div>
+            <div className="eyebrow">Songwriting sketchpad · v{APP_VERSION}</div>
+            <h1>The Progression Wheel</h1>
+          </div>
+          <div className={"tog gold" + (tips ? " on" : "")} onClick={() => setTips(v => !v)} title="Show or hide the explanatory tips">
+            <div className="sw" /> Tips
+          </div>
+        </div>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.
           {" "}<a href="transcribe.html" style={{ color:GOLD, textDecoration:"none", whiteSpace:"nowrap" }}>🎤 Hum a tune →</a></p>
 
@@ -3035,11 +3050,11 @@ export default function ProgressionWheel() {
           <div className="progtitle" style={{ fontSize:17 }}>
             Suggested progressions{genre ? ` · ${genre}` : ""}{emotion ? ` · ${emotion}` : ""}
           </div>
-          <p className="keytag" style={{ margin:"3px 0 8px" }}>
+          {tips && <p className="keytag" style={{ margin:"3px 0 8px" }}>
             {genre || emotion
               ? "The classic loops behind this style — tap one to load it onto the wheel. The top pick is showing now."
               : "Pick a genre or a feeling above to narrow these, or tap any loop to load it."}
-          </p>
+          </p>}
           <div className="progchips">
             {progList.map(id => {
               const p = PROGRESSIONS[id];
@@ -3216,7 +3231,7 @@ export default function ProgressionWheel() {
                 <button className="mini" onClick={straightenPills} title="Restore the original order">↺ Straighten</button>}
             </div>
           )}
-          {!reorder && fingerIdx == null && (
+          {tips && !reorder && fingerIdx == null && (
             <div className="hint" style={{ padding:"2px 10px 4px" }}>
               Tap a chord above for its shapes and to change its <b>version</b> (7th · add9 · sus…),
               <b> duplicate</b> it (longer) or <b>remove</b> it (shorter).
@@ -3295,13 +3310,13 @@ export default function ProgressionWheel() {
             <div className="scorewrap">
               <NotationScore measures={scoreMeasures} instr={scoreInstr} meloBeats={meloBeats} />
             </div>
-            <div className="hint" style={{ padding:"2px 10px 4px" }}>
+            {tips && <div className="hint" style={{ padding:"2px 10px 4px" }}>
               {scoreInstr === "piano"
                 ? <>Grand staff — right hand plays the melody{scoreHasMelody ? "" : " (add one in the melody grid below)"}, left hand holds the chord voicing. Chord symbols sit above each bar.</>
                 : <>Guitar lead sheet — chord symbols above, the melody on the treble staff{scoreHasMelody ? ", with fret numbers on the tab below fingered low on the neck (first position, sounding lower)" : " — write a melody below and its tab appears here"}.</>}
               {structSel ? " Following the selected song structure." : " Following the loop."}
               {scoreHasB && <> The <b style={{ color:LAV }}>2nd melody</b> is shown in violet.</>}
-            </div>
+            </div>}
           </>)}
         </div>
 
@@ -3380,11 +3395,11 @@ export default function ProgressionWheel() {
               </div>
             ))}
           </div>
-          <p className="keytag" style={{ marginTop:8 }}>
+          {tips && <p className="keytag" style={{ marginTop:8 }}>
             Plays through the chosen song structure if one is selected below — each section with its own
             melody — otherwise loops the progression, one chord per bar. No sound? Check the phone's
             silent switch and volume.
-          </p>
+          </p>}
         </div>
 
         {/* song & melody */}
@@ -3445,18 +3460,18 @@ export default function ProgressionWheel() {
                   </div>
                 );
               })}
-              <p className="keytag" style={{ marginTop:6 }}>
+              {tips && <p className="keytag" style={{ marginTop:6 }}>
                 Land long notes, downbeats and phrase endings on the playing chord's notes — root and 3rd
                 strongest. Gold notes sit outside the key: strong landings during that chord's bar only.
-              </p>
+              </p>}
             </div>
           )}
 
-          <p className="keytag" style={{ marginTop:8 }}>
+          {tips && <p className="keytag" style={{ marginTop:8 }}>
             On each section: <b>▶</b> play from here · <b>🔁</b> loop just this section ·
             <b> {recSource === "guitar" ? "🎸" : "🎤"} Rec</b> record a {recSource} line straight onto its
             melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> on the Rhythm panel above.
-          </p>
+          </p>}
           {(() => {
             const groups = [];
             sections.insts.forEach(d => {
@@ -3652,13 +3667,13 @@ export default function ProgressionWheel() {
 
           <div className="struct">
             {structSel && <div className="sttip">{structSel.st.tip}</div>}
-            <p className="keytag" style={{ marginTop:8 }}>
+            {tips && <p className="keytag" style={{ marginTop:8 }}>
               {structSel
                 ? <>≈ {sections.totalBars} bars at one chord per bar. Every pass has its own melody — "copy"
                   duplicates an earlier sibling's tune as a starting point, then vary it.</>
                 : <>Choose a structure above to write the song out pass by pass, each with its own melody —
                   or sketch over the loop here.</>}
-            </p>
+            </p>}
           </div>
         </div>
 
@@ -3692,8 +3707,8 @@ export default function ProgressionWheel() {
           </div>
           {(() => {
             if (!selSong.startsWith(progId + ":")) {
-              return <p className="keytag" style={{ marginTop:8 }}>
-                Ten songs run on this engine — pick one to see the progression in its own key.</p>;
+              return tips ? <p className="keytag" style={{ marginTop:8 }}>
+                Ten songs run on this engine — pick one to see the progression in its own key.</p> : null;
             }
             const i = +selSong.split(":")[1];
             const k = (SONG_KEYS[progId] || [])[i];
@@ -3704,8 +3719,8 @@ export default function ProgressionWheel() {
               <div className="struct" style={{ borderTop:"none", marginTop:6, paddingTop:2 }}>
                 <div className="stname">{prog.songs[i]}</div>
                 {line && <div className="arrch" style={{ marginTop:4 }}>{line}</div>}
-                {k != null && <div className="arrnote">in {spell(k, k, prog.mode)} {MODES[modeId(prog.mode)].short} —
-                  key follows the most common recording or transcription; some originals sit between keys or use altered tunings.</div>}
+                {k != null && <div className="arrnote">in {spell(k, k, prog.mode)} {MODES[modeId(prog.mode)].short}
+                  {tips && <> — key follows the most common recording or transcription; some originals sit between keys or use altered tunings.</>}</div>}
               </div>
             );
           })()}
