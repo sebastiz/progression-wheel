@@ -5,11 +5,11 @@ const APP_VERSION = "dev";   // replaced with package.json version at build time
 /* ===== theory ===== */
 const SEMI_NAME = { 0:"C",1:"D♭",2:"D",3:"E♭",4:"E",5:"F",6:"F♯",7:"G",8:"A♭",9:"A",10:"B♭",11:"B" };
 const posOf = s => (s * 7) % 12;
-const MAJOR_NUM = { I:[0,"maj"], ii:[2,"min"], iii:[4,"min"], IV:[5,"maj"], V:[7,"maj"], vi:[9,"min"],
+const MAJOR_NUM = { I:[0,"maj"], ii:[2,"min"], iii:[4,"min"], IV:[5,"maj"], iv:[5,"min"], V:[7,"maj"], vi:[9,"min"],
   II:[2,"maj"], v:[7,"min"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"],
   I7:[0,"dom"], II7:[2,"dom"], III7:[4,"dom"], IV7:[5,"dom"], V7:[7,"dom"], VI7:[9,"dom"] };
 const MINOR_NUM = { i:[0,"min"], I:[0,"maj"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], VI:[9,"maj"], bII:[1,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
-const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", II:"S", IV:"S", IV7:"S", bVI:"S", v:"D", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
+const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", II:"S", IV:"S", iv:"S", IV7:"S", bVI:"S", v:"D", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
 const FUNC_MINOR = { i:"T", I:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
 const QSUF = { maj:"", min:"m", dom:"7", maj7:"maj7", m7:"m7", maj9:"maj9", m9:"m9", dom9:"9",
   add9:"add9", madd9:"m(add9)", six:"6", m6:"m6", sus2:"sus2", sus4:"sus4", dom7sus4:"7sus4", dim:"°", aug:"+" };
@@ -101,6 +101,22 @@ const PROGRESSIONS = {};
  ["Oh Happy Day — Edwin Hawkins Singers","Ain't No Mountain High Enough — Marvin Gaye & Tammi Terrell","I Say a Little Prayer — Aretha Franklin","Lean on Me — Bill Withers","Isn't She Lovely — Stevie Wonder","Signed, Sealed, Delivered — Stevie Wonder","Higher Ground — Stevie Wonder","Never Too Much — Luther Vandross","Ain't Nobody — Chaka Khan","Golden — Jill Scott"]],
 ["neoSoul","Neo-soul descent","major","IV iii ii I",
  ["Doo Wop (That Thing) — Lauryn Hill","Brown Sugar — D'Angelo","Untitled (How Does It Feel) — D'Angelo","Cranes in the Sky — Solange","Come Away with Me — Norah Jones","Put Your Records On — Corinne Bailey Rae","Best Part — Daniel Caesar & H.E.R.","The Light — Common","Electric Lady — Janelle Monáe","Sunday Morning — Maroon 5"]],
+["rockRiff","Riff rock","minor","i bIII IV",
+ ["Whole Lotta Love — Led Zeppelin","Sunshine of Your Love — Cream","You Really Got Me — The Kinks","Smoke on the Water — Deep Purple","Black Dog — Led Zeppelin","Barracuda — Heart","Iron Man — Black Sabbath","Should I Stay or Should I Go — The Clash","Cocaine — Eric Clapton","Rebel Rebel — David Bowie"]],
+["grunge","Grunge chromatic","major","I bIII bVI bVII",
+ ["Smells Like Teen Spirit — Nirvana","Come as You Are — Nirvana","Black Hole Sun — Soundgarden","Man in the Box — Alice in Chains","Even Flow — Pearl Jam","Plush — Stone Temple Pilots","Would? — Alice in Chains","Bullet with Butterfly Wings — The Smashing Pumpkins","Zombie — The Cranberries","No Rain — Blind Melon"]],
+["britpop","Britpop climb","major","I iii IV V",
+ ["Wonderwall — Oasis","Don't Look Back in Anger — Oasis","Bitter Sweet Symphony — The Verve","Common People — Pulp","Live Forever — Oasis","The Universal — Blur","She's Electric — Oasis","Disco 2000 — Pulp","There She Goes — The La's","Sit Down — James"]],
+["emo","Emo lift","major","IV I V vi",
+ ["The Middle — Jimmy Eat World","Sugar, We're Goin Down — Fall Out Boy","Welcome to the Black Parade — My Chemical Romance","The Only Exception — Paramore","Dear Maria, Count Me In — All Time Low","Ohio Is for Lovers — Hawthorne Heights","Miserable at Best — Mayday Parade","Vindicated — Dashboard Confessional","Konstantine — Something Corporate","Basket Case — Green Day"]],
+["country","Country boom-chick","major","I IV I V",
+ ["Ring of Fire — Johnny Cash","Folsom Prison Blues — Johnny Cash","Take Me Home, Country Roads — John Denver","Wagon Wheel — Old Crow Medicine Show","Friends in Low Places — Garth Brooks","On the Road Again — Willie Nelson","Jackson — Johnny Cash & June Carter","Chicken Fried — Zac Brown Band","Wide Open Spaces — The Chicks","Guitars, Cadillacs — Dwight Yoakam"]],
+["celtic","Celtic reel","dorian","i bVII IV",
+ ["Whiskey in the Jar — traditional","The Foggy Dew — traditional","Drunken Sailor — traditional","Star of the County Down — traditional","She Moved Through the Fair — traditional","The Wild Rover — traditional","Molly Malone — traditional","The Gael — Dougie MacLean","Black Is the Colour — traditional","The Rocky Road to Dublin — traditional"]],
+["motownTurn","Motown turnaround","major","I vi ii V",
+ ["Baby Love — The Supremes","My Girl — The Temptations","I Can't Help Myself — Four Tops","You Can't Hurry Love — The Supremes","Please Mr. Postman — The Marvelettes","Dancing in the Street — Martha & the Vandellas","My Guy — Mary Wells","Heat Wave — Martha & the Vandellas","Where Did Our Love Go — The Supremes","The Way You Do the Things You Do — The Temptations"]],
+["rnbSlow","Slow-jam IV–iv","major","I iii IV iv",
+ ["Let's Stay Together — Al Green","Ordinary People — John Legend","Adorn — Miguel","So Sick — Ne-Yo","Redbone — Childish Gambino","Sara Smile — Hall & Oates","Rock with You — Michael Jackson","Nothing Even Matters — Lauryn Hill & D'Angelo","Golden — Jill Scott","Killing Me Softly — Roberta Flack"]],
 ].forEach(([id, label, mode, nums, songs]) =>
   PROGRESSIONS[id] = { label, mode, numerals: nums.split(" "), songs });
 
@@ -115,39 +131,39 @@ const SONG_KEYS = {
 const GENRE_GROUPS = [
   ["Pop & Rock", [
     ["Pop", ["axis","doowop","axisMinor","pachelbel"]],
-    ["Rock", ["three","mixo","axis"]],
-    ["Classic Rock", ["three","mixo","blues"]],
-    ["Hard Rock", ["three","mixo","axisMinor"]],
-    ["Arena Rock", ["axis","three","pachelbel"]],
-    ["Alternative / Indie", ["axis","axisMinor","mixo"]],
-    ["Grunge", ["axisMinor","mixo","three"]],
-    ["Britpop", ["axis","pachelbel","mixo"]],
+    ["Rock", ["three","mixo","rockRiff"]],
+    ["Classic Rock", ["mixo","rockRiff","blues"]],
+    ["Hard Rock", ["rockRiff","mixo","axisMinor"]],
+    ["Arena Rock", ["axis","pachelbel","britpop"]],
+    ["Alternative / Indie", ["britpop","grunge","axisMinor"]],
+    ["Grunge", ["grunge","axisMinor","mixo"]],
+    ["Britpop", ["britpop","axis","pachelbel"]],
     ["Punk", ["three","axis"]],
-    ["Pop-Punk", ["axis","three","doowop"]],
-    ["Emo", ["axis","axisMinor","pachelbel"]],
+    ["Pop-Punk", ["emo","three","axis"]],
+    ["Emo", ["emo","axisMinor","pachelbel"]],
     ["Shoegaze", ["aeolian","lydian","dorian"]],
     ["Post-Rock", ["lydian","aeolian","pachelbel"]],
     ["Psychedelic", ["mixo","dorian","lydian"]],
-    ["Surf Rock", ["three","andalusian","mixo"]],
+    ["Surf Rock", ["andalusian","rockRiff","three"]],
   ]],
   ["Metal & Heavy", [
     ["Metal", ["phrygian","axisMinor","mixo","flamenco"]],
-    ["Heavy Metal", ["phrygian","aeolian","mixo"]],
+    ["Heavy Metal", ["phrygian","aeolian","rockRiff"]],
     ["Thrash Metal", ["phrygian","aeolian","axisMinor"]],
     ["Doom / Sludge", ["aeolian","axisMinor","phrygian"]],
     ["Power Metal", ["axisMinor","mixo","pachelbel"]],
     ["Prog Metal", ["dorian","phrygian","lydian"]],
-    ["Nu-Metal", ["phrygian","aeolian","dorian"]],
+    ["Nu-Metal", ["grunge","phrygian","aeolian"]],
   ]],
   ["Blues, Soul & Funk", [
     ["Blues", ["blues","three"]],
-    ["Rhythm & Blues", ["blues","doowop","axis"]],
-    ["Soul", ["gospel","doowop","jazz"]],
-    ["Motown", ["gospel","doowop","axis"]],
+    ["Rhythm & Blues", ["blues","motownTurn","doowop"]],
+    ["Soul", ["gospel","motownTurn","doowop"]],
+    ["Motown", ["motownTurn","doowop","gospel"]],
     ["Funk", ["mixo","gospel","dorian"]],
     ["Disco", ["axis","gospel","doowop"]],
     ["Gospel", ["gospel","doowop","blues"]],
-    ["Neo-Soul", ["neoSoul","jazz","gospel"]],
+    ["Neo-Soul", ["rnbSlow","neoSoul","jazz"]],
   ]],
   ["Jazz & Standards", [
     ["Jazz", ["jazz","rhythm","doowop"]],
@@ -159,13 +175,13 @@ const GENRE_GROUPS = [
     ["Lounge", ["bossa","jazz","doowop"]],
   ]],
   ["Folk, Country & Roots", [
-    ["Folk", ["three","axis","dorian","doowop"]],
-    ["Country", ["three","axis","doowop"]],
-    ["Bluegrass", ["three","blues","axis"]],
-    ["Americana", ["three","axis","mixo"]],
-    ["Rockabilly", ["blues","three","doowop"]],
-    ["Celtic", ["dorian","mixo","aeolian"]],
-    ["Singer-Songwriter", ["axis","pachelbel","doowop"]],
+    ["Folk", ["three","celtic","axis","doowop"]],
+    ["Country", ["country","three","doowop"]],
+    ["Bluegrass", ["three","country","blues"]],
+    ["Americana", ["mixo","country","three"]],
+    ["Rockabilly", ["blues","country","doowop"]],
+    ["Celtic", ["celtic","dorian","mixo"]],
+    ["Singer-Songwriter", ["pachelbel","axis","doowop"]],
   ]],
   ["Dance & Electronic", [
     ["EDM / Dance", ["edm","axisMinor","festival"]],
@@ -399,12 +415,15 @@ const PATTERN_DEFAULT = { axis:"pop", axisMinor:"drive", three:"rock8", blues:"s
   dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop",
   flamenco:"latin", edm:"stomp", deepHouse:"stomp", festival:"stomp", futureBass:"halftime",
   montuno:"tresillo", rhythm:"charleston", bossa:"bossa", guajira:"tresillo", bolero:"arp",
-  gospel:"sway12", neoSoul:"funk" };
+  gospel:"sway12", neoSoul:"funk",
+  rockRiff:"rock8", grunge:"drive", britpop:"pop", emo:"rock8", country:"boomchick",
+  celtic:"busy8", motownTurn:"boomchick", rnbSlow:"funk" };
 const BPM_DEFAULT = { axis:96, axisMinor:84, three:140, blues:92, doowop:66, jazz:120,
   mixo:112, andalusian:104, pachelbel:72,
   dorian:100, lydian:84, phrygian:128, aeolian:92,
   flamenco:120, edm:128, deepHouse:122, festival:138, futureBass:150,
-  montuno:96, rhythm:160, bossa:132, guajira:100, bolero:76, gospel:76, neoSoul:88 };
+  montuno:96, rhythm:160, bossa:132, guajira:100, bolero:76, gospel:76, neoSoul:88,
+  rockRiff:128, grunge:120, britpop:116, emo:144, country:108, celtic:116, motownTurn:128, rnbSlow:76 };
 
 const DRUMS = {};
 [
@@ -3407,28 +3426,34 @@ export default function ProgressionWheel() {
             </select>
           </div>
 
-          {/* melody tools: bring a tune in (hum / MIDI / record), export, and shape it */}
-          <div className="row" style={{ marginTop:10, gap:8, alignItems:"center", flexWrap:"wrap" }}>
+          {/* melody tools — bring a tune in, choose the record source, utilities */}
+          <div className="row" style={{ marginTop:10, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
+            <span className="lbl" style={{ margin:0 }}>Add a melody</span>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody}
               title="Load the tune you hummed in the Tune Transcriber">🎤 Hum</button>
-            <label className="btn" style={{ padding:"5px 11px", cursor:"pointer" }} title="Import a melody from a MIDI file">↑ MIDI
+            <label className="btn" style={{ padding:"5px 11px", cursor:"pointer" }} title="Import a melody from a MIDI file">↑ MIDI file
               <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} hidden />
             </label>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ MIDI</button>
+            <span className="keytag">→ lands on</span>
             <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""}
               onChange={e => setImpSec(e.target.value)}
-              title="Which section a hummed / played tune, MIDI import, or in-app recording lands on">
-              <option value="">Melody → first section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
-              {sections.insts.map(s => <option key={s.key} value={s.key}>Melody → {s.key} · {s.word}</option>)}
+              title="Which section a hummed tune or MIDI import lands on">
+              <option value="">first section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
+              {sections.insts.map(s => <option key={s.key} value={s.key}>{s.key} · {s.word}</option>)}
             </select>
+          </div>
+          <div className="row" style={{ marginTop:8, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
+            <span className="lbl" style={{ margin:0 }}>Record</span>
             <span className="seg" title="What the ● Rec button on each section listens for — tunes pitch detection">
               <button className={recSource === "guitar" ? "on" : ""} onClick={() => setRecSource("guitar")} disabled={!!recSec}>🎸 Guitar</button>
               <button className={recSource === "voice" ? "on" : ""} onClick={() => setRecSource("voice")} disabled={!!recSec}>🎤 Voice</button>
             </span>
-            <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ paddingBottom:2 }}
+            <span className="keytag">— press ● Rec on any section below</span>
+            <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ marginLeft:"auto" }}
               title="Merge the melody notes into one flowing line — smoother, less stodgy">
               <div className="sw" /> Legato
             </div>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ Export MIDI</button>
           </div>
 
           {structSel && (
@@ -3454,41 +3479,12 @@ export default function ProgressionWheel() {
             {scaleSemis.map((s, i) => (
               <span key={i} className={"npill nsm" + (pentSemis.includes(s) ? " npent" : "")}>{spell((tonic + s) % 12, tonic, effMode)}</span>
             ))}
-            <button className="mini" onClick={() => setShowLand(v => !v)}>{showLand ? "Hide" : "Landing notes"}</button>
           </div>
-
-          <div className="row" style={{ marginTop:8, gap:6, alignItems:"center" }}>
-            <span className="keytag" style={{ marginRight:2 }}>Chords in {keyLabel}:</span>
-            {modeTriads.map((t, i) => (
-              <span key={i} className="npill nsm" title={`${t.rn} — ${chordName(t.root, t.q)}`}>
-                <b style={{ color:GOLD }}>{t.rn}</b> {spell(t.root, tonic, effMode)}{QSUF[t.q]}
-              </span>
-            ))}
-          </div>
-          {showLand && (
-            <div style={{ marginTop:4 }}>
-              {uniques.map((c, i) => {
-                const tones = chordIvs(c.quality).map(x => (c.root + x) % 12);
-                const chrom = tones.some(t => !scaleNotes.includes(t));
-                return (
-                  <div key={i} className="mrow">
-                    <span className="pill" style={{ background: FN_COLOR[c.func], color: FN_TEXT[c.func] }}>{c.name}</span>
-                    {tones.map((t, j) => <span key={j} className={"npill nsm" + (!scaleNotes.includes(t) ? " nchrom" : "")}>{spell(t, tonic, effMode)}</span>)}
-                    {chrom && <span className="keytag" style={{ color:GOLD }}>chromatic</span>}
-                  </div>
-                );
-              })}
-              {tips && <p className="keytag" style={{ marginTop:6 }}>
-                Land long notes, downbeats and phrase endings on the playing chord's notes — root and 3rd
-                strongest. Gold notes sit outside the key: strong landings during that chord's bar only.
-              </p>}
-            </div>
-          )}
 
           {tips && <p className="keytag" style={{ marginTop:8 }}>
             On each section: <b>▶</b> play from here · <b>🔁</b> loop just this section ·
             <b> {recSource === "guitar" ? "🎸" : "🎤"} Rec</b> record a {recSource} line straight onto its
-            melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> on the Rhythm panel above.
+            melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> above.
           </p>}
           {(() => {
             const groups = [];

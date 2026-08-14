@@ -1,6 +1,23 @@
 # Changelog
 
 ## Unreleased
+- **Genre-specific chord sequences, so styles stop sharing the same loops.** Eight new signature
+  progressions (library now 33) give the rock, roots and soul genres their own defaults instead of all
+  leaning on the four-chord axis: **Riff rock** (i–♭III–IV, hard/classic rock), **Grunge chromatic**
+  (I–♭III–♭VI–♭VII, grunge / alt / nu-metal), **Britpop climb** (I–iii–IV–V), **Emo lift** (IV–I–V–vi,
+  emo / pop-punk), **Country boom-chick** (I–IV–I–V), **Celtic reel** (i–♭VII–IV, Dorian), **Motown
+  turnaround** (I–vi–ii–V) and the **Slow-jam IV–iv** (I–iii–IV–iv, neo-soul / R&B). Each genre in Pop &
+  Rock, Folk/Country/Roots and Blues/Soul/Funk was re-pointed so it now *leads* with a characteristic
+  loop (Grunge → grunge, Hard Rock → riff rock, Britpop → britpop, Country → country, Celtic → celtic,
+  Motown → motown turnaround, Neo-Soul → the IV–iv jam, and so on), each with its own groove and tempo.
+  A borrowed `iv` in major keys was added to make the R&B move possible. Version bumped to 4.31.0.
+- **Tidier Song & melody panel.** The melody tools are now grouped and labelled so their roles are clear:
+  an **Add a melody** row (🎤 Hum · ↑ MIDI file · → lands on <section>) for bringing a whole tune in, and
+  a separate **Record** row (🎸 Guitar / 🎤 Voice — the source the per-section ● Rec button listens for)
+  with **Legato** and **↓ Export MIDI** alongside. The redundant **Chords in <key>** row (it just
+  duplicated the wheel's haloed chords) and the **Landing notes** feature (the Scale row's toggle and its
+  per-chord expansion) are removed; a plain one-line **Scale (<key>): notes** readout stays as a quick
+  reference for the melody grid. Version bumped to 4.30.0.
 - **Remove several chords at once in Reorder mode.** Reorder mode already lets you tap chords to select
   them; now there's a **🗑 Remove** button beside Move, so you can select one or many chords and drop them
   all in a single tap — a first-class counterpart to **＋ Add**. It won't let you remove every chord (the
