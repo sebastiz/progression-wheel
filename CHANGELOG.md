@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Add any chord straight from the circle of fifths.** A new **＋ Add** button by the chord strip turns
+  on an add mode: every node on the wheel — all twelve majors and twelve minors — lights up with a dashed
+  ring, and tapping one **appends that chord to the end of the chain**. Keep tapping to add several, then
+  press **✕ Done**. Added chords carry a proper Roman numeral when they're diatonic (or a neutral • when
+  they're chromatic, with the gold ✦ marking them outside the key), and each has its own identity, so the
+  existing **⇄ Reorder** works on them — drop a chord in from anywhere and slide it into place. Version
+  bumped to 4.27.0.
 - **Neater interface — the explanatory text is now opt-in.** The app had grown a lot of always-on helper
   prose, which made it feel cluttered. A new **Tips** toggle in the header (off by default) hides the
   longer guidance paragraphs — the chord-card how-to, the stave and section explainers, the landing-note
