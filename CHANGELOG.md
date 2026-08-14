@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **A wider progression library so same-family genres pull distinct loops.** Six more authentic
+  progressions join the catalogue (now 25 in all): **Rhythm changes** (I–VI7–ii–V7, the jazz/bebop
+  standard), **Bossa nova turnaround** (I–II7–ii–V7), **Son guajira** (I–IV–V–IV, the Cuban son vamp),
+  **Bolero cadence** (i–♭VI–iv–V), **Gospel turnaround** (vi–ii–V–I) and **Neo-soul descent**
+  (IV–iii–ii–I). Genres across Jazz, Soul/Funk, Hip-Hop and especially Latin are re-mapped onto them so
+  neighbouring styles differ: Bebop/Ragtime → rhythm changes, Bossa Nova/Samba/Latin Jazz → bossa
+  turnaround, Son Cubano/Cumbia/Mariachi → son guajira, Bolero/Tango → bolero cadence, Salsa/Mambo →
+  montuno, Soul/Motown/Gospel → gospel turnaround, Neo-Soul/Lo-Fi → neo-soul descent. Jazz and Latin
+  loops lean on secondary and dominant-function chords, so their idiomatic borrowed chords (a VI7 or II7,
+  a major V in a minor key) carry the gold ✦ "outside the key" mark — correctly, the same way the
+  Andalusian cadence and flamenco loop do. Version bumped to 4.25.0.
 - **Dance and Latin genres get progressions that actually move.** Many of the new dance/EDM genres were
   defaulting to bare two-chord modal vamps (House → `i–IV`, etc.) or all landing on the same loop — so
   they read as "no chord changes." Five new progressions with real movement fix that: **The EDM anthem**
