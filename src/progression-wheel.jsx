@@ -2319,6 +2319,53 @@ export default function ProgressionWheel() {
     putSec(key, layer ? { barsB: bars } : { bars });
     setSelFrom(key, layer, placed);
   };
+  // ---- melodic development on the selection (motif → melody) ----
+  // in-place transform: map each selected note to a new {c,deg}; originals are cleared first
+  const transformMel = mapNote => {
+    const key = melSel.key, layer = melSel.layer, sec = secMelos[key];
+    const notes = selNotesList();
+    if (!sec || notes.length < 1) return;
+    const srcBars = barsOf(sec, layer); if (!srcBars) return;
+    const cols = flatOf(sec, layer).length, maxDeg = scaleSemis.length - 1;
+    const minC = Math.min(...notes.map(n => n.c)), maxC = Math.max(...notes.map(n => n.c));
+    const pivot = [...notes].sort((a, b) => a.c - b.c || a.deg - b.deg)[0].deg;   // first note's degree
+    const bars = dupBars(srcBars);
+    const colOf = c => bars[Math.floor(c / meloBeats)][c % meloBeats];
+    notes.forEach(n => { const cell = colOf(n.c); const at = cell.indexOf(n.deg); if (at >= 0) cell.splice(at, 1); });
+    const placed = [];
+    notes.forEach(n => {
+      const m = mapNote(n, { minC, maxC, pivot });
+      const nc = m.c, nd = Math.max(0, Math.min(maxDeg, m.deg));
+      if (nc < 0 || nc >= cols) return;                                          // off the grid → drop
+      const cell = colOf(nc); if (!cell.includes(nd)) cell.push(nd);
+      placed.push({ c: nc, deg: nd });
+    });
+    putSec(key, layer ? { barsB: bars } : { bars });
+    if (placed.length) setSelFrom(key, layer, placed);
+  };
+  // copy the selection immediately after itself, transposed by dd scale-steps (0 = repeat, ±1 = sequence)
+  const echoMel = dd => {
+    const key = melSel.key, layer = melSel.layer, sec = secMelos[key];
+    const notes = selNotesList();
+    if (!sec || notes.length < 1) return;
+    const srcBars = barsOf(sec, layer); if (!srcBars) return;
+    const cols = flatOf(sec, layer).length, maxDeg = scaleSemis.length - 1;
+    const minC = Math.min(...notes.map(n => n.c)), maxC = Math.max(...notes.map(n => n.c));
+    const span = maxC - minC + 1;
+    const bars = dupBars(srcBars);
+    const colOf = c => bars[Math.floor(c / meloBeats)][c % meloBeats];
+    const placed = [];
+    notes.forEach(n => {
+      const nc = n.c + span, nd = Math.max(0, Math.min(maxDeg, n.deg + dd));
+      if (nc >= cols) return;
+      const cell = colOf(nc); if (!cell.includes(nd)) cell.push(nd);
+      placed.push({ c: nc, deg: nd });
+    });
+    putSec(key, layer ? { barsB: bars } : { bars });
+    if (placed.length) setSelFrom(key, layer, placed);        // keep the copy selected → chain sequences
+  };
+  const invertMel  = () => transformMel((n, { pivot }) => ({ c: n.c, deg: 2 * pivot - n.deg }));  // flip contour
+  const reverseMel = () => transformMel((n, { minC, maxC }) => ({ c: minC + maxC - n.c, deg: n.deg })); // retrograde
   const cellFromPoint = (x, y) => {
     const el = typeof document !== "undefined" && document.elementFromPoint(x, y);
     if (!el || el.dataset == null || el.dataset.mk === undefined) return null;
@@ -3652,13 +3699,21 @@ export default function ProgressionWheel() {
                         {melMove && (() => {
                           const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
                           return (<>
-                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} — drag one, or nudge →` : "drag a box over notes to select"}</span>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Up a scale step">▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Down a scale step">▼</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Earlier">◀</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Later">▶</button>
+                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
                             <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
                             <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
+                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
+                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
                             <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
                           </>);
                         })()}
