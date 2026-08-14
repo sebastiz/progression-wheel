@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **Remove several chords at once in Reorder mode.** Reorder mode already lets you tap chords to select
+  them; now there's a **🗑 Remove** button beside Move, so you can select one or many chords and drop them
+  all in a single tap — a first-class counterpart to **＋ Add**. It won't let you remove every chord (the
+  button greys out when the whole loop is selected), and it handles both catalogue chords and ones you
+  added from the wheel. Version bumped to 4.29.0.
 - **Rhythm controls moved up top; the strum-arrow grid is gone.** The Rhythm panel was a grab-bag, so it's
   been dissolved. **Pattern** and **Drums** (plus the **Real** and **Click** toggles) now sit in the main
   controls, right under **Sound** and **Lead** — all the "how it sounds and feels" settings in one place.

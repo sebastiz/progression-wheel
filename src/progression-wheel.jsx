@@ -1946,6 +1946,19 @@ export default function ProgressionWheel() {
     setPillSel(moving.map((_, k) => insertAt + k));
   };
   const straightenPills = () => { setOrder({ key:"", list:null }); setPillSel([]); };
+  const removeSelected = () => {   // delete the selected chords in one go (reorder mode)
+    if (!pillSel.length) return;
+    const sel = new Set(pillSel);
+    const toRemove = chords.filter((_, i) => sel.has(i));
+    if (toRemove.length >= chords.length) return;                 // never remove every chord
+    const remIns = toRemove.filter(c => c.inserted);
+    const remBase = toRemove.filter(c => !c.inserted);
+    if (remIns.length) setInserts({ key: editKey, list: insList.filter(x =>
+      !remIns.some(c => x.before === c.insBefore && x.root === c.insRoot && x.tag === c.numeral)) });
+    const keys = remBase.map(chordKeyOf).filter(k => !remList.includes(k));
+    if (keys.length) setRemoved({ key: editKey, list: [...remList, ...keys] });
+    setPillSel([]);
+  };
   const toggleReorder = () => { setReorder(v => !v); setAdding(false); setPillSel([]); setFingerIdx(null); };
   const toggleAdding = () => { setAdding(v => !v); setReorder(false); setPillSel([]); setSel(null); setFingerIdx(null); };
 
@@ -3285,9 +3298,11 @@ export default function ProgressionWheel() {
 
           {reorder && (
             <div className="reorderbar">
-              <span className="rlbl">{pillSel.length ? `${pillSel.length} selected` : "Tap chords to select"}</span>
+              <span className="rlbl">{pillSel.length ? `${pillSel.length} selected` : "Tap chords to select, then move or remove"}</span>
               <button className="mini" disabled={!pillSel.length} onClick={() => movePills(-1)}>◀ Move</button>
               <button className="mini" disabled={!pillSel.length} onClick={() => movePills(1)}>Move ▶</button>
+              <button className="mini recstop" disabled={!pillSel.length || pillSel.length >= chords.length}
+                onClick={removeSelected} title="Remove the selected chords from the progression">🗑 Remove</button>
               {order.list && order.key === editKey &&
                 <button className="mini" onClick={straightenPills} title="Restore the original order">↺ Straighten</button>}
             </div>
