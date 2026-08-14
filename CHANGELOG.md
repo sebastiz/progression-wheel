@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Add any chord straight from the circle of fifths.** A new **＋ Add** button by the chord strip turns
+  on an add mode: every node on the wheel — all twelve majors and twelve minors — lights up with a dashed
+  ring, and tapping one **appends that chord to the end of the chain**. Keep tapping to add several, then
+  press **✕ Done**. Added chords carry a proper Roman numeral when they're diatonic (or a neutral • when
+  they're chromatic, with the gold ✦ marking them outside the key), and each has its own identity, so the
+  existing **⇄ Reorder** works on them — drop a chord in from anywhere and slide it into place. Version
+  bumped to 4.27.0.
 - **Neater interface — the explanatory text is now opt-in.** The app had grown a lot of always-on helper
   prose, which made it feel cluttered. A new **Tips** toggle in the header (off by default) hides the
   longer guidance paragraphs — the chord-card how-to, the stave and section explainers, the landing-note
@@ -10,7 +17,9 @@
   decluttered: the power-user harmony controls — the **secondary-dominant**, **parallel-chord** and
   **borrowed-colour** menus plus the **Par / Sec** wheel overlays — now sit behind a **＋ Advanced**
   disclosure (collapsed by default), so the everyday row is just Key · Mode · Genre · Emotion · colour ·
-  dice. Version bumped to 4.26.0.
+  dice. The wheel's tap-to-swap hint, the colour legend beneath the wheel (tonic / subdominant /
+  dominant / chords-in-key / ✦ / order), and the strum-pattern description are gated the same way — hidden
+  by default, back with Tips. Version bumped to 4.26.0.
 - **Signature grooves and tempos for the new loops.** The eleven new progressions (the five dance loops,
   six jazz/Latin/soul loops) now each carry their own default rhythm pattern and tempo instead of falling
   back to the generic pop strum — so a Bossa pick brushes a bossa, Salsa and Son ride a tresillo/clave,

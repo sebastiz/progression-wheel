@@ -1740,6 +1740,7 @@ export default function ProgressionWheel() {
   const [order, setOrder] = useState({ key:"", list:null }); // reordered chord sequence (keys)
   const [reorder, setReorder] = useState(false);            // pill reorder mode on/off
   const [pillSel, setPillSel] = useState([]);               // selected pill indices (reorder mode)
+  const [adding, setAdding] = useState(false);              // "add any chord from the wheel" mode
   const [scoreInstr, setScoreInstr] = useState("piano");    // notation: piano | guitar
   const [showScore, setShowScore] = useState(false);        // notation panel collapse
   const [realSounds, setRealSounds] = useState(true);       // use real instrument samples when available
@@ -1834,8 +1835,10 @@ export default function ProgressionWheel() {
       insList.filter(x => x.before === i).forEach(x => emitInsert(x, i));
       out.push(c);
     });
-    // trailing inserts (a chord duplicated/added after the last one) append at the end
-    insList.filter(x => x.before >= base.length).forEach(x => emitInsert(x, base.length));
+    // trailing inserts (a chord duplicated/added after the last one) append at the end, ordered by
+    // `before` — each added chord gets a distinct `before` so its identity (baseName) stays unique
+    insList.filter(x => x.before >= base.length).sort((a, b) => a.before - b.before)
+      .forEach(x => emitInsert(x, x.before));
     // removed chords drop out (but never leave the progression empty)
     let kept = out.filter(c => !remList.includes(chordKeyOf(c)));
     if (!kept.length) kept = out;
@@ -1908,9 +1911,24 @@ export default function ProgressionWheel() {
     }
     setFingerIdx(null);
   };
+  // the next unused trailing slot, so each appended chord keeps a unique identity (for reorder / remove)
+  const nextTrailBefore = () => {
+    const nBase = prog.numerals.length;
+    return insList.reduce((m, x) => x.before >= nBase ? Math.max(m, x.before + 1) : m, nBase);
+  };
+  const numeralFor = (root, quality) => {   // roman numeral for the pill, or "•" if it's chromatic here
+    const offv = ((root - tonic) % 12 + 12) % 12;
+    const rn = Object.entries(numDefs).find(([, v]) => v[0] === offv && v[1] === quality);
+    return rn ? rn[0] : "•";
+  };
+  const addChord = (root, quality) => {   // append any wheel chord to the end of the chain
+    setInserts({ key: editKey, list: [...insList, { before: nextTrailBefore(), root, quality, tag: numeralFor(root, quality) }] });
+    setSel(null);
+  };
   const duplicateChord = c => {   // add a copy right after — makes the progression longer
-    const before = c.inserted ? c.insBefore : c.bi + 1;
-    setInserts({ key: editKey, list: [...insList, { before, root: c.root, quality: c.quality, tag: c.name }] });
+    let before = c.inserted ? c.insBefore : c.bi + 1;
+    if (before >= prog.numerals.length) before = nextTrailBefore();   // trailing copy: keep it unique
+    setInserts({ key: editKey, list: [...insList, { before, root: c.root, quality: c.quality, tag: c.inserted ? c.numeral : c.name }] });
     setFingerIdx(null);
   };
 
@@ -1928,7 +1946,8 @@ export default function ProgressionWheel() {
     setPillSel(moving.map((_, k) => insertAt + k));
   };
   const straightenPills = () => { setOrder({ key:"", list:null }); setPillSel([]); };
-  const toggleReorder = () => { setReorder(v => !v); setPillSel([]); setFingerIdx(null); };
+  const toggleReorder = () => { setReorder(v => !v); setAdding(false); setPillSel([]); setFingerIdx(null); };
+  const toggleAdding = () => { setAdding(v => !v); setReorder(false); setPillSel([]); setSel(null); setFingerIdx(null); };
 
   const uniques = useMemo(() => {
     const seen = {};
@@ -3142,9 +3161,13 @@ export default function ProgressionWheel() {
               const maj = POS_MAJ[p], min = (maj + 9) % 12;
               const M = slotXY(p, R_MAJ), m = slotXY(p, R_MIN);
               return (
-                <g key={"hit"+p} style={{ cursor: sel ? "pointer" : "default" }}>
-                  <circle cx={M.x} cy={M.y} r={27} fill="transparent" onClick={() => doSwap(maj, "maj")} />
-                  <circle cx={m.x} cy={m.y} r={22} fill="transparent" onClick={() => doSwap(min, "min")} />
+                <g key={"hit"+p} style={{ cursor: (sel || adding) ? "pointer" : "default" }}>
+                  {adding && <>
+                    <circle cx={M.x} cy={M.y} r={25} fill="none" stroke="#54B79D" strokeWidth="1.3" strokeDasharray="3 3" opacity="0.5" />
+                    <circle cx={m.x} cy={m.y} r={20} fill="none" stroke="#54B79D" strokeWidth="1.3" strokeDasharray="3 3" opacity="0.42" />
+                  </>}
+                  <circle cx={M.x} cy={M.y} r={27} fill="transparent" onClick={() => adding ? addChord(maj, "maj") : doSwap(maj, "maj")} />
+                  <circle cx={m.x} cy={m.y} r={22} fill="transparent" onClick={() => adding ? addChord(min, "min") : doSwap(min, "min")} />
                 </g>
               );
             })}
@@ -3182,6 +3205,7 @@ export default function ProgressionWheel() {
               return (
                 <g key={"n"+i} style={{ cursor:"pointer" }}
                   onClick={() => {
+                    if (adding) { addChord(c.root, c.quality); return; }   // tap a node again to add another copy
                     if (c.inserted) {
                       setInserts({ key: editKey, list: insList.filter(x => !(x.before === c.insBefore && x.root === c.insRoot)) });
                       return;
@@ -3204,11 +3228,13 @@ export default function ProgressionWheel() {
           </svg>
 
           <div className="hint">
-            {sel
+            {adding
+              ? <>Tap any node on the wheel to <b style={{ color:"#54B79D" }}>add</b> it to the end of the chain — then <b>⇄ Reorder</b> to place it. Tap <b>✕ Done</b> when finished.</>
+              : sel
               ? <>Tap any note on the wheel to replace <b>{(uniques.find(u => u.baseName === sel) || {}).name || sel}</b> — or tap it again to cancel.</>
               : (Object.keys(ovMap).length || insList.length || Object.keys(qmap).length || remList.length)
                 ? <>Progression edited. <button className="mini" onClick={resetEdits}>Reset</button></>
-                : <>Tap a chord to swap it. Tap a <b style={{ color:GOLD }}>gold</b> or <b style={{ color:LAV }}>lavender</b> node to pull it into the progression.</>}
+                : tips ? <>Tap a chord to swap it, or <b>＋ Add</b> any chord from the wheel.</> : null}
           </div>
 
           <div className="stripline">
@@ -3227,7 +3253,11 @@ export default function ProgressionWheel() {
                 );
               })}
             </span>
-            <button className={"mini" + (reorder ? " miniOn" : "")} style={{ marginLeft:"auto" }}
+            <button className={"mini" + (adding ? " miniOn" : "")} style={{ marginLeft:"auto" }}
+              onClick={toggleAdding} title="Tap any chord on the wheel to add it to the chain">
+              {adding ? "✕ Done" : "＋ Add"}
+            </button>
+            <button className={"mini" + (reorder ? " miniOn" : "")}
               onClick={toggleReorder} title="Select several chords and shift them as a group">
               {reorder ? "✕ Done" : "⇄ Reorder"}
             </button>
@@ -3289,7 +3319,7 @@ export default function ProgressionWheel() {
             );
           })()}
 
-          <div className="legend" style={{ padding:"0 10px 8px" }}>
+          {tips && <div className="legend" style={{ padding:"0 10px 8px" }}>
             <span><i className="dot" style={{ background: FN_COLOR.T }} /> tonic</span>
             <span><i className="dot" style={{ background: FN_COLOR.S }} /> subdominant</span>
             <span><i className="dot" style={{ background: FN_COLOR.D }} /> dominant</span>
@@ -3298,7 +3328,7 @@ export default function ProgressionWheel() {
             {showPar && <span style={{ color:LAV }}><i className="dash" /> parallel</span>}
             {showSec && <span style={{ color:GOLD }}><i className="dash" /> secondary dominant</span>}
             <span>numbers = order in the loop</span>
-          </div>
+          </div>}
         </div>
 
         {/* notation — the song on a stave */}
@@ -3391,9 +3421,9 @@ export default function ProgressionWheel() {
             </div>
           </div>
 
-          <div className="arrnote" style={{ marginTop:5 }}>
+          {tips && <div className="arrnote" style={{ marginTop:5 }}>
             {rhythm.name}{rhythm.swing ? " · swung" : ""} — {rhythm.desc}
-          </div>
+          </div>}
           {playing && curLabel && (
             <div className="arrnote" style={{ color:GOLD, fontStyle:"normal", fontWeight:600 }}>Playing: {curLabel}</div>
           )}
