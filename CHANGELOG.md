@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Rhythm controls moved up top; the strum-arrow grid is gone.** The Rhythm panel was a grab-bag, so it's
+  been dissolved. **Pattern** and **Drums** (plus the **Real** and **Click** toggles) now sit in the main
+  controls, right under **Sound** and **Lead** — all the "how it sounds and feels" settings in one place.
+  The animated **↓ ↑ · strum-arrow grid was removed** (the pattern still drives playback and MIDI, it just
+  isn't drawn). The melody-related tools that were stranded under Rhythm — **🎤 Hum**, **↑/↓ MIDI**, the
+  "which section a melody lands on" picker, the **🎸 Guitar / 🎤 Voice** record source, and **Legato** —
+  moved into the **Song & melody** panel where they belong. Version bumped to 4.28.0.
 - **Add any chord straight from the circle of fifths.** A new **＋ Add** button by the chord strip turns
   on an add mode: every node on the wheel — all twelve majors and twelve minors — lights up with a dashed
   ring, and tapping one **appends that chord to the end of the chain**. Keep tapping to add several, then
