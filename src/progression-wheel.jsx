@@ -3407,28 +3407,34 @@ export default function ProgressionWheel() {
             </select>
           </div>
 
-          {/* melody tools: bring a tune in (hum / MIDI / record), export, and shape it */}
-          <div className="row" style={{ marginTop:10, gap:8, alignItems:"center", flexWrap:"wrap" }}>
+          {/* melody tools — bring a tune in, choose the record source, utilities */}
+          <div className="row" style={{ marginTop:10, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
+            <span className="lbl" style={{ margin:0 }}>Add a melody</span>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody}
               title="Load the tune you hummed in the Tune Transcriber">🎤 Hum</button>
-            <label className="btn" style={{ padding:"5px 11px", cursor:"pointer" }} title="Import a melody from a MIDI file">↑ MIDI
+            <label className="btn" style={{ padding:"5px 11px", cursor:"pointer" }} title="Import a melody from a MIDI file">↑ MIDI file
               <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} hidden />
             </label>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ MIDI</button>
+            <span className="keytag">→ lands on</span>
             <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""}
               onChange={e => setImpSec(e.target.value)}
-              title="Which section a hummed / played tune, MIDI import, or in-app recording lands on">
-              <option value="">Melody → first section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
-              {sections.insts.map(s => <option key={s.key} value={s.key}>Melody → {s.key} · {s.word}</option>)}
+              title="Which section a hummed tune or MIDI import lands on">
+              <option value="">first section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
+              {sections.insts.map(s => <option key={s.key} value={s.key}>{s.key} · {s.word}</option>)}
             </select>
+          </div>
+          <div className="row" style={{ marginTop:8, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
+            <span className="lbl" style={{ margin:0 }}>Record</span>
             <span className="seg" title="What the ● Rec button on each section listens for — tunes pitch detection">
               <button className={recSource === "guitar" ? "on" : ""} onClick={() => setRecSource("guitar")} disabled={!!recSec}>🎸 Guitar</button>
               <button className={recSource === "voice" ? "on" : ""} onClick={() => setRecSource("voice")} disabled={!!recSec}>🎤 Voice</button>
             </span>
-            <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ paddingBottom:2 }}
+            <span className="keytag">— press ● Rec on any section below</span>
+            <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ marginLeft:"auto" }}
               title="Merge the melody notes into one flowing line — smoother, less stodgy">
               <div className="sw" /> Legato
             </div>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ Export MIDI</button>
           </div>
 
           {structSel && (
@@ -3454,41 +3460,12 @@ export default function ProgressionWheel() {
             {scaleSemis.map((s, i) => (
               <span key={i} className={"npill nsm" + (pentSemis.includes(s) ? " npent" : "")}>{spell((tonic + s) % 12, tonic, effMode)}</span>
             ))}
-            <button className="mini" onClick={() => setShowLand(v => !v)}>{showLand ? "Hide" : "Landing notes"}</button>
           </div>
-
-          <div className="row" style={{ marginTop:8, gap:6, alignItems:"center" }}>
-            <span className="keytag" style={{ marginRight:2 }}>Chords in {keyLabel}:</span>
-            {modeTriads.map((t, i) => (
-              <span key={i} className="npill nsm" title={`${t.rn} — ${chordName(t.root, t.q)}`}>
-                <b style={{ color:GOLD }}>{t.rn}</b> {spell(t.root, tonic, effMode)}{QSUF[t.q]}
-              </span>
-            ))}
-          </div>
-          {showLand && (
-            <div style={{ marginTop:4 }}>
-              {uniques.map((c, i) => {
-                const tones = chordIvs(c.quality).map(x => (c.root + x) % 12);
-                const chrom = tones.some(t => !scaleNotes.includes(t));
-                return (
-                  <div key={i} className="mrow">
-                    <span className="pill" style={{ background: FN_COLOR[c.func], color: FN_TEXT[c.func] }}>{c.name}</span>
-                    {tones.map((t, j) => <span key={j} className={"npill nsm" + (!scaleNotes.includes(t) ? " nchrom" : "")}>{spell(t, tonic, effMode)}</span>)}
-                    {chrom && <span className="keytag" style={{ color:GOLD }}>chromatic</span>}
-                  </div>
-                );
-              })}
-              {tips && <p className="keytag" style={{ marginTop:6 }}>
-                Land long notes, downbeats and phrase endings on the playing chord's notes — root and 3rd
-                strongest. Gold notes sit outside the key: strong landings during that chord's bar only.
-              </p>}
-            </div>
-          )}
 
           {tips && <p className="keytag" style={{ marginTop:8 }}>
             On each section: <b>▶</b> play from here · <b>🔁</b> loop just this section ·
             <b> {recSource === "guitar" ? "🎸" : "🎤"} Rec</b> record a {recSource} line straight onto its
-            melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> on the Rhythm panel above.
+            melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> above.
           </p>}
           {(() => {
             const groups = [];

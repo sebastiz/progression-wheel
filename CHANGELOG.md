@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Tidier Song & melody panel.** The melody tools are now grouped and labelled so their roles are clear:
+  an **Add a melody** row (🎤 Hum · ↑ MIDI file · → lands on <section>) for bringing a whole tune in, and
+  a separate **Record** row (🎸 Guitar / 🎤 Voice — the source the per-section ● Rec button listens for)
+  with **Legato** and **↓ Export MIDI** alongside. The redundant **Chords in <key>** row (it just
+  duplicated the wheel's haloed chords) and the **Landing notes** feature (the Scale row's toggle and its
+  per-chord expansion) are removed; a plain one-line **Scale (<key>): notes** readout stays as a quick
+  reference for the melody grid. Version bumped to 4.30.0.
 - **Remove several chords at once in Reorder mode.** Reorder mode already lets you tap chords to select
   them; now there's a **🗑 Remove** button beside Move, so you can select one or many chords and drop them
   all in a single tap — a first-class counterpart to **＋ Add**. It won't let you remove every chord (the
