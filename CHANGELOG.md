@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Remove chords next to Add; melody tools behind one button; scale readout gone.** Three tidy-ups.
+  (1) A **🗑 Remove** button now sits right beside **＋ Add** under the wheel — tap it, then tap any chord
+  on the strip or the wheel to delete it (Add / Remove / Reorder are one-tap modes; the last chord can't
+  be removed). (2) The melody tools are folded into a single **🎵 Add a melody** button that expands to
+  reveal Hum, MIDI-file import, **🔴 Record**, the "→ lands on" section and the Guitar/Voice record
+  source — collapsed by default, so the panel is clean until you need it. (3) The one-line **Scale
+  (<key>): notes** readout is removed. Version bumped to 4.33.0.
 - **One-tap "Add recorded melody" button.** Recording used to mean setting a source up top, then scrolling
   down to find a section's ● Rec button — confusing. Now the **Add a melody** row has three matching
   actions in a line — **🎤 Hum · ↑ MIDI file · 🔴 Add recorded melody** — and all three drop the melody
