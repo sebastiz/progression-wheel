@@ -17,7 +17,9 @@
   decluttered: the power-user harmony controls — the **secondary-dominant**, **parallel-chord** and
   **borrowed-colour** menus plus the **Par / Sec** wheel overlays — now sit behind a **＋ Advanced**
   disclosure (collapsed by default), so the everyday row is just Key · Mode · Genre · Emotion · colour ·
-  dice. Version bumped to 4.26.0.
+  dice. The wheel's tap-to-swap hint, the colour legend beneath the wheel (tonic / subdominant /
+  dominant / chords-in-key / ✦ / order), and the strum-pattern description are gated the same way — hidden
+  by default, back with Tips. Version bumped to 4.26.0.
 - **Signature grooves and tempos for the new loops.** The eleven new progressions (the five dance loops,
   six jazz/Latin/soul loops) now each carry their own default rhythm pattern and tempo instead of falling
   back to the generic pop strum — so a Bossa pick brushes a bossa, Salsa and Son ride a tresillo/clave,

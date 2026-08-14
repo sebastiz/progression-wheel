@@ -3234,7 +3234,7 @@ export default function ProgressionWheel() {
               ? <>Tap any note on the wheel to replace <b>{(uniques.find(u => u.baseName === sel) || {}).name || sel}</b> — or tap it again to cancel.</>
               : (Object.keys(ovMap).length || insList.length || Object.keys(qmap).length || remList.length)
                 ? <>Progression edited. <button className="mini" onClick={resetEdits}>Reset</button></>
-                : <>Tap a chord to swap it, or <b>＋ Add</b> any chord from the wheel.</>}
+                : tips ? <>Tap a chord to swap it, or <b>＋ Add</b> any chord from the wheel.</> : null}
           </div>
 
           <div className="stripline">
@@ -3319,7 +3319,7 @@ export default function ProgressionWheel() {
             );
           })()}
 
-          <div className="legend" style={{ padding:"0 10px 8px" }}>
+          {tips && <div className="legend" style={{ padding:"0 10px 8px" }}>
             <span><i className="dot" style={{ background: FN_COLOR.T }} /> tonic</span>
             <span><i className="dot" style={{ background: FN_COLOR.S }} /> subdominant</span>
             <span><i className="dot" style={{ background: FN_COLOR.D }} /> dominant</span>
@@ -3328,7 +3328,7 @@ export default function ProgressionWheel() {
             {showPar && <span style={{ color:LAV }}><i className="dash" /> parallel</span>}
             {showSec && <span style={{ color:GOLD }}><i className="dash" /> secondary dominant</span>}
             <span>numbers = order in the loop</span>
-          </div>
+          </div>}
         </div>
 
         {/* notation — the song on a stave */}
@@ -3421,9 +3421,9 @@ export default function ProgressionWheel() {
             </div>
           </div>
 
-          <div className="arrnote" style={{ marginTop:5 }}>
+          {tips && <div className="arrnote" style={{ marginTop:5 }}>
             {rhythm.name}{rhythm.swing ? " · swung" : ""} — {rhythm.desc}
-          </div>
+          </div>}
           {playing && curLabel && (
             <div className="arrnote" style={{ color:GOLD, fontStyle:"normal", fontWeight:600 }}>Playing: {curLabel}</div>
           )}
