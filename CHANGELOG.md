@@ -1,6 +1,43 @@
 # Changelog
 
 ## Unreleased
+- **Neater interface — the explanatory text is now opt-in.** The app had grown a lot of always-on helper
+  prose, which made it feel cluttered. A new **Tips** toggle in the header (off by default) hides the
+  longer guidance paragraphs — the chord-card how-to, the stave and section explainers, the landing-note
+  and structure notes, the song-key caveats — leaving clean panels with just the controls and results.
+  Flip **Tips** on to bring the guidance back. Contextual, in-the-moment hints (what a tap will do, what's
+  currently playing, recording instructions) stay visible either way. The controls panel is also
+  decluttered: the power-user harmony controls — the **secondary-dominant**, **parallel-chord** and
+  **borrowed-colour** menus plus the **Par / Sec** wheel overlays — now sit behind a **＋ Advanced**
+  disclosure (collapsed by default), so the everyday row is just Key · Mode · Genre · Emotion · colour ·
+  dice. Version bumped to 4.26.0.
+- **Signature grooves and tempos for the new loops.** The eleven new progressions (the five dance loops,
+  six jazz/Latin/soul loops) now each carry their own default rhythm pattern and tempo instead of falling
+  back to the generic pop strum — so a Bossa pick brushes a bossa, Salsa and Son ride a tresillo/clave,
+  EDM and House stomp four-on-the-floor, the festival lift and future-bass swell get their tempos, gospel
+  sways in 12/8, and neo-soul sits back on a funk scratch. Flamenco also gets its groove. Version bumped
+  to 4.26.0.
+- **A wider progression library so same-family genres pull distinct loops.** Six more authentic
+  progressions join the catalogue (now 25 in all): **Rhythm changes** (I–VI7–ii–V7, the jazz/bebop
+  standard), **Bossa nova turnaround** (I–II7–ii–V7), **Son guajira** (I–IV–V–IV, the Cuban son vamp),
+  **Bolero cadence** (i–♭VI–iv–V), **Gospel turnaround** (vi–ii–V–I) and **Neo-soul descent**
+  (IV–iii–ii–I). Genres across Jazz, Soul/Funk, Hip-Hop and especially Latin are re-mapped onto them so
+  neighbouring styles differ: Bebop/Ragtime → rhythm changes, Bossa Nova/Samba/Latin Jazz → bossa
+  turnaround, Son Cubano/Cumbia/Mariachi → son guajira, Bolero/Tango → bolero cadence, Salsa/Mambo →
+  montuno, Soul/Motown/Gospel → gospel turnaround, Neo-Soul/Lo-Fi → neo-soul descent. Jazz and Latin
+  loops lean on secondary and dominant-function chords, so their idiomatic borrowed chords (a VI7 or II7,
+  a major V in a minor key) carry the gold ✦ "outside the key" mark — correctly, the same way the
+  Andalusian cadence and flamenco loop do. Version bumped to 4.25.0.
+- **Dance and Latin genres get progressions that actually move.** Many of the new dance/EDM genres were
+  defaulting to bare two-chord modal vamps (House → `i–IV`, etc.) or all landing on the same loop — so
+  they read as "no chord changes." Five new progressions with real movement fix that: **The EDM anthem**
+  (vi–IV–I–V), **Deep-house groove** (i–iv–♭VII–♭III), **The festival lift** (i–♭VII–♭VI–♭VII),
+  **Future-bass swell** (IV–V–iii–vi) and **Latin montuno** (i–iv–V). Every Dance & Electronic and Latin
+  genre is re-mapped so its default loop has three or four chords and neighbouring genres differ (House →
+  EDM anthem, Deep House → Deep-house groove, Trance → festival lift, Techno → Aeolian cadence, Future
+  Bass → future-bass swell, Salsa/Latin → montuno, and so on). The short modal vamps are still available
+  as secondary picks for genres that genuinely stay static (minimal techno, ambient). Version bumped to
+  4.24.0.
 - **A much bigger genre list.** The Genre picker grows from 9 to **106 genres**, organised into nine
   families shown as labelled groups in the dropdown: **Pop & Rock** (15 — Pop, Classic/Hard/Arena Rock,
   Alternative, Grunge, Britpop, Punk, Pop-Punk, Emo, Shoegaze, Post-Rock, Psychedelic, Surf), **Metal &

@@ -79,6 +79,28 @@ const PROGRESSIONS = {};
  ["Wherever I May Roam — Metallica","Sails of Charon — Scorpions","Symphony of Destruction — Megadeth","War — Joe Satriani","Pyramid Song — Radiohead","Remember Tomorrow — Iron Maiden","Space Truckin' — Deep Purple","White Rabbit — Jefferson Airplane","Entre Dos Aguas — Paco de Lucía","Duel of the Fates — John Williams"]],
 ["aeolian","Aeolian cadence","minor","i bVI bVII",
  ["All Along the Watchtower — Bob Dylan","Stairway to Heaven — Led Zeppelin (ascent)","My Heart Will Go On — Céline Dion","Somebody That I Used to Know — Gotye","Boulevard of Broken Dreams — Green Day","Californication — Red Hot Chili Peppers","Self Esteem — The Offspring","The Passenger — Iggy Pop","Runaway Train — Soul Asylum","Mad World — Gary Jules"]],
+["edm","The EDM anthem","major","vi IV I V",
+ ["Wake Me Up — Avicii","This Is What You Came For — Calvin Harris ft. Rihanna","Something Just Like This — The Chainsmokers & Coldplay","The Nights — Avicii","Hey Brother — Avicii","Don't You Worry Child — Swedish House Mafia","Wide Awake — Katy Perry","Clarity — Zedd","Waiting for Love — Avicii","We Found Love — Rihanna ft. Calvin Harris"]],
+["deepHouse","Deep-house groove","minor","i iv bVII bIII",
+ ["Insomnia — Faithless","You Don't Know Me — Jax Jones ft. RAYE","Cola — CamelPhat & Elderbrook","Need U (100%) — Duke Dumont","Finally — Kings of Tomorrow","Gypsy Woman — Crystal Waters","Your Love — Frankie Knuckles","Promised Land — Joe Smooth","Rather Be — Clean Bandit","Move Your Body — Marshall Jefferson"]],
+["festival","The festival lift","minor","i bVII bVI bVII",
+ ["Adagio for Strings — Tiësto","For an Angel — Paul van Dyk","Children — Robert Miles","Silence — Delerium ft. Sarah McLachlan","Strobe — deadmau5","Save the World — Swedish House Mafia","Reload — Sebastian Ingrosso & Tommy Trash","Concrete Angel — Gareth Emery","Greyhound — Swedish House Mafia","In and Out of Love — Armin van Buuren"]],
+["futureBass","Future-bass swell","major","IV V iii vi",
+ ["Never Be Like You — Flume","Roses — The Chainsmokers","Stay — Zedd & Alessia Cara","Let Me Love You — DJ Snake ft. Justin Bieber","Alone — Marshmello","It Ain't Me — Kygo & Selena Gomez","Firestone — Kygo","Cold Water — Major Lazer","Don't Let Me Down — The Chainsmokers","Middle — DJ Snake"]],
+["montuno","Latin montuno","minor","i iv V",
+ ["El Cuarto de Tula — Buena Vista Social Club","Quimbara — Celia Cruz","Pedro Navaja — Rubén Blades","El Cantante — Héctor Lavoe","Llorarás — Oscar D'León","Vivir Mi Vida — Marc Anthony","La Vida Es un Carnaval — Celia Cruz","Aguanile — Héctor Lavoe","Idilio — Willie Colón","Oye Como Va — Tito Puente"]],
+["rhythm","Rhythm changes","major","I VI7 ii V7",
+ ["I Got Rhythm — George Gershwin","Oleo — Sonny Rollins","Anthropology — Charlie Parker","Cotton Tail — Duke Ellington","Rhythm-a-ning — Thelonious Monk","Salt Peanuts — Dizzy Gillespie","Moose the Mooche — Charlie Parker","Dexterity — Charlie Parker","The Flintstones — Hoyt Curtin","Shaw 'Nuff — Gillespie & Parker"]],
+["bossa","Bossa nova turnaround","major","I II7 ii V7",
+ ["The Girl from Ipanema — Antônio Carlos Jobim","Corcovado (Quiet Nights) — Jobim","Desafinado — Jobim","Wave — Jobim","Summer Samba (So Nice) — Marcos Valle","Mas Que Nada — Jorge Ben","One Note Samba — Jobim","Águas de Março — Jobim","Meditation — Jobim","Blame It on the Bossa Nova — Eydie Gormé"]],
+["guajira","Son guajira","major","I IV V IV",
+ ["Guantanamera — Joseíto Fernández","Chan Chan — Buena Vista Social Club","El Manisero (The Peanut Vendor) — Moisés Simons","Son de la Loma — Trío Matamoros","Lágrimas Negras — Bebo & Cigala","Bilongo (La Negra Tomasa) — Guillermo Rodríguez","Guajira Guantanamera — traditional","El Carretero — Guillermo Portabales","Candela — Buena Vista Social Club","Herencia Africana — traditional"]],
+["bolero","Bolero cadence","minor","i bVI iv V",
+ ["Bésame Mucho — Consuelo Velázquez","Sabor a Mí — Álvaro Carrillo","Contigo en la Distancia — César Portillo de la Luz","Historia de un Amor — Carlos Eleta Almarán","Perfidia — Alberto Domínguez","Quizás, Quizás, Quizás — Osvaldo Farrés","El Reloj — Roberto Cantoral","Dos Gardenias — Isolina Carrillo","Solamente una Vez — Agustín Lara","La Barca — Roberto Cantoral"]],
+["gospel","Gospel turnaround","major","vi ii V I",
+ ["Oh Happy Day — Edwin Hawkins Singers","Ain't No Mountain High Enough — Marvin Gaye & Tammi Terrell","I Say a Little Prayer — Aretha Franklin","Lean on Me — Bill Withers","Isn't She Lovely — Stevie Wonder","Signed, Sealed, Delivered — Stevie Wonder","Higher Ground — Stevie Wonder","Never Too Much — Luther Vandross","Ain't Nobody — Chaka Khan","Golden — Jill Scott"]],
+["neoSoul","Neo-soul descent","major","IV iii ii I",
+ ["Doo Wop (That Thing) — Lauryn Hill","Brown Sugar — D'Angelo","Untitled (How Does It Feel) — D'Angelo","Cranes in the Sky — Solange","Come Away with Me — Norah Jones","Put Your Records On — Corinne Bailey Rae","Best Part — Daniel Caesar & H.E.R.","The Light — Common","Electric Lady — Janelle Monáe","Sunday Morning — Maroon 5"]],
 ].forEach(([id, label, mode, nums, songs]) =>
   PROGRESSIONS[id] = { label, mode, numerals: nums.split(" "), songs });
 
@@ -120,21 +142,21 @@ const GENRE_GROUPS = [
   ["Blues, Soul & Funk", [
     ["Blues", ["blues","three"]],
     ["Rhythm & Blues", ["blues","doowop","axis"]],
-    ["Soul", ["doowop","jazz","axis"]],
-    ["Motown", ["doowop","axis","jazz"]],
-    ["Funk", ["dorian","mixo","axis"]],
-    ["Disco", ["axis","dorian","doowop"]],
-    ["Gospel", ["doowop","blues","jazz"]],
-    ["Neo-Soul", ["jazz","dorian","doowop"]],
+    ["Soul", ["gospel","doowop","jazz"]],
+    ["Motown", ["gospel","doowop","axis"]],
+    ["Funk", ["mixo","gospel","dorian"]],
+    ["Disco", ["axis","gospel","doowop"]],
+    ["Gospel", ["gospel","doowop","blues"]],
+    ["Neo-Soul", ["neoSoul","jazz","gospel"]],
   ]],
   ["Jazz & Standards", [
-    ["Jazz", ["jazz","doowop"]],
-    ["Swing", ["jazz","blues"]],
-    ["Bebop", ["jazz"]],
-    ["Bossa Nova", ["jazz","dorian"]],
-    ["Cool Jazz", ["jazz","dorian"]],
-    ["Ragtime", ["blues","three","jazz"]],
-    ["Lounge", ["jazz","doowop","pachelbel"]],
+    ["Jazz", ["jazz","rhythm","doowop"]],
+    ["Swing", ["rhythm","jazz","blues"]],
+    ["Bebop", ["rhythm","jazz"]],
+    ["Bossa Nova", ["bossa","jazz","dorian"]],
+    ["Cool Jazz", ["jazz","bossa","dorian"]],
+    ["Ragtime", ["rhythm","blues","three"]],
+    ["Lounge", ["bossa","jazz","doowop"]],
   ]],
   ["Folk, Country & Roots", [
     ["Folk", ["three","axis","dorian","doowop"]],
@@ -146,57 +168,57 @@ const GENRE_GROUPS = [
     ["Singer-Songwriter", ["axis","pachelbel","doowop"]],
   ]],
   ["Dance & Electronic", [
-    ["EDM / Dance", ["axis","axisMinor","dorian"]],
-    ["House", ["dorian","axis","aeolian"]],
-    ["Deep House", ["dorian","aeolian","axis"]],
-    ["Tech House", ["dorian","aeolian","phrygian"]],
-    ["Progressive House", ["axis","aeolian","pachelbel"]],
-    ["Future House", ["axis","dorian","aeolian"]],
-    ["Tropical House", ["axis","mixo","dorian"]],
-    ["Nu-Disco", ["axis","dorian","doowop"]],
-    ["Techno", ["aeolian","dorian","phrygian"]],
-    ["Minimal Techno", ["aeolian","dorian","phrygian"]],
-    ["Trance", ["axis","aeolian","pachelbel"]],
-    ["Psytrance", ["phrygian","aeolian","dorian"]],
-    ["Big Room", ["axisMinor","aeolian","axis"]],
-    ["Electro House", ["axis","axisMinor","dorian"]],
-    ["Dubstep", ["aeolian","phrygian","axisMinor"]],
-    ["Future Bass", ["axis","lydian","aeolian"]],
-    ["Drum & Bass", ["dorian","aeolian","phrygian"]],
-    ["Jungle", ["aeolian","dorian","phrygian"]],
-    ["UK Garage", ["dorian","aeolian","jazz"]],
-    ["Breakbeat", ["dorian","mixo","aeolian"]],
-    ["Hardstyle", ["axisMinor","phrygian","aeolian"]],
-    ["Eurodance", ["axis","axisMinor","dorian"]],
-    ["Synthwave", ["axisMinor","aeolian","mixo"]],
-    ["Ambient", ["lydian","aeolian","dorian"]],
-    ["Downtempo / Trip-Hop", ["aeolian","dorian","jazz"]],
-    ["IDM", ["lydian","dorian","aeolian"]],
-    ["Lo-Fi / Chillhop", ["jazz","dorian","doowop"]],
-    ["Hip-Hop", ["dorian","aeolian","jazz"]],
-    ["Trap", ["aeolian","phrygian","axisMinor"]],
+    ["EDM / Dance", ["edm","axisMinor","festival"]],
+    ["House", ["edm","deepHouse","axis"]],
+    ["Deep House", ["deepHouse","edm","aeolian"]],
+    ["Tech House", ["deepHouse","aeolian","dorian"]],
+    ["Progressive House", ["festival","edm","pachelbel"]],
+    ["Future House", ["edm","festival","axis"]],
+    ["Tropical House", ["axis","edm","futureBass"]],
+    ["Nu-Disco", ["axis","edm","doowop"]],
+    ["Techno", ["aeolian","festival","deepHouse"]],
+    ["Minimal Techno", ["deepHouse","aeolian","dorian"]],
+    ["Trance", ["festival","edm","axisMinor"]],
+    ["Psytrance", ["festival","phrygian","aeolian"]],
+    ["Big Room", ["festival","axisMinor","edm"]],
+    ["Electro House", ["edm","axisMinor","festival"]],
+    ["Dubstep", ["axisMinor","festival","aeolian"]],
+    ["Future Bass", ["futureBass","edm","axis"]],
+    ["Drum & Bass", ["deepHouse","aeolian","festival"]],
+    ["Jungle", ["aeolian","deepHouse","dorian"]],
+    ["UK Garage", ["deepHouse","edm","jazz"]],
+    ["Breakbeat", ["mixo","edm","deepHouse"]],
+    ["Hardstyle", ["festival","axisMinor","phrygian"]],
+    ["Eurodance", ["edm","axisMinor","festival"]],
+    ["Synthwave", ["axisMinor","festival","aeolian"]],
+    ["Ambient", ["lydian","deepHouse","aeolian"]],
+    ["Downtempo / Trip-Hop", ["deepHouse","neoSoul","jazz"]],
+    ["IDM", ["lydian","deepHouse","dorian"]],
+    ["Lo-Fi / Chillhop", ["jazz","neoSoul","deepHouse"]],
+    ["Hip-Hop", ["deepHouse","neoSoul","aeolian"]],
+    ["Trap", ["axisMinor","festival","aeolian"]],
   ]],
   ["Latin", [
-    ["Latin", ["andalusian","jazz","dorian"]],
-    ["Salsa", ["jazz","dorian","andalusian"]],
-    ["Son Cubano", ["jazz","dorian","andalusian"]],
-    ["Mambo", ["jazz","dorian","mixo"]],
-    ["Cha-Cha-Chá", ["jazz","dorian","axis"]],
-    ["Rumba", ["andalusian","jazz","dorian"]],
-    ["Timba", ["jazz","dorian","andalusian"]],
-    ["Latin Jazz", ["jazz","dorian","andalusian"]],
-    ["Samba", ["jazz","dorian","axis"]],
-    ["Bossa Nova (Latin)", ["jazz","dorian","axis"]],
-    ["Bachata", ["axis","doowop","andalusian"]],
-    ["Merengue", ["three","axis","mixo"]],
-    ["Cumbia", ["axis","three","dorian"]],
-    ["Reggaetón", ["axisMinor","aeolian","dorian"]],
-    ["Latin Pop", ["axis","doowop","axisMinor"]],
-    ["Tango", ["andalusian","jazz","phrygian"]],
-    ["Bolero", ["jazz","doowop","andalusian"]],
-    ["Mariachi", ["three","axis","andalusian"]],
-    ["Norteño", ["three","axis","doowop"]],
-    ["Forró", ["three","mixo","dorian"]],
+    ["Latin", ["montuno","guajira","andalusian"]],
+    ["Salsa", ["montuno","guajira","jazz"]],
+    ["Son Cubano", ["guajira","montuno","jazz"]],
+    ["Mambo", ["montuno","guajira","jazz"]],
+    ["Cha-Cha-Chá", ["guajira","montuno","jazz"]],
+    ["Rumba", ["bolero","andalusian","montuno"]],
+    ["Timba", ["montuno","guajira","jazz"]],
+    ["Latin Jazz", ["bossa","jazz","montuno"]],
+    ["Samba", ["bossa","jazz","montuno"]],
+    ["Bossa Nova (Latin)", ["bossa","jazz","montuno"]],
+    ["Bachata", ["bolero","axis","doowop"]],
+    ["Merengue", ["guajira","montuno","three"]],
+    ["Cumbia", ["guajira","axis","three"]],
+    ["Reggaetón", ["axisMinor","festival","montuno"]],
+    ["Latin Pop", ["axis","edm","bolero"]],
+    ["Tango", ["bolero","andalusian","montuno"]],
+    ["Bolero", ["bolero","jazz","doowop"]],
+    ["Mariachi", ["guajira","three","andalusian"]],
+    ["Norteño", ["guajira","three","axis"]],
+    ["Forró", ["guajira","three","mixo"]],
   ]],
   ["World & Modal", [
     ["Flamenco", ["flamenco","andalusian","phrygian"]],
@@ -374,10 +396,15 @@ const PATTERNS = {};
 
 const PATTERN_DEFAULT = { axis:"pop", axisMinor:"drive", three:"rock8", blues:"shuffle",
   doowop:"sway12", jazz:"fourbar", mixo:"push", andalusian:"latin", pachelbel:"arp",
-  dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop" };
+  dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop",
+  flamenco:"latin", edm:"stomp", deepHouse:"stomp", festival:"stomp", futureBass:"halftime",
+  montuno:"tresillo", rhythm:"charleston", bossa:"bossa", guajira:"tresillo", bolero:"arp",
+  gospel:"sway12", neoSoul:"funk" };
 const BPM_DEFAULT = { axis:96, axisMinor:84, three:140, blues:92, doowop:66, jazz:120,
   mixo:112, andalusian:104, pachelbel:72,
-  dorian:100, lydian:84, phrygian:128, aeolian:92 };
+  dorian:100, lydian:84, phrygian:128, aeolian:92,
+  flamenco:120, edm:128, deepHouse:122, festival:138, futureBass:150,
+  montuno:96, rhythm:160, bossa:132, guajira:100, bolero:76, gospel:76, neoSoul:88 };
 
 const DRUMS = {};
 [
@@ -1674,6 +1701,8 @@ export default function ProgressionWheel() {
   const [genre, setGenre] = useState("Pop");
   const [emotion, setEmotion] = useState(null);
   const [mode, setMode] = useState(null);   // null = follow the loaded progression's own mode; else an override
+  const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
+  const [adv, setAdv] = useState(false);    // reveal the advanced harmony controls (secondary doms, etc.)
   const [showPar, setShowPar] = useState(false);
   const [showSec, setShowSec] = useState(false);
   const [selStruct, setSelStruct] = useState("");
@@ -2683,6 +2712,8 @@ export default function ProgressionWheel() {
         h1 { font-family:'Fraunces',serif; font-weight:650; font-size:clamp(26px,5vw,36px); margin:0; letter-spacing:.01em; }
         .eyebrow { font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:#8B94A3; margin-bottom:6px; }
         .sub { color:#8B94A3; font-size:14px; margin:6px 0 18px; line-height:1.45; }
+        .hdr { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+        .hdr .tog { margin-top:6px; }
         .panel { background:#171E28; border:1px solid #232C3A; border-radius:16px; padding:14px; margin-bottom:14px; }
         .panel.accent { background:#1C2A3B; border-color:#33475F; box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 4px 18px rgba(0,0,0,.22); }
         .toptransport { position:sticky; top:0; z-index:6; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
@@ -2838,8 +2869,15 @@ export default function ProgressionWheel() {
       `}</style>
 
       <div className="wrap">
-        <div className="eyebrow">Songwriting sketchpad · v{APP_VERSION}</div>
-        <h1>The Progression Wheel</h1>
+        <div className="hdr">
+          <div>
+            <div className="eyebrow">Songwriting sketchpad · v{APP_VERSION}</div>
+            <h1>The Progression Wheel</h1>
+          </div>
+          <div className={"tog gold" + (tips ? " on" : "")} onClick={() => setTips(v => !v)} title="Show or hide the explanatory tips">
+            <div className="sw" /> Tips
+          </div>
+        </div>
         <p className="sub">Pick a key, a genre and a feeling — the wheel does the rest.
           {" "}<a href="transcribe.html" style={{ color:GOLD, textDecoration:"none", whiteSpace:"nowrap" }}>🎤 Hum a tune →</a></p>
 
@@ -2900,18 +2938,27 @@ export default function ProgressionWheel() {
                 {CATEGORIES[1].items.map(it => <option key={it.name} value={it.name}>{it.name}</option>)}
               </select>
             </label>
-            <div className={"tog lav" + (showPar ? " on" : "")} onClick={() => setShowPar(v => !v)} style={{ paddingBottom:6 }}>
-              <div className="sw" /> Par
-            </div>
-            <div className={"tog gold" + (showSec ? " on" : "")} onClick={() => setShowSec(v => !v)} style={{ paddingBottom:6 }}>
-              <div className="sw" /> Sec
-            </div>
             <div className="seg" style={{ marginBottom:2 }}>
               <button className={colour === "triads" ? "on" : ""} onClick={() => setColour("triads")}>Triads</button>
               <button className={colour === "sevenths" ? "on" : ""} onClick={() => setColour("sevenths")}>7ths</button>
               <button className={colour === "extended" ? "on" : ""} onClick={() => setColour("extended")}>9ths</button>
             </div>
             <button className="btn" style={{ padding:"5px 11px", marginBottom:2 }} onClick={rollDice} title="Surprise me">🎲</button>
+            <button className={"btn" + (adv ? " on" : "")} style={{ padding:"5px 11px", marginBottom:2 }}
+              onClick={() => setAdv(v => !v)} title="Secondary dominants, parallel chords and borrowed colour">
+              {adv ? "− Advanced" : "＋ Advanced"}
+            </button>
+          </div>
+
+          {adv && (<>
+          <div className="row" style={{ gap:14, marginTop:12, alignItems:"center" }}>
+            <div className={"tog lav" + (showPar ? " on" : "")} onClick={() => setShowPar(v => !v)}>
+              <div className="sw" /> Par
+            </div>
+            <div className={"tog gold" + (showSec ? " on" : "")} onClick={() => setShowSec(v => !v)}>
+              <div className="sw" /> Sec
+            </div>
+            {tips && <span className="keytag">dashed lines on the wheel: parallel chords &amp; secondary dominants</span>}
           </div>
 
           <div className="selrow" style={{ marginTop:12 }}>
@@ -2967,6 +3014,7 @@ export default function ProgressionWheel() {
               </select>
             </label>
           </div>
+          </>)}
 
           <div className="selrow" style={{ marginTop:10 }}>
             <label className="selwrap">
@@ -3013,11 +3061,11 @@ export default function ProgressionWheel() {
           <div className="progtitle" style={{ fontSize:17 }}>
             Suggested progressions{genre ? ` · ${genre}` : ""}{emotion ? ` · ${emotion}` : ""}
           </div>
-          <p className="keytag" style={{ margin:"3px 0 8px" }}>
+          {tips && <p className="keytag" style={{ margin:"3px 0 8px" }}>
             {genre || emotion
               ? "The classic loops behind this style — tap one to load it onto the wheel. The top pick is showing now."
               : "Pick a genre or a feeling above to narrow these, or tap any loop to load it."}
-          </p>
+          </p>}
           <div className="progchips">
             {progList.map(id => {
               const p = PROGRESSIONS[id];
@@ -3194,7 +3242,7 @@ export default function ProgressionWheel() {
                 <button className="mini" onClick={straightenPills} title="Restore the original order">↺ Straighten</button>}
             </div>
           )}
-          {!reorder && fingerIdx == null && (
+          {tips && !reorder && fingerIdx == null && (
             <div className="hint" style={{ padding:"2px 10px 4px" }}>
               Tap a chord above for its shapes and to change its <b>version</b> (7th · add9 · sus…),
               <b> duplicate</b> it (longer) or <b>remove</b> it (shorter).
@@ -3273,13 +3321,13 @@ export default function ProgressionWheel() {
             <div className="scorewrap">
               <NotationScore measures={scoreMeasures} instr={scoreInstr} meloBeats={meloBeats} />
             </div>
-            <div className="hint" style={{ padding:"2px 10px 4px" }}>
+            {tips && <div className="hint" style={{ padding:"2px 10px 4px" }}>
               {scoreInstr === "piano"
                 ? <>Grand staff — right hand plays the melody{scoreHasMelody ? "" : " (add one in the melody grid below)"}, left hand holds the chord voicing. Chord symbols sit above each bar.</>
                 : <>Guitar lead sheet — chord symbols above, the melody on the treble staff{scoreHasMelody ? ", with fret numbers on the tab below fingered low on the neck (first position, sounding lower)" : " — write a melody below and its tab appears here"}.</>}
               {structSel ? " Following the selected song structure." : " Following the loop."}
               {scoreHasB && <> The <b style={{ color:LAV }}>2nd melody</b> is shown in violet.</>}
-            </div>
+            </div>}
           </>)}
         </div>
 
@@ -3358,11 +3406,11 @@ export default function ProgressionWheel() {
               </div>
             ))}
           </div>
-          <p className="keytag" style={{ marginTop:8 }}>
+          {tips && <p className="keytag" style={{ marginTop:8 }}>
             Plays through the chosen song structure if one is selected below — each section with its own
             melody — otherwise loops the progression, one chord per bar. No sound? Check the phone's
             silent switch and volume.
-          </p>
+          </p>}
         </div>
 
         {/* song & melody */}
@@ -3423,18 +3471,18 @@ export default function ProgressionWheel() {
                   </div>
                 );
               })}
-              <p className="keytag" style={{ marginTop:6 }}>
+              {tips && <p className="keytag" style={{ marginTop:6 }}>
                 Land long notes, downbeats and phrase endings on the playing chord's notes — root and 3rd
                 strongest. Gold notes sit outside the key: strong landings during that chord's bar only.
-              </p>
+              </p>}
             </div>
           )}
 
-          <p className="keytag" style={{ marginTop:8 }}>
+          {tips && <p className="keytag" style={{ marginTop:8 }}>
             On each section: <b>▶</b> play from here · <b>🔁</b> loop just this section ·
             <b> {recSource === "guitar" ? "🎸" : "🎤"} Rec</b> record a {recSource} line straight onto its
             melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> on the Rhythm panel above.
-          </p>
+          </p>}
           {(() => {
             const groups = [];
             sections.insts.forEach(d => {
@@ -3630,13 +3678,13 @@ export default function ProgressionWheel() {
 
           <div className="struct">
             {structSel && <div className="sttip">{structSel.st.tip}</div>}
-            <p className="keytag" style={{ marginTop:8 }}>
+            {tips && <p className="keytag" style={{ marginTop:8 }}>
               {structSel
                 ? <>≈ {sections.totalBars} bars at one chord per bar. Every pass has its own melody — "copy"
                   duplicates an earlier sibling's tune as a starting point, then vary it.</>
                 : <>Choose a structure above to write the song out pass by pass, each with its own melody —
                   or sketch over the loop here.</>}
-            </p>
+            </p>}
           </div>
         </div>
 
@@ -3670,8 +3718,8 @@ export default function ProgressionWheel() {
           </div>
           {(() => {
             if (!selSong.startsWith(progId + ":")) {
-              return <p className="keytag" style={{ marginTop:8 }}>
-                Ten songs run on this engine — pick one to see the progression in its own key.</p>;
+              return tips ? <p className="keytag" style={{ marginTop:8 }}>
+                Ten songs run on this engine — pick one to see the progression in its own key.</p> : null;
             }
             const i = +selSong.split(":")[1];
             const k = (SONG_KEYS[progId] || [])[i];
@@ -3682,8 +3730,8 @@ export default function ProgressionWheel() {
               <div className="struct" style={{ borderTop:"none", marginTop:6, paddingTop:2 }}>
                 <div className="stname">{prog.songs[i]}</div>
                 {line && <div className="arrch" style={{ marginTop:4 }}>{line}</div>}
-                {k != null && <div className="arrnote">in {spell(k, k, prog.mode)} {MODES[modeId(prog.mode)].short} —
-                  key follows the most common recording or transcription; some originals sit between keys or use altered tunings.</div>}
+                {k != null && <div className="arrnote">in {spell(k, k, prog.mode)} {MODES[modeId(prog.mode)].short}
+                  {tips && <> — key follows the most common recording or transcription; some originals sit between keys or use altered tunings.</>}</div>}
               </div>
             );
           })()}
