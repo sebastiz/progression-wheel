@@ -1760,6 +1760,8 @@ export default function ProgressionWheel() {
   const [reorder, setReorder] = useState(false);            // pill reorder mode on/off
   const [pillSel, setPillSel] = useState([]);               // selected pill indices (reorder mode)
   const [adding, setAdding] = useState(false);              // "add any chord from the wheel" mode
+  const [removing, setRemoving] = useState(false);          // "tap a chord to remove it" mode
+  const [addMel, setAddMel] = useState(false);              // reveal the melody-adding tools (collapsed by default)
   const [scoreInstr, setScoreInstr] = useState("piano");    // notation: piano | guitar
   const [showScore, setShowScore] = useState(false);        // notation panel collapse
   const [realSounds, setRealSounds] = useState(true);       // use real instrument samples when available
@@ -1978,8 +1980,9 @@ export default function ProgressionWheel() {
     if (keys.length) setRemoved({ key: editKey, list: [...remList, ...keys] });
     setPillSel([]);
   };
-  const toggleReorder = () => { setReorder(v => !v); setAdding(false); setPillSel([]); setFingerIdx(null); };
-  const toggleAdding = () => { setAdding(v => !v); setReorder(false); setPillSel([]); setSel(null); setFingerIdx(null); };
+  const toggleReorder = () => { setReorder(v => !v); setAdding(false); setRemoving(false); setPillSel([]); setFingerIdx(null); };
+  const toggleAdding = () => { setAdding(v => !v); setReorder(false); setRemoving(false); setPillSel([]); setSel(null); setFingerIdx(null); };
+  const toggleRemoving = () => { setRemoving(v => !v); setAdding(false); setReorder(false); setPillSel([]); setSel(null); setFingerIdx(null); };
 
   const uniques = useMemo(() => {
     const seen = {};
@@ -3258,6 +3261,7 @@ export default function ProgressionWheel() {
                 <g key={"n"+i} style={{ cursor:"pointer" }}
                   onClick={() => {
                     if (adding) { addChord(c.root, c.quality); return; }   // tap a node again to add another copy
+                    if (removing) { removeChord(c); return; }
                     if (c.inserted) {
                       setInserts({ key: editKey, list: insList.filter(x => !(x.before === c.insBefore && x.root === c.insRoot)) });
                       return;
@@ -3282,6 +3286,8 @@ export default function ProgressionWheel() {
           <div className="hint">
             {adding
               ? <>Tap any node on the wheel to <b style={{ color:"#54B79D" }}>add</b> it to the end of the chain — then <b>⇄ Reorder</b> to place it. Tap <b>✕ Done</b> when finished.</>
+              : removing
+              ? <>Tap a chord — on the strip or the wheel — to <b style={{ color:"#E06A55" }}>remove</b> it. Tap <b>✕ Done</b> when finished.</>
               : sel
               ? <>Tap any note on the wheel to replace <b>{(uniques.find(u => u.baseName === sel) || {}).name || sel}</b> — or tap it again to cancel.</>
               : (Object.keys(ovMap).length || insList.length || Object.keys(qmap).length || remList.length)
@@ -3299,7 +3305,7 @@ export default function ProgressionWheel() {
                     + (outside ? " pillout" : "")}
                   style={{ background: FN_COLOR[c.func], color: FN_TEXT[c.func] }}
                   title={outside ? `${c.name} sits outside ${keyLabel} — borrowed / chromatic colour` : undefined}
-                  onClick={() => reorder ? togglePillSel(i) : setFingerIdx(fingerIdx === i ? null : i)}>
+                  onClick={() => removing ? removeChord(c) : reorder ? togglePillSel(i) : setFingerIdx(fingerIdx === i ? null : i)}>
                   <i>{c.numeral}</i>{c.name}{outside && <b className="outmark">✦</b>}
                 </span>
                 );
@@ -3308,6 +3314,10 @@ export default function ProgressionWheel() {
             <button className={"mini" + (adding ? " miniOn" : "")} style={{ marginLeft:"auto" }}
               onClick={toggleAdding} title="Tap any chord on the wheel to add it to the chain">
               {adding ? "✕ Done" : "＋ Add"}
+            </button>
+            <button className={"mini" + (removing ? " miniOn" : "")}
+              onClick={toggleRemoving} title="Tap chords on the strip or wheel to remove them">
+              {removing ? "✕ Done" : "🗑 Remove"}
             </button>
             <button className={"mini" + (reorder ? " miniOn" : "")}
               onClick={toggleReorder} title="Select several chords and shift them as a group">
@@ -3429,43 +3439,53 @@ export default function ProgressionWheel() {
           {(() => {
             // where a hummed / imported / recorded melody lands: the chosen section, else the first
             const recDest = sections.insts.some(s => s.key === impSec) ? impSec : (sections.insts[0] || {}).key;
+            const openMel = addMel || !!recSec;   // stay open while a recording is in progress
             return (<>
-          {/* melody tools — three ways to add a melody, all landing on the chosen section */}
+          {/* one button holds every way to add a melody; utilities sit alongside */}
           <div className="row" style={{ marginTop:10, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
-            <span className="lbl" style={{ margin:0 }}>Add a melody</span>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody} disabled={!!recSec}
-              title="Load the tune you hummed in the Tune Transcriber">🎤 Hum</button>
-            <label className="btn" style={{ padding:"5px 11px", cursor: recSec ? "default" : "pointer", opacity: recSec ? 0.4 : 1 }} title="Import a melody from a MIDI file">↑ MIDI file
-              <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} disabled={!!recSec} hidden />
-            </label>
-            {recSec
-              ? <button className="btn" style={{ padding:"5px 11px", borderColor:"#E06A55", color:"#F2B8AC" }}
-                  onClick={stopSecRec} title="Stop and add the recorded melody">■ Stop &amp; add</button>
-              : <button className="btn" style={{ padding:"5px 11px" }} disabled={!recDest}
-                  onClick={() => recDest && startSecRec(recDest)}
-                  title="Record a melody from your microphone and add it to the chosen section">🔴 Add recorded melody</button>}
-            {recSec && <span className="recmeter" style={{ flex:"0 0 90px" }}><span className="recfill" style={{ width:(recLevel * 100) + "%" }} /></span>}
-            {recSec && <span className="rechz">{recHz ? SEMI_NAME[((Math.round(hzToMidiF(recHz)) % 12) + 12) % 12] + " · " + Math.round(recHz) + " Hz" : "listening…"}</span>}
-            <span className="keytag">→ lands on</span>
-            <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""} disabled={!!recSec}
-              onChange={e => setImpSec(e.target.value)}
-              title="Which section a hummed, imported or recorded melody lands on">
-              <option value="">first section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
-              {sections.insts.map(s => <option key={s.key} value={s.key}>{s.key} · {s.word}</option>)}
-            </select>
-          </div>
-          <div className="row" style={{ marginTop:8, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
-            <span className="lbl" style={{ margin:0 }}>Record source</span>
-            <span className="seg" title="What the recorder listens for — tunes pitch detection">
-              <button className={recSource === "guitar" ? "on" : ""} onClick={() => setRecSource("guitar")} disabled={!!recSec}>🎸 Guitar</button>
-              <button className={recSource === "voice" ? "on" : ""} onClick={() => setRecSource("voice")} disabled={!!recSec}>🎤 Voice</button>
-            </span>
+            <button className={"btn" + (openMel ? " on" : "")} style={{ padding:"5px 12px" }} onClick={() => setAddMel(v => !v)}
+              title="Hum, import a MIDI file, or record a melody — all onto a section you choose">
+              {openMel ? "▾" : "▸"} 🎵 Add a melody
+            </button>
             <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ marginLeft:"auto" }}
               title="Merge the melody notes into one flowing line — smoother, less stodgy">
               <div className="sw" /> Legato
             </div>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ Export MIDI</button>
           </div>
+          {openMel && (
+            <div className="sugmel" style={{ marginTop:8 }}>
+              <div className="row" style={{ gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
+                <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody} disabled={!!recSec}
+                  title="Load the tune you hummed in the Tune Transcriber">🎤 Hum</button>
+                <label className="btn" style={{ padding:"5px 11px", cursor: recSec ? "default" : "pointer", opacity: recSec ? 0.4 : 1 }} title="Import a melody from a MIDI file">↑ MIDI file
+                  <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} disabled={!!recSec} hidden />
+                </label>
+                {recSec
+                  ? <button className="btn" style={{ padding:"5px 11px", borderColor:"#E06A55", color:"#F2B8AC" }}
+                      onClick={stopSecRec} title="Stop and add the recorded melody">■ Stop &amp; add</button>
+                  : <button className="btn" style={{ padding:"5px 11px" }} disabled={!recDest}
+                      onClick={() => recDest && startSecRec(recDest)}
+                      title="Record a melody from your microphone">🔴 Record</button>}
+                {recSec && <span className="recmeter" style={{ flex:"0 0 90px" }}><span className="recfill" style={{ width:(recLevel * 100) + "%" }} /></span>}
+                {recSec && <span className="rechz">{recHz ? SEMI_NAME[((Math.round(hzToMidiF(recHz)) % 12) + 12) % 12] + " · " + Math.round(recHz) + " Hz" : "listening…"}</span>}
+                <span className="keytag">→ lands on</span>
+                <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""} disabled={!!recSec}
+                  onChange={e => setImpSec(e.target.value)}
+                  title="Which section a hummed, imported or recorded melody lands on">
+                  <option value="">first section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
+                  {sections.insts.map(s => <option key={s.key} value={s.key}>{s.key} · {s.word}</option>)}
+                </select>
+              </div>
+              <div className="row" style={{ marginTop:8, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
+                <span className="keytag">Record source</span>
+                <span className="seg" title="What the recorder listens for — tunes pitch detection">
+                  <button className={recSource === "guitar" ? "on" : ""} onClick={() => setRecSource("guitar")} disabled={!!recSec}>🎸 Guitar</button>
+                  <button className={recSource === "voice" ? "on" : ""} onClick={() => setRecSource("voice")} disabled={!!recSec}>🎤 Voice</button>
+                </span>
+              </div>
+            </div>
+          )}
             </>);
           })()}
 
@@ -3487,12 +3507,6 @@ export default function ProgressionWheel() {
             </div>
           )}
 
-          <div className="row" style={{ marginTop:10, gap:6, alignItems:"center" }}>
-            <span className="keytag" style={{ marginRight:2 }}>Scale ({keyLabel}):</span>
-            {scaleSemis.map((s, i) => (
-              <span key={i} className={"npill nsm" + (pentSemis.includes(s) ? " npent" : "")}>{spell((tonic + s) % 12, tonic, effMode)}</span>
-            ))}
-          </div>
 
           {tips && <p className="keytag" style={{ marginTop:8 }}>
             On each section: <b>▶</b> play from here · <b>🔁</b> loop just this section ·
