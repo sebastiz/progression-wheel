@@ -2366,6 +2366,35 @@ export default function ProgressionWheel() {
   };
   const invertMel  = () => transformMel((n, { pivot }) => ({ c: n.c, deg: 2 * pivot - n.deg }));  // flip contour
   const reverseMel = () => transformMel((n, { minC, maxC }) => ({ c: minC + maxC - n.c, deg: n.deg })); // retrograde
+  // call & response: keep the selection (the "call"), append an echo right after it whose LAST note
+  // resolves home to the tonic (degree 0) — the classic antecedent → consequent answer
+  const callResponseMel = () => {
+    const key = melSel.key, layer = melSel.layer, sec = secMelos[key];
+    const notes = selNotesList();
+    if (!sec || notes.length < 1) return;
+    const srcBars = barsOf(sec, layer); if (!srcBars) return;
+    const cols = flatOf(sec, layer).length;
+    const minC = Math.min(...notes.map(n => n.c)), maxC = Math.max(...notes.map(n => n.c));
+    const span = maxC - minC + 1;
+    const bars = dupBars(srcBars);
+    const colOf = c => bars[Math.floor(c / meloBeats)][c % meloBeats];
+    const placed = [];
+    notes.forEach(n => {
+      const nc = n.c + span; if (nc >= cols) return;
+      const nd = n.c === maxC ? 0 : n.deg;                 // the answer lands on the tonic
+      const cell = colOf(nc); if (!cell.includes(nd)) cell.push(nd);
+      placed.push({ c: nc, deg: nd });
+    });
+    putSec(key, layer ? { barsB: bars } : { bars });
+    if (placed.length) setSelFrom(key, layer, placed);
+  };
+  // select every note in a section's melody (across the whole grid, not just what's scrolled into view)
+  const selectAllMel = (key, layer) => {
+    const sec = secMelos[key]; if (!sec) return;
+    const list = [];
+    (flatOf(sec, layer) || []).forEach((cell, c) => (cell || []).forEach(deg => list.push({ c, deg })));
+    if (list.length) { setMelMove(true); setSelFrom(key, layer, list); }
+  };
   const cellFromPoint = (x, y) => {
     const el = typeof document !== "undefined" && document.elementFromPoint(x, y);
     if (!el || el.dataset == null || el.dataset.mk === undefined) return null;
@@ -3375,6 +3404,8 @@ export default function ProgressionWheel() {
           {reorder && (
             <div className="reorderbar">
               <span className="rlbl">{pillSel.length ? `${pillSel.length} selected` : "Tap chords to select, then move or remove"}</span>
+              <button className="mini" onClick={() => setPillSel(pillSel.length === chords.length ? [] : chords.map((_, i) => i))}
+                title="Select every chord in the progression">{pillSel.length === chords.length ? "Select none" : "Select all"}</button>
               <button className="mini" disabled={!pillSel.length} onClick={() => movePills(-1)}>◀ Move</button>
               <button className="mini" disabled={!pillSel.length} onClick={() => movePills(1)}>Move ▶</button>
               <button className="mini recstop" disabled={!pillSel.length || pillSel.length >= chords.length}
@@ -3713,7 +3744,9 @@ export default function ProgressionWheel() {
                             <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
                             <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
                             <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
+                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
                             <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
                             <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
                           </>);
                         })()}
