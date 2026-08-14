@@ -1946,6 +1946,19 @@ export default function ProgressionWheel() {
     setPillSel(moving.map((_, k) => insertAt + k));
   };
   const straightenPills = () => { setOrder({ key:"", list:null }); setPillSel([]); };
+  const removeSelected = () => {   // delete the selected chords in one go (reorder mode)
+    if (!pillSel.length) return;
+    const sel = new Set(pillSel);
+    const toRemove = chords.filter((_, i) => sel.has(i));
+    if (toRemove.length >= chords.length) return;                 // never remove every chord
+    const remIns = toRemove.filter(c => c.inserted);
+    const remBase = toRemove.filter(c => !c.inserted);
+    if (remIns.length) setInserts({ key: editKey, list: insList.filter(x =>
+      !remIns.some(c => x.before === c.insBefore && x.root === c.insRoot && x.tag === c.numeral)) });
+    const keys = remBase.map(chordKeyOf).filter(k => !remList.includes(k));
+    if (keys.length) setRemoved({ key: editKey, list: [...remList, ...keys] });
+    setPillSel([]);
+  };
   const toggleReorder = () => { setReorder(v => !v); setAdding(false); setPillSel([]); setFingerIdx(null); };
   const toggleAdding = () => { setAdding(v => !v); setReorder(false); setPillSel([]); setSel(null); setFingerIdx(null); };
 
@@ -2829,13 +2842,6 @@ export default function ProgressionWheel() {
         .formtok { font-family:'Fraunces',serif; font-weight:650; font-size:21px; color:#EAE2CC; background:#10151D; border:1px solid #2A3442; border-radius:9px; padding:3px 11px; }
         .formtok i { font-style:normal; font-size:14px; color:${GOLD}; margin-left:2px; }
         .bpmval { font-size:13px; color:#EDE7DA; font-weight:600; min-width:58px; text-align:center; }
-        .rgrid { display:grid; gap:5px; margin-top:12px; }
-        .rcount { text-align:center; font-size:11px; color:#8B94A3; }
-        .rcell { text-align:center; font-size:22px; line-height:1.6; color:#EDE7DA; background:#10151D; border:1px solid #2A3442; border-radius:9px; transition:all .06s; }
-        .rcell.racc { color:${GOLD}; font-weight:700; }
-        .rcell.rrest { color:#4A5668; }
-        .rcell.ron { background:#EAE2CC; color:#171E28; border-color:#EAE2CC; }
-        .rcell.ron.racc { background:${GOLD}; color:#2A1F06; border-color:${GOLD}; }
         .npill { border:1px solid #2A3442; background:#10151D; color:#EDE7DA; border-radius:8px; padding:3px 10px; font-size:13.5px; font-weight:600; }
         .npill.npent { background:#EAE2CC; color:#171E28; border-color:#EAE2CC; }
         .npill.nsm { padding:2px 8px; font-size:12.5px; }
@@ -3061,6 +3067,33 @@ export default function ProgressionWheel() {
             </label>
           </div>
 
+          <div className="selrow" style={{ marginTop:10, alignItems:"flex-end", flexWrap:"wrap" }}>
+            <label className="selwrap" style={{ minWidth:150 }}>
+              <span className="lbl" style={{ margin:0 }}>Pattern</span>
+              <select value={patId} onChange={e => setPatSel({ key: progId, id: e.target.value })}>
+                {Object.entries(PATTERNS).map(([id, p]) => (
+                  <option key={id} value={id}>
+                    {p.name}{id === (PATTERN_DEFAULT[progId] || "pop") ? " ★" : ""}{p.swing ? " (swung)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="selwrap" style={{ minWidth:130 }}>
+              <span className="lbl" style={{ margin:0 }}>Drums</span>
+              <select value={drum} onChange={e => setDrum(e.target.value)}>
+                {Object.entries(DRUMS).map(([id, d]) => <option key={id} value={id}>{d.name}</option>)}
+              </select>
+            </label>
+            <div className={"tog" + (realSounds ? " on" : "")} onClick={() => setRealSounds(v => !v)} style={{ paddingBottom:6 }}
+              title="Play real recorded instruments (loads samples when online; falls back to the built-in synth offline)">
+              <div className="sw" /> Real
+            </div>
+            <div className={"tog" + (clickOn ? " on" : "")} onClick={() => setClickOn(v => !v)} style={{ paddingBottom:6 }}
+              title="A metronome tick on each beat">
+              <div className="sw" /> Click
+            </div>
+          </div>
+
           <div className="row" style={{ marginTop:12, gap:8 }}>
             <input className="txt" placeholder="Sketch name…" value={sketchName}
               onChange={e => setSketchName(e.target.value)} />
@@ -3265,9 +3298,11 @@ export default function ProgressionWheel() {
 
           {reorder && (
             <div className="reorderbar">
-              <span className="rlbl">{pillSel.length ? `${pillSel.length} selected` : "Tap chords to select"}</span>
+              <span className="rlbl">{pillSel.length ? `${pillSel.length} selected` : "Tap chords to select, then move or remove"}</span>
               <button className="mini" disabled={!pillSel.length} onClick={() => movePills(-1)}>◀ Move</button>
               <button className="mini" disabled={!pillSel.length} onClick={() => movePills(1)}>Move ▶</button>
+              <button className="mini recstop" disabled={!pillSel.length || pillSel.length >= chords.length}
+                onClick={removeSelected} title="Remove the selected chords from the progression">🗑 Remove</button>
               {order.list && order.key === editKey &&
                 <button className="mini" onClick={straightenPills} title="Restore the original order">↺ Straighten</button>}
             </div>
@@ -3361,88 +3396,6 @@ export default function ProgressionWheel() {
           </>)}
         </div>
 
-        {/* rhythm */}
-        <div className="panel accent">
-          <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
-            <div className="progtitle" style={{ fontSize:17 }}>Rhythm</div>
-            <div className="row" style={{ gap:6 }}>
-              <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody}
-                title="Load the tune you hummed in the Tune Transcriber">🎤 Hum</button>
-              <label className="btn" style={{ padding:"5px 11px", cursor:"pointer" }} title="Import a melody from a MIDI file">↑ MIDI
-                <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} hidden />
-              </label>
-              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export MIDI">↓ MIDI</button>
-            </div>
-          </div>
-
-          <div className="row" style={{ marginTop:8, gap:8, alignItems:"center" }}>
-            <span className="keytag" style={{ marginRight:2 }}>Add imported / recorded melody to:</span>
-            <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""}
-              onChange={e => setImpSec(e.target.value)}
-              title="Which section a hummed / played tune, MIDI import, or in-app recording lands on">
-              <option value="">First section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
-              {sections.insts.map(s => <option key={s.key} value={s.key}>{s.key} · {s.word}</option>)}
-            </select>
-            <span className="keytag" style={{ fontStyle:"italic" }}>— or press ● Rec on any section below</span>
-            <span className="seg" title="What the ● Rec button listens for — tunes pitch detection">
-              <button className={recSource === "guitar" ? "on" : ""} onClick={() => setRecSource("guitar")} disabled={!!recSec}>🎸 Guitar</button>
-              <button className={recSource === "voice" ? "on" : ""} onClick={() => setRecSource("voice")} disabled={!!recSec}>🎤 Voice</button>
-            </span>
-          </div>
-
-          <div className="selrow" style={{ marginTop:10, alignItems:"flex-end", flexWrap:"wrap" }}>
-            <label className="selwrap" style={{ minWidth:150 }}>
-              <span className="lbl" style={{ margin:0 }}>Pattern</span>
-              <select value={patId} onChange={e => setPatSel({ key: progId, id: e.target.value })}>
-                {Object.entries(PATTERNS).map(([id, p]) => (
-                  <option key={id} value={id}>
-                    {p.name}{id === (PATTERN_DEFAULT[progId] || "pop") ? " ★" : ""}{p.swing ? " (swung)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="selwrap" style={{ minWidth:130 }}>
-              <span className="lbl" style={{ margin:0 }}>Drums</span>
-              <select value={drum} onChange={e => setDrum(e.target.value)}>
-                {Object.entries(DRUMS).map(([id, d]) => <option key={id} value={id}>{d.name}</option>)}
-              </select>
-            </label>
-            <div className={"tog" + (realSounds ? " on" : "")} onClick={() => setRealSounds(v => !v)} style={{ paddingBottom:6 }}
-              title="Play real recorded instruments (loads samples when online; falls back to the built-in synth offline)">
-              <div className="sw" /> Real
-            </div>
-            <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ paddingBottom:6 }}
-              title="Merge the melody notes into one flowing line — smoother, less stodgy">
-              <div className="sw" /> Legato
-            </div>
-            <div className={"tog" + (clickOn ? " on" : "")} onClick={() => setClickOn(v => !v)} style={{ paddingBottom:6 }}
-              title="A metronome tick on each beat — off by default; turn on if you want a click track">
-              <div className="sw" /> Click
-            </div>
-          </div>
-
-          {tips && <div className="arrnote" style={{ marginTop:5 }}>
-            {rhythm.name}{rhythm.swing ? " · swung" : ""} — {rhythm.desc}
-          </div>}
-          {playing && curLabel && (
-            <div className="arrnote" style={{ color:GOLD, fontStyle:"normal", fontWeight:600 }}>Playing: {curLabel}</div>
-          )}
-
-          <div className="rgrid" style={{ gridTemplateColumns:`repeat(${rhythm.pattern.length}, 1fr)` }}>
-            {rhythm.pattern.map((_, i) => <div key={"c"+i} className="rcount">{i % 2 === 0 ? (i / 2 + 1) : "&"}</div>)}
-            {rhythm.pattern.map((s, i) => (
-              <div key={"s"+i} className={"rcell" + (playing && curStep === i ? " ron" : "") + (s === ">" ? " racc" : "") + (s === "-" ? " rrest" : "")}>
-                {s === "U" ? "↑" : s === "-" ? "·" : "↓"}
-              </div>
-            ))}
-          </div>
-          {tips && <p className="keytag" style={{ marginTop:8 }}>
-            Plays through the chosen song structure if one is selected below — each section with its own
-            melody — otherwise loops the progression, one chord per bar. No sound? Check the phone's
-            silent switch and volume.
-          </p>}
-        </div>
-
         {/* song & melody */}
         <div className="panel accent">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
@@ -3452,6 +3405,30 @@ export default function ProgressionWheel() {
               {(STRUCTURES[progId] || []).map((st, i) => <option key={"p"+i} value={progId + ":p:" + i}>{st.name}</option>)}
               {UNIVERSAL.map((st, i) => <option key={"u"+i} value={progId + ":u:" + i}>{st.name}</option>)}
             </select>
+          </div>
+
+          {/* melody tools: bring a tune in (hum / MIDI / record), export, and shape it */}
+          <div className="row" style={{ marginTop:10, gap:8, alignItems:"center", flexWrap:"wrap" }}>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody}
+              title="Load the tune you hummed in the Tune Transcriber">🎤 Hum</button>
+            <label className="btn" style={{ padding:"5px 11px", cursor:"pointer" }} title="Import a melody from a MIDI file">↑ MIDI
+              <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} hidden />
+            </label>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ MIDI</button>
+            <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""}
+              onChange={e => setImpSec(e.target.value)}
+              title="Which section a hummed / played tune, MIDI import, or in-app recording lands on">
+              <option value="">Melody → first section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
+              {sections.insts.map(s => <option key={s.key} value={s.key}>Melody → {s.key} · {s.word}</option>)}
+            </select>
+            <span className="seg" title="What the ● Rec button on each section listens for — tunes pitch detection">
+              <button className={recSource === "guitar" ? "on" : ""} onClick={() => setRecSource("guitar")} disabled={!!recSec}>🎸 Guitar</button>
+              <button className={recSource === "voice" ? "on" : ""} onClick={() => setRecSource("voice")} disabled={!!recSec}>🎤 Voice</button>
+            </span>
+            <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ paddingBottom:2 }}
+              title="Merge the melody notes into one flowing line — smoother, less stodgy">
+              <div className="sw" /> Legato
+            </div>
           </div>
 
           {structSel && (
