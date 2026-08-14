@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **One-tap "Add recorded melody" button.** Recording used to mean setting a source up top, then scrolling
+  down to find a section's ● Rec button — confusing. Now the **Add a melody** row has three matching
+  actions in a line — **🎤 Hum · ↑ MIDI file · 🔴 Add recorded melody** — and all three drop the melody
+  onto the section chosen in **→ lands on**. Press **🔴 Add recorded melody**, play or sing (a live level
+  meter and pitch readout show what it's hearing), press **■ Stop & add**, and the transcribed line lands
+  on that section. The Guitar / Voice choice is now clearly labelled **Record source** (it just tunes the
+  pitch detection). The per-section ● Rec buttons still work for recording straight onto one section.
+  Version bumped to 4.32.0.
 - **Genre-specific chord sequences, so styles stop sharing the same loops.** Eight new signature
   progressions (library now 33) give the rock, roots and soul genres their own defaults instead of all
   leaning on the four-chord axis: **Riff rock** (i–♭III–IV, hard/classic rock), **Grunge chromatic**

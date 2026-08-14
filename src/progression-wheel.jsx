@@ -3426,35 +3426,48 @@ export default function ProgressionWheel() {
             </select>
           </div>
 
-          {/* melody tools — bring a tune in, choose the record source, utilities */}
+          {(() => {
+            // where a hummed / imported / recorded melody lands: the chosen section, else the first
+            const recDest = sections.insts.some(s => s.key === impSec) ? impSec : (sections.insts[0] || {}).key;
+            return (<>
+          {/* melody tools — three ways to add a melody, all landing on the chosen section */}
           <div className="row" style={{ marginTop:10, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
             <span className="lbl" style={{ margin:0 }}>Add a melody</span>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody}
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={loadHummedMelody} disabled={!!recSec}
               title="Load the tune you hummed in the Tune Transcriber">🎤 Hum</button>
-            <label className="btn" style={{ padding:"5px 11px", cursor:"pointer" }} title="Import a melody from a MIDI file">↑ MIDI file
-              <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} hidden />
+            <label className="btn" style={{ padding:"5px 11px", cursor: recSec ? "default" : "pointer", opacity: recSec ? 0.4 : 1 }} title="Import a melody from a MIDI file">↑ MIDI file
+              <input type="file" accept=".mid,.midi,audio/midi" onChange={importMidiFile} disabled={!!recSec} hidden />
             </label>
+            {recSec
+              ? <button className="btn" style={{ padding:"5px 11px", borderColor:"#E06A55", color:"#F2B8AC" }}
+                  onClick={stopSecRec} title="Stop and add the recorded melody">■ Stop &amp; add</button>
+              : <button className="btn" style={{ padding:"5px 11px" }} disabled={!recDest}
+                  onClick={() => recDest && startSecRec(recDest)}
+                  title="Record a melody from your microphone and add it to the chosen section">🔴 Add recorded melody</button>}
+            {recSec && <span className="recmeter" style={{ flex:"0 0 90px" }}><span className="recfill" style={{ width:(recLevel * 100) + "%" }} /></span>}
+            {recSec && <span className="rechz">{recHz ? SEMI_NAME[((Math.round(hzToMidiF(recHz)) % 12) + 12) % 12] + " · " + Math.round(recHz) + " Hz" : "listening…"}</span>}
             <span className="keytag">→ lands on</span>
-            <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""}
+            <select value={sections.insts.some(s => s.key === impSec) ? impSec : ""} disabled={!!recSec}
               onChange={e => setImpSec(e.target.value)}
-              title="Which section a hummed tune or MIDI import lands on">
+              title="Which section a hummed, imported or recorded melody lands on">
               <option value="">first section{sections.insts[0] ? ` (${sections.insts[0].key} ${sections.insts[0].word})` : ""}</option>
               {sections.insts.map(s => <option key={s.key} value={s.key}>{s.key} · {s.word}</option>)}
             </select>
           </div>
           <div className="row" style={{ marginTop:8, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
-            <span className="lbl" style={{ margin:0 }}>Record</span>
-            <span className="seg" title="What the ● Rec button on each section listens for — tunes pitch detection">
+            <span className="lbl" style={{ margin:0 }}>Record source</span>
+            <span className="seg" title="What the recorder listens for — tunes pitch detection">
               <button className={recSource === "guitar" ? "on" : ""} onClick={() => setRecSource("guitar")} disabled={!!recSec}>🎸 Guitar</button>
               <button className={recSource === "voice" ? "on" : ""} onClick={() => setRecSource("voice")} disabled={!!recSec}>🎤 Voice</button>
             </span>
-            <span className="keytag">— press ● Rec on any section below</span>
             <div className={"tog" + (legato ? " on" : "")} onClick={() => setLegato(v => !v)} style={{ marginLeft:"auto" }}
               title="Merge the melody notes into one flowing line — smoother, less stodgy">
               <div className="sw" /> Legato
             </div>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ Export MIDI</button>
           </div>
+            </>);
+          })()}
 
           {structSel && (
             <div className="row" style={{ marginTop:8, gap:8 }}>
