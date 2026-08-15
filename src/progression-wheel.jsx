@@ -1721,6 +1721,220 @@ const MELODY_PATTERNS = [
         return layBar(u.B, Q, [g, g+2, g+4]); }); } },
 ];
 
+/* ===== melodic narratives =====
+   A melody pattern shapes one section. A *narrative* is a single melodic idea told across the
+   WHOLE song: it writes every section's grid in one go, deciding each section's register, density
+   and contour from what that section IS (verse / chorus / bridge …), which pass of it this is, and
+   where it sits in the running order. That's the difference between a tune and a shape that goes
+   somewhere — the arch of a ballad, the withheld top note, the motif that climbs a step each time.
+
+   Each narrative's `gen(u)` returns one section's bars (same format as MELODY_PATTERNS). Context:
+     u.nBars / u.B      — bars in this section, eighth columns per bar
+     u.nd               — scale degrees available (the grid is one octave: 0 = tonic … nd-1)
+     u.chordDegs        — per-bar diatonic degree of the bar's chord root (null if chromatic)
+     u.role             — section letter: V verse, C chorus, B bridge, P pre-chorus, I intro,
+                          S solo, R refrain, T tag, U build, D drop, K break, O outro, L loop
+     u.pass / u.passes  — which pass of this role (0-based) out of how many
+     u.idx / u.total    — position in the running order; u.frac — 0 at the top, 1 at the end   */
+
+const clampDeg = (d, nd) => Math.max(0, Math.min(nd - 1, Math.round(d)));
+// where notes want to sit in a bar, most-wanted first: downbeat, half-bar, the other beats, off-beats
+const colPrefs = B => {
+  const beats = qbeats(B), half = Math.floor(B / 2), offs = [];
+  for (let i = 1; i < B; i += 2) offs.push(i);
+  const order = B % 4 === 0 ? [0, half, ...beats, ...offs] : [0, ...beats, half, ...offs];
+  return [...new Set(order)].filter(c => c >= 0 && c < B);
+};
+// n notes in a bar, spread over the strongest available positions
+const nCols = (B, n) => colPrefs(B).slice(0, Math.max(1, Math.min(n, B))).sort((a, b) => a - b);
+// notes per bar by section role — choruses sing out, verses sit back, intros and outros breathe
+const ROLE_N = { I:2, V:3, P:3, C:4, B:2, S:4, R:4, T:3, U:3, D:4, K:2, O:2, A:3, H:3, L:3 };
+const roleN = (role, d = 3) => ROLE_N[role] || d;
+// how high in the octave a section sits: 0 = bottom, 1 = top. The single biggest lever a narrative
+// has — pop's "big chorus" is usually just the same notes sung higher.
+const ROLE_LIFT = { I:0.1, V:0.15, P:0.45, C:0.75, B:0.5, S:0.6, R:0.7, T:0.5, U:0.55, D:0.85,
+  K:0.2, O:0.1, A:0.35, H:0.4, L:0.35 };
+const roleLift = (role, d = 0.35) => (ROLE_LIFT[role] != null ? ROLE_LIFT[role] : d);
+// a section's register window [lo, hi]: `width` (0–1) of the octave, floated by the role's lift
+const winFor = (u, width) => {
+  const span = Math.max(1, Math.min(u.nd - 1, Math.round((u.nd - 1) * width)));
+  const lo = Math.round(roleLift(u.role) * (u.nd - 1 - span));
+  return [lo, lo + span];
+};
+// nearest chord tone to a degree — locks a shaped line onto the harmony under it
+const chordSnap = (deg, cd, nd) => {
+  if (cd == null) return deg;
+  let best = deg, bd = Infinity;
+  for (const t of [cd, cd + 2, cd + 4]) {
+    const x = ((t % nd) + nd) % nd;
+    if (Math.abs(x - deg) < bd) { bd = Math.abs(x - deg); best = x; }
+  }
+  return best;
+};
+// walk a section slot by slot. `colsOf(bar)` picks that bar's columns; `degAt` returns the degree
+// for each slot from { b bar, i note-in-bar, n notes-in-bar, c column, g slot number,
+// t 0→1 through the section, cd the bar's chord degree }.
+const narBars = (u, colsOf, degAt) => {
+  const per = Array.from({ length:u.nBars }, (_, b) => colsOf(b));
+  const N = per.reduce((n, a) => n + a.length, 0) || 1;
+  let g = 0;
+  return per.map((cols, b) => {
+    const bar = Array.from({ length:u.B }, () => []);
+    cols.forEach((c, i) => {
+      const d = degAt({ b, i, n:cols.length, c, g, t: N > 1 ? g / (N - 1) : 0, cd:u.chordDegs[b] });
+      g++;
+      if (d != null) bar[c] = [clampDeg(d, u.nd)];
+    });
+    return bar;
+  });
+};
+const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
+
+const NARRATIVES = [
+ { id:"arch", name:"Arch — rise and fall",
+   tip:"Every section is one arch: the line climbs to a peak halfway through and settles back down where it started. The oldest singable shape there is — it breathes like a spoken sentence, and it's why a ballad verse feels complete without a chorus.",
+   refs:"Someone Like You (verse) · Yesterday · Hallelujah",
+   gen(u){ const [lo, hi] = winFor(u, 0.6);
+     return narBars(u, () => nCols(u.B, roleN(u.role)),
+       s => lo + (hi - lo) * Math.sin(Math.PI * s.t)); } },
+
+ { id:"archSong", name:"Song-length arch",
+   tip:"One arch across the whole running order instead of one per phrase: the register creeps up to the middle of the song and eases back down to the outro. Each section stays simple — the story is the long climb and the long fall.",
+   refs:"Bohemian Rhapsody · Stairway to Heaven · A Day in the Life",
+   gen(u){ const lo = Math.round(Math.sin(Math.PI * u.frac) * (u.nd - 3)), hi = lo + 2;
+     return narBars(u, () => nCols(u.B, roleN(u.role)),
+       s => lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * s.t))); } },
+
+ { id:"terraced", name:"Terraced — a step higher each time",
+   tip:"States a short motif, then repeats it a step higher, bar after bar. The most reliable way to build a bridge or a final chorus: nothing changes except the height, so the lift is felt rather than noticed.",
+   refs:"Where the Streets Have No Name · Sigur Rós builds · gospel vamps",
+   gen(u){ const [lo, hi] = winFor(u, 0.55), fig = [0, 2, 1];
+     return narBars(u, () => nCols(u.B, Math.max(3, roleN(u.role))),
+       s => lo + fig[s.i % fig.length] + (s.b % Math.max(1, hi - lo))); } },
+
+ { id:"expand", name:"Range expansion at the hook",
+   tip:"Verses stay inside two or three notes; the chorus opens the whole octave and leaps to the top. The commonest trick in pop — the hook feels enormous because everything around it was deliberately made small.",
+   refs:"Where the Streets Have No Name · Someone Like You (chorus) · Rolling in the Deep",
+   gen(u){ const top = u.nd - 1;
+     if (!isHook(u.role)) { const fig = [0, 1, 0, -1];        // narrow noodle, low in the octave
+       return narBars(u, () => nCols(u.B, roleN(u.role)), s => 1 + fig[s.g % fig.length]); }
+     return narBars(u, () => nCols(u.B, 4),                   // leap to the top, then fill back down
+       s => s.i === 0 ? (s.b % 2 ? 2 : 0) : top - (s.i - 1)); } },
+
+ { id:"lament", name:"Descending lament",
+   tip:"A stepwise fall, phrase after phrase, each one starting near the top and sinking toward the tonic. Grief music since the Baroque lament bass, and still the default shape for a sad ballad — especially over a descending bass line.",
+   refs:"Dido's Lament · Stay With Me · Hurt",
+   gen(u){ const [lo, hi] = winFor(u, 0.85);
+     return narBars(u, () => nCols(u.B, roleN(u.role)), s => hi - (s.g % (hi - lo + 1))); } },
+
+ { id:"ostinato", name:"Ostinato — one repeating cell",
+   tip:"The melody IS a short cell, repeated unchanged, with the harmony moving underneath doing all the work. Textural rather than narrative — it's the reason a four-chord loop can carry a whole track without the tune ever developing.",
+   refs:"Shape of You · Clocks · most house and minimalism",
+   gen(u){ const [lo] = winFor(u, 0.5), cell = [0, 2, 4, 2, 0, 2, 4, 4];
+     const cols = Array.from({ length:u.B }, (_, i) => i).filter(i => i % 2 === 0 || i % 4 === 1);
+     return narBars(u, () => cols, s => lo + cell[s.i % cell.length]); } },
+
+ { id:"climb", name:"Long climb across the song",
+   tip:"Each section sits a little higher than the one before, so the last pass is the highest thing in the song without a single new chord. Register standing in for a key change — cheaper, and it never sounds like a gimmick.",
+   refs:"Hey Jude · Champagne Supernova · Chandelier",
+   gen(u){ const base = Math.round(u.frac * (u.nd - 3)), fig = [0, 2, 1, 2];
+     return narBars(u, () => nCols(u.B, roleN(u.role)), s => base + fig[s.i % fig.length]); } },
+
+ { id:"peak", name:"Withheld peak — save the top note",
+   tip:"Keeps the whole song inside a low, narrow band and spends the top of the octave exactly once, in the final section. The high note lands because you'd never heard it before — restraint is the whole technique.",
+   refs:"Landslide · I Will Always Love You · Wuthering Heights",
+   gen(u){ const last = u.idx >= u.total - 1;
+     if (!last) { const fig = [0, 1, 2, 1];
+       return narBars(u, () => nCols(u.B, roleN(u.role)), s => fig[s.g % fig.length]); }
+     return narBars(u, () => nCols(u.B, 4), s => (u.nd - 1) - (s.g % 4)); } },
+
+ { id:"period", name:"Question & answer phrases",
+   tip:"Two-bar sentences all the way through: the first bar rises and hangs unresolved, the second falls and lands home on the tonic. Classical period form, and the backbone of nearly every tune people can sing back at you.",
+   refs:"Twinkle Twinkle · Let It Be · Don't Look Back in Anger",
+   gen(u){ const [lo, hi] = winFor(u, 0.7);
+     return narBars(u, () => nCols(u.B, roleN(u.role)), s => {
+       const x = s.n > 1 ? s.i / (s.n - 1) : 0;
+       if (s.b % 2 === 0) return lo + 1 + (hi - lo - 1) * x;         // antecedent — rises, hangs
+       return s.i === s.n - 1 ? 0 : hi - (hi - lo) * x; }); } },     // consequent — falls home
+
+ { id:"callResp", name:"Call & response",
+   tip:"A phrase up high answered by a sparser, lower reply in the next bar — the preacher-and-congregation shape that runs through blues, gospel and soul. Keeping the answer thin is what makes it sound like a second voice.",
+   refs:"I Got You (I Feel Good) · Hound Dog · most 12-bar blues",
+   gen(u){ const [lo, hi] = winFor(u, 0.8);
+     return narBars(u, b => nCols(u.B, b % 2 ? 2 : roleN(u.role, 4)),
+       s => s.b % 2 ? lo + (s.n - 1 - s.i) : hi - s.i); } },
+
+ { id:"germ", name:"Motif development (one germ cell)",
+   tip:"States a three-note cell at the top of the song and then works it — the same shape transposed, inverted, stretched, and finally returned. Nothing is new and everything is related: the through-composed way to hold a long song together.",
+   refs:"Beethoven's 5th · Norwegian Wood · Paranoid Android",
+   gen(u){ const v = u.idx % 4;                       // 0 state · 1 transpose · 2 invert · 3 stretch
+     const shape = v === 2 ? [0, -2, -1] : [0, 2, 1];
+     const base = v === 1 ? 2 : v === 2 ? 3 : v === 3 ? 1 : 0;
+     const lift = Math.round(roleLift(u.role) * (u.nd - 4));
+     return narBars(u, () => nCols(u.B, v === 3 ? 2 : 3),
+       s => lift + base + shape[(v === 3 ? s.g : s.i) % shape.length] + (s.b % 2 ? 1 : 0)); } },
+
+ { id:"pendulum", name:"Widening pendulum",
+   tip:"The line rocks between two notes for the whole song, but the gap between them opens as it grows: a second in the verse, a third by the pre-chorus, a fifth in the last chorus. Motion without actually going anywhere.",
+   refs:"Seven Nation Army · Billie Jean · Take Me Out",
+   gen(u){ const gap = Math.max(1, Math.min(u.nd - 2,
+       1 + Math.round(u.frac * 2 + roleLift(u.role) * 3)));
+     const lo = Math.max(0, Math.min(u.nd - 1 - gap, 1));
+     return narBars(u, () => nCols(u.B, roleN(u.role, 4)), s => s.g % 2 ? lo + gap : lo); } },
+
+ { id:"chant", name:"Chant, then release",
+   tip:"Verses sit on one repeated reciting note — speech on a pitch, with a small drop at the end of each phrase — so the chorus's first real melodic move sounds like the song finally opening its mouth.",
+   refs:"Royals · Subterranean Homesick Blues · psalm tones",
+   gen(u){ if (!isHook(u.role) && u.role !== "T") {
+       const rec = 2;
+       return narBars(u, () => nCols(u.B, Math.max(3, roleN(u.role))),
+         s => s.i === s.n - 1 && s.b % 2 ? rec - 1 : rec); }
+     const [lo, hi] = winFor(u, 0.9);
+     return narBars(u, () => nCols(u.B, 4), s => lo + (hi - lo) * Math.sin(Math.PI * s.t)); } },
+
+ { id:"wave", name:"Waves — long undulation",
+   tip:"A continuous rise and fall that never quite settles, with a longer wavelength in the choruses than the verses: restless underneath the words, expansive under the hook.",
+   refs:"Wichita Lineman · Nothing Compares 2 U · Bittersweet Symphony",
+   gen(u){ const [lo, hi] = winFor(u, 0.75), cyc = isHook(u.role) ? 1 : 2;
+     return narBars(u, () => nCols(u.B, roleN(u.role, 4)),
+       s => lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * cyc * s.t))); } },
+
+ { id:"cascade", name:"Cascading sequence",
+   tip:"One falling figure, restated a step lower every bar — a staircase down. The mirror of the terraced build; spend it on a section that has to lose altitude, like a post-chorus or the way out of a bridge.",
+   refs:"Ain't No Sunshine · While My Guitar Gently Weeps · Für Elise",
+   gen(u){ const [lo, hi] = winFor(u, 0.85), fig = [0, -1, -2];
+     return narBars(u, () => nCols(u.B, 3),
+       s => hi - (s.b % Math.max(1, hi - lo)) + fig[s.i % fig.length]); } },
+
+ { id:"gapfill", name:"Leap, then fill the gap",
+   tip:"Every phrase jumps a wide interval and then walks stepwise back through the space it just skipped. The shape ears find most satisfying, and the reason a big leap never sounds arbitrary when it's answered.",
+   refs:"Over the Rainbow · Take On Me · Superman theme",
+   gen(u){ const [lo, hi] = winFor(u, 0.95);
+     return narBars(u, () => nCols(u.B, roleN(u.role, 4)),
+       s => s.i === 0 ? lo : hi - (s.i - 1)); } },
+
+ { id:"converse", name:"Speech contour",
+   tip:"Narrow, conversational phrases that drop at the end like a spoken sentence, with air between them. Lets the words lead — the natural home for a lyric-heavy verse, and it makes any sung chorus after it feel like singing.",
+   refs:"Tangled Up in Blue · Tom's Diner · Common People",
+   gen(u){ const base = 2 + Math.round(roleLift(u.role) * 2);
+     return narBars(u, b => nCols(u.B, b % 2 ? 2 : 4),
+       s => s.i === s.n - 1 ? base - (s.b % 2 ? 2 : 1) : base + (s.i % 2)); } },
+
+ { id:"chordLock", name:"Chord-locked hook",
+   tip:"The same rhythmic cell in every bar, but every note snapped to the chord underneath: the tune only moves because the harmony does. Made for a progression with strong bass movement — the melody spells the changes out.",
+   refs:"Don't Stop Believin' · Let It Be · Dreams",
+   gen(u){ const cell = [0, 2, 1, 2], lift = Math.round(roleLift(u.role) * 3);
+     return narBars(u, () => nCols(u.B, roleN(u.role, 4)),
+       s => chordSnap(clampDeg(cell[s.i % cell.length] + lift, u.nd), s.cd, u.nd)); } },
+
+ { id:"suspend", name:"Suspension chain",
+   tip:"Lands a step above the chord on every downbeat and resolves it down onto a chord tone — then the next chord turns that resolution into a clash again. The ache that keeps a slow song moving when nothing else is happening.",
+   refs:"Bridge Over Troubled Water · Nothing Compares 2 U · Nuvole Bianche",
+   gen(u){ return narBars(u, () => nCols(u.B, 2), s => {
+       const tone = chordSnap(3 + Math.round(roleLift(u.role) * 2), s.cd, u.nd);
+       return s.i === 0 ? tone + 1 : tone; }); } },
+];
+
 /* ===== app ===== */
 export default function ProgressionWheel() {
   const [tonic, setTonic] = useState(0);
@@ -1761,6 +1975,8 @@ export default function ProgressionWheel() {
   const [openSecs, setOpenSecs] = useState({});             // which section melody grids are open
   const [melTab, setMelTab] = useState({});                 // per-section: "write" | "suggest"
   const [sugSel, setSugSel] = useState({});                 // per-section: { pat, start } suggested-melody picks
+  const [narSel, setNarSel] = useState({ key:"", id:"" });  // melodic narrative written across the whole song
+  const [narUndo, setNarUndo] = useState(null);             // melody snapshot from before the last narrative write
   const [showLand, setShowLand] = useState(false);          // landing-notes collapse
   const [curQ, setCurQ] = useState(null);                   // {sym, col} playhead in melody grids
   const [curInst, setCurInst] = useState(null);             // instance key currently playing
@@ -2462,16 +2678,50 @@ export default function ProgressionWheel() {
   // write a suggested melody pattern onto a section's grid (overwrites what's there)
   const applyPattern = (d, sec, patId, start, L) => {
     const pat = MELODY_PATTERNS.find(p => p.id === patId) || MELODY_PATTERNS[0];
-    const chordDegs = d.cs.map(c => {
-      const i = scaleNotes.indexOf(((c.root % 12) + 12) % 12);
-      return i >= 0 ? i : null;
-    });
-    const bars = pat.gen({ nBars: d.cs.length, B: meloBeats, start: start % scaleSemis.length, chordDegs });
+    const bars = pat.gen({ nBars: d.cs.length, B: meloBeats, start: start % scaleSemis.length,
+      chordDegs: chordDegsOf(d.cs) });
     putSec(d.key, L ? { barsB: bars } : { bars });
     setMelTab({ ...melTab, [d.key]: "write" });   // reveal the result on the grid
   };
   const clearMelody = (d, sec, L) => {
     putSec(d.key, L ? { barsB: blankBars(d.cs.length, meloBeats) } : { bars: blankBars(d.cs.length, meloBeats) });
+  };
+
+  /* ---- melodic narrative: one shape written across every section at once ---- */
+  const narId = narSel.key === progId ? narSel.id : "";
+  const curNar = NARRATIVES.find(n => n.id === narId) || null;
+  // the bar's chord as a scale degree — the hook narratives use to follow the harmony
+  const chordDegsOf = cs => cs.map(c => {
+    const i = scaleNotes.indexOf(((c.root % 12) + 12) % 12);
+    return i >= 0 ? i : null;
+  });
+  // write every section's melody A in one state update (a putSec per section would read stale state)
+  const applyNarrative = id => {
+    const nar = NARRATIVES.find(n => n.id === id);
+    setNarSel({ key: progId, id: nar ? id : "" });
+    if (!nar || !sections.insts.length) return;
+    const secs = melos.progId === progId ? { ...melos.secs } : {};
+    const passes = {};
+    sections.insts.forEach(d => { passes[d.base] = (passes[d.base] || 0) + 1; });
+    const seen = {};
+    const total = sections.insts.length;
+    sections.insts.forEach((d, idx) => {
+      const pass = seen[d.base] = (seen[d.base] || 0);
+      seen[d.base] = pass + 1;
+      const bars = nar.gen({ nBars: d.cs.length, B: meloBeats, nd: scaleSemis.length,
+        chordDegs: chordDegsOf(d.cs), role: d.base, pass, passes: passes[d.base],
+        idx, total, frac: total > 1 ? idx / (total - 1) : 0 });
+      const sec = secMelos[d.key], prev = secs[d.key] || {};
+      secs[d.key] = { ids: sec ? sec.ids : prev.ids, bars,
+        barsB: sec ? dupBars(sec.barsB) : (prev.barsB || null),
+        instr: prev.instr || null, instrB: prev.instrB || null };
+    });
+    setNarUndo(melos);                       // one step back, in case it wrote over something good
+    setMelos({ progId, secs });
+  };
+  const undoNarrative = () => {
+    if (!narUndo) return;
+    setMelos(narUndo); setNarUndo(null); setNarSel({ key: progId, id: "" });
   };
   {
     const idx = chords.map((_, i) => i);
@@ -3539,6 +3789,34 @@ export default function ProgressionWheel() {
               {UNIVERSAL.map((st, i) => <option key={"u"+i} value={progId + ":u:" + i}>{st.name}</option>)}
             </select>
           </div>
+
+          {/* melodic narrative — one melodic idea written across every section at once */}
+          <div className="row" style={{ marginTop:8, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
+            <span className="keytag" style={{ margin:0 }}>Melodic narrative</span>
+            <select value={narId} onChange={e => applyNarrative(e.target.value)} style={{ flex:"1 1 200px" }}
+              title="Write one melodic shape across the whole song — each section's register, density and contour chosen from what it is and where it sits">
+              <option value="">None — write each section yourself</option>
+              {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+            </select>
+            {curNar && <button className="mini" onClick={() => applyNarrative(narId)}
+              title="Rewrite it — after a key change, a new structure, or edits you want to throw away">↻ Rewrite</button>}
+            {narUndo && narSel.key === progId && <button className="mini" onClick={undoNarrative}
+              title="Put the melodies back as they were before the narrative was written">↶ Undo</button>}
+          </div>
+          {curNar
+            ? <p className="arrnote" style={{ marginTop:6 }}>{curNar.tip}
+                <span className="keytag" style={{ display:"block", marginTop:3 }}>e.g. {curNar.refs}</span>
+                <span className="keytag" style={{ display:"block" }}>
+                  Written onto melody <b>A</b> of all {sections.insts.length} section{sections.insts.length > 1 ? "s" : ""} —
+                  edit any of them below; the narrative is a first draft, not a cage.
+                  {sections.insts.some(d => !(secMelos[d.key] || { flat:[] }).flat.some(a => a.length))
+                    && <> Some sections are empty — the structure changed since it was written, so tap <b>↻ Rewrite</b>.</>}
+                </span></p>
+            : tips && <p className="arrnote" style={{ marginTop:6 }}>
+                A narrative writes one melodic idea across every section at once — an arch, a lament, a
+                withheld top note — using each section's role and its place in the running order to pick
+                its register and shape. A quick way to get a whole song's worth of melody to argue with.
+              </p>}
 
           {(() => {
             // where a hummed / imported / recorded melody lands: the chosen section, else the first

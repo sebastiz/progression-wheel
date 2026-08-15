@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- **Melodic narratives — write a whole song's melody in one pick.** A new **Melodic narrative** menu
+  sits directly under the song-structure chooser in **Song & melody**. The per-section Suggest tab
+  shapes one section; a narrative is a single melodic idea told across the *whole* song — choose one
+  and it writes melody **A** of every section at once, taking each section's register, note density
+  and contour from what that section is (verse, chorus, bridge, intro…), which pass of it this is,
+  and where it falls in the running order. 19 shapes: **Arch**, **Song-length arch**, **Terraced**
+  (a step higher each bar), **Range expansion at the hook** (narrow verses, the octave opened for the
+  chorus), **Descending lament**, **Ostinato cell**, **Long climb across the song**, **Withheld
+  peak** (the top note spent only in the final section), **Question & answer**, **Call & response**,
+  **Motif development**, **Widening pendulum**, **Chant then release**, **Waves**, **Cascading
+  sequence**, **Leap and fill**, **Speech contour**, **Chord-locked hook** and **Suspension chain** —
+  each with a note on what it does and a few songs that do it. **↻ Rewrite** re-runs it after a key
+  change, a new structure or edits you'd rather discard; **↶ Undo** restores the melodies as they
+  were. It only touches layer A, so a 2nd melody stays put, and everything it writes is ordinary grid
+  notes you can edit section by section. Version bumped to 4.37.0.
 - **Per-section drums — build dynamics across the song.** Drums used to be one global kit for the whole
   song. Now every section in **Song & melody** carries its own **🥁** menu in its group header (Verses,
   Chorus, Bridge, Intro…): leave it on *global drums* to follow the top Drums picker, choose a different

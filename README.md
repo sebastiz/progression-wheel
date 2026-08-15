@@ -38,6 +38,10 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   notes and a scale/pentatonic reference; melodies persist through every edit and transpose with the
   key. A **Suggest** tab writes 16 common melody shapes (chord-tone arpeggios, scale runs, call &
   response, AA / AB / AABA motifs, sequences and more) onto the grid from a chosen starting note
+- **Melodic narratives** — one melodic idea written across the *whole* song from a single menu under
+  the structure chooser: 19 shapes (arch, terraced climb, range expansion at the hook, descending
+  lament, withheld peak, ostinato, call & response, motif development and more) that pick each
+  section's register, density and contour from its role and its place in the running order
 - **Tools** — destination finder (shortest chord path between two chords), descending-bass
   harmonisations, ear training, dice, MIDI export, persistent sketches
 - **Fingerings** — tap any chord for guitar chord boxes (open + barre shapes) and highlighted piano

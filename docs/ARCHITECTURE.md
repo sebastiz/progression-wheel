@@ -91,6 +91,21 @@ follow their chords through inserts/removals/swaps/key changes), positionally on
 progression. Degrees, not pitches, are stored, so melodies transpose with the key and survive mode
 changes.
 
+## Melody generation
+
+Two data tables, both producing the same thing — bars of scale-degree columns:
+
+- `MELODY_PATTERNS` shape **one section** from a start degree and the bar's chord degree.
+- `NARRATIVES` shape **the whole song**: `applyNarrative` walks `sections.insts` and calls one
+  `gen(u)` per section instance, where `u` carries the section's role letter (`V`/`C`/`B`/…), which
+  pass of that role it is, and its place in the running order (`idx`/`total`/`frac`). The generators
+  are built from a few shared primitives — `nCols` (how many notes in a bar, from `ROLE_N`), `winFor`
+  (the register window, floated by `ROLE_LIFT`), `chordSnap` (nearest chord tone) and `narBars`
+  (walks the section slot by slot, handing a contour function `t`: 0→1). So "the chorus sings higher
+  and busier" is a table lookup, not per-narrative code. All degrees are clamped into the single
+  octave the grid displays. Every section is written in one `setMelos` (per-section `putSec` calls
+  would read stale state), with the previous store kept for one-step Undo.
+
 ## Notation
 
 `NotationScore` draws the song on a staff in hand-built SVG (no engraving library), matching the
