@@ -65,12 +65,28 @@ Turns the song into readable music. **Show score**, then choose **Piano** or **G
 
 ## Rhythm
 
-Pattern (≈30 strums including 3/4, 6/8 and swung feels — ★ marks the progression's suggested one),
-Sound (guitar / piano / organ / bass / double bass), Drums (≈40 patterns including 3/4, 6/8 and
-dance), Kit, Pump, tempo ±5, and Play. Playback runs one chord per bar; if a song structure is
+Pattern (≈37 strums including 3/4, 6/8, swung feels and sixteenths — ★ marks the progression's
+suggested one, **· 16ths** marks the finer grid),
+Sound (guitar / piano / organ / bass / double bass), Drums (≈53 patterns including 3/4, 6/8, dance and
+sixteenths), Kit, Pump, tempo ±5, and Play. Playback runs one chord per bar; if a song structure is
 selected below, it plays the **entire written-out song**, showing the current section and bar. The
 current chord's pill and its landing-note row light up as it plays. All changes (pattern, drums,
 tempo, chord edits) take effect within about a tenth of a second, mid-playback.
+
+### Sixteenths
+
+Most rhythms divide each beat in two. The ones marked **· 16ths** divide it in four, which is where
+dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling hat.
+
+- Picking a 16ths rhythm **doubles the melody grid** to sixteen columns a bar, so you can write 16th
+  toplines, arps and offbeat lines. Switch back to an eighth-note rhythm and any melody you've
+  written is re-timed so every note stays where it sounds.
+- The drum patterns at this resolution (*House · 16th hats*, *Techno · driving 16ths*, *UK garage
+  2-step*, *Drum & bass*, *Amen break*, *Big beat breaks*, *Trap · rolling hats*, *Dubstep*,
+  *Hip-hop 16ths*, *Footwork*) can be used with any rhythm — an eighth-note strum with a sixteenth
+  kit works fine, and so does the reverse.
+- **Swing** on a 16ths rhythm is a sixteenth shuffle rather than an eighth one — that's the UK
+  garage and 2-step feel. Try *Swung 16ths* with *UK garage 2-step*.
 
 ### Dance kits and the pump
 
