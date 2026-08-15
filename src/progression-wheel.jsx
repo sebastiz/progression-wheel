@@ -5,7 +5,7 @@ import { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PAT
 import { FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, sfPrefetch } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
-import { LAYER_DEFAULT_INSTR, LAYER_INK, LAYER_NAMES, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, blankBars, rescaleBar } from "./melody.js";
+import { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, blankBars, layerGain, rescaleBar} from "./melody.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -316,7 +316,8 @@ function NotationScore({ measures, instr, meloBeats, sub = 2, perSystem = 4 }) {
     }
     // barlines + measures
     const topY = yTreble(38), botY = piano ? yBass(18) : tabY(5);
-    parts.push(<line key="bl0" x1={clefW} y1={topY} x2={clefW} y2={botY} stroke={FAINT} strokeWidth="1" />);
+    // the opening barline — keyed apart from the per-bar ones, whose keys start at bl0
+    parts.push(<line key="blopen" x1={clefW} y1={topY} x2={clefW} y2={botY} stroke={FAINT} strokeWidth="1" />);
     bars.forEach((m, bi) => {
       const mx0 = clefW + bi * barW;
       const mx1 = mx0 + barW;
@@ -884,8 +885,12 @@ export default function ProgressionWheel() {
       const src = (saved && saved.layers && saved.layers.length) ? saved.layers : [{ bars: null, instr: null }];
       const layers = src.map((ly, li) => {
         const bars = adaptBars(saved && saved.ids, ly && ly.bars, ids, samePid);
-        // part 0 always exists; the rest keep whatever bars they were given
-        return { bars, flat: bars.flat(), instr: (ly && ly.instr) || null };
+        // part 0 always exists; the rest keep whatever bars they were given. Register and level
+        // fall back to the defaults for that part index, so older sections gain sane values.
+        return { bars, flat: bars.flat(), instr: (ly && ly.instr) || null,
+          oct: (ly && ly.oct) != null ? ly.oct : (LAYER_DEFAULT_OCT[li] || 0),
+          vol: (ly && ly.vol) != null ? ly.vol : (LAYER_DEFAULT_VOL[li] != null ? LAYER_DEFAULT_VOL[li] : 1),
+          mute: !!(ly && ly.mute), solo: !!(ly && ly.solo) };
       });
       out[d.key] = { ids, layers };
     });
@@ -897,14 +902,14 @@ export default function ProgressionWheel() {
     const melBase = (tonic > 6 ? 60 : 72) + tonic;
     const loopSec = secMelos.L1 || Object.values(secMelos)[0];
     // pull every note of one layer out independently by its own onset + held length
-    const extract = cols => {
+    const extract = (cols, oct = 0) => {
       if (!cols) return [];
       const on = (i, d) => (cols[i] || []).includes(d);
       const out = [];
       for (let i = 0; i < meloBeats; i++) for (const d of (cols[i] || [])) {
         if (i > 0 && on(i - 1, d)) continue;                    // only at the note's onset
         let run = 1; while (i + run < meloBeats && on(i + run, d)) run++;
-        out.push({ on: i, dur: run, midi: melBase + scaleSemis[d] });
+        out.push({ on: i, dur: run, midi: melBase + 12 * oct + scaleSemis[d] });
       }
       return out;
     };
@@ -912,7 +917,9 @@ export default function ProgressionWheel() {
       const secm = b.inst != null ? secMelos[b.inst] : loopSec;
       const idx = b.inst != null ? b.mb : bi % ((secm && secm.layers[0] && secm.layers[0].bars.length) || 1);
       // every melody part lands on the same stave, inked by the part it belongs to
-      const per = ((secm && secm.layers) || []).map(ly => extract(ly.bars && ly.bars[idx]));
+      // a muted part is left off the stave, as it is out of the sound
+      const per = ((secm && secm.layers) || []).map(ly =>
+        ly.mute ? [] : extract(ly.bars && ly.bars[idx], ly.oct || 0));
       // notes that share an onset AND length become one clean chord; differing rhythms stay separate
       const groups = {};
       per.forEach((evs, li) => evs.forEach(e => {
@@ -947,43 +954,53 @@ export default function ProgressionWheel() {
   const putSec = (key, patch) => {
     const secs = melos.progId === progId ? melos.secs : {};
     const sec = secMelos[key], prev = secs[key] || {};
-    const base = sec ? sec.layers.map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr }))
+    const base = sec ? sec.layers.map(l => ({ bars: dupBars(l.bars), instr: l.instr,
+                         oct: l.oct || 0, vol: l.vol == null ? 1 : l.vol, mute: !!l.mute, solo: !!l.solo }))
                      : (prev.layers || [{ bars: [], instr: null }]);
     setMelos({ progId, secs: { ...secs, [key]: {
       ids: sec ? sec.ids : prev.ids,
       layers: "layers" in patch ? patch.layers : base,
     } } });
   };
+  // copy a part, keeping every field. Anything that rebuilds the list goes through this, so a
+  // part's register, level, mute and solo survive edits that only meant to touch its notes.
+  const cloneLayer = ly => ({ bars: dupBars(ly.bars), instr: ly.instr,
+    oct: ly.oct || 0, vol: ly.vol == null ? 1 : ly.vol, mute: !!ly.mute, solo: !!ly.solo });
   // replace one part's bars (the shape almost every melody edit takes)
   const putLayer = (key, L, bars) => {
     const sec = secMelos[key]; if (!sec) return;
-    putSec(key, { layers: sec.layers.map((ly, i) =>
-      i === L ? { bars, instr: ly.instr } : { bars: dupBars(ly.bars), instr: ly.instr }) });
+    putSec(key, { layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), bars } : cloneLayer(ly)) });
+  };
+  // set one field on one part (register, level, mute, solo)
+  const setLayerProp = (key, L, patch) => {
+    const sec = secMelos[key]; if (!sec) return;
+    putSec(key, { layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), ...patch } : cloneLayer(ly)) });
   };
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
     if (!from) return;
     setMelos({ progId, secs: { ...melos.secs, [toKey]: { ids: [...from.ids],
-      layers: (from.layers || []).map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })) } } });
+      layers: (from.layers || []).map(cloneLayer) } } });
   };
   const addLayer = key => {
     const sec = secMelos[key]; if (!sec || nLayers(sec) >= MAX_LAYERS) return;
     const at = nLayers(sec);
-    putSec(key, { layers: [...sec.layers.map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })),
-      { bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: LAYER_DEFAULT_INSTR[at] || null }] });
+    putSec(key, { layers: [...sec.layers.map(cloneLayer),
+      { bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: LAYER_DEFAULT_INSTR[at] || null,
+        oct: LAYER_DEFAULT_OCT[at] || 0, vol: LAYER_DEFAULT_VOL[at] == null ? 1 : LAYER_DEFAULT_VOL[at],
+        mute: false, solo: false }] });
     setMelLayer(at);
   };
   const removeLayer = (key, L) => {
     const sec = secMelos[key]; if (!sec || L === 0 || !layerOf(sec, L)) return;   // part A is the section
-    putSec(key, { layers: sec.layers.filter((_, i) => i !== L)
-      .map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })) });
+    putSec(key, { layers: sec.layers.filter((_, i) => i !== L).map(cloneLayer) });
     setMelLayer(l => (l >= L ? Math.max(0, l - 1) : l));
     if (melSel.key === key && melSel.layer >= L) setMelSel({ key:"", layer:0, notes:{} });
   };
   const setSecInstr = (key, L, val) => {
     const sec = secMelos[key]; if (!sec) return;
     putSec(key, { layers: sec.layers.map((ly, i) =>
-      ({ bars: dupBars(ly.bars), instr: i === L ? (val || null) : ly.instr })) });
+      i === L ? { ...cloneLayer(ly), instr: val || null } : cloneLayer(ly)) });
   };
   meloRef.current = { bySym: secMelos, scale: scaleSemis, tonic, melInstr, legato };
   const tapMelo = (sym, c, deg, L) => {
@@ -1272,7 +1289,7 @@ export default function ProgressionWheel() {
     const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
     const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
     if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, partGain: [], sampler, lastInstr: instrRef.current, lastLead: leadKey,
       leadLoaded: new Set(leadKey ? [leadKey] : []),
       step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     m.timer = setInterval(() => {
@@ -1368,9 +1385,14 @@ export default function ProgressionWheel() {
           if (sec && sec.layers.some(ly => ly.flat.length)) {
             const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
             // play one melody layer's column with its own voice (falling back to the global lead)
-            const playLayer = (flat, voice) => {
-              if (!flat || !flat.length || melStep == null) return;
+            const playLayer = (flat, voice, li, oct, gain) => {
+              if (!flat || !flat.length || melStep == null || !gain) return;
               const N = flat.length, col = (mb * MB + melStep) % N;
+              // each part plays through its own gain into the music bus, so level, mute and solo
+              // apply to the part rather than to individual notes
+              let dest = m.partGain[li];
+              if (!dest) { dest = m.partGain[li] = m.ctx.createGain(); dest.connect(m.music); }
+              dest.gain.setValueAtTime(gain, t);
               const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
               if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
               (flat[col] || []).forEach(deg => {
@@ -1379,20 +1401,22 @@ export default function ProgressionWheel() {
                 if (held && col > 0 && prev.includes(deg)) return; // still ringing from last slot
                 let run = 1;
                 if (held) while (col + run < N && (flat[col + run] || []).includes(deg)) run++;
-                const midi = base + mel.scale[deg];
+                const midi = base + 12 * (oct || 0) + mel.scale[deg];
                 // `run` counts melody columns, so a note's length has to be measured in columns
                 // — on a sixteenth grid a one-column note is a sixteenth, not an eighth
                 const colDur = beat / (subRef.current || 2);
                 const dur = held ? colDur * (run + 0.35) : colDur * 0.92;
-                const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, m.music);
+                const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, dest);
                 if (!sampled) {
                   // GM instrument with no loaded sample → its family's synth voice; else the synth spec itself
                   const kind = isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice;
-                  leadNote(m.ctx, t, midi, dur, kind, held, m.music);
+                  leadNote(m.ctx, t, midi, dur, kind, held, dest);
                 }
               });
             };
-            sec.layers.forEach(ly => playLayer(ly.flat, ly.instr || mel.melInstr));
+            const anySolo = sec.layers.some(ly => ly.solo);
+            sec.layers.forEach((ly, li) =>
+              playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo)));
             const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
             if (melStep != null) {
               const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
@@ -1453,9 +1477,10 @@ export default function ProgressionWheel() {
         const bi2 = b.inst != null ? b.mb : bi % nb;
         for (let p = 0; p < nParts; p++) {
           const ly = secm && secm.layers[p];
-          const barCols = ly && ly.bars[bi2];
+          const barCols = ly && !ly.mute ? ly.bars[bi2] : null;   // a muted part exports silent
+          const oct = (ly && ly.oct) || 0;
           for (let c = 0; c < meloBeats; c++)
-            partCols[p].push(((barCols && barCols[c]) || []).map(d => melBase + scaleSemis[d]));
+            partCols[p].push(((barCols && barCols[c]) || []).map(d => melBase + 12 * oct + scaleSemis[d]));
         }
       });
       // per-bar drum pattern: a section's own kit if it set one, else the global choice
@@ -1789,6 +1814,11 @@ export default function ProgressionWheel() {
         /* a cell carrying two parts is split diagonally between their colours, inline */
         .mcell.colnow { border-color:#EAE2CC; }
         .mcell.colnow:not(.on) { background:#2A3442; }
+        .octval { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#EDE7DA; min-width:22px; text-align:center; font-variant-numeric:tabular-nums; }
+        .lvl { width:104px; accent-color:#54B79D; }
+        .mini.mixon { background:#54B79D; border-color:#54B79D; color:#0c1116; }
+        .mini:disabled { opacity:.35; cursor:default; }
+        .partmix { padding:7px 9px; background:#131924; border:1px solid #222A38; border-radius:8px; }
         .lybtn { font-size:11px; padding:2px 9px; border-radius:999px; border:1px solid #2A3442; background:#161C26; color:#8B94A3; cursor:pointer; }
         .mcell.b0 { border-left:2px solid #3A4656; }
         .mcell.bt { border-left:1px solid #2A3442; }
@@ -2585,6 +2615,38 @@ export default function ProgressionWheel() {
                       {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
                         title={"Remove part " + LAYER_NAMES[secL]}>🗑 {LAYER_NAMES[secL]}</button>}
                     </div>
+
+                    {/* the active part's register and level — what turns six voices into an arrangement */}
+                    {(() => {
+                      const ly = layerOf(sec, secL) || {};
+                      const oct = ly.oct || 0, vol = ly.vol == null ? 1 : ly.vol;
+                      const anySolo = sec.layers.some(l => l.solo);
+                      const set = patch => setLayerProp(d.key, secL, patch);
+                      return (
+                        <div className="row partmix" style={{ gap:10, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
+                          <span className="keytag" style={{ margin:0 }}>Octave</span>
+                          <div className="row" style={{ gap:4, alignItems:"center" }}>
+                            <button className="mini" disabled={oct <= LAYER_OCT_MIN}
+                              onClick={() => set({ oct: Math.max(LAYER_OCT_MIN, oct - 1) })}
+                              title="Drop this part an octave">−</button>
+                            <span className="octval">{oct > 0 ? "+" + oct : oct}</span>
+                            <button className="mini" disabled={oct >= LAYER_OCT_MAX}
+                              onClick={() => set({ oct: Math.min(LAYER_OCT_MAX, oct + 1) })}
+                              title="Lift this part an octave">＋</button>
+                          </div>
+                          <span className="keytag" style={{ margin:0 }}>Level</span>
+                          <input className="lvl" type="range" min="0" max="100" value={Math.round(vol * 100)}
+                            onChange={e => set({ vol: +e.target.value / 100 })}
+                            title={"Level of part " + LAYER_NAMES[secL]} />
+                          <span className="octval">{Math.round(vol * 100)}</span>
+                          <button className={"mini" + (ly.mute ? " mixon" : "")} onClick={() => set({ mute: !ly.mute })}
+                            title="Silence this part">{ly.mute ? "muted" : "mute"}</button>
+                          <button className={"mini" + (ly.solo ? " mixon" : "")} onClick={() => set({ solo: !ly.solo })}
+                            title="Hear this part alone">{ly.solo ? "soloed" : "solo"}</button>
+                          {anySolo && !ly.solo && <span className="keytag" style={{ margin:0, opacity:.75 }}>another part is soloed</span>}
+                        </div>
+                      );
+                    })()}
 
                     <div className="seg" style={{ marginBottom:8 }}>
                       <button className={tab === "write" ? "on" : ""}

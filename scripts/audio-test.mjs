@@ -433,6 +433,34 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`source shape guard: ${bad.length + 1} patterns checked`);
 }
 
+/* ---- per-part register and level ---- */
+{
+  const { layerGain, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_OCT_MIN, LAYER_OCT_MAX, MAX_LAYERS } = M;
+  if (LAYER_DEFAULT_OCT.length !== MAX_LAYERS) problems.push("LAYER_DEFAULT_OCT does not cover every part");
+  if (LAYER_DEFAULT_VOL.length !== MAX_LAYERS) problems.push("LAYER_DEFAULT_VOL does not cover every part");
+  LAYER_DEFAULT_OCT.forEach((o, i) => {
+    if (!Number.isInteger(o)) problems.push(`part ${i}: default octave ${o} is not a whole octave`);
+    if (o < LAYER_OCT_MIN || o > LAYER_OCT_MAX) problems.push(`part ${i}: default octave ${o} outside ${LAYER_OCT_MIN}..${LAYER_OCT_MAX}`);
+  });
+  LAYER_DEFAULT_VOL.forEach((v, i) => {
+    if (!(v > 0 && v <= 1)) problems.push(`part ${i}: default level ${v} outside 0..1`);
+  });
+  // the bass part must actually sit below the lead, or "bassline" is a lie
+  if (!(LAYER_DEFAULT_OCT[2] < LAYER_DEFAULT_OCT[0])) problems.push("the bass part does not default below the lead");
+  // gain: mute wins; solo elsewhere silences; otherwise the part's own level
+  const g = (ly, anySolo) => layerGain(ly, anySolo);
+  if (g({ vol: 0.8 }, false) !== 0.8) problems.push("an ordinary part does not play at its own level");
+  if (g({ vol: 0.8, mute: true }, false) !== 0) problems.push("mute does not silence a part");
+  if (g({ vol: 0.8 }, true) !== 0) problems.push("a non-soloed part still sounds while another is soloed");
+  if (g({ vol: 0.8, solo: true }, true) !== 0.8) problems.push("a soloed part does not play");
+  if (g({ vol: 0.8, solo: true, mute: true }, true) !== 0) problems.push("mute should beat solo on the same part");
+  if (g({}, false) !== 1) problems.push("a part with no level set should play at full");
+  // a MIDI note at the lowest register must stay a legal MIDI note
+  const lowest = 60 + 12 * LAYER_OCT_MIN;
+  if (lowest < 0 || lowest > 127) problems.push(`the lowest register puts notes off the MIDI range (${lowest})`);
+  console.log(`part mix: octaves ${LAYER_DEFAULT_OCT.join(",")} · levels ${LAYER_DEFAULT_VOL.join(",")} · lowest MIDI ${lowest}`);
+}
+
 /* ---- the module seams hold ----
    Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
    declares something but forgets to export it, and the component referencing a module's symbol

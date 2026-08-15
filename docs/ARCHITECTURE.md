@@ -133,8 +133,12 @@ never reach zero because the ramps are exponential.
 
 ### Melody parts
 
-A section holds `layers: [{bars, flat, instr}]` — up to `MAX_LAYERS`, each with its own instrument
-and its own `LAYER_INK` colour. Every melody edit goes through `barsOf`/`flatOf`/`putLayer`, so the
+A section holds `layers: [{bars, flat, instr, oct, vol, mute, solo}]` — up to `MAX_LAYERS`, each with
+its own instrument and its own `LAYER_INK` colour. `oct` is what separates a bassline from a topline,
+since the grid itself only ever shows one octave of scale degrees; it is applied in three places
+(playback, `scoreMeasures`, MIDI export). `layerGain` folds level, mute and any solo in the section
+into one number, and each part plays through its own gain node into the music bus. Every rebuild of
+the list goes through `cloneLayer`, so an edit meant for a part's notes cannot drop its mix settings. Every melody edit goes through `barsOf`/`flatOf`/`putLayer`, so the
 edit operations are resolution- and part-agnostic. MIDI export gives each part its own track and
 channel, skipping channel 9 (percussion) so a part is never voiced as a drum kit.
 - Swing delays odd eighths by a third of an eighth. Pattern length sets the meter (8 = 4/4, 6 = 3/4).

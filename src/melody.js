@@ -23,6 +23,18 @@ const LAYER_NAMES = ["A", "B", "C", "D", "E", "F"];
 // grid + notation ink per part, in order. A is the app's green; the rest stay clearly separable.
 const LAYER_INK = ["#54B79D", "#B98CF0", "#E8A33D", "#6EA8FF", "#E0687F", "#5FCBC3"];
 const LAYER_DEFAULT_INSTR = ["", "ep", "synth_bass_1", "pad_2_warm", "lead_2_sawtooth", "vibraphone"];
+// Register, in octaves from the melody grid's own octave. The grid always shows one octave of scale
+// degrees, so this is what actually separates a bassline from a topline — without it a part on a
+// synth bass just sounds like a mid-register synth. Defaults match the instruments above: the
+// bassline drops two octaves, the pad sits under the lead, the saw lead sits above it.
+const LAYER_DEFAULT_OCT = [0, 0, -2, -1, 1, 1];
+const LAYER_OCT_MIN = -3, LAYER_OCT_MAX = 2;
+// Level per part, 0..1. Defaults duck the accompaniment under the lead so a six-part arrangement
+// is roughly balanced before you touch anything.
+const LAYER_DEFAULT_VOL = [1, 0.8, 0.9, 0.6, 0.7, 0.7];
+// one part's gain, folding in mute and any soloing elsewhere in the section
+const layerGain = (ly, anySolo) =>
+  (ly.mute || (anySolo && !ly.solo)) ? 0 : (ly.vol == null ? 1 : ly.vol);
 // Re-time one stored bar onto a grid of B columns. A bar remembers its own resolution in its
 // length, so switching between an eighth and a sixteenth rhythm keeps every note where it sounds
 // rather than sliding it into the wrong half of the bar. Going finer is lossless; going coarser
@@ -448,4 +460,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { wrap7, qbeats, blankBars, MAX_LAYERS, LAYER_NAMES, LAYER_INK, LAYER_DEFAULT_INSTR, rescaleBar, layBar, MELODY_PATTERNS, clampDeg, colPrefs, nCols, ROLE_N, roleN, ROLE_LIFT, roleLift, winFor, chordSnap, narBars, isHook, NARRATIVES };
+export { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, ROLE_LIFT, ROLE_N, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, qbeats, rescaleBar, roleLift, roleN, winFor, wrap7 };

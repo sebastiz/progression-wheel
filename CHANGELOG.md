@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **Melody parts get a register and a level.** Parts shipped with their own instrument, colour and
+  MIDI channel — but every part still sounded in the same octave, so a part set to *Synth bass* was
+  a mid-register synth rather than a bassline. Each part now has its own **Octave** (−3 to +2) and
+  **Level**, plus **mute** and **solo** for auditioning, in a row under the part buttons. Defaults
+  match each part's suggested instrument: the bass part starts two octaves down, the pad one below
+  the lead, the saw lead one above, and the accompaniment sits a little under the lead so a
+  six-part arrangement is roughly balanced before you touch anything. Register and level apply to
+  playback, to the stave and to the exported MIDI — a muted part is silent in all three. Version
+  bumped to 4.42.0.
+- **Fixed: the first barline in the score shared a key with the first bar's.** A duplicate React key
+  in the notation, which can silently drop or duplicate an element.
 - **Internal: the source is now modules, not one file.** No behaviour change — the app builds and
   plays exactly as before. `src/progression-wheel.jsx` had grown to 4,600 lines, and the blank-screen
   bug in 4.40.1 was the predictable result: a refactor with call sites too scattered to sweep by eye.

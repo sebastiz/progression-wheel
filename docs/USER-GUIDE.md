@@ -82,8 +82,14 @@ own colour — enough for a sub bass, a pad, an arp and a topline at once.
   can't be removed.
 - The **Part** buttons pick which one your edits, patterns and recordings write to.
 - Grid cells are coloured by the part that owns them; a cell two parts share is split diagonally.
+- **Octave** moves a part into its own register — this is what makes a bassline a bassline rather
+  than a mid-range synth. New parts start where their instrument suggests: the bass part two octaves
+  down, the pad one below the lead, the saw lead one above.
+- **Level**, **mute** and **solo** balance the parts against each other. Solo on any part silences
+  the others in that section until you turn it off.
 - Exported MIDI gives each part its own track and channel, so a DAW opens the arrangement with the
-  parts already separated onto their own instruments.
+  parts already separated onto their own instruments. Register and level carry across; a muted part
+  exports silent.
 
 ### Builds, drops and risers
 
