@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **Per-section drums — build dynamics across the song.** Drums used to be one global kit for the whole
+  song. Now every section in **Song & melody** carries its own **🥁** menu in its group header (Verses,
+  Chorus, Bridge, Intro…): leave it on *global drums* to follow the top Drums picker, choose a different
+  kit for contrast, or pick *No drums* to drop percussion out entirely for that section. That's the
+  simplest way to shape dynamics — strip the kit on a verse, slam it back for the chorus, or give the
+  bridge a half-time shuffle. The per-section choice drives live playback, is saved with the sketch, and
+  is written correctly into the exported MIDI (each bar emits its own section's pattern). Version bumped
+  to 4.36.0.
 - **Call & response, plus Select-all for notes and chords.** Two more melody-writing helpers and a
   selection fix. **↩ Answer** (in the melody Move toolbar) takes the selected phrase — the "call" — and
   echoes it right after itself as a "response" whose final note resolves home to the tonic: instant

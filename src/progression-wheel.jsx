@@ -1252,15 +1252,22 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2) {
     notes.forEach((n, i) => ev(chordsT, i ? 0 : 0, 0x90, n, 78));
     notes.forEach((n, i) => ev(chordsT, i ? 0 : beatsPerBar * T, 0x80, n, 0));
   });
+  // drumPat may be one pattern (array) shared by every bar, or a function (barIndex) → pattern|null
+  // so each section can carry its own kit (or fall silent) in the exported file
+  const drumFn = typeof drumPat === "function" ? drumPat : () => drumPat;
+  const drumHas = typeof drumPat === "function" ? bars.some((_, i) => drumFn(i)) : !!drumPat;
   const drumsT = [];
-  if (drumPat) {
+  if (drumHas) {
     let pend = 0;
-    for (let bar = 0; bar < bars.length; bar++) for (let s = 0; s < beatsPerBar * 2; s++) {
-      const notes = [...(drumPat[s] || "")].map(c => c === "K" ? 36 : c === "S" ? 38 : 42);
-      if (!notes.length) { pend += T / 2; continue; }
-      notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n, n === 42 ? 62 : 92));
-      notes.forEach((n, i) => ev(drumsT, i ? 0 : 60, 0x89, n, 0));
-      pend = T / 2 - 60;
+    for (let bar = 0; bar < bars.length; bar++) {
+      const pat = drumFn(bar);
+      for (let s = 0; s < beatsPerBar * 2; s++) {
+        const notes = [...((pat && pat[s]) || "")].map(c => c === "K" ? 36 : c === "S" ? 38 : 42);
+        if (!notes.length) { pend += T / 2; continue; }
+        notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n, n === 42 ? 62 : 92));
+        notes.forEach((n, i) => ev(drumsT, i ? 0 : 60, 0x89, n, 0));
+        pend = T / 2 - 60;
+      }
     }
   }
   // build one melody track from its eighth-columns; each layer gets its own channel
@@ -1286,10 +1293,10 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2) {
   };
   const melA = buildMelo(meloCols, 0x91, 0x81);                   // layer A → channel 1
   const melB = buildMelo(meloCols2, 0x92, 0x82);                 // layer B → channel 2
-  const nTrk = 2 + (drumPat ? 1 : 0) + (melA.has ? 1 : 0) + (melB.has ? 1 : 0);
+  const nTrk = 2 + (drumHas ? 1 : 0) + (melA.has ? 1 : 0) + (melB.has ? 1 : 0);
   const head = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0, nTrk, (T>>8)&255, T&255];
   return new Uint8Array([...head, ...trk(tempo), ...trk(chordsT),
-    ...(drumPat ? trk(drumsT) : []), ...(melA.has ? trk(melA.arr) : []), ...(melB.has ? trk(melB.arr) : [])]);
+    ...(drumHas ? trk(drumsT) : []), ...(melA.has ? trk(melA.arr) : []), ...(melB.has ? trk(melB.arr) : [])]);
 }
 
 /* ===== midi import ===== */
@@ -1743,6 +1750,7 @@ export default function ProgressionWheel() {
   const [clickOn, setClickOn] = useState(false);            // metronome click on each hit (off by default)
   const [patSel, setPatSel] = useState({ key:"", id:"" });
   const [drum, setDrum] = useState("off");
+  const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
   const [colour, setColour] = useState("triads");           // triads | sevenths
   const [force, setForce] = useState(null);                 // dice override of the progression
   const [sketches, setSketches] = useState(null);           // null = not loaded yet
@@ -1782,6 +1790,7 @@ export default function ProgressionWheel() {
   const metroRef = useRef(null);
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(false);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
+  const secDrumRef = useRef({});
   const realRef = useRef(true);
   const clickRef = useRef(false);
   const meloRef = useRef(null);
@@ -2099,7 +2108,7 @@ export default function ProgressionWheel() {
         insts.push({ key, base: L, word, cs, str, usedC, note: r === 0 ? row.note : null,
           nbars: cs.length, startBar: totalBars });
         totalBars += cs.length;
-        if (bars) cs.forEach((c, mb) => bars.push({ chord: c, inst: key, word, mb }));
+        if (bars) cs.forEach((c, mb) => bars.push({ chord: c, inst: key, base: L, word, mb }));
       }
     });
     return { insts, totalBars, bars };
@@ -2144,6 +2153,7 @@ export default function ProgressionWheel() {
   const effBpm = bpmSt.key === progId ? bpmSt.val : (BPM_DEFAULT[progId] || 96);
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = !!rhythm.swing;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
+  secDrumRef.current = secDrum;
   clickRef.current = clickOn;
   const meloBeats = rhythm.pattern.length;                  // eighths per bar (6 in waltz time)
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
@@ -2538,7 +2548,12 @@ export default function ProgressionWheel() {
             if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.music);
           }
         }
-        const dpat = drumRef.current;
+        let dpat = drumRef.current;                       // global drum pattern by default
+        if (struct && struct.length && structBar >= 0) {   // a section can override with its own kit
+          const b = struct[structBar];
+          const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
+          if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
+        }
         if (dpat && dpat[i]) for (const ch of dpat[i]) drumSound(m.ctx, t, ch, m.noise, m.master);
         const mel = meloRef.current;
         if (mel) {
@@ -2643,14 +2658,21 @@ export default function ProgressionWheel() {
           meloColsB.push(degsB.map(d => melBase + scaleSemis[d]));
         }
       });
-      const bytes = midiBytes(effBpm, rhythm.pattern.length / 2, bars, DRUMS[drum].pattern,
+      // per-bar drum pattern: a section's own kit if it set one, else the global choice
+      const drumForBar = bi => {
+        const b = bars[bi];
+        const id = (b && b.base != null && secDrum[b.base]) || drum;
+        return DRUMS[id] ? DRUMS[id].pattern : null;
+      };
+      const anyDrum = bars.some((_, i) => drumForBar(i));
+      const bytes = midiBytes(effBpm, rhythm.pattern.length / 2, bars, drumForBar,
         anyMelo ? meloCols : null, anyMeloB ? meloColsB : null);
       const url = URL.createObjectURL(new Blob([bytes], { type:"audio/midi" }));
       const a = document.createElement("a");
       a.href = url; a.download = "progression-wheel.mid";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      setIoNote("MIDI exported — chords" + (DRUMS[drum].pattern ? " + drums" : "")
+      setIoNote("MIDI exported — chords" + (anyDrum ? " + drums" : "")
         + (anyMelo ? " + melody" : "") + (anyMeloB ? " + melody 2" : "") + " at " + effBpm + " bpm.");
     } catch (e) { setIoNote("Export failed in this viewer — try on desktop."); }
   };
@@ -2793,7 +2815,7 @@ export default function ProgressionWheel() {
   useEffect(() => { if (realSounds && isGM(melInstr)) sfPrefetch(melInstr); }, [melInstr, realSounds]);
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
-    const s = { name, progId, tonic, genre, emotion, mode, colour, patId, drum, instr,
+    const s = { name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr,
       bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
       quals: qmap, removed: remList,
       order: order.key === editKey ? order.list : null };
@@ -2807,7 +2829,7 @@ export default function ProgressionWheel() {
   };
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
-    setColour(s.colour || "triads"); setInstr(s.instr); setDrum(s.drum);
+    setColour(s.colour || "triads"); setInstr(s.instr); setDrum(s.drum); setSecDrum(s.secDrum || {});
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
     setSelStruct(s.selStruct || ""); setContrast(s.contrast || { id:"", sec:"C" });
     const eKey = s.progId + ":" + s.tonic;
@@ -2975,7 +2997,11 @@ export default function ProgressionWheel() {
         .sgrp .arr:first-of-type { border-top:none; padding-top:2px; }
         .arr.playnow { background:#161F2C; border-radius:10px; padding:9px 10px 10px; border-top-color:transparent; margin-top:6px; }
         .arr.playnow + .arr { border-top-color:transparent; }
-        .sgrplbl { font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; margin-top:7px; }
+        .sgrphdr { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; }
+        .sgrplbl { font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; }
+        .secdrum { display:inline-flex; align-items:center; gap:4px; font-size:11px; }
+        .secdrum select { font-size:11px; padding:2px 5px; border-radius:7px; background:#141C27; color:#C9D2DE;
+          border:1px solid #2A3442; max-width:130px; }
         .mbar { font-size:11px; font-weight:700; border-radius:6px; text-align:center; padding:2px 0; margin:0 1px 2px; white-space:nowrap; overflow:hidden; }
         .sug { border-top:1px solid #232C3A; padding:10px 2px 8px; margin-top:8px; }
         .modehint { margin:10px 0 0; padding:10px 12px; border:1px solid ${GOLD}55; background:#1B2130; border-radius:12px; }
@@ -3590,6 +3616,8 @@ export default function ProgressionWheel() {
             On each section: <b>▶</b> play from here · <b>🔁</b> loop just this section ·
             <b> {recSource === "guitar" ? "🎸" : "🎤"} Rec</b> record a {recSource} line straight onto its
             melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> above.
+            Each section's <b>🥁</b> menu gives it its own drum kit (or silence) for contrast — build
+            dynamics by dropping the drums out on a verse and bringing them back for the chorus.
           </p>}
           {(() => {
             const groups = [];
@@ -3600,8 +3628,18 @@ export default function ProgressionWheel() {
             });
             return groups.map((g, gi) => (
               <div key={gi} className="sgrp" style={{ borderColor: (SEC_COL[g.base] || "#2A3442") + "55" }}>
-                <div className="sgrplbl" style={{ color: SEC_COL[g.base] || "#8B94A3" }}>
-                  {g.word}{g.items.length > 1 ? "s ×" + g.items.length : ""}
+                <div className="sgrphdr">
+                  <div className="sgrplbl" style={{ color: SEC_COL[g.base] || "#8B94A3" }}>
+                    {g.word}{g.items.length > 1 ? "s ×" + g.items.length : ""}
+                  </div>
+                  <label className="secdrum" title="Drum kit for this section — overrides the global Drums choice">
+                    <span aria-hidden="true">🥁</span>
+                    <select value={secDrum[g.base] || ""}
+                      onChange={e => setSecDrum({ ...secDrum, [g.base]: e.target.value })}>
+                      <option value="">global drums</option>
+                      {Object.entries(DRUMS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                    </select>
+                  </label>
                 </div>
                 {g.items.map((d, di) => {
             const sec = secMelos[d.key] || { flat: [] };
