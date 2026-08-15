@@ -6,17 +6,22 @@ import { readFileSync, writeFileSync } from "fs";
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 
-async function compile({ src, component, tmp, title, extraHead = "", boot = "Tuning up…" }) {
+async function compile({ src, component, title, extraHead = "", boot = "Tuning up…" }) {
   let code = readFileSync(src, "utf8");
   code = code.replace('const APP_VERSION = "dev";', `const APP_VERSION = ${JSON.stringify(pkg.version)};`);
+  // only the react import becomes globals — the entry's own `./*.js` imports are left for esbuild
   code = code.replace(/import \{[^}]*\} from "react";/,
     "const { useState, useMemo, useRef, useEffect } = React;");
   code = code.replace(`export default function ${component}(`, `function ${component}(`);
   code += `\nReactDOM.createRoot(document.getElementById("root")).render(React.createElement(${component}));\n`;
-  writeFileSync(tmp + ".jsx", code);
-  await build({ entryPoints: [tmp + ".jsx"], outfile: tmp + ".min.js",
-    loader: { ".jsx": "jsx" }, jsx: "transform", minify: true, target: "es2018" });
-  const js = readFileSync(tmp + ".min.js", "utf8");
+  // Fed through stdin with resolveDir "src" so the entry's relative imports resolve against the
+  // real module folder — no temp files, and nothing of ours lands in global scope (format: iife).
+  const res = await build({
+    stdin: { contents: code, resolveDir: "src", sourcefile: "entry.jsx", loader: "jsx" },
+    bundle: true, format: "iife", write: false,
+    loader: { ".jsx": "jsx" }, jsx: "transform", minify: true, target: "es2018",
+  });
+  const js = res.outputFiles[0].text;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -49,13 +54,13 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link 
 
 writeFileSync("index.html", await compile({
   src: "src/progression-wheel.jsx", component: "ProgressionWheel",
-  tmp: "scripts/.app", title: "The Progression Wheel",
+  title: "The Progression Wheel",
 }));
 console.log("built index.html");
 
 writeFileSync("transcribe.html", await compile({
   src: "src/tune-transcriber.jsx", component: "TuneTranscriber",
-  tmp: "scripts/.tt", title: "The Tune Transcriber",
+  title: "The Tune Transcriber",
   extraHead: FONTS, boot: "Warming up…",
 }));
 console.log("built transcribe.html");

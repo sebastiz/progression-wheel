@@ -1,19 +1,18 @@
 // Exercises the new drum voices + sidechain against a recording stub of the Web Audio API.
 // Catches the classic footguns: exponential ramps to zero, NaN frequencies, un-started
 // sources, and envelopes that outlive their buffer.
-import { readFileSync, writeFileSync } from "fs";
-import { build } from "esbuild";
+// Since the logic lives in plain .js modules, this imports them directly — no build step, no
+// JSX transform, no React stub. Only the component file needs compiling, and nothing here needs it.
+import { readFileSync } from "fs";
+import * as theory from "../src/theory.js";
+import * as patterns from "../src/patterns.js";
+import * as audio from "../src/audio.js";
+import * as midiMod from "../src/midi.js";
+import * as melody from "../src/melody.js";
 
-let code = readFileSync("src/progression-wheel.jsx", "utf8");
-code = code.replace(/import \{[^}]*\} from "react";/, "const React = globalThis.React;");
-code = code.replace("export default function ProgressionWheel(", "function ProgressionWheel(");
-code += "\nexport { drumSound, duckAt, midiBytes, makeNoise, DRUMS, DRUM_MIDI, PUMP_AMT, DRUM_KITS, DRUM_DEFAULT, KIT_DEFAULT, PUMP_DEFAULT, KIT_PROGRAM, MOVES, applyMove, FILTER_OPEN, LAYER_INK, LAYER_NAMES, MAX_LAYERS, LAYER_DEFAULT_INSTR, PATTERNS, PATTERN_DEFAULT, subOf, beatsOf, stepAt, sampleAt, drumBeatsOf, lcm, rescaleBar, qbeats, colPrefs, nCols, blankBars, MELODY_PATTERNS, NARRATIVES };\n";
-writeFileSync("scripts/.test.jsx", code);
-await build({ entryPoints: ["scripts/.test.jsx"], outfile: "scripts/.test.mjs",
-  loader: { ".jsx": "jsx" }, jsx: "transform", format: "esm", bundle: false });
-
-globalThis.React = { createElement: () => null };
-const M = await import("../scripts/.test.mjs");
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody };
+// the component source, read as text for the shape guard at the end
+const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
 /* ---- recording stub ---- */
 const problems = [];
@@ -432,6 +431,87 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const strayFlat = lines.filter(ln => /\bsec\.flat\b|\bsec\.bars\b|\bsecm\.bars\b/.test(ln));
   strayFlat.forEach(ln => problems.push(`src: section read bypasses layers — ${ln.trim().slice(0, 80)}`));
   console.log(`source shape guard: ${bad.length + 1} patterns checked`);
+}
+
+/* ---- per-part register and level ---- */
+{
+  const { layerGain, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_OCT_MIN, LAYER_OCT_MAX, MAX_LAYERS } = M;
+  if (LAYER_DEFAULT_OCT.length !== MAX_LAYERS) problems.push("LAYER_DEFAULT_OCT does not cover every part");
+  if (LAYER_DEFAULT_VOL.length !== MAX_LAYERS) problems.push("LAYER_DEFAULT_VOL does not cover every part");
+  LAYER_DEFAULT_OCT.forEach((o, i) => {
+    if (!Number.isInteger(o)) problems.push(`part ${i}: default octave ${o} is not a whole octave`);
+    if (o < LAYER_OCT_MIN || o > LAYER_OCT_MAX) problems.push(`part ${i}: default octave ${o} outside ${LAYER_OCT_MIN}..${LAYER_OCT_MAX}`);
+  });
+  LAYER_DEFAULT_VOL.forEach((v, i) => {
+    if (!(v > 0 && v <= 1)) problems.push(`part ${i}: default level ${v} outside 0..1`);
+  });
+  // the bass part must actually sit below the lead, or "bassline" is a lie
+  if (!(LAYER_DEFAULT_OCT[2] < LAYER_DEFAULT_OCT[0])) problems.push("the bass part does not default below the lead");
+  // gain: mute wins; solo elsewhere silences; otherwise the part's own level
+  const g = (ly, anySolo) => layerGain(ly, anySolo);
+  if (g({ vol: 0.8 }, false) !== 0.8) problems.push("an ordinary part does not play at its own level");
+  if (g({ vol: 0.8, mute: true }, false) !== 0) problems.push("mute does not silence a part");
+  if (g({ vol: 0.8 }, true) !== 0) problems.push("a non-soloed part still sounds while another is soloed");
+  if (g({ vol: 0.8, solo: true }, true) !== 0.8) problems.push("a soloed part does not play");
+  if (g({ vol: 0.8, solo: true, mute: true }, true) !== 0) problems.push("mute should beat solo on the same part");
+  if (g({}, false) !== 1) problems.push("a part with no level set should play at full");
+  // a MIDI note at the lowest register must stay a legal MIDI note
+  const lowest = 60 + 12 * LAYER_OCT_MIN;
+  if (lowest < 0 || lowest > 127) problems.push(`the lowest register puts notes off the MIDI range (${lowest})`);
+  console.log(`part mix: octaves ${LAYER_DEFAULT_OCT.join(",")} · levels ${LAYER_DEFAULT_VOL.join(",")} · lowest MIDI ${lowest}`);
+}
+
+/* ---- the module seams hold ----
+   Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
+   declares something but forgets to export it, and the component referencing a module's symbol
+   without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
+{
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js"];
+  const strip = t => t
+    .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/`(?:[^`\\]|\\.)*`/g, "``").replace(/\.\.\./g, " ");
+  // top-level names, including the later declarators of `const A = …, B = …`
+  const declared = text => {
+    const out = new Set();
+    for (const ln of text.split("\n")) {
+      const d = ln.match(/^(?:const|let|var)\s+(.*)$/);
+      if (d) {
+        let depth = 0, cur = "";
+        const parts = [];
+        for (const ch of d[1]) {
+          if ("([{".includes(ch)) depth++;
+          else if (")]}".includes(ch)) depth--;
+          if (ch === "," && depth === 0) { parts.push(cur); cur = ""; } else cur += ch;
+        }
+        parts.push(cur);
+        for (const p of parts) { const n = p.match(/^\s*([A-Za-z_$][\w$]*)\s*=/); if (n) out.add(n[1]); }
+      }
+      const f = ln.match(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
+      if (f) out.add(f[1]);
+    }
+    return out;
+  };
+  const owner = new Map();
+  for (const m of MODS) {
+    const s = readFileSync("src/" + m, "utf8");
+    const exp = s.match(/\nexport \{ (.*) \};/);
+    if (!exp) { problems.push(`${m}: no export block`); continue; }
+    const exported = new Set(exp[1].split(", "));
+    for (const n of declared(s.split("\nexport {")[0]))
+      if (!exported.has(n)) problems.push(`${m}: declares \`${n}\` but never exports it`);
+    for (const n of exported) owner.set(n, m);
+  }
+  // what the component imports vs what it actually uses
+  const imported = new Set();
+  for (const mm of code.matchAll(/^import \{([^}]*)\} from "\.\/[^"]*";$/gm))
+    for (const n of mm[1].split(",")) imported.add(n.trim());
+  const usedNames = new Set(strip(code.replace(/^import [^\n]*$/gm, "")).match(/[A-Za-z_$][\w$]*/g) || []);
+  const localNames = declared(code);
+  for (const n of usedNames)
+    if (owner.has(n) && !imported.has(n) && !localNames.has(n))
+      problems.push(`progression-wheel.jsx uses \`${n}\` from ${owner.get(n)} without importing it`);
+  console.log(`module seams: ${MODS.length} modules, ${owner.size} exports, ${imported.size} imported by the component`);
 }
 
 console.log(problems.length ? `\n✗ ${problems.length} PROBLEM(S):\n` + problems.map(p => "  - " + p).join("\n")

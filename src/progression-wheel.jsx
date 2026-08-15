@@ -1,1110 +1,14 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
+import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, UNIVERSAL, letterFor } from "./progressions.js";
+import { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, sfPrefetch } from "./audio.js";
+import { midiBytes, parseMidiMelody } from "./midi.js";
+import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
+import { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, blankBars, layerGain, rescaleBar} from "./melody.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
-/* ===== theory ===== */
-const SEMI_NAME = { 0:"C",1:"D♭",2:"D",3:"E♭",4:"E",5:"F",6:"F♯",7:"G",8:"A♭",9:"A",10:"B♭",11:"B" };
-const posOf = s => (s * 7) % 12;
-const MAJOR_NUM = { I:[0,"maj"], ii:[2,"min"], iii:[4,"min"], IV:[5,"maj"], iv:[5,"min"], V:[7,"maj"], vi:[9,"min"],
-  II:[2,"maj"], v:[7,"min"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"],
-  I7:[0,"dom"], II7:[2,"dom"], III7:[4,"dom"], IV7:[5,"dom"], V7:[7,"dom"], VI7:[9,"dom"] };
-const MINOR_NUM = { i:[0,"min"], I:[0,"maj"], ii:[2,"min"], IV:[5,"maj"], iv:[5,"min"], v:[7,"min"], V:[7,"maj"], VI:[9,"maj"], bII:[1,"maj"], bIII:[3,"maj"], bVI:[8,"maj"], bVII:[10,"maj"] };
-const FUNC_MAJOR = { I:"T", I7:"T", iii:"T", vi:"T", bIII:"T", ii:"S", II:"S", IV:"S", iv:"S", IV7:"S", bVI:"S", v:"D", V:"D", V7:"D", bVII:"D", II7:"D", III7:"D", VI7:"D" };
-const FUNC_MINOR = { i:"T", I:"T", bIII:"T", ii:"S", IV:"S", iv:"S", VI:"S", bII:"S", bVI:"S", v:"D", V:"D", bVII:"D" };
-const QSUF = { maj:"", min:"m", dom:"7", maj7:"maj7", m7:"m7", maj9:"maj9", m9:"m9", dom9:"9",
-  add9:"add9", madd9:"m(add9)", six:"6", m6:"m6", sus2:"sus2", sus4:"sus4", dom7sus4:"7sus4", dim:"°", aug:"+" };
-const chordName = (r, q) => SEMI_NAME[r] + (QSUF[q] || "");
-const famMin = q => q === "min" || q === "m7" || q === "m9" || q === "madd9" || q === "m6";
-
-/* ===== modes ===== */
-// the seven diatonic modes: interval pattern from the tonic, a pentatonic subset for melody,
-// the major/minor *family* (which numeral map + function colours a progression uses), a short label,
-// and `rel` — the semitones from this mode's tonic up to its parent (relative-Ionian) major root.
-const MODES = {
-  ionian:     { label:"Major (Ionian)",  short:"major",      semis:[0,2,4,5,7,9,11], pent:[0,2,4,7,9],  family:"major", rel:0 },
-  dorian:     { label:"Dorian",          short:"Dorian",     semis:[0,2,3,5,7,9,10], pent:[0,3,5,7,10], family:"minor", rel:10 },
-  phrygian:   { label:"Phrygian",        short:"Phrygian",   semis:[0,1,3,5,7,8,10], pent:[0,3,5,7,10], family:"minor", rel:8 },
-  lydian:     { label:"Lydian",          short:"Lydian",     semis:[0,2,4,6,7,9,11], pent:[0,2,4,7,9],  family:"major", rel:7 },
-  mixolydian: { label:"Mixolydian",      short:"Mixolydian", semis:[0,2,4,5,7,9,10], pent:[0,2,4,7,9],  family:"major", rel:5 },
-  aeolian:    { label:"Minor (Aeolian)", short:"minor",      semis:[0,2,3,5,7,8,10], pent:[0,3,5,7,10], family:"minor", rel:3 },
-  locrian:    { label:"Locrian",         short:"Locrian",    semis:[0,1,3,5,6,8,10], pent:[0,3,5,8,10], family:"minor", rel:1 },
-  // Phrygian dominant — the flamenco / "Spanish" scale (Phrygian with a major 3rd): 1 ♭2 3 4 5 ♭6 ♭7.
-  // Not a mode of the major scale (it's the 5th mode of harmonic minor); spelled off the Phrygian parent.
-  flamenco:   { label:"Phrygian dominant (Flamenco)", short:"Flamenco", semis:[0,1,4,5,7,8,10], pent:[0,1,4,5,7], family:"minor", rel:8,
-    hint:"The classic flamenco loop is the Andalusian cadence (i–♭VII–♭VI–V). Load “The Andalusian descent” from the Suggested progressions (Emotion → Sad or Dark / Tense), or build one by tapping the gold-haloed chords." },
-};
-const MODE_IDS = Object.keys(MODES);
-// legacy progressions stored "major"/"minor"; map anything to a real mode id
-const modeId = m => MODES[m] ? m : (m === "minor" ? "aeolian" : "ionian");
-const modeFamily = m => MODES[modeId(m)].family;
-
-/* ===== note spelling ===== */
-// key-signature accidentals for each major key (>=0 sharps, <0 flats), picking the simpler enharmonic
-const MAJOR_SIG = { 0:0, 7:1, 2:2, 9:3, 4:4, 11:5, 6:6, 5:-1, 10:-2, 3:-3, 8:-4, 1:-5 };
-const SHARP_NAMES = ["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];
-const FLAT_NAMES  = ["C","D♭","D","E♭","E","F","G♭","G","A♭","A","B♭","B"];
-// does the key (tonic + mode) sit on the sharp side of the circle of fifths?
-const keyIsSharp = (tonic, mode) => (MAJOR_SIG[((tonic + MODES[modeId(mode)].rel) % 12 + 12) % 12] ?? 0) >= 0;
-// spell a pitch class the way this key would write it (sharps in sharp keys, flats in flat keys)
-const spell = (pc, tonic, mode) => (keyIsSharp(tonic, mode) ? SHARP_NAMES : FLAT_NAMES)[((pc % 12) + 12) % 12];
-
-/* ===== progressions ===== */
-const PROGRESSIONS = {};
-[
-["axis","The four-chord axis","major","I V vi IV",
- ["Let It Be — The Beatles","No Woman, No Cry — Bob Marley","With or Without You — U2","Someone Like You — Adele","I'm Yours — Jason Mraz","Don't Stop Believin' — Journey (chorus)","She Will Be Loved — Maroon 5","When I Come Around — Green Day","Paradise — Coldplay","Can You Feel the Love Tonight — Elton John"]],
-["axisMinor","The minor axis","minor","i bVI bIII bVII",
- ["Zombie — The Cranberries","Apologize — OneRepublic","Grenade — Bruno Mars","Numb — Linkin Park","Save Tonight — Eagle-Eye Cherry","The Kids Aren't Alright — The Offspring","Despacito — Luis Fonsi","Hello — Adele (chorus)","Complicated — Avril Lavigne","It's My Life — Bon Jovi"]],
-["three","Three-chord rock & roll","major","I IV V",
- ["Twist and Shout — The Beatles","La Bamba — Ritchie Valens","Wild Thing — The Troggs","Louie Louie — The Kingsmen","Blitzkrieg Bop — Ramones","Hang On Sloopy — The McCoys","Stir It Up — Bob Marley","Ring of Fire — Johnny Cash","Good Lovin' — The Rascals","What I Like About You — The Romantics"]],
-["blues","12-bar blues","major","I7 IV7 I7 V7 IV7 I7",
- ["Johnny B. Goode — Chuck Berry","Hound Dog — Elvis Presley","Sweet Home Chicago — Robert Johnson","Pride and Joy — Stevie Ray Vaughan","Tutti Frutti — Little Richard","Rock Around the Clock — Bill Haley","Folsom Prison Blues — Johnny Cash","Kansas City — Wilbert Harrison","Crossroads — Cream","Before You Accuse Me — Eric Clapton"]],
-["doowop","The '50s do-wop turnaround","major","I vi IV V",
- ["Stand by Me — Ben E. King","Earth Angel — The Penguins","Every Breath You Take — The Police","Unchained Melody — The Righteous Brothers","Blue Moon — The Marcels","Duke of Earl — Gene Chandler","Perfect — Ed Sheeran","Crocodile Rock — Elton John (verse)","Baby — Justin Bieber","Please Mr. Postman — The Marvelettes"]],
-["jazz","The ii–V–I turnaround","major","ii V I vi",
- ["Fly Me to the Moon — Frank Sinatra","Autumn Leaves — jazz standard","Satin Doll — Duke Ellington","Blue Bossa — Kenny Dorham","All the Things You Are — Jerome Kern","Tune Up — Miles Davis","There Will Never Be Another You — standard","Honeysuckle Rose — Fats Waller","Perdido — Juan Tizol","I Got Rhythm — Gershwin (A section)"]],
-["mixo","Mixolydian rock","mixolydian","I bVII IV",
- ["Sweet Home Alabama — Lynyrd Skynyrd","Sweet Child O' Mine — Guns N' Roses (verse)","Sympathy for the Devil — The Rolling Stones","Fortunate Son — CCR","Takin' Care of Business — BTO","Hey Jude — The Beatles (outro)","Gimme Some Lovin' — Spencer Davis Group","Won't Get Fooled Again — The Who","Cinnamon Girl — Neil Young","Tush — ZZ Top (chorus)"]],
-["andalusian","The Andalusian descent","minor","i bVII bVI V",
- ["Hit the Road Jack — Ray Charles","Runaway — Del Shannon (verse)","Sultans of Swing — Dire Straits (verse)","Smooth — Santana ft. Rob Thomas","Happy Together — The Turtles (verse)","Stray Cat Strut — Stray Cats","Good Vibrations — The Beach Boys (verse)","Walk, Don't Run — The Ventures","Babe I'm Gonna Leave You — Led Zeppelin","California Dreamin' — The Mamas & the Papas (verse)"]],
-["flamenco","Flamenco cadence","flamenco","iv bIII bII I",
- ["Bamboléo — Gipsy Kings","Djobi Djoba — Gipsy Kings","Baila Me — Gipsy Kings","Entre Dos Aguas — Paco de Lucía","Malagueña — Ernesto Lecuona","Asturias (Leyenda) — Isaac Albéniz","Misirlou — Dick Dale","Hava Nagila — traditional","Ojos Así — Shakira","Concierto de Aranjuez — Joaquín Rodrigo"]],
-["pachelbel","The Pachelbel sequence","major","I V vi iii IV I IV V",
- ["Canon in D — Pachelbel","Basket Case — Green Day (verse)","Don't Look Back in Anger — Oasis","Memories — Maroon 5","Go West — Pet Shop Boys","Streets of London — Ralph McTell","Graduation (Friends Forever) — Vitamin C","C U When U Get There — Coolio","Cryin' — Aerosmith (verse)","Hook — Blues Traveler"]],
-["dorian","Dorian groove","dorian","i IV",
- ["Oye Como Va — Santana","So What — Miles Davis","Evil Ways — Santana","Mad World — Tears for Fears","Another Brick in the Wall — Pink Floyd","Get Lucky — Daft Punk","Moondance — Van Morrison","Riders on the Storm — The Doors","Who Will Save Your Soul — Jewel","Scarborough Fair — traditional"]],
-["lydian","Lydian bright","lydian","I II",
- ["Flying in a Blue Dream — Joe Satriani","Man on the Moon — R.E.M. (chorus)","Jane — Jefferson Starship","Freewill — Rush","Here Comes My Girl — Tom Petty","Dreams — Fleetwood Mac","Blue Jay Way — The Beatles","Possibly Maybe — Björk","Theme from The Simpsons — Danny Elfman","Yoda's Theme — John Williams"]],
-["phrygian","Phrygian dark","phrygian","i bII",
- ["Wherever I May Roam — Metallica","Sails of Charon — Scorpions","Symphony of Destruction — Megadeth","War — Joe Satriani","Pyramid Song — Radiohead","Remember Tomorrow — Iron Maiden","Space Truckin' — Deep Purple","White Rabbit — Jefferson Airplane","Entre Dos Aguas — Paco de Lucía","Duel of the Fates — John Williams"]],
-["aeolian","Aeolian cadence","minor","i bVI bVII",
- ["All Along the Watchtower — Bob Dylan","Stairway to Heaven — Led Zeppelin (ascent)","My Heart Will Go On — Céline Dion","Somebody That I Used to Know — Gotye","Boulevard of Broken Dreams — Green Day","Californication — Red Hot Chili Peppers","Self Esteem — The Offspring","The Passenger — Iggy Pop","Runaway Train — Soul Asylum","Mad World — Gary Jules"]],
-["edm","The EDM anthem","major","vi IV I V",
- ["Wake Me Up — Avicii","This Is What You Came For — Calvin Harris ft. Rihanna","Something Just Like This — The Chainsmokers & Coldplay","The Nights — Avicii","Hey Brother — Avicii","Don't You Worry Child — Swedish House Mafia","Wide Awake — Katy Perry","Clarity — Zedd","Waiting for Love — Avicii","We Found Love — Rihanna ft. Calvin Harris"]],
-["deepHouse","Deep-house groove","minor","i iv bVII bIII",
- ["Insomnia — Faithless","You Don't Know Me — Jax Jones ft. RAYE","Cola — CamelPhat & Elderbrook","Need U (100%) — Duke Dumont","Finally — Kings of Tomorrow","Gypsy Woman — Crystal Waters","Your Love — Frankie Knuckles","Promised Land — Joe Smooth","Rather Be — Clean Bandit","Move Your Body — Marshall Jefferson"]],
-["festival","The festival lift","minor","i bVII bVI bVII",
- ["Adagio for Strings — Tiësto","For an Angel — Paul van Dyk","Children — Robert Miles","Silence — Delerium ft. Sarah McLachlan","Strobe — deadmau5","Save the World — Swedish House Mafia","Reload — Sebastian Ingrosso & Tommy Trash","Concrete Angel — Gareth Emery","Greyhound — Swedish House Mafia","In and Out of Love — Armin van Buuren"]],
-["futureBass","Future-bass swell","major","IV V iii vi",
- ["Never Be Like You — Flume","Roses — The Chainsmokers","Stay — Zedd & Alessia Cara","Let Me Love You — DJ Snake ft. Justin Bieber","Alone — Marshmello","It Ain't Me — Kygo & Selena Gomez","Firestone — Kygo","Cold Water — Major Lazer","Don't Let Me Down — The Chainsmokers","Middle — DJ Snake"]],
-["montuno","Latin montuno","minor","i iv V",
- ["El Cuarto de Tula — Buena Vista Social Club","Quimbara — Celia Cruz","Pedro Navaja — Rubén Blades","El Cantante — Héctor Lavoe","Llorarás — Oscar D'León","Vivir Mi Vida — Marc Anthony","La Vida Es un Carnaval — Celia Cruz","Aguanile — Héctor Lavoe","Idilio — Willie Colón","Oye Como Va — Tito Puente"]],
-["rhythm","Rhythm changes","major","I VI7 ii V7",
- ["I Got Rhythm — George Gershwin","Oleo — Sonny Rollins","Anthropology — Charlie Parker","Cotton Tail — Duke Ellington","Rhythm-a-ning — Thelonious Monk","Salt Peanuts — Dizzy Gillespie","Moose the Mooche — Charlie Parker","Dexterity — Charlie Parker","The Flintstones — Hoyt Curtin","Shaw 'Nuff — Gillespie & Parker"]],
-["bossa","Bossa nova turnaround","major","I II7 ii V7",
- ["The Girl from Ipanema — Antônio Carlos Jobim","Corcovado (Quiet Nights) — Jobim","Desafinado — Jobim","Wave — Jobim","Summer Samba (So Nice) — Marcos Valle","Mas Que Nada — Jorge Ben","One Note Samba — Jobim","Águas de Março — Jobim","Meditation — Jobim","Blame It on the Bossa Nova — Eydie Gormé"]],
-["guajira","Son guajira","major","I IV V IV",
- ["Guantanamera — Joseíto Fernández","Chan Chan — Buena Vista Social Club","El Manisero (The Peanut Vendor) — Moisés Simons","Son de la Loma — Trío Matamoros","Lágrimas Negras — Bebo & Cigala","Bilongo (La Negra Tomasa) — Guillermo Rodríguez","Guajira Guantanamera — traditional","El Carretero — Guillermo Portabales","Candela — Buena Vista Social Club","Herencia Africana — traditional"]],
-["bolero","Bolero cadence","minor","i bVI iv V",
- ["Bésame Mucho — Consuelo Velázquez","Sabor a Mí — Álvaro Carrillo","Contigo en la Distancia — César Portillo de la Luz","Historia de un Amor — Carlos Eleta Almarán","Perfidia — Alberto Domínguez","Quizás, Quizás, Quizás — Osvaldo Farrés","El Reloj — Roberto Cantoral","Dos Gardenias — Isolina Carrillo","Solamente una Vez — Agustín Lara","La Barca — Roberto Cantoral"]],
-["gospel","Gospel turnaround","major","vi ii V I",
- ["Oh Happy Day — Edwin Hawkins Singers","Ain't No Mountain High Enough — Marvin Gaye & Tammi Terrell","I Say a Little Prayer — Aretha Franklin","Lean on Me — Bill Withers","Isn't She Lovely — Stevie Wonder","Signed, Sealed, Delivered — Stevie Wonder","Higher Ground — Stevie Wonder","Never Too Much — Luther Vandross","Ain't Nobody — Chaka Khan","Golden — Jill Scott"]],
-["neoSoul","Neo-soul descent","major","IV iii ii I",
- ["Doo Wop (That Thing) — Lauryn Hill","Brown Sugar — D'Angelo","Untitled (How Does It Feel) — D'Angelo","Cranes in the Sky — Solange","Come Away with Me — Norah Jones","Put Your Records On — Corinne Bailey Rae","Best Part — Daniel Caesar & H.E.R.","The Light — Common","Electric Lady — Janelle Monáe","Sunday Morning — Maroon 5"]],
-["rockRiff","Riff rock","minor","i bIII IV",
- ["Whole Lotta Love — Led Zeppelin","Sunshine of Your Love — Cream","You Really Got Me — The Kinks","Smoke on the Water — Deep Purple","Black Dog — Led Zeppelin","Barracuda — Heart","Iron Man — Black Sabbath","Should I Stay or Should I Go — The Clash","Cocaine — Eric Clapton","Rebel Rebel — David Bowie"]],
-["grunge","Grunge chromatic","major","I bIII bVI bVII",
- ["Smells Like Teen Spirit — Nirvana","Come as You Are — Nirvana","Black Hole Sun — Soundgarden","Man in the Box — Alice in Chains","Even Flow — Pearl Jam","Plush — Stone Temple Pilots","Would? — Alice in Chains","Bullet with Butterfly Wings — The Smashing Pumpkins","Zombie — The Cranberries","No Rain — Blind Melon"]],
-["britpop","Britpop climb","major","I iii IV V",
- ["Wonderwall — Oasis","Don't Look Back in Anger — Oasis","Bitter Sweet Symphony — The Verve","Common People — Pulp","Live Forever — Oasis","The Universal — Blur","She's Electric — Oasis","Disco 2000 — Pulp","There She Goes — The La's","Sit Down — James"]],
-["emo","Emo lift","major","IV I V vi",
- ["The Middle — Jimmy Eat World","Sugar, We're Goin Down — Fall Out Boy","Welcome to the Black Parade — My Chemical Romance","The Only Exception — Paramore","Dear Maria, Count Me In — All Time Low","Ohio Is for Lovers — Hawthorne Heights","Miserable at Best — Mayday Parade","Vindicated — Dashboard Confessional","Konstantine — Something Corporate","Basket Case — Green Day"]],
-["country","Country boom-chick","major","I IV I V",
- ["Ring of Fire — Johnny Cash","Folsom Prison Blues — Johnny Cash","Take Me Home, Country Roads — John Denver","Wagon Wheel — Old Crow Medicine Show","Friends in Low Places — Garth Brooks","On the Road Again — Willie Nelson","Jackson — Johnny Cash & June Carter","Chicken Fried — Zac Brown Band","Wide Open Spaces — The Chicks","Guitars, Cadillacs — Dwight Yoakam"]],
-["celtic","Celtic reel","dorian","i bVII IV",
- ["Whiskey in the Jar — traditional","The Foggy Dew — traditional","Drunken Sailor — traditional","Star of the County Down — traditional","She Moved Through the Fair — traditional","The Wild Rover — traditional","Molly Malone — traditional","The Gael — Dougie MacLean","Black Is the Colour — traditional","The Rocky Road to Dublin — traditional"]],
-["motownTurn","Motown turnaround","major","I vi ii V",
- ["Baby Love — The Supremes","My Girl — The Temptations","I Can't Help Myself — Four Tops","You Can't Hurry Love — The Supremes","Please Mr. Postman — The Marvelettes","Dancing in the Street — Martha & the Vandellas","My Guy — Mary Wells","Heat Wave — Martha & the Vandellas","Where Did Our Love Go — The Supremes","The Way You Do the Things You Do — The Temptations"]],
-["rnbSlow","Slow-jam IV–iv","major","I iii IV iv",
- ["Let's Stay Together — Al Green","Ordinary People — John Legend","Adorn — Miguel","So Sick — Ne-Yo","Redbone — Childish Gambino","Sara Smile — Hall & Oates","Rock with You — Michael Jackson","Nothing Even Matters — Lauryn Hill & D'Angelo","Golden — Jill Scott","Killing Me Softly — Roberta Flack"]],
-].forEach(([id, label, mode, nums, songs]) =>
-  PROGRESSIONS[id] = { label, mode, numerals: nums.split(" "), songs });
-
-const SONG_KEYS = {
-  axis:[0,0,2,9,11,4,0,7,9,5], axisMinor:[4,0,2,6,9,1,11,5,2,0], three:[2,0,9,9,9,7,9,7,2,4],
-  blues:[10,0,4,4,5,9,4,7,9,4], doowop:[9,8,8,0,5,0,8,7,3,9], jazz:[0,10,0,0,8,2,3,5,10,10],
-  mixo:[2,2,4,7,0,5,4,9,2,7], andalusian:[9,10,2,9,6,0,2,9,9,1], pachelbel:[2,3,0,11,0,0,0,0,9,9],
-};
-
-// genres are curated, ordered picks from the progression catalogue, grouped into families so the
-// dropdown stays navigable (rendered as <optgroup>s). progList[0] — the first id — is the default pick.
-const GENRE_GROUPS = [
-  ["Pop & Rock", [
-    ["Pop", ["axis","doowop","axisMinor","pachelbel"]],
-    ["Rock", ["three","mixo","rockRiff"]],
-    ["Classic Rock", ["mixo","rockRiff","blues"]],
-    ["Hard Rock", ["rockRiff","mixo","axisMinor"]],
-    ["Arena Rock", ["axis","pachelbel","britpop"]],
-    ["Alternative / Indie", ["britpop","grunge","axisMinor"]],
-    ["Grunge", ["grunge","axisMinor","mixo"]],
-    ["Britpop", ["britpop","axis","pachelbel"]],
-    ["Punk", ["three","axis"]],
-    ["Pop-Punk", ["emo","three","axis"]],
-    ["Emo", ["emo","axisMinor","pachelbel"]],
-    ["Shoegaze", ["aeolian","lydian","dorian"]],
-    ["Post-Rock", ["lydian","aeolian","pachelbel"]],
-    ["Psychedelic", ["mixo","dorian","lydian"]],
-    ["Surf Rock", ["andalusian","rockRiff","three"]],
-  ]],
-  ["Metal & Heavy", [
-    ["Metal", ["phrygian","axisMinor","mixo","flamenco"]],
-    ["Heavy Metal", ["phrygian","aeolian","rockRiff"]],
-    ["Thrash Metal", ["phrygian","aeolian","axisMinor"]],
-    ["Doom / Sludge", ["aeolian","axisMinor","phrygian"]],
-    ["Power Metal", ["axisMinor","mixo","pachelbel"]],
-    ["Prog Metal", ["dorian","phrygian","lydian"]],
-    ["Nu-Metal", ["grunge","phrygian","aeolian"]],
-  ]],
-  ["Blues, Soul & Funk", [
-    ["Blues", ["blues","three"]],
-    ["Rhythm & Blues", ["blues","motownTurn","doowop"]],
-    ["Soul", ["gospel","motownTurn","doowop"]],
-    ["Motown", ["motownTurn","doowop","gospel"]],
-    ["Funk", ["mixo","gospel","dorian"]],
-    ["Disco", ["axis","gospel","doowop"]],
-    ["Gospel", ["gospel","doowop","blues"]],
-    ["Neo-Soul", ["rnbSlow","neoSoul","jazz"]],
-  ]],
-  ["Jazz & Standards", [
-    ["Jazz", ["jazz","rhythm","doowop"]],
-    ["Swing", ["rhythm","jazz","blues"]],
-    ["Bebop", ["rhythm","jazz"]],
-    ["Bossa Nova", ["bossa","jazz","dorian"]],
-    ["Cool Jazz", ["jazz","bossa","dorian"]],
-    ["Ragtime", ["rhythm","blues","three"]],
-    ["Lounge", ["bossa","jazz","doowop"]],
-  ]],
-  ["Folk, Country & Roots", [
-    ["Folk", ["three","celtic","axis","doowop"]],
-    ["Country", ["country","three","doowop"]],
-    ["Bluegrass", ["three","country","blues"]],
-    ["Americana", ["mixo","country","three"]],
-    ["Rockabilly", ["blues","country","doowop"]],
-    ["Celtic", ["celtic","dorian","mixo"]],
-    ["Singer-Songwriter", ["pachelbel","axis","doowop"]],
-  ]],
-  ["Dance & Electronic", [
-    ["EDM / Dance", ["edm","axisMinor","festival"]],
-    ["House", ["edm","deepHouse","axis"]],
-    ["Deep House", ["deepHouse","edm","aeolian"]],
-    ["Tech House", ["deepHouse","aeolian","dorian"]],
-    ["Progressive House", ["festival","edm","pachelbel"]],
-    ["Future House", ["edm","festival","axis"]],
-    ["Tropical House", ["axis","edm","futureBass"]],
-    ["Nu-Disco", ["axis","edm","doowop"]],
-    ["Techno", ["aeolian","festival","deepHouse"]],
-    ["Minimal Techno", ["deepHouse","aeolian","dorian"]],
-    ["Trance", ["festival","edm","axisMinor"]],
-    ["Psytrance", ["festival","phrygian","aeolian"]],
-    ["Big Room", ["festival","axisMinor","edm"]],
-    ["Electro House", ["edm","axisMinor","festival"]],
-    ["Dubstep", ["axisMinor","festival","aeolian"]],
-    ["Future Bass", ["futureBass","edm","axis"]],
-    ["Drum & Bass", ["deepHouse","aeolian","festival"]],
-    ["Jungle", ["aeolian","deepHouse","dorian"]],
-    ["UK Garage", ["deepHouse","edm","jazz"]],
-    ["Breakbeat", ["mixo","edm","deepHouse"]],
-    ["Hardstyle", ["festival","axisMinor","phrygian"]],
-    ["Eurodance", ["edm","axisMinor","festival"]],
-    ["Synthwave", ["axisMinor","festival","aeolian"]],
-    ["Ambient", ["lydian","deepHouse","aeolian"]],
-    ["Downtempo / Trip-Hop", ["deepHouse","neoSoul","jazz"]],
-    ["IDM", ["lydian","deepHouse","dorian"]],
-    ["Lo-Fi / Chillhop", ["jazz","neoSoul","deepHouse"]],
-    ["Hip-Hop", ["deepHouse","neoSoul","aeolian"]],
-    ["Trap", ["axisMinor","festival","aeolian"]],
-  ]],
-  ["Latin", [
-    ["Latin", ["montuno","guajira","andalusian"]],
-    ["Salsa", ["montuno","guajira","jazz"]],
-    ["Son Cubano", ["guajira","montuno","jazz"]],
-    ["Mambo", ["montuno","guajira","jazz"]],
-    ["Cha-Cha-Chá", ["guajira","montuno","jazz"]],
-    ["Rumba", ["bolero","andalusian","montuno"]],
-    ["Timba", ["montuno","guajira","jazz"]],
-    ["Latin Jazz", ["bossa","jazz","montuno"]],
-    ["Samba", ["bossa","jazz","montuno"]],
-    ["Bossa Nova (Latin)", ["bossa","jazz","montuno"]],
-    ["Bachata", ["bolero","axis","doowop"]],
-    ["Merengue", ["guajira","montuno","three"]],
-    ["Cumbia", ["guajira","axis","three"]],
-    ["Reggaetón", ["axisMinor","festival","montuno"]],
-    ["Latin Pop", ["axis","edm","bolero"]],
-    ["Tango", ["bolero","andalusian","montuno"]],
-    ["Bolero", ["bolero","jazz","doowop"]],
-    ["Mariachi", ["guajira","three","andalusian"]],
-    ["Norteño", ["guajira","three","axis"]],
-    ["Forró", ["guajira","three","mixo"]],
-  ]],
-  ["World & Modal", [
-    ["Flamenco", ["flamenco","andalusian","phrygian"]],
-    ["Reggae", ["axis","dorian","three"]],
-    ["Ska", ["three","axis","blues"]],
-    ["Afrobeat", ["dorian","mixo","axis"]],
-    ["Middle Eastern", ["phrygian","flamenco","andalusian"]],
-    ["Klezmer", ["flamenco","phrygian","andalusian"]],
-    ["Bollywood", ["mixo","dorian","andalusian"]],
-  ]],
-  ["Cinematic & Classical", [
-    ["Cinematic / Film", ["lydian","aeolian","pachelbel"]],
-    ["Epic / Trailer", ["axisMinor","aeolian","mixo"]],
-    ["Horror / Tension", ["phrygian","aeolian","andalusian"]],
-    ["Classical", ["pachelbel","three","jazz"]],
-    ["Baroque", ["pachelbel","jazz"]],
-    ["Dreamscore", ["lydian","dorian","pachelbel"]],
-  ]],
-];
-const CATEGORIES = [
-  { group:"Genre", items: GENRE_GROUPS.flatMap(([, list]) => list.map(([name, progs]) => ({ name, progs }))) },
-  { group:"Emotion", items:[
-    { name:"Happy", progs:["axis","three","doowop"] },
-    { name:"Sad", progs:["axisMinor","andalusian"] },
-    { name:"Nostalgic", progs:["doowop","pachelbel"] },
-    { name:"Hopeful", progs:["pachelbel","axis","lydian"] },
-    { name:"Dark / Tense", progs:["andalusian","axisMinor","phrygian","flamenco"] },
-    { name:"Epic", progs:["mixo","axisMinor","pachelbel"] },
-    { name:"Romantic", progs:["jazz","doowop"] },
-    { name:"Dreamy", progs:["lydian","dorian","pachelbel"] },
-    { name:"Melancholic", progs:["aeolian","andalusian","axisMinor"] } ]},
-];
-
-/* ===== colour-move songs ===== */
-const SEC_SONGS = {
-  "V/vi":{ why:"The dominant of the relative minor — it drags the ear sideways before landing home.", songs:["Creep — Radiohead (the B major)","Oh! Darling — The Beatles","All of Me — jazz standard (E7 → Am)"] },
-  "V/V":{ why:"A dominant of the dominant — doubles the pull into V.", songs:["Take the 'A' Train — Duke Ellington","Hey Good Lookin' — Hank Williams","Sweet Georgia Brown — chained dominants"] },
-  "V/IV":{ why:"The tonic grows a ♭7 and tips into IV — the oldest move in blues and gospel.", songs:["Something — The Beatles (C → C7 → F)","Hey Jude — The Beatles (F7 into B♭)","Every 12-bar blues, bar 4"] },
-  "V/ii":{ why:"Sets up ii, so the ii–V–I that follows lands twice as hard.", songs:["All of Me — jazz standard (A7 → Dm)","Georgia on My Mind — Hoagy Carmichael","Sweet Georgia Brown"] },
-  default:{ why:"A dominant a fifth above its target — borrowed tension, quickly resolved.", songs:["Sweet Georgia Brown — a whole chain of them","Salty Dog Blues — ragtime dominant cycle"] },
-};
-const PAR_SONGS = {
-  IV:{ why:"IV → iv, borrowed from the parallel minor — the classic bittersweet fade home.", songs:["Creep — Radiohead (C → Cm)","In My Life — The Beatles","Sleepwalk — Santo & Johnny"] },
-  I:{ why:"I → i, full mode mixture — daylight to shadow on the same root.", songs:["Norwegian Wood — The Beatles (E → Em)","While My Guitar Gently Weeps — Am verses, A-major bridge"] },
-  i:{ why:"i → I, the Picardy third — a minor song allowed to end in the light.", songs:["And I Love Her — The Beatles (major final chord)","countless Bach chorales"] },
-  V:{ why:"V → v softens the dominant — modal, folky, less insistent.", songs:["the Mixolydian shading behind much folk-rock"] },
-  vi:{ why:"vi → VI, a chromatic-mediant lift — sudden film-score glow.", songs:["Beach Boys harmony and Bond scores live here"] },
-  default:{ why:"Same root, opposite quality — colour borrowed from the parallel key.", songs:["swap it in and trust your ear"] },
-};
-
-/* ===== structures (name, tip) + plans ("Sec|nums|reps|note") ===== */
-const mkPlan = rows => rows.map(r => {
-  const [sec, nums, reps, note] = r.split("|");
-  return { sec, nums: /^(LOOP|HALF1|HALF2|HOLD1)$/.test(nums) ? nums : nums.split(" "),
-    reps: reps ? +reps : 1, note: note || null };
-});
-const STRUCTURES = {}, PLANS = {};
-const defStruct = (pid, list) => { STRUCTURES[pid] = list.map(x => ({ name:x[0], tip:x[1] })); PLANS[pid] = list.map(x => mkPlan(x[2])); };
-
-defStruct("axis", [
- ["Radio pop","Keep the loop running throughout, but start verses on vi (vi–IV–I–V) and choruses on I — the chorus then lands as an arrival.",
-  ["Intro|LOOP|1|instrumental","Verse 1|vi IV I V|2|the loop rotated to start on vi","Pre-chorus|IV V|2|hold the V into the chorus","Chorus|LOOP|2|","Verse 2|vi IV I V|2|","Pre-chorus|IV V|2|","Chorus|LOOP|2|","Bridge|vi IV|2|strip the arrangement back","Final chorus|LOOP|2|lift the melody, add harmonies"]],
- ["Loop and strip","Give the verse only half the loop so the chorus feels harmonically wider without adding new chords.",
-  ["Verse 1|I V|4|half the loop — keep it small","Chorus|LOOP|2|the full loop arrives here","Verse 2|I V|4|","Chorus|LOOP|2|","Middle 8|vi IV V V|1|sit on V to set up the return","Double chorus|LOOP|4|"]],
- ["Anthem build","Same four chords, arranged in layers — the structure is dynamics, not harmony.",
-  ["Intro|I|1|drone or pad, held","Verse 1|LOOP|2|sparse — voice + one instrument","Verse 2|LOOP|2|add drums","Chorus|LOOP|2|","Verse 3|LOOP|2|","Chorus|LOOP|2|","Breakdown|vi IV|2|drop to almost nothing","Final chorus|LOOP|2|biggest arrangement; consider stepping the whole loop up a tone"]],
-]);
-defStruct("axisMinor", [
- ["Quiet–loud","The Zombie template: harmony never changes, texture does.",
-  ["Verse 1|i bVI|4|fingerpicked / clean","Chorus|LOOP|2|full band","Verse 2|i bVI|4|","Chorus|LOOP|2|","Bridge|bVI bVII|2|","Chorus|LOOP|2|out on the loop, fading or hard stop on i"]],
- ["Brooding pop","Rotate the loop to start the chorus on ♭VI for a lift without leaving the four chords.",
-  ["Verse 1|LOOP|2|","Verse 2|LOOP|2|","Chorus|bVI bIII bVII i|2|same chords, rotated to start on ♭VI — a lift without new harmony","Verse 3|LOOP|2|","Chorus|bVI bIII bVII i|2|","Bridge|bVI|1|stripped, held","Chorus|bVI bIII bVII i|2|"]],
-]);
-const BLUES12 = "I7 I7 I7 I7 IV7 IV7 I7 I7 V7 IV7 I7 V7", BLUES12Q = "I7 IV7 I7 I7 IV7 IV7 I7 I7 V7 IV7 I7 V7";
-defStruct("blues", [
- ["12-bar AAB","Solos take whole 12-bar choruses over the same changes. Add a V7 pickup in bar 12 to relaunch.",
-  [`Verse 1 (12 bars)|${BLUES12}|1|lyric: line A (1–4) · line A again (5–8) · answer B (9–12); bar 12's V7 is the turnaround`,`Verse 2 (12 bars)|${BLUES12}|1|new lyric, same changes`,`Solo choruses|${BLUES12}|2|`,`Final verse|${BLUES12.replace(/V7$/,"I7")}|1|end bar 12 on I7 to close`]],
- ["Quick change","The classic Chuck Berry variation — it stops the first four bars sitting still.",
-  [`Verse (12 bars, quick change)|${BLUES12Q}|1|IV7 in bar 2 — the Chuck Berry move`,`Verse 2|${BLUES12Q}|1|`,`Solo choruses|${BLUES12Q}|2|`,`Final verse|${BLUES12Q.replace(/V7$/,"I7")}|1|`]],
-]);
-defStruct("three", [
- ["Verse–refrain","Hold I longer than feels comfortable, then snap IV–V into the refrain.",
-  ["Verse 1|I I IV V|2|sit on I longer than feels comfortable","Refrain|IV V I I|1|title line lands here","Verse 2|I I IV V|2|","Refrain|IV V I I|1|","Solo|I I IV V|2|over the verse changes","Refrain|IV V I I|2|"]],
- ["Call and response","Three chords means the hook has to live in the rhythm and the vocal, not the harmony.",
-  ["Riff intro|I|1|rhythm is the hook","Verse|I IV|2|call and response vocal","Chorus|IV V I I|2|","Verse|I IV|2|","Chorus|IV V I I|2|","Breakdown|I|1|drums + vocal only","Out-chorus|IV V I I|2|"]],
-]);
-defStruct("doowop", [
- ["Loop ballad","Stand by Me shape: the loop never breaks except at the middle 8, which parks on IV then V to set up the return.",
-  ["Intro|LOOP|1|","Verse 1|LOOP|2|","Verse 2|LOOP|2|","Middle 8|IV IV V V|1|park on IV, then hold V to relaunch","Verse 3|LOOP|2|","Tag|LOOP|2|repeat the title, fade or ritard"]],
- ["Modern pop reuse","The '50s loop reads as sincere and nostalgic under a contemporary beat — Perfect does exactly this.",
-  ["Verse|LOOP|2|","Pre-chorus|ii V|2|","Chorus|LOOP|2|","Verse|LOOP|2|","Pre-chorus|ii V|2|","Chorus|LOOP|2|","Bridge|vi IV|2|","Final chorus|LOOP|2|"]],
-]);
-defStruct("jazz", [
- ["32-bar AABA","The bridge is where secondary dominants earn their keep — toggle them on and follow the gold arrows.",
-  ["A (bars 1–8)|ii V I vi|2|","A (bars 9–16)|ii V I vi|2|","B — bridge (17–24)|III7 VI7 II7 V7|1|dominant cycle: each chord is the V of the next — watch the gold arrows chain","A (bars 25–32)|ii V I vi|2|32-bar AABA head; solos repeat the whole form"]],
- ["Bossa vamp","Keep the ii–V as a two-bar vamp for intros and endings.",
-  ["Intro vamp|ii V|4|","Head|LOOP|4|","Solos|LOOP|1|open — repeat until done","Head out|LOOP|2|","Tag|ii V I I|3|tag the last phrase three times to end"]],
-]);
-defStruct("mixo", [
- ["Riff rock","Sweet Home Alabama shape: the riff IS the song — structure comes from what sits on top.",
-  ["Intro riff|I bVII IV IV|2|","Verse|I bVII IV IV|2|vocal over the riff","Chorus|IV IV I bVII|2|lift by landing on IV first","Solo|I bVII IV IV|2|","Verse|I bVII IV IV|2|","Double chorus|IV IV I bVII|4|","Riff out|I bVII IV IV|1|repeat and fade"]],
- ["One-chord verse","Saving ♭VII for the pre-chorus makes the borrowed chord an event rather than wallpaper.",
-  ["Verse|I|1|one-chord vamp — groove carries it","Pre-chorus|bVII IV|2|the borrowed ♭VII arrives as an event","Chorus|I bVII IV IV|2|","Verse|I|1|","Pre-chorus|bVII IV|2|","Chorus|I bVII IV IV|2|","Outro jam|I bVII IV IV|1|extended, solos trading"]],
-]);
-defStruct("andalusian", [
- ["Descent and release","Happy Together shape: minor descent in the verse, major daylight in the chorus.",
-  ["Verse|LOOP|2|the full descent, twice","Chorus|bIII bVII i V|2|flip into the relative major for daylight","Verse|LOOP|2|","Chorus|bIII bVII i V|2|","Solo|LOOP|2|over the descent","Chorus|bIII bVII i V|2|"]],
- ["Vamp noir","Let the V chord ring unresolved at section ends — the pull back to i is the hook.",
-  ["Intro|i|1|held, atmospheric","Verse|LOOP|2|let the V ring unresolved at the end of each pass","Refrain|LOOP|1|land hard on V","Verse|LOOP|2|","Breakdown|V|1|V7, suspended — the pull back to i is the hook","Final verse|LOOP|2|"]],
-]);
-defStruct("pachelbel", [
- ["Through-line ballad","The 8-chord cycle is one full verse. Don't change the chords — change the register and density.",
-  ["Intro|LOOP|1|instrumental cycle","Verse 1|LOOP|1|","Verse 2|LOOP|1|","Chorus|LOOP|1|same cycle — melody up, arrangement denser","Verse 3|LOOP|1|","Chorus|LOOP|1|","Instrumental|LOOP|1|","Final chorus|LOOP|1|"]],
- ["Escape bridge","After so much sequence, any chord outside the cycle sounds enormous — spend it on the bridge.",
-  ["Verse|LOOP|2|","Chorus|LOOP|1|","Bridge|ii IV ii V|1|first chords outside the cycle — after all that sequence, ii sounds enormous","Final choruses|LOOP|2|"]],
-]);
-
-const UNIVERSAL = [
- ["Storyteller (strophic)","Folk and country narrative form — no chorus at all. The loop never changes; the story does.",
-  ["Intro|LOOP|1|instrumental","Verse 1|LOOP|2|","Verse 2|LOOP|2|","Instrumental|LOOP|1|","Verse 3|LOOP|2|","Final verse|LOOP|2|return to the opening image","Outro|HOLD1|1|let the tonic ring out"]],
- ["Slow-burn ballad","Everything about restraint until the last chorus — dynamics do the storytelling.",
-  ["Intro|HOLD1|1|held — piano or pad only","Verse 1|LOOP|2|minimal","Chorus|LOOP|1|still restrained","Verse 2|LOOP|2|add one element","Chorus|LOOP|2|","Middle 8|HALF2|2|the back half of the loop, stripped bare","Final chorus|LOOP|2|full arrangement at last","Outro|HOLD1|1|back to where it started"]],
- ["Pop-punk sprint","Under three minutes. Verses on half the loop keep the chorus feeling like a payoff.",
-  ["Intro|LOOP|2|full speed, guitars only then drums in","Verse 1|HALF1|4|","Chorus|LOOP|2|","Verse 2|HALF1|4|","Chorus|LOOP|2|","Bridge|HALF2|2|half-time feel — same chords, half the speed","Double chorus|LOOP|4|gang vocals on the last pass"]],
- ["Dance build","Club architecture: tension on a fragment of the loop, release on the whole thing.",
-  ["Intro|HOLD1|2|groove on one chord, filtered","Build|HALF1|4|rising filter / snare roll","Drop|LOOP|4|full loop, full energy","Break|HOLD1|2|strip to almost silence","Build|HALF1|4|","Drop|LOOP|4|","Outro|HOLD1|2|filter back down"]],
- ["AABA classic","Two statements, a contrasting middle, and home again — the pre-rock standard form.",
-  ["A|LOOP|2|","A|LOOP|2|same music, second lyric","B — the middle|HALF2|2|contrast from the loop's back half; end poised to fall home","A|LOOP|2|home again — often the first lyric returns"]],
-].map(x => ({ name:x[0], tip:x[1], plan: mkPlan(x[2]) }));
-
-const LETTER_WORD = { I:"intro", V:"verse", P:"pre-chorus", C:"chorus", B:"bridge", S:"solo",
-  R:"refrain", T:"tag", O:"outro", U:"build", D:"drop", K:"break", A:"A section", H:"head" };
-function letterFor(sec) {
-  const s = sec.toLowerCase();
-  for (const [k, L] of [["pre","P"],["chorus","C"],["intro","I"],["verse","V"],["bridge","B"],["middle","B"],
-    ["solo","S"],["instrumental","S"],["refrain","R"],["tag","T"],["build","U"],["drop","D"],["break","K"],
-    ["outro","O"],["out","O"],["head","H"]]) if (s.includes(k)) return L;
-  return sec[0].toUpperCase();
-}
-
-/* ===== rhythm + drums ===== */
-const PATTERNS = {};
-[
-["pop","Campfire pop strum",">-DU-UDU","the universal acoustic pattern — miss the beat-2 down, let it ring"],
-["drive","Brooding drive",">-D-DUDU","heavier front, busier back half — leans into the minor"],
-["rock8","Straight-eight rock",">DDD>DDD","all down-strums, accents on 1 and 3 — punk energy comes from the wrist"],
-["shuffle","Shuffle",">UDUDUDU","long-short swung eighths — the engine of every 12-bar",1],
-["sway12","12/8 sway",">UDU>UDU","slow triplet lilt — Stand by Me lives here",1],
-["fourbar","Four-to-the-bar","D-D-D-D-","Freddie Green comping — even quarters, swing implied not stated",1],
-["push","Pushed rock",">-DUU-D-","the chord change lands early on the 'and' — that push is the swagger"],
-["latin","Latin clip",">-DUD-DU","clipped and percussive — mute the strings between strums"],
-["arp","Slow arpeggio pulse","D-U-D-U-","gentle alternation — or pick through the chord tones instead"],
-["quarters","Straight quarters","D-D-D-D-","metronomic — the best pattern for learning the changes"],
-["skank","Reggae skank","-U-U-U-U","all off-beats, everything else muted — instant island"],
-["ballad","Sparse ballad",">---D---","two hits a bar — space is the arrangement"],
-["boomchick","Country boom-chick",">-DU>-DU","pick the bass note on 1 and 3 if you can — chord answers on 2 and 4"],
-["busy8","Constant eighths","DUDUDUDU","surf and indie jangle — the accents live in your wrist, not the pattern"],
-["charleston","Charleston","D--U----","beat 1 and the 'and' of 2, then silence — the great jazz comping rhythm"],
-["tresillo","Tresillo (3+3+2)",">--D--D-","the Cuban cell behind reggaeton and half of modern pop"],
-["halftime","Half-time rock","D--->-DU","the big accent waits for beat 3 — everything feels twice as heavy"],
-["stomp","Four-beat stomp",">->->->-","accented quarters — glam-rock floor stomp"],
-["bossa","Bossa brush","D-U--U-U","gentle and syncopated — thumb the bass, brush the rest"],
-["funk","Funk scratch","D-U--UD-","ghost the rests with muted scratches — the groove is in what you don't voice"],
-["drone","Whole-note wash",">-------","one strum, let it drone — for pads, ambience and doom"],
-["waltz","Waltz (3/4)",">-D-D-","one-two-three, strong on one — three beats to the bar"],
-["slowwaltz","Slow waltz",">---D-","just beats one and three — stately, lots of air"],
-["waltzpick","Flowing waltz","DUDUDU","constant 3/4 eighths — works beautifully picked through the chord"],
-["countrywaltz","Country waltz",">-DUDU","bass note on one, brushed answers after — Tennessee Waltz territory"],
-["mazurka","Mazurka","D->-D-","3/4 with the accent displaced onto two — instantly old-world"],
-["quickwaltz","Quick waltz",">DDDDD","driving downstrokes in three — Viennese momentum, folk-punk at speed"],
-["jig68","6/8 roll",">UUDUU","two lilting groups of three — folk ballads and sea shanties"],
-["waltzsway","Jazz waltz","D-DUDU","3/4 with a swung lilt — My Favorite Things territory",1],
-// 16ths (sub = 4). Everything above divides the beat in two; these divide it in four, which is
-// where dance rhythm actually lives — the offbeat stab, the skipping garage accent, the 16th
-// funk scratch. Meter still reads pattern.length / sub, so these are all 4/4.
-["stab16","Offbeat 16th stabs","--D---D---D---D-","house piano stabs — land off the beat and keep them short",0,4],
-["house16","House chord pump",">---D---D---D---","a chord on each beat after the first — leaves the downbeat to the kick",0,4],
-["garage16","Garage skip",">--D--D-->-D--D-","the skipping 2-step accent, pulling against the four",0,4],
-["four16","Constant sixteenths","DUDUDUDUDUDUDUDU","the engine of garage and funk — accents live in the wrist",0,4],
-["funk16","16th funk scratch","D-UD-UD-D-UD-UD-","ghost the rests with muted scratches — the groove is what you don't voice",0,4],
-["disco16","Disco chug",">-U->-U->-U->-U-","clipped upstrokes pushing every offbeat — nu-disco guitar",0,4],
-["shuffle16","Swung 16ths","D-UD-UD-D-UD-UD-","16ths with a shuffle — UK garage and 2-step swing",1,4],
-["trap16","Trap sparse",">-------D-------","two chords a bar, everything else left to the drums",0,4],
-].forEach(([id, name, pat, desc, swing, sub]) =>
-  PATTERNS[id] = { name, pattern: pat.split(""), desc, swing: !!swing, sub: sub || 2 });
-
-// Columns per beat for a rhythm pattern: 2 = eighths, 4 = sixteenths. Everything downstream —
-// the scheduler tick, the melody grid, note values in the score, MIDI ticks — reads the meter
-// from these two numbers rather than assuming an eighth-note grid.
-const subOf = p => (p && p.sub) || 2;
-const beatsOf = p => p.pattern.length / subOf(p);
-
-// A bar is divided into as many ticks as the finest pattern in play needs, and every pattern is
-// sampled onto that grid: a pattern of length P fires at tick i only when i·P lands exactly on a
-// step. So an eighth-note strum and a sixteenth-note drum pattern coexist — the strum plays every
-// other tick, the hats every one — without either being truncated or stretched.
-const gcd = (a, b) => b ? gcd(b, a % b) : a;
-const lcm = (a, b) => a / gcd(a, b) * b;
-// index into a length-P pattern at tick i of a `ticks`-tick bar, or null if it falls between steps
-const stepAt = (len, i, ticks) => {
-  const n = i * len;
-  return n % ticks === 0 ? n / ticks : null;
-};
-const sampleAt = (pat, i, ticks) => {
-  if (!pat || !pat.length) return null;
-  const s = stepAt(pat.length, i, ticks);
-  return s == null ? null : pat[s];
-};
-// a drum pattern carries no `sub`, so read its meter from its length: 6 steps is three beats
-// (3/4 and 6/8), 8 and 16 are both four
-const drumBeatsOf = pat => (pat && pat.length === 6 ? 3 : 4);
-
-const PATTERN_DEFAULT = { axis:"pop", axisMinor:"drive", three:"rock8", blues:"shuffle",
-  doowop:"sway12", jazz:"fourbar", mixo:"push", andalusian:"latin", pachelbel:"arp",
-  dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop",
-  flamenco:"latin", edm:"house16", deepHouse:"stab16", festival:"house16", futureBass:"trap16",
-  montuno:"tresillo", rhythm:"charleston", bossa:"bossa", guajira:"tresillo", bolero:"arp",
-  gospel:"sway12", neoSoul:"funk",
-  rockRiff:"rock8", grunge:"drive", britpop:"pop", emo:"rock8", country:"boomchick",
-  celtic:"busy8", motownTurn:"boomchick", rnbSlow:"funk" };
-const BPM_DEFAULT = { axis:96, axisMinor:84, three:140, blues:92, doowop:66, jazz:120,
-  mixo:112, andalusian:104, pachelbel:72,
-  dorian:100, lydian:84, phrygian:128, aeolian:92,
-  flamenco:120, edm:128, deepHouse:122, festival:138, futureBass:150,
-  montuno:96, rhythm:160, bossa:132, guajira:100, bolero:76, gospel:76, neoSoul:88,
-  rockRiff:128, grunge:120, britpop:116, emo:144, country:108, celtic:116, motownTurn:128, rnbSlow:76 };
-
-const DRUMS = {};
-[
-["off","No drums",null],
-// 4/4 — eight eighth-note steps
-["rock","Rock backbeat","KH H SH H KH H SH H"],
-["pop","Pop punch","KH H SH KH H KH SH H"],
-["four","Four-on-the-floor","K H KS H K H KS H"],
-["shuffle","Shuffle backbeat","K H S H K H S H"],
-["train","Train beat","KS S S S KS S S S"],
-["halftime","Half-time","KH H H H SH H H H"],
-["driving","Driving eighths","KH KH SH KH KH KH SH KH"],
-["funk","Funk groove","KH H SKH H H KH SH H"],
-["disco","Disco","KH H KSH H KH H KSH H"],
-["boombap","Hip-hop boom-bap","KH H SH H H KH SH H"],
-["breakbeat","Breakbeat","KH H SH KH H KSH H SH"],
-["rnb","R&B swing","KH H SH H KH H SKH H"],
-["motown","Motown backbeat","KH SH KSH SH KH SH KSH SH"],
-["reggae","Reggae one-drop",". H . H KSH H . H"],
-["ska","Ska upbeat","K SH . SH K SH . SH"],
-["bossa","Bossa nova","KH H H SH H KH SH H"],
-["samba","Samba","KSH H KH SH KSH H KH SH"],
-["tresillo","Tresillo (3-3-2)","KH H H KH H H KH H"],
-["surf","Surf","KH H SH KH KH H SH H"],
-["punk","Punk d-beat","KH SH KH SH KH SH KH SH"],
-["newwave","New wave","K H SH H KH H SH H"],
-["anthem","Anthem","KH H SH H KH KH SH H"],
-["stomp","Stomp-clap","K K SH . K K SH ."],
-["march","March","K H SH H K H SH H"],
-["twostep","Country two-step","KS H S H KS H S H"],
-["ballad","Ballad (sparse)","K . . . SH . . ."],
-// 3/4 — six steps
-["waltzkit","Waltz kit (3/4)","K . SH . SH ."],
-["jazzwaltz","Jazz waltz (3/4)","KH H SH H SH H"],
-["waltzballad","Waltz ballad (3/4)","K H H SH H H"],
-// 6/8 — six steps
-["kit68","6/8 kit","K H H SH H H"],
-["shuffle68","6/8 shuffle","KH H H SH H H"],
-["march68","6/8 march","K H SH H SH H"],
-// 4/4 dance — written for the machine kits: O = open hat, C = clap, P = rim, R = ride,
-// X = crash, B = 808 sub-boom. The offbeat open hat is the engine of house; the clap
-// (not a snare) on 2 and 4 is what stops four-on-the-floor sounding like disco-rock.
-["house909","House (909)","K O KC O K O KC O"],
-["deep","Deep house","KH O KCH O KH O KCH OP"],
-["techhouse","Tech house","KH OP KCH H KH OP KCH O"],
-["techno","Techno","KH H KH H KH H KH O"],
-["trance","Trance","KH O KCH O KH O KCH O"],
-["bigroom","Big room","KHX O KCH O KH O KCH O"],
-["garage","UK garage 2-step","KH H CH KH H C H SH"],
-["disco909","Nu-disco","KH O KCH O KH O KCH OP"],
-["trap","Trap","BH H H CH H BH CH H"],
-["dubstep","Dubstep half-time","KH H H H CH H P H"],
-["electro","Electro house","KH H KCH H KH KH CH H"],
-// 4/4 at sixteenths — sixteen steps. This is the resolution the rolling hats, the skipping
-// garage kick and a real breakbeat need; at eighths they can only be approximated.
-["house16d","House · 16th hats","K H H H KC H H H K H H H KC H H O"],
-["techno16","Techno · driving 16ths","KH H H H KH H H H KH H H H KH H H OH"],
-["garage16d","UK garage 2-step","KH H H H CH H H H H H KH H CH H H H"],
-["dnb","Drum & bass","KH H H H SH H H H H H KH H SH H H H"],
-["amen","Amen break","KH H KH H SH H H SH H H KH H SH H SH H"],
-["breaks16","Big beat breaks","KH H H H SH H KH H KH H H H SH H KH H"],
-["trap16d","Trap · rolling hats","BH H H H H H H H CH H BH H H H H H"],
-["dubstep16","Dubstep","KH H H H H H H H CH H H H H H KH H"],
-["hiphop16","Hip-hop 16ths","KH H H H SH H KH H H KH H H SH H H H"],
-["footwork","Footwork","K H K H CH H K H K H K H CH H K H"],
-].forEach(([id, name, pat]) =>
-  DRUMS[id] = { name, pattern: pat ? pat.split(" ").map(s => s === "." ? "" : s) : null });
-
-// Kit voicings for the drum channels above (see drumSound).
-const DRUM_KITS = [["acoustic","Acoustic kit"], ["909","TR-909 · house & techno"], ["808","TR-808 · trap & hip-hop"]];
-// How hard the kick ducks everything pitched. "classic" is the familiar house pump.
-const PUMPS = [["off","No pump"], ["subtle","Subtle"], ["classic","Classic pump"], ["hard","Hard pump"]];
-const PUMP_AMT = { off:0, subtle:0.3, classic:0.6, hard:0.85 };
-// Channel letter → General MIDI percussion note, for the exported channel-10 drum track.
-const DRUM_MIDI = { K:36, B:35, S:38, H:42, O:46, C:39, P:37, R:51, X:49 };
-// GM percussion-set program numbers (0-indexed) so an exported file opens with a kit that
-// matches what you heard. GM has no 909, so it borrows the Electronic set.
-const KIT_PROGRAM = { "909":24, "808":25 };
-// The dance progressions come up already grooving — pick Deep House and press play.
-// Everything else keeps the acoustic kit and no pump, exactly as before.
-const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16", futureBass:"trap16d" };
-const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
-const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
-
-/* ===== sounds ===== */
-const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
-function makeNoise(ctx) {
-  const b = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.3), ctx.sampleRate);
-  const d = b.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  return b;
-}
-function env(ctx, t, vol, attack, decay, exp = true, dest) {
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(vol, t + attack);
-  if (exp) g.gain.exponentialRampToValueAtTime(0.0006, t + decay);
-  g.connect(dest || ctx.destination);
-  return g;
-}
-function clickSound(ctx, t, sym, dest) {
-  const o = ctx.createOscillator();
-  o.type = "square";
-  o.frequency.value = sym === ">" ? 1660 : sym === "U" ? 830 : 1108;
-  o.connect(env(ctx, t, sym === ">" ? 0.09 : sym === "U" ? 0.035 : 0.055, 0.001, 0.05, true, dest));
-  o.start(t); o.stop(t + 0.06);
-  if (sym === ">") {
-    const o2 = ctx.createOscillator();
-    o2.type = "sine";
-    o2.frequency.setValueAtTime(160, t);
-    o2.frequency.exponentialRampToValueAtTime(60, t + 0.09);
-    o2.connect(env(ctx, t, 0.22, 0.001, 0.12, true, dest));
-    o2.start(t); o2.stop(t + 0.13);
-  }
-}
-// One drum voice. `ch` is a channel letter from a DRUMS pattern; `kit` picks the voicing.
-// The two machine kits are what dance music is actually built on, and they differ from the
-// acoustic kit in kind, not just tone: the 909's kick is a short punchy thud with a hard
-// click on top, the 808's is a long tuned sub-boom that rings for most of a beat.
-function drumSound(ctx, t, ch, noise, dest, kit) {
-  const K9 = kit === "909", K8 = kit === "808";
-  // one filtered noise burst — the skin/cymbal half of nearly every voice here.
-  // The shared noise buffer is only 0.3 s, so anything ringing longer (ride, crash) has to
-  // loop it or the tail goes silent halfway through its own envelope.
-  const nz = (vol, atk, dec, type, hz, Q) => {
-    const n = ctx.createBufferSource(); n.buffer = noise;
-    if (dec > 0.25) n.loop = true;
-    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = hz;
-    if (Q != null) f.Q.value = Q;
-    n.connect(f); f.connect(env(ctx, t, vol, atk, dec, true, dest));
-    n.start(t); n.stop(t + dec + 0.02);
-  };
-  // one pitched tone, optionally sweeping hz0 → hz1 over `sweep` seconds
-  const tone = (type, hz0, hz1, sweep, vol, atk, dec, at = t) => {
-    const o = ctx.createOscillator(); o.type = type;
-    o.frequency.setValueAtTime(hz0, at);
-    if (hz1) o.frequency.exponentialRampToValueAtTime(hz1, at + sweep);
-    o.connect(env(ctx, at, vol, atk, dec, true, dest));
-    o.start(at); o.stop(at + dec + 0.02);
-  };
-  if (ch === "K" || ch === "B") {
-    // B is the 808-style sub-boom on any kit — the long tuned tail under a trap beat
-    const sub = ch === "B" || K8;
-    if (sub) {                                   // pure sine, slow drop, long ring
-      tone("sine", ch === "B" ? 105 : 120, 42, 0.06, 0.72, 0.004, ch === "B" ? 1.1 : 0.85);
-      nz(0.05, 0.001, 0.012, "lowpass", 2200);   // barely any beater — the 808 is almost all body
-    } else if (K9) {                             // 909: tight body, hard click on top
-      tone("sine", 200, 48, 0.045, 0.68, 0.001, 0.3);
-      nz(0.3, 0.001, 0.016, "lowpass", 4200);
-    } else {                                     // acoustic: the original kick
-      tone("sine", 165, 42, 0.09, 0.62, 0.002, 0.22);
-      nz(0.22, 0.001, 0.02, "lowpass", 3200);
-    }
-  } else if (ch === "S") {
-    if (K9) {                                    // 909 snare: noise-forward, short, bright
-      tone("triangle", 238, 0, 0, 0.1, 0.001, 0.06);
-      nz(0.34, 0.001, 0.075, "highpass", 1900);
-      nz(0.12, 0.001, 0.13, "bandpass", 4200, 0.7);
-    } else if (K8) {                             // 808 snare: tuned tick + a thin noise puff
-      tone("triangle", 180, 0, 0, 0.16, 0.001, 0.075);
-      nz(0.2, 0.001, 0.055, "highpass", 2400);
-    } else {                                     // acoustic: two-tone shell + crack + wire rattle
-      [175, 330].forEach((hz, k) => tone("triangle", hz, 0, 0, k ? 0.09 : 0.14, 0.001, 0.09));
-      nz(0.3, 0.001, 0.055, "highpass", 1600);
-      nz(0.14, 0.002, 0.16, "bandpass", 3200, 0.6);
-    }
-  } else if (ch === "H" || ch === "O") {
-    // closed vs open hat: the same voice with a longer tail. Machine hats are brighter and
-    // more metallic than the acoustic one, which is most of why a 909 pattern reads as "house".
-    const open = ch === "O";
-    const dec = open ? (K8 ? 0.34 : 0.28) : (K9 ? 0.035 : K8 ? 0.028 : 0.04);
-    const vol = open ? 0.1 : 0.11;
-    nz(vol, 0.001, dec, "highpass", K9 ? 8600 : K8 ? 9200 : 7800);
-    if (K8) return;                              // 808 hats are pure noise — no partial ring
-    // a ring of inharmonic square partials through a shared high-pass gives the metal
-    const ring = ctx.createGain(); ring.gain.value = 0.02;
-    const rhp = ctx.createBiquadFilter(); rhp.type = "highpass"; rhp.frequency.value = 8500;
-    ring.connect(rhp); rhp.connect(env(ctx, t, open ? 0.42 : 0.5, 0.001, open ? dec * 0.9 : 0.035, true, dest));
-    (K9 ? [3100, 4200, 5900] : [2400, 3000, 4700]).forEach(hz => {
-      const o = ctx.createOscillator(); o.type = "square"; o.frequency.value = hz;
-      o.connect(ring); o.start(t); o.stop(t + dec + 0.01);
-    });
-  } else if (ch === "C") {
-    // hand clap: three fast noise slaps a few ms apart (the "spread" that makes it a room
-    // full of hands rather than one pair) plus a longer body tail behind them
-    [0, 0.011, 0.022].forEach((d, i) => {
-      const n = ctx.createBufferSource(); n.buffer = noise;
-      const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1750; f.Q.value = 0.9;
-      n.connect(f); f.connect(env(ctx, t + d, i === 2 ? 0.26 : 0.17, 0.001, 0.028, true, dest));
-      n.start(t + d); n.stop(t + d + 0.04);
-    });
-    nz(0.13, 0.004, 0.16, "bandpass", 2100, 0.8);
-  } else if (ch === "P") {
-    // rim / side-stick: a short woody knock — the off-grid percussion in house and latin house
-    tone("triangle", 1720, 0, 0, 0.13, 0.001, 0.028);
-    nz(0.09, 0.001, 0.022, "bandpass", 2600, 1.4);
-  } else if (ch === "R") {
-    // ride: a sustained wash of high partials, quieter and far longer than a hat
-    nz(0.055, 0.002, 0.5, "highpass", 6200);
-    const ring = ctx.createGain(); ring.gain.value = 0.014;
-    const rhp = ctx.createBiquadFilter(); rhp.type = "highpass"; rhp.frequency.value = 7000;
-    ring.connect(rhp); rhp.connect(env(ctx, t, 0.4, 0.002, 0.45, true, dest));
-    [2100, 3300, 4900, 6100].forEach(hz => {
-      const o = ctx.createOscillator(); o.type = "square"; o.frequency.value = hz;
-      o.connect(ring); o.start(t); o.stop(t + 0.46);
-    });
-  } else if (ch === "X") {
-    // crash: a broad noise swell that rings on — marks the top of a drop or a section change
-    nz(0.17, 0.004, 1.15, "highpass", 3400);
-    nz(0.08, 0.006, 0.9, "bandpass", 6800, 0.4);
-  }
-}
-/* ===== section moves (arrangement automation) =====
-   A build isn't a chord change — it's a filter opening over eight bars, a riser underneath and a
-   crash on the downbeat of the drop. These are the moves that shape dance arrangements, attached
-   to a section so they run for exactly that section's length however long it is.
-   `lo`/`hi` are filter cutoffs in Hz; every value stays above zero because the sweeps are
-   exponential (an exponential ramp to or from 0 throws). */
-const MOVES = {};
-[
-["",       "— no move —",             null],
-["build",  "Build · filter opens",    { from: 260, to: 16000 }],
-["riser",  "Build + riser",           { from: 260, to: 16000, riser: true }],
-["drop",   "Drop · slam open + crash",{ from: 16000, to: 16000, impact: true }],
-["fade",   "Fade · filter closes",    { from: 16000, to: 300 }],
-["under",  "Underwater · stays shut", { from: 600, to: 600 }],
-["swell",  "Swell · opens then shuts",{ from: 400, to: 400, peak: 14000 }],
-].forEach(([id, name, spec]) => { MOVES[id] = { name, spec }; });
-const FILTER_OPEN = 18000;                       // "no filtering", still inside Nyquist at 44.1k
-
-// Schedule one section move: the cutoff envelope across the section, plus the riser and impact
-// that go with it. `dur` is the whole section's length in seconds, so the sweep always lands on
-// the section boundary whether it is four bars or sixteen.
-function applyMove(ctx, filt, spec, t, dur, noise, dest) {
-  if (!spec) {                                   // no move → make sure nothing is left filtered
-    filt.frequency.cancelScheduledValues(t);
-    filt.frequency.setValueAtTime(FILTER_OPEN, t);
-    return;
-  }
-  const f = filt.frequency;
-  f.cancelScheduledValues(t);
-  f.setValueAtTime(Math.max(20, spec.from), t);
-  if (spec.peak) {                               // open to the peak by halfway, then close again
-    f.exponentialRampToValueAtTime(spec.peak, t + dur * 0.5);
-    f.exponentialRampToValueAtTime(Math.max(20, spec.to), t + dur);
-  } else if (spec.to !== spec.from) {
-    f.exponentialRampToValueAtTime(Math.max(20, spec.to), t + dur);
-  }
-  if (spec.impact) {
-    // crash + a short sub boom on the downbeat — the hit that lands a drop
-    const boom = ctx.createOscillator(); boom.type = "sine";
-    boom.frequency.setValueAtTime(90, t);
-    boom.frequency.exponentialRampToValueAtTime(34, t + 0.5);
-    boom.connect(env(ctx, t, 0.5, 0.004, 0.75, true, dest));
-    boom.start(t); boom.stop(t + 0.8);
-    const cr = ctx.createBufferSource(); cr.buffer = noise; cr.loop = true;
-    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 3200;
-    cr.connect(hp); hp.connect(env(ctx, t, 0.2, 0.005, 1.3, true, dest));
-    cr.start(t); cr.stop(t + 1.35);
-  }
-  if (spec.riser) {
-    // noise sweeping up through the last two bars (or the last third of a short section),
-    // swelling as it goes — the tension that makes the drop land
-    const rise = Math.min(dur * 0.34, 4);
-    const t0 = t + dur - rise;
-    const n = ctx.createBufferSource(); n.buffer = noise; n.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4;
-    bp.frequency.setValueAtTime(400, t0);
-    bp.frequency.exponentialRampToValueAtTime(9000, t0 + rise);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.linearRampToValueAtTime(0.16, t0 + rise * 0.92);
-    g.gain.linearRampToValueAtTime(0.0001, t0 + rise);   // cut right on the boundary
-    n.connect(bp); bp.connect(g); g.connect(dest);
-    n.start(t0); n.stop(t0 + rise + 0.05);
-  }
-}
-// Sidechain pump. The pitched bus runs through a gain that gets slammed down on every kick
-// and breathes back before the next one — the ducking that defines house, techno and EDM.
-// We schedule the envelope directly instead of running a real compressor with a detector:
-// we already know exactly when each kick lands, so this is sample-accurate and free.
-function duckAt(g, t, amount, rel) {
-  const floor = Math.max(0.05, 1 - amount);
-  g.gain.cancelScheduledValues(t);
-  g.gain.setValueAtTime(1, t);                                  // full level at the hit…
-  g.gain.linearRampToValueAtTime(floor, t + 0.006);             // …down in ~6 ms
-  g.gain.linearRampToValueAtTime(1, t + Math.max(0.09, rel));   // and back up through the gap
-}
-const chordIvs = q => ({ dom:[0,4,7,10], maj7:[0,4,7,11], m7:[0,3,7,10],
-  maj9:[0,4,7,11,14], m9:[0,3,7,10,14], dom9:[0,4,7,10,14],
-  add9:[0,4,7,14], madd9:[0,3,7,14], six:[0,4,7,9], m6:[0,3,7,9],
-  sus2:[0,2,7], sus4:[0,5,7], dom7sus4:[0,5,7,10] }[q] || [0, q === "min" ? 3 : 4, 7]);
-// Karplus–Strong plucked string: a short noise burst excites a tuned feedback
-// delay line with a damping low-pass — the physical model of a real plucked
-// string, far closer to an acoustic guitar than a filtered sawtooth.
-function ksPluck(ctx, t, freq, dur, vol, bright, dest) {
-  const period = 1 / freq;
-  const delay = ctx.createDelay(0.05);
-  delay.delayTime.value = period;
-  const damp = ctx.createBiquadFilter();
-  damp.type = "lowpass"; damp.frequency.value = Math.min(7000, 1400 + bright); damp.Q.value = 0.2;
-  const fb = ctx.createGain();
-  // feedback per round-trip, tuned so the string decays to silence over ~dur. HARD CAP well below 1:
-  // a real Web-Audio delay+filter loop has a little excess gain (fractional-delay interpolation, the
-  // biquad), so a feedback near unity doesn't decay — it self-oscillates into a piercing squeal that
-  // the limiter then pins at full scale. Measured stable up to ~0.85; 0.8 keeps a safe margin.
-  fb.gain.value = Math.min(0.8, Math.pow(0.0008, period / Math.max(0.12, dur)));
-  delay.connect(damp); damp.connect(fb); fb.connect(delay);
-  const out = ctx.createGain();
-  out.gain.setValueAtTime(vol, t);
-  out.gain.setValueAtTime(vol, t + dur * 0.8);
-  out.gain.exponentialRampToValueAtTime(0.0004, t + dur + 0.12);
-  delay.connect(out); out.connect(dest || ctx.destination);
-  // excitation: a burst of noise one period long
-  const nlen = Math.max(2, Math.ceil(ctx.sampleRate * period));
-  const buf = ctx.createBuffer(1, nlen, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < nlen; i++) d[i] = Math.random() * 2 - 1;
-  const src = ctx.createBufferSource(); src.buffer = buf;
-  const ig = ctx.createGain(); ig.gain.value = 1;
-  src.connect(ig); ig.connect(delay);
-  src.start(t); src.stop(t + period + 0.02);
-}
-function strumChord(ctx, t, chord, sym, dest) {
-  const base = 48 + chord.root;
-  let notes = [base - 12, ...chordIvs(chord.quality).map(x => base + x)];
-  if (sym === "U") notes = notes.slice(2).reverse();
-  const vol = sym === ">" ? 0.16 : sym === "U" ? 0.09 : 0.12;
-  const dur = sym === ">" ? 1.4 : 0.9;
-  const bright = sym === ">" ? 2600 : sym === "U" ? 1400 : 1900;
-  notes.forEach((mid, j) => {
-    const tt = t + j * (sym === "U" ? 0.010 : 0.016);   // roll the pick across the strings
-    ksPluck(ctx, tt, midiHz(mid), dur, vol, bright, dest);
-  });
-}
-// sustained bowed/blown voice (strings, brass, reeds, pads) for the offline fallback
-function padVoice(ctx, t, mid, sym, slotDur, dest) {
-  const freq = midiHz(mid), vol = (sym === ">" ? 0.06 : 0.045);
-  const dur = Math.max(0.2, slotDur * 0.95);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(vol, t + 0.06);
-  g.gain.setValueAtTime(vol, t + Math.max(0.08, dur - 0.06));
-  g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.05);
-  const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 2400; f.Q.value = 0.5;
-  f.connect(g).connect(dest || ctx.destination);
-  [[1, 0.5, "sawtooth"], [1.004, 0.5, "sawtooth"], [2, 0.12, "sine"]].forEach(([mult, amp, type]) => {
-    const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq * mult;
-    const pg = ctx.createGain(); pg.gain.value = amp; o.connect(pg).connect(f);
-    o.start(t); o.stop(t + dur + 0.1);
-  });
-}
-function playHit(ctx, t, chord, sym, instr, slotDur, dest) {
-  const fam = gmFam(instr);
-  if (fam === "pluck") return strumChord(ctx, t, chord, sym, dest);
-  const iv = chordIvs(chord.quality), rootMid = 48 + chord.root;
-  if (fam === "bass") {
-    const o = ctx.createOscillator();
-    o.frequency.value = midiHz(36 + chord.root + (sym === "U" ? 7 : 0));
-    o.type = "sawtooth";
-    const f = ctx.createBiquadFilter();
-    f.type = "lowpass"; f.frequency.value = 440; f.Q.value = 1;
-    o.connect(f); f.connect(env(ctx, t, sym === ">" ? 0.30 : 0.20, 0.008, 0.5, true, dest));
-    o.start(t); o.stop(t + 0.6);
-    return;
-  }
-  const notes = sym === "U" ? iv.slice(1).map(x => rootMid + x) : [rootMid - 12, ...iv.map(x => rootMid + x)];
-  notes.forEach((mid, j) => {
-    if (fam === "organ") {
-      [1, 2, 3].forEach((h, hi) => {
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = "sine"; o.frequency.value = midiHz(mid) * h;
-        const vol = (sym === ">" ? 0.055 : 0.04) / (hi + 1);
-        const dur = Math.max(0.14, slotDur * 0.92);
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.linearRampToValueAtTime(vol, t + 0.02);
-        g.gain.setValueAtTime(vol, t + Math.max(0.05, dur - 0.04));
-        g.gain.linearRampToValueAtTime(0.0001, t + dur);
-        o.connect(g).connect(dest || ctx.destination);
-        o.start(t); o.stop(t + dur + 0.05);
-      });
-    } else if (fam === "pad") {
-      padVoice(ctx, t, mid, sym, slotDur, dest);
-    } else { // keys / mallet — fundamental + partials, hammer attack (mallet decays quicker)
-      const freq = midiHz(mid);
-      const vol = sym === ">" ? 0.10 : sym === "U" ? 0.055 : 0.08;
-      const tt = t + j * 0.003, dur = fam === "mallet" ? 0.45 : (sym === ">" ? 1.1 : 0.8);
-      [[1, 1, "triangle"], [2, 0.28, "sine"], [4, 0.07, "sine"]].forEach(([h, hv, type]) => {
-        const o = ctx.createOscillator();
-        o.type = type; o.frequency.value = freq * h;
-        o.connect(env(ctx, tt, vol * hv, 0.004, dur / (h > 1 ? 2.5 : 1), true, dest));
-        o.start(tt); o.stop(tt + dur + 0.1);
-      });
-    }
-  });
-}
-
-/* ===== realistic samples (real recorded instruments, loaded when online) ===== */
-// FluidR3 GM soundfont MP3s via jsDelivr (CORS-enabled). Every General MIDI instrument is
-// available; we fetch a few natural-note anchors per instrument and pitch-shift to cover the
-// rest, so downloads stay small (loaded lazily only for the instrument you pick) and the
-// service worker caches them for offline use. Anything that fails (offline / blocked) falls
-// back to a synth voice picked by the instrument's family.
-const SF_BASE = "https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@master/FluidR3_GM/";
-const SF_NAT = { 0:"C", 2:"D", 4:"E", 5:"F", 7:"G", 9:"A", 11:"B" };
-// The instrument catalogue, grouped for the dropdowns. Each entry: [GM folder key, label, synth-family].
-// families: pluck | keys | organ | bass | pad | mallet — used for the offline synth fallback.
-const GM_CATS = [
-  ["Pianos & keys", [
-    ["acoustic_grand_piano","Grand piano","keys"], ["bright_acoustic_piano","Bright piano","keys"],
-    ["electric_grand_piano","Electric grand","keys"], ["honkytonk_piano","Honky-tonk","keys"],
-    ["electric_piano_1","Electric piano","keys"], ["electric_piano_2","Electric piano 2","keys"],
-    ["harpsichord","Harpsichord","pluck"], ["clavinet","Clavinet","keys"]]],
-  ["Mallets & bells", [
-    ["celesta","Celesta","mallet"], ["glockenspiel","Glockenspiel","mallet"], ["music_box","Music box","mallet"],
-    ["vibraphone","Vibraphone","mallet"], ["marimba","Marimba","mallet"], ["xylophone","Xylophone","mallet"],
-    ["tubular_bells","Tubular bells","mallet"], ["dulcimer","Dulcimer","pluck"]]],
-  ["Organs & accordion", [
-    ["drawbar_organ","Drawbar organ","organ"], ["percussive_organ","Percussive organ","organ"],
-    ["rock_organ","Rock organ","organ"], ["church_organ","Church organ","organ"],
-    ["reed_organ","Reed organ","organ"], ["accordion","Accordion","organ"],
-    ["harmonica","Harmonica","organ"], ["tango_accordion","Tango accordion","organ"]]],
-  ["Guitars", [
-    ["acoustic_guitar_nylon","Nylon guitar","pluck"], ["acoustic_guitar_steel","Steel guitar","pluck"],
-    ["electric_guitar_jazz","Jazz guitar","pluck"], ["electric_guitar_clean","Clean electric","pluck"],
-    ["electric_guitar_muted","Muted electric","pluck"], ["overdriven_guitar","Overdrive guitar","pluck"],
-    ["distortion_guitar","Distortion guitar","pluck"]]],
-  ["Basses", [
-    ["acoustic_bass","Acoustic bass","bass"], ["electric_bass_finger","Finger bass","bass"],
-    ["electric_bass_pick","Pick bass","bass"], ["fretless_bass","Fretless bass","bass"],
-    ["slap_bass_1","Slap bass","bass"], ["synth_bass_1","Synth bass","bass"], ["contrabass","Double bass","bass"]]],
-  ["Strings & harp", [
-    ["violin","Violin","pad"], ["viola","Viola","pad"], ["cello","Cello","pad"],
-    ["tremolo_strings","Tremolo strings","pad"], ["pizzicato_strings","Pizzicato strings","pluck"],
-    ["orchestral_harp","Harp","pluck"], ["timpani","Timpani","mallet"]]],
-  ["Ensemble & choir", [
-    ["string_ensemble_1","String ensemble","pad"], ["string_ensemble_2","Slow strings","pad"],
-    ["synth_strings_1","Synth strings","pad"], ["choir_aahs","Choir “aahs”","pad"],
-    ["voice_oohs","Voice “oohs”","pad"], ["synth_choir","Synth voice","pad"], ["orchestra_hit","Orchestra hit","keys"]]],
-  ["Brass", [
-    ["trumpet","Trumpet","pad"], ["trombone","Trombone","pad"], ["tuba","Tuba","bass"],
-    ["muted_trumpet","Muted trumpet","pad"], ["french_horn","French horn","pad"],
-    ["brass_section","Brass section","pad"], ["synth_brass_1","Synth brass","pad"]]],
-  ["Reeds", [
-    ["soprano_sax","Soprano sax","pad"], ["alto_sax","Alto sax","pad"], ["tenor_sax","Tenor sax","pad"],
-    ["baritone_sax","Baritone sax","pad"], ["oboe","Oboe","pad"], ["english_horn","English horn","pad"],
-    ["bassoon","Bassoon","pad"], ["clarinet","Clarinet","pad"]]],
-  ["Pipes", [
-    ["piccolo","Piccolo","pad"], ["flute","Flute","pad"], ["recorder","Recorder","pad"],
-    ["pan_flute","Pan flute","pad"], ["whistle","Whistle","pad"], ["ocarina","Ocarina","pad"]]],
-  ["Synth lead & pad", [
-    ["lead_1_square","Square lead","keys"], ["lead_2_sawtooth","Saw lead","keys"],
-    ["lead_3_calliope","Calliope lead","pad"], ["lead_8_bass__lead","Bass+lead","keys"],
-    ["pad_1_new_age","New-age pad","pad"], ["pad_2_warm","Warm pad","pad"],
-    ["pad_4_choir","Choir pad","pad"], ["pad_7_halo","Halo pad","pad"]]],
-  ["World", [
-    ["sitar","Sitar","pluck"], ["banjo","Banjo","pluck"], ["shamisen","Shamisen","pluck"],
-    ["koto","Koto","pluck"], ["kalimba","Kalimba","mallet"], ["shanai","Shanai","pad"],
-    ["steel_drums","Steel drums","mallet"], ["agogo","Agogo","mallet"]]],
-];
-const GM_FAM = {}, GM_LABEL = {};
-GM_CATS.forEach(([, list]) => list.forEach(([k, label, fam]) => { GM_FAM[k] = fam; GM_LABEL[k] = label; }));
-const isGM = k => GM_FAM[k] !== undefined;
-// old sketch/state values → GM keys
-const LEGACY_INSTR = { guitar:"acoustic_guitar_steel", piano:"acoustic_grand_piano",
-  organ:"drawbar_organ", bass:"acoustic_bass", dbass:"contrabass" };
-const gmKey = k => LEGACY_INSTR[k] || k;
-const gmFam = k => GM_FAM[gmKey(k)] || "keys";
-// natural-note anchors: basses low, everything else spanning chord + melody range. Denser than a
-// bare octave grid (gaps of ~3-5 semitones, not ~7) so notes are pitch-shifted only a little from
-// the nearest real sample — the less a sample is stretched, the more natural the instrument sounds.
-const anchorsFor = k => gmFam(k) === "bass" ? [24,31,36,41,45,48] : [43,48,53,57,62,67,72,76,81,84];
-// offline synth-family fallback for the melody lead → a LEAD_SPECS voice
-const FAM_LEAD = { pluck:"pluck", keys:"ep", organ:"organ", bass:"pluck", pad:"strings", mallet:"bell" };
-
-const sfName = m => SF_NAT[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
-const sfRawCache = {};                                    // "folder:midi" → Promise<ArrayBuffer>
-function sfFetch(folder, midi) {
-  const ck = folder + ":" + midi;
-  if (sfRawCache[ck]) return sfRawCache[ck];
-  const url = SF_BASE + folder + "-mp3/" + sfName(midi) + ".mp3";
-  sfRawCache[ck] = fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status));
-  sfRawCache[ck].catch(() => { delete sfRawCache[ck]; });   // let a later attempt retry
-  return sfRawCache[ck];
-}
-function sfPrefetch(k) { const f = gmKey(k); if (isGM(f)) anchorsFor(f).forEach(m => sfFetch(f, m).catch(() => {})); }
-// a sampler bound to one AudioContext: decodes the cached MP3s and plays the nearest anchor repitched
-function makeSampler(ctx) {
-  const decoded = {}, done = {}, loading = {};
-  const load = k => {
-    const f = gmKey(k);
-    if (!isGM(f) || done[f]) return Promise.resolve();
-    if (loading[f]) return loading[f];
-    const anc = anchorsFor(f);
-    loading[f] = Promise.all(anc.map(m =>
-      sfFetch(f, m).then(ab => ctx.decodeAudioData(ab.slice(0)))
-        .then(buf => { decoded[f + ":" + m] = buf; }).catch(() => {})
-    )).then(() => { done[f] = anc.some(m => decoded[f + ":" + m]); });
-    return loading[f];
-  };
-  const ready = k => !!done[gmKey(k)];
-  // nearest usable anchor to a target note. Repitching is ASYMMETRIC: shifting a sample down just
-  // makes it lower and warmer, but shifting it up raises the pitch and thins it — past a little way
-  // it becomes the piercing squeal. So allow a big down-shift (a chord's bass note sits an octave
-  // below the lowest anchor) but only a small up-shift; notes needing more defer to the synth voice.
-  const MAX_UP = 7, MAX_DOWN = 16;   // semitones of repitch allowed above / below an anchor
-  const nearest = (k, midi) => {
-    const f = gmKey(k);
-    let best = null;
-    for (const m of anchorsFor(f)) {
-      const buf = decoded[f + ":" + m]; if (!buf) continue;
-      const shift = midi - m;                              // + = repitch up (the squeal direction)
-      if (shift > MAX_UP || shift < -MAX_DOWN) continue;   // outside the safe range for this anchor
-      const d = Math.abs(shift); if (!best || d < best.d) best = { m, d, buf };
-    }
-    return best;
-  };
-  const covers = (k, midi) => !!nearest(k, midi);
-  const play = (k, t, midi, gain, dur, dest) => {
-    const best = nearest(k, midi);
-    if (!best) return false;
-    const src = ctx.createBufferSource(); src.buffer = best.buf;
-    src.playbackRate.value = Math.pow(2, (midi - best.m) / 12);
-    const g = ctx.createGain(); g.gain.setValueAtTime(gain, t);
-    const end = t + (dur || 1.2);
-    g.gain.setValueAtTime(gain, Math.max(t, end - 0.12));
-    g.gain.exponentialRampToValueAtTime(0.0006, end + 0.08);
-    src.connect(g).connect(dest || ctx.destination);
-    src.start(t); src.stop(end + 0.15);
-    return true;
-  };
-  return { load, ready, play, covers };
-}
-// note voicing for the sampler, mirroring the synth voicings, by instrument family
-function sampleVoicing(chord, sym, fam) {
-  const iv = chordIvs(chord.quality), root = chord.root;
-  if (fam === "bass") return { notes: [36 + root + (sym === "U" ? 7 : 0)], roll: 0.03 };
-  const base = 48 + root;
-  const notes = sym === "U" ? iv.slice(1).map(x => base + x) : [base - 12, ...iv.map(x => base + x)];
-  return { notes, roll: fam === "pluck" ? (sym === "U" ? 0.010 : 0.016) : 0.004 };
-}
-function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest) {
-  if (!sampler || !sampler.ready(instr)) return false;
-  const fam = gmFam(instr);
-  const { notes, roll } = sampleVoicing(chord, sym, fam);
-  // if any voiced note lacks a nearby loaded anchor (samples still loading), play the whole chord
-  // on the synth rather than repitching a distant anchor into a shrill artifact for part of it
-  if (!notes.every(mid => sampler.covers(instr, mid))) return false;
-  const g = sym === ">" ? 0.5 : sym === "U" ? 0.3 : 0.4;
-  const dur = sym === ">" ? 1.6 : fam === "pluck" ? 1.0 : Math.max(0.5, slotDur * 2.5);
-  notes.forEach((mid, j) => sampler.play(instr, t + j * roll, mid, g, dur, dest));
-  return true;
-}
-// play one melody note as a real sample if the chosen lead voice is a GM instrument that's loaded
-function playLeadSampled(sampler, kind, t, midi, dur, dest) {
-  if (!sampler || !isGM(kind) || !sampler.ready(kind)) return false;
-  return sampler.play(kind, t, midi, 0.55, dur, dest);   // false if no loaded anchor is close → synth covers this note
-}
-// a convolution reverb bus: input node feeding a dry path + a wet (reverb) path
-function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16) {
-  const rate = ctx.sampleRate, len = Math.max(1, Math.floor(rate * seconds));
-  const ir = ctx.createBuffer(2, len, rate);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = ir.getChannelData(ch);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
-  }
-  const conv = ctx.createConvolver(); conv.buffer = ir;
-  const wet = ctx.createGain(); wet.gain.value = mix;
-  const input = ctx.createGain(); input.gain.value = 1;
-  input.connect(dest);                    // dry
-  input.connect(conv); conv.connect(wet); wet.connect(dest);   // wet
-  return input;
-}
-
-// Melody lead voices — chosen from the "Lead" dropdown. Each spec is a stack of
-// partials (oscillator type · harmonic multiple · relative level) plus an
-// envelope: atk = attack, rel = release tail, vol = peak, sus = sustain level
-// (0 = percussive decay, >0 = held tone). lp adds a low-pass; vib adds vibrato.
-const LEAD_VOICES = [
-  ["synth","Synth lead"], ["sine","Soft sine"], ["triangle","Mellow triangle"],
-  ["square","Chiptune square"], ["saw","Bright saw"], ["flute","Flute"],
-  ["pluck","Pluck"], ["bell","Bell"], ["musicbox","Music box"],
-  ["ep","Electric piano"], ["strings","Strings"], ["brass","Brass"],
-  ["organ","Organ"], ["voice","Voice (ah)"], ["glass","Glass pad"], ["whistle","Whistle"],
-];
-const LEAD_SPECS = {
-  synth:    { parts:[["triangle",1,1],["sine",2,0.3]],                 atk:0.012, rel:0.13, vol:0.12, sus:0.6 },
-  sine:     { parts:[["sine",1,1],["sine",2,0.1]],                     atk:0.02,  rel:0.18, vol:0.13, sus:0.7 },
-  triangle: { parts:[["triangle",1,1]],                               atk:0.01,  rel:0.15, vol:0.13, sus:0.65 },
-  square:   { parts:[["square",1,0.6]],                               atk:0.005, rel:0.07, vol:0.085, sus:0.55, lp:2600 },
-  saw:      { parts:[["sawtooth",1,0.6]],                             atk:0.008, rel:0.13, vol:0.085, sus:0.6, lp:3200 },
-  flute:    { parts:[["sine",1,1],["sine",2,0.05]],                   atk:0.05,  rel:0.15, vol:0.15, sus:0.8, vib:true },
-  pluck:    { parts:[["triangle",1,1],["sine",3,0.15]],               atk:0.003, rel:0.3,  vol:0.14, sus:0 },
-  bell:     { parts:[["sine",1,1],["sine",2.76,0.5],["sine",5.4,0.2]],atk:0.002, rel:0.6,  vol:0.11, sus:0 },
-  musicbox: { parts:[["sine",1,1],["sine",4,0.35],["sine",8,0.08]],   atk:0.002, rel:0.45, vol:0.1,  sus:0 },
-  ep:       { parts:[["sine",1,1],["triangle",2,0.25],["sine",5,0.06]],atk:0.004,rel:0.4,  vol:0.13, sus:0.15 },
-  strings:  { parts:[["sawtooth",1,0.5],["sawtooth",1.004,0.5]],      atk:0.1,   rel:0.28, vol:0.08, sus:0.85, lp:2400, vib:true },
-  brass:    { parts:[["sawtooth",1,0.7],["square",1,0.1]],            atk:0.035, rel:0.15, vol:0.085, sus:0.7, lp:2800 },
-  organ:    { parts:[["sine",1,1],["sine",2,0.5],["sine",3,0.3],["sine",4,0.15]], atk:0.006, rel:0.06, vol:0.075, sus:0.9 },
-  voice:    { parts:[["sawtooth",1,0.4],["sine",1,0.45]],             atk:0.06,  rel:0.18, vol:0.1,  sus:0.8, lp:1500, vib:true },
-  glass:    { parts:[["sine",1,1],["sine",3,0.2],["triangle",2,0.15]],atk:0.07,  rel:0.32, vol:0.1,  sus:0.75 },
-  whistle:  { parts:[["sine",1,1],["sine",2,0.02]],                   atk:0.03,  rel:0.1,  vol:0.12, sus:0.85, vib:true },
-};
-// legato=true softens the attack and lets the note ring past its slot so a
-// moving line flows together instead of re-articulating on every eighth.
-function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
-  const V = LEAD_SPECS[kind] || LEAD_SPECS.synth;
-  const hz = midiHz(midi);
-  const atk = legato ? Math.max(V.atk, 0.03) : V.atk;
-  const rel = legato ? V.rel * 1.6 : V.rel;
-  const peak = V.vol, sus = peak * V.sus;
-  const t1 = t + atk;                          // reach peak
-  const t2 = Math.max(t1 + 0.01, t + dur);     // sustain end / release start
-  const t3 = t2 + rel;                         // silence
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(peak, t1);
-  if (V.sus > 0) {
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, sus), Math.min(t2, t1 + 0.12));
-    g.gain.setValueAtTime(Math.max(0.0002, sus), t2);
-  }
-  g.gain.exponentialRampToValueAtTime(0.0006, t3);
-  g.connect(dest || ctx.destination);
-  let out = g;
-  if (V.lp) {
-    const f = ctx.createBiquadFilter();
-    f.type = "lowpass"; f.frequency.value = V.lp; f.Q.value = 0.7;
-    f.connect(g); out = f;
-  }
-  let lfoG = null;
-  if (V.vib) {
-    const lfo = ctx.createOscillator(); lfoG = ctx.createGain();
-    lfo.type = "sine"; lfo.frequency.value = 5.2; lfoG.gain.value = hz * 0.006;
-    lfo.connect(lfoG); lfo.start(t + atk); lfo.stop(t3 + 0.05);
-  }
-  V.parts.forEach(([type, mult, amp]) => {
-    const o = ctx.createOscillator();
-    o.type = type; o.frequency.value = hz * mult;
-    if (lfoG) lfoG.connect(o.frequency);
-    const pg = ctx.createGain(); pg.gain.value = amp;
-    o.connect(pg).connect(out);
-    o.start(t); o.stop(t3 + 0.05);
-  });
-}
 
 /* ===== fingering diagrams ===== */
 const OPEN_SHAPES = {
@@ -1412,7 +316,8 @@ function NotationScore({ measures, instr, meloBeats, sub = 2, perSystem = 4 }) {
     }
     // barlines + measures
     const topY = yTreble(38), botY = piano ? yBass(18) : tabY(5);
-    parts.push(<line key="bl0" x1={clefW} y1={topY} x2={clefW} y2={botY} stroke={FAINT} strokeWidth="1" />);
+    // the opening barline — keyed apart from the per-bar ones, whose keys start at bl0
+    parts.push(<line key="blopen" x1={clefW} y1={topY} x2={clefW} y2={botY} stroke={FAINT} strokeWidth="1" />);
     bars.forEach((m, bi) => {
       const mx0 = clefW + bi * barW;
       const mx1 = mx0 + barW;
@@ -1477,147 +382,6 @@ const POS_MAJ = [0,7,2,9,4,11,6,1,8,3,10,5];
 // section-type accent colours for the song write-out grouping
 const SEC_COL = { V:"#54B79D", C:"#E0B85A", B:"#B7A6E0", P:"#7FB4D8", I:"#8B94A3", O:"#8B94A3", L:"#8B94A3" };
 
-/* ===== midi export ===== */
-const vlq = n => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) | 0x80); return b; };
-// meloCols (optional): flat list of eighth-columns aligned to bars × (beatsPerBar*2),
-// each column a list of absolute MIDI note numbers. Runs of the same note across
-// adjacent columns are merged into one held note (legato) so the exported line
-// flows the way it plays.
-// `melParts` is a list of column-lists, one per melody part; each gets its own MIDI channel.
-function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2) {
-  const T = 480, ev = (arr, dt, ...bytes) => arr.push(...vlq(dt), ...bytes);
-  const trk = arr => {
-    const body = [...arr, 0, 0xff, 0x2f, 0];
-    return [0x4d,0x54,0x72,0x6b, (body.length>>>24)&255,(body.length>>>16)&255,(body.length>>>8)&255,body.length&255, ...body];
-  };
-  const uspq = Math.round(60000000 / bpm);
-  const tempo = []; ev(tempo, 0, 0xff, 0x51, 3, (uspq>>16)&255, (uspq>>8)&255, uspq&255);
-  const chordsT = [];
-  bars.forEach(b => {
-    const notes = [36 + b.chord.root - 12, ...chordIvs(b.chord.quality).map(x => 60 + b.chord.root + x)];
-    notes.forEach((n, i) => ev(chordsT, i ? 0 : 0, 0x90, n, 78));
-    notes.forEach((n, i) => ev(chordsT, i ? 0 : beatsPerBar * T, 0x80, n, 0));
-  });
-  // drumPat may be one pattern (array) shared by every bar, or a function (barIndex) → pattern|null
-  // so each section can carry its own kit (or fall silent) in the exported file
-  const drumFn = typeof drumPat === "function" ? drumPat : () => drumPat;
-  const drumHas = typeof drumPat === "function" ? bars.some((_, i) => drumFn(i)) : !!drumPat;
-  const drumsT = [];
-  if (drumHas) {
-    let pend = 0;
-    if (KIT_PROGRAM[kit] != null) ev(drumsT, 0, 0xc9, KIT_PROGRAM[kit]);   // machine kit on channel 10
-    for (let bar = 0; bar < bars.length; bar++) {
-      const pat = drumFn(bar);
-      // each bar's pattern sets its own step count, so a sixteenth-note kit and an eighth-note
-      // one can sit in the same exported file and both come out at the right speed
-      const steps = (pat && pat.length) || beatsPerBar * 2;
-      const stepT = beatsPerBar * T / steps;
-      const gate = Math.min(60, stepT * 0.5);            // note length; short enough to fit a 16th step
-      for (let s = 0; s < steps; s++) {
-        const notes = [...((pat && pat[s]) || "")].map(c => DRUM_MIDI[c] || 42);
-        if (!notes.length) { pend += stepT; continue; }
-        // cymbals and rim sit behind the kick/snare/clap, as they do in the app
-        notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n, [42,46,51,37].includes(n) ? 62 : 92));
-        notes.forEach((n, i) => ev(drumsT, i ? 0 : gate, 0x89, n, 0));
-        pend = stepT - gate;
-      }
-    }
-  }
-  // build one melody track from its grid columns; each layer gets its own channel
-  const buildMelo = (cols, chOn, chOff) => {
-    const arr = []; let has = false;
-    if (cols && cols.length) {
-      const EI = T / sub, N = cols.length;                        // ticks per grid column
-      const at = (i, note) => (cols[i] || []).includes(note);
-      const evs = [];
-      for (let i = 0; i < N; i++) for (const note of (cols[i] || [])) {
-        if (i > 0 && at(i - 1, note)) continue;                   // continuation of a held note
-        let run = 1;
-        while (i + run < N && at(i + run, note)) run++;
-        evs.push({ t: i * EI, on: 1, note });
-        evs.push({ t: (i + run) * EI, on: 0, note });
-      }
-      has = evs.length > 0;
-      evs.sort((a, b) => a.t - b.t || a.on - b.on);               // note-offs before note-ons at a tick
-      let last = 0;
-      for (const e of evs) { ev(arr, e.t - last, e.on ? chOn : chOff, e.note, e.on ? 92 : 0); last = e.t; }
-    }
-    return { arr, has };
-  };
-  // one track per melody part, on its own channel. Channels 1.. skip 9 (percussion is channel 10
-  // in 1-based terms, 9 here), so a part is never voiced as a drum kit by mistake.
-  const chanFor = p => { const c = p + 1; return c >= 9 ? c + 1 : c; };
-  const mels = (melParts || []).map((cols, p) => {
-    const ch = chanFor(p) & 0x0f;
-    return buildMelo(cols, 0x90 | ch, 0x80 | ch);
-  }).filter(m => m.has);
-  const nTrk = 2 + (drumHas ? 1 : 0) + mels.length;
-  const head = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0, nTrk, (T>>8)&255, T&255];
-  return new Uint8Array([...head, ...trk(tempo), ...trk(chordsT),
-    ...(drumHas ? trk(drumsT) : []), ...mels.flatMap(m => trk(m.arr))]);
-}
-
-/* ===== midi import ===== */
-// Parse a standard MIDI file and pull out the single most melodic track as a list
-// of { midi, startE, durE } where positions are in eighth-notes. Chooses a track
-// named "Melody" if present (the Tune Transcriber tags its line that way),
-// otherwise the non-drum track with the most notes. Returns null on a bad file.
-function parseMidiMelody(buf) {
-  const d = new DataView(buf);
-  let p = 0;
-  const u32 = () => { const v = d.getUint32(p); p += 4; return v; };
-  const u16 = () => { const v = d.getUint16(p); p += 2; return v; };
-  const u8 = () => d.getUint8(p++);
-  if (u32() !== 0x4d546864) return null;                 // "MThd"
-  u32();                                                  // header length
-  u16();                                                  // format
-  const ntrk = u16();
-  const ppq = u16();
-  if (ppq <= 0) return null;                              // SMPTE division unsupported
-  const tracks = [];
-  for (let t = 0; t < ntrk && p < buf.byteLength; t++) {
-    if (u32() !== 0x4d54726b) break;                     // "MTrk"
-    const len = u32();
-    const end = p + len;
-    let tick = 0, status = 0, name = "";
-    const open = {};                                       // "note" → startTick
-    const notes = [];
-    while (p < end) {
-      let dt = 0, b;
-      do { b = u8(); dt = (dt << 7) | (b & 0x7f); } while (b & 0x80);
-      tick += dt;
-      let ev = u8();
-      if (ev < 0x80) { ev = status; p--; } else status = ev;
-      const hi = ev & 0xf0, ch = ev & 0x0f;
-      if (ev === 0xff) {                                   // meta
-        const type = u8(); let ml = 0, mb;
-        do { mb = u8(); ml = (ml << 7) | (mb & 0x7f); } while (mb & 0x80);
-        if (type === 0x03) { let s = ""; for (let i = 0; i < ml; i++) s += String.fromCharCode(u8()); name = s; }
-        else p += ml;
-      } else if (ev === 0xf0 || ev === 0xf7) {             // sysex
-        let sl = 0, sb; do { sb = u8(); sl = (sl << 7) | (sb & 0x7f); } while (sb & 0x80); p += sl;
-      } else if (hi === 0x90 || hi === 0x80) {
-        const note = u8(), vel = u8();
-        if (hi === 0x90 && vel > 0) { if (open[note] == null) open[note] = tick; }
-        else { const st = open[note]; if (st != null) { notes.push({ midi: note, startTick: st, durTick: Math.max(1, tick - st) }); delete open[note]; } }
-      } else if (hi === 0xa0 || hi === 0xb0 || hi === 0xe0) { p += 2; }
-      else if (hi === 0xc0 || hi === 0xd0) { p += 1; }
-      else p = end;                                        // unknown — bail this track
-    }
-    p = end;
-    tracks.push({ name, notes, drums: notes.length === 0 });
-  }
-  const named = tracks.find(t => /melody/i.test(t.name) && t.notes.length);
-  const cand = named || tracks.filter(t => t.notes.length).sort((a, b) => b.notes.length - a.notes.length)[0];
-  if (!cand || !cand.notes.length) return null;
-  const eighth = ppq / 2;
-  return cand.notes.map(n => ({
-    midi: n.midi,
-    startE: Math.round(n.startTick / eighth),
-    durE: Math.max(1, Math.round(n.durTick / eighth)),
-  })).sort((a, b) => a.startE - b.startE);
-}
-
 /* ===== discovery tools ===== */
 // borrowed + mediant menus: [tag, semitone offset, quality, where] — where: 0 = before the tonic's
 // return (end-of-loop colour), 1 = right after the tonic (the mediant jump)
@@ -1629,596 +393,6 @@ const BORROWED = {
 const MEDIANTS = { major: [["III",4,"maj",1],["VI",9,"maj",1],["bVI",8,"maj",1],["bIII",3,"maj",1]],
   minor: [["V of bIII",10,"maj",1],["III",4,"maj",1],["VI",9,"maj",1]] };
 
-/* ===== suggested melody patterns =====
-   Each generator returns an array of `nBars` bars; every bar is an array of
-   length B (the eighth-note columns), and every cell is an array of scale-degree
-   indices (0..6, an index into the diatonic scale). Melodies are written in
-   diatonic scale degrees relative to a chosen starting degree, then wrapped back
-   into the single-octave grid the writer displays. The context `u` carries:
-     u.nBars   — bars in this section
-     u.B       — eighth columns per bar (8 in common time, 6 in 3/4 & 6/8)
-     u.start   — the chosen starting scale degree (0..6)
-     u.chordDegs — per-bar diatonic degree of the bar's chord root (null if the
-                   chord is chromatic / outside the key) — used by the arpeggios */
-const wrap7 = d => ((d % 7) + 7) % 7;
-
-/* ===== in-app pitch tracking (guitar / voice → notes) =====
-   A compact McLeod-Pitch-Method transcriber, mirroring the Tune Transcriber's DSP, so a line
-   played into the mic can be dropped straight onto a section's melody grid. Source profiles
-   tune the RMS gate, shortest kept note and trusted frequency window: a plucked guitar decays
-   (its tail would split into spurious re-onsets under a voice gate) and reaches lower than most
-   singing. Output notes are quantised to an eighth-note grid so they map onto grid columns. */
-const REC_SOURCES = {
-  voice:  { gate: 0.006, minNoteMs: 70, loHz: 65, hiHz: 1400, clarityFrac: 0.62, clarityMin: 0.45 },
-  guitar: { gate: 0.004, minNoteMs: 85, loHz: 70, hiHz: 1320, clarityFrac: 0.55, clarityMin: 0.34 },
-};
-const hzToMidiF = hz => 69 + 12 * Math.log2(hz / 440);
-// gate override lets the caller pass an adaptive per-recording threshold
-function recDetectPitch(buf, sampleRate, prof, gate) {
-  const SIZE = buf.length;
-  let rms = 0;
-  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
-  rms = Math.sqrt(rms / SIZE);
-  if (rms < (gate != null ? gate : prof.gate)) return null;
-  const maxLag = Math.floor(SIZE / 2);
-  const nsdf = new Float32Array(maxLag);
-  for (let lag = 0; lag < maxLag; lag++) {
-    let ac = 0, m = 0;
-    for (let i = 0; i < SIZE - lag; i++) {
-      ac += buf[i] * buf[i + lag];
-      m += buf[i] * buf[i] + buf[i + lag] * buf[i + lag];
-    }
-    nsdf[lag] = m > 0 ? (2 * ac) / m : 0;
-  }
-  const maxima = [];
-  let lag = 1;
-  while (lag < maxLag - 1 && nsdf[lag] > 0) lag++;      // skip the lag-0 hump
-  while (lag < maxLag - 1) {
-    if (nsdf[lag] > 0) {
-      let best = lag, bestV = nsdf[lag];
-      while (lag < maxLag - 1 && nsdf[lag] > 0) { if (nsdf[lag] > bestV) { bestV = nsdf[lag]; best = lag; } lag++; }
-      maxima.push({ lag: best, val: bestV });
-    } else lag++;
-  }
-  if (!maxima.length) return null;
-  const peak = Math.max(...maxima.map(m => m.val));
-  const chosen = maxima.find(m => m.val >= (prof.clarityFrac || 0.62) * peak) || maxima[0];
-  if (chosen.val < (prof.clarityMin || 0.45)) return null;
-  const x = chosen.lag, a = nsdf[x - 1], b = nsdf[x], c = nsdf[x + 1];
-  const denom = a - 2 * b + c, shift = denom !== 0 ? (0.5 * (a - c)) / denom : 0;
-  const hz = sampleRate / (x + shift);
-  if (hz < prof.loHz || hz > prof.hiHz) return null;
-  return { hz, clarity: chosen.val, rms };
-}
-// samples → notes [{midi,t0,t1}] in seconds. Normalises level, gates against the recording's own
-// noise floor, and bridges short dropouts so a decaying guitar note stays one note.
-function recTrackNotes(samples, sampleRate, prof) {
-  // normalise to ~0.95 peak so a quiet take is treated the same as a loud one
-  let pk = 0;
-  for (let i = 0; i < samples.length; i++) { const a = samples[i] < 0 ? -samples[i] : samples[i]; if (a > pk) pk = a; }
-  if (pk > 1e-4 && pk < 0.95) {
-    const g = 0.95 / pk, s2 = new Float32Array(samples.length);
-    for (let i = 0; i < samples.length; i++) s2[i] = samples[i] * g;
-    samples = s2;
-  }
-  const WIN = 2048, HOP = Math.round(sampleRate * 0.011);
-  // pass 1 (cheap): per-frame RMS → an adaptive gate a little above the noise floor
-  const starts = [], rmsArr = [];
-  for (let start = 0; start + WIN <= samples.length; start += HOP) {
-    let r = 0; for (let i = 0; i < WIN; i++) { const v = samples[start + i]; r += v * v; }
-    starts.push(start); rmsArr.push(Math.sqrt(r / WIN));
-  }
-  const sorted = [...rmsArr].sort((a, b) => a - b);
-  const noise = sorted.length ? sorted[Math.floor(sorted.length * 0.2)] : 0;   // 20th-percentile ≈ quiet floor
-  const gate = Math.max(prof.gate, noise * 2.2);
-  // pass 2: detect pitch only where the frame clears the gate
-  const frames = starts.map((start, k) => {
-    if (rmsArr[k] < gate) return { t: (start + WIN / 2) / sampleRate, midi: null, conf: 0 };
-    const p = recDetectPitch(samples.subarray(start, start + WIN), sampleRate, prof, gate);
-    return { t: (start + WIN / 2) / sampleRate, midi: p ? hzToMidiF(p.hz) : null, conf: p ? p.clarity : 0 };
-  });
-  const W = 2;
-  const sm = frames.map((f, i) => {
-    if (f.midi == null) return null;
-    const vals = [];
-    for (let k = -W; k <= W; k++) { const g = frames[i + k]; if (g && g.midi != null) vals.push(g.midi); }
-    vals.sort((a, b) => a - b);
-    return vals.length ? vals[Math.floor(vals.length / 2)] : f.midi;
-  });
-  const notes = [];
-  let cur = null;
-  const flush = () => {
-    if (!cur) return;
-    if ((cur.tEnd - cur.tStart) * 1000 >= prof.minNoteMs && cur.pitches.length) {
-      const rounded = cur.pitches.map(Math.round).sort((a, b) => a - b);
-      notes.push({ midi: rounded[Math.floor(rounded.length / 2)], t0: cur.tStart, t1: cur.tEnd });
-    }
-    cur = null;
-  };
-  const maxGap = Math.max(2, Math.round(0.07 / (HOP / sampleRate)));   // bridge dropouts up to ~70 ms
-  let gap = 0;
-  for (let i = 0; i < frames.length; i++) {
-    const m = sm[i];
-    if (m == null) {
-      if (cur && gap < maxGap) { gap++; continue; }   // a brief dropout inside a ringing note
-      flush(); gap = 0; continue;
-    }
-    const r = Math.round(m);
-    if (cur && Math.abs(r - cur.ref) < 0.5) { cur.tEnd = frames[i].t; cur.pitches.push(m); gap = 0; }
-    else { flush(); cur = { ref: r, tStart: frames[i].t, tEnd: frames[i].t, pitches: [m] }; gap = 0; }
-  }
-  flush();
-  return notes;
-}
-// crude auto-tempo: BPM whose eighth-note grid best fits the onsets
-function recEstimateTempo(notes) {
-  if (notes.length < 3) return 100;
-  let best = 100, bestErr = Infinity;
-  for (let bpm = 60; bpm <= 180; bpm++) {
-    const step = 60 / bpm / 2;
-    let err = 0;
-    for (const n of notes) { const q = n.t0 / step; err += Math.abs(q - Math.round(q)); }
-    err /= notes.length;
-    if (err < bestErr) { bestErr = err; best = bpm; }
-  }
-  return best;
-}
-// notes → eighth-note grid events [{ midi, startE, durE }], time 0 = first onset
-function recToEvents(notes) {
-  if (!notes.length) return [];
-  const t0 = notes[0].t0;
-  const shifted = notes.map(n => ({ midi: n.midi, t0: n.t0 - t0, t1: n.t1 - t0 }));
-  const bpm = recEstimateTempo(shifted);
-  const step = 60 / bpm / 2;                             // eighth-note
-  const out = shifted.map(n => {
-    const s = Math.max(0, Math.round(n.t0 / step));
-    const e = Math.max(s + 1, Math.round(n.t1 / step));
-    return { midi: n.midi, startE: s, durE: e - s };
-  });
-  out.sort((a, b) => a.startE - b.startE);
-  for (let i = 0; i < out.length - 1; i++) {             // keep it monophonic
-    const end = out[i].startE + out[i].durE;
-    if (end > out[i + 1].startE) out[i].durE = Math.max(1, out[i + 1].startE - out[i].startE);
-  }
-  return out;
-}
-
-// the "strong" beat columns of a bar — one per beat: [0,2,4,6] on an eighth grid in 4/4,
-// [0,4,8,12] on a sixteenth grid. `sub` is columns per beat.
-const qbeats = (B, sub = 2) => Array.from({ length: Math.ceil(B / sub) }, (_, i) => i * sub).filter(x => x < B);
-const blankBars = (nBars, B) => Array.from({ length: nBars }, () => Array.from({ length: B }, () => []));
-// Melody parts. A section holds a list of them — a dance arrangement wants a sub bass, a pad, an
-// arp and a topline all at once, not one tune and an optional harmony. Part 0 is the lead; the
-// defaults after it are picked to be audibly distinct from each other out of the box.
-const MAX_LAYERS = 6;
-const LAYER_NAMES = ["A", "B", "C", "D", "E", "F"];
-// grid + notation ink per part, in order. A is the app's green; the rest stay clearly separable.
-const LAYER_INK = ["#54B79D", "#B98CF0", "#E8A33D", "#6EA8FF", "#E0687F", "#5FCBC3"];
-const LAYER_DEFAULT_INSTR = ["", "ep", "synth_bass_1", "pad_2_warm", "lead_2_sawtooth", "vibraphone"];
-// Re-time one stored bar onto a grid of B columns. A bar remembers its own resolution in its
-// length, so switching between an eighth and a sixteenth rhythm keeps every note where it sounds
-// rather than sliding it into the wrong half of the bar. Going finer is lossless; going coarser
-// folds notes onto the nearest column (two can land on one, which is what the ear would do too).
-const rescaleBar = (bar, B) => {
-  if (!bar || !bar.length) return Array.from({ length: B }, () => []);
-  if (bar.length === B) return bar.map(col => [...(col || [])]);
-  const out = Array.from({ length: B }, () => []);
-  bar.forEach((col, c) => {
-    if (!col || !col.length) return;
-    const nc = Math.min(B - 1, Math.round(c * B / bar.length));
-    for (const d of col) if (!out[nc].includes(d)) out[nc].push(d);
-  });
-  return out;
-};
-// lay a sequence of degrees onto given columns of one bar
-const layBar = (B, cols, degs) => {
-  const bar = Array.from({ length: B }, () => []);
-  cols.forEach((c, i) => { if (i < degs.length && degs[i] != null && c < B) bar[c] = [wrap7(degs[i])]; });
-  return bar;
-};
-const MELODY_PATTERNS = [
-  { id:"arpUp", name:"Arpeggio ↑ (chord tones)",
-    desc:"Climbs each bar's chord — root, 3rd, 5th, 7th — one note per beat. Follows the chords; the start note fills in over any out-of-key chord.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) => {
-        const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g, g+2, g+4, g+6]); }); } },
-  { id:"arpDown", name:"Arpeggio ↓ (chord tones)",
-    desc:"Falls through each bar's chord from the top down — 5th, 3rd, root. A gentler, more resolved shape than climbing.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) => {
-        const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g+4, g+2, g, g-3]); }); } },
-  { id:"arpRoll", name:"Arpeggio ↑↓ (rolling)",
-    desc:"Rolls up the chord and back down within every bar — a continuous broken-chord ripple.",
-    gen(u){ return Array.from({ length:u.nBars }, (_, b) => {
-        const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        const shape = [0,2,4,6,4,2,0,2].map(x => g + x);
-        return layBar(u.B, Array.from({ length:u.B }, (_, i) => i), shape.slice(0, u.B)); }); } },
-  { id:"scaleUp", name:"Scale run ↑",
-    desc:"A stepwise climb up the scale from your start note, running straight through the whole section.",
-    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0;
-      return Array.from({ length:u.nBars }, () =>
-        layBar(u.B, Q, Q.map(() => u.start + n++))); } },
-  { id:"scaleDown", name:"Scale run ↓",
-    desc:"A stepwise descent from your start note down the scale, running through the whole section.",
-    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0;
-      return Array.from({ length:u.nBars }, () =>
-        layBar(u.B, Q, Q.map(() => u.start - n++))); } },
-  { id:"wave", name:"Wave (up-and-down contour)",
-    desc:"A smooth arch that rises a few steps then falls back, over and over — an easy, singable contour.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const tri = [0,1,2,3,2,1]; let n = 0;
-      return Array.from({ length:u.nBars }, () =>
-        layBar(u.B, Q, Q.map(() => u.start + tri[n++ % tri.length]))); } },
-  { id:"neighbor", name:"Neighbour tones",
-    desc:"Decorates your start note with its upper and lower neighbours — note, step up, note, step down.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,0,-1]; let n = 0;
-      return Array.from({ length:u.nBars }, () =>
-        layBar(u.B, Q, Q.map(() => u.start + fig[n++ % fig.length]))); } },
-  { id:"pedal", name:"Pedal tone (repeated note)",
-    desc:"Repeats your start note on every beat — a drone / chant to build tension against the moving chords.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start))); } },
-  { id:"callResp", name:"Call & response",
-    desc:"A rising question in one bar answered by a falling reply in the next — the two-bar conversation that anchors most tunes.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) =>
-        b % 2 === 0 ? layBar(u.B, Q, [0,1,2,3].map(x => u.start + x))
-                    : layBar(u.B, Q, [2,1,0,0].map(x => u.start + x))); } },
-  { id:"aa", name:"AA — repeat the motif",
-    desc:"States one short motif and repeats it in every bar. The most direct way to make a line stick.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, A.map(x => u.start + x))); } },
-  { id:"ab", name:"AB — alternating motifs",
-    desc:"Alternates a low motif (A) with a higher contrasting one (B), bar by bar — statement and counter-statement.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0], B = [4,2,3,4];
-      return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, (b % 2 === 0 ? A : B).map(x => u.start + x))); } },
-  { id:"aaba", name:"AABA — motif with a middle turn",
-    desc:"Motif A three times with a contrasting B in the third bar — the classic 32-bar sentence in miniature.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0], B = [4,3,2,4];
-      return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, (b % 4 === 2 ? B : A).map(x => u.start + x))); } },
-  { id:"seqUp", name:"Ascending sequence",
-    desc:"Takes one three-note figure and steps it up the scale a degree at a time each bar — builds lift and momentum.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,2];
-      return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, fig.map(x => u.start + x + b))); } },
-  { id:"seqDown", name:"Descending sequence",
-    desc:"A three-note figure stepped down the scale each bar — an easing, settling motion toward resolution.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,-1,-2];
-      return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, fig.map(x => u.start + x - b))); } },
-  { id:"leaps", name:"Leaping (zig-zag)",
-    desc:"Zig-zags between your start note and a note a fifth above — wide, angular intervals for a bolder hook.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,4,0,4];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
-  { id:"qa", name:"Question & answer (resolves to tonic)",
-    desc:"An antecedent phrase that rises and hangs, then a consequent that comes to rest on the tonic — a fully closed two-bar sentence.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) =>
-        b % 2 === 0 ? layBar(u.B, Q, [u.start, u.start+1, u.start+2, u.start+2])
-                    : layBar(u.B, Q, [u.start+1, u.start-1, u.start, 0])); } },
-  { id:"archTwo", name:"Two-bar arch",
-    desc:"Rises across the first bar and falls back across the second — a broad, singable two-bar arch.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, (b % 2 === 0 ? [0,1,2,3] : [3,2,1,0]).map(x => u.start + x))); } },
-  { id:"zigTight", name:"Tight zig-zag",
-    desc:"Steps up and dips back on every beat — a busy, chattering close-interval line.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,0,2];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
-  { id:"thirds", name:"Skipping thirds",
-    desc:"Leaps up a third then steps back down, walking the line upward in gentle skips.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,1,3];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
-  { id:"gapfill", name:"Leap & fill",
-    desc:"Jumps up to a high note then fills the gap with a stepwise descent — a classic melodic shape.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [4,3,2,1];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
-  { id:"penta", name:"Pentatonic hook",
-    desc:"Stays on the five pentatonic degrees — the notes that sound good over anything — for a foolproof hook.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const pent = [0,2,4,5,4,2,1,0]; let n = 0;
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + pent[n++ % pent.length]))); } },
-  { id:"hook", name:"High-to-low hook",
-    desc:"Opens high and tumbles down to the tonic — an instantly memorable pop-hook shape.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [4,4,2,0];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
-  { id:"pairs", name:"Repeated pairs",
-    desc:"Says each note twice before moving on — a stuttering, insistent way to drill a hook in.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,0,2,2];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
-  { id:"turn", name:"Turn (ornament)",
-    desc:"Circles the start note — up, home, down, home — the ornamental 'turn' from classical melody.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [1,0,-1,0];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
-  { id:"fanfare", name:"Fanfare (chord leaps)",
-    desc:"Bugle-call leaps around each bar's chord — root, fifth, third, fifth — bold and brassy.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) => {
-        const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g, g+4, g+2, g+4]); }); } },
-  { id:"chordDrop", name:"Chord climb, scale fall",
-    desc:"Climbs the bar's chord tones then eases back down the scale — outlines the harmony, then smooths it over.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) => {
-        const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g, g+2, g+4, g+3]); }); } },
-  { id:"bluesy", name:"Bluesy lick",
-    desc:"Curls around the third and fourth for a lazy, vocal blues inflection.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,3,2];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
-  { id:"offbeat", name:"Off-beat syncopation",
-    desc:"Puts the notes on the and-of-each-beat instead of the beat — a syncopated push that pulls against the chords.",
-    gen(u){ const off = Array.from({ length:u.B }, (_, i) => i).filter(i => i % 2 === 1); const fig = [0,1,2,3];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, off, fig.map(x => u.start + x))); } },
-  { id:"riff8", name:"Eighth-note riff",
-    desc:"A driving eighth-note riff that repeats every bar — motoric and hooky.",
-    gen(u){ const cols = Array.from({ length:u.B }, (_, i) => i); const fig = [0,0,2,0,3,2,1,0];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, cols, cols.map((_, i) => u.start + fig[i % fig.length]))); } },
-  { id:"sparse", name:"Sparse (lots of space)",
-    desc:"Just two notes a bar — a call on beat one, a reply halfway through. Leaves room for the groove to breathe.",
-    gen(u){ const half = Math.floor(u.B / 2);
-      return Array.from({ length:u.nBars }, (_, b) => {
-        const bar = Array.from({ length:u.B }, () => []);
-        bar[0] = [wrap7(u.start)]; bar[half] = [wrap7(u.start + (b % 2 ? 2 : 1))]; return bar; }); } },
-  { id:"pickup", name:"Pickup + long note",
-    desc:"A quick two-note pickup into a note that rings for the rest of the bar — plenty of space to breathe.",
-    gen(u){ return Array.from({ length:u.nBars }, () => {
-        const bar = Array.from({ length:u.B }, () => []);
-        bar[0] = [wrap7(u.start)]; if (u.B > 1) bar[1] = [wrap7(u.start+1)]; if (u.B > 2) bar[2] = [wrap7(u.start+2)];
-        return bar; }); } },
-  { id:"mirror", name:"Rise then mirror",
-    desc:"States a rising shape, then answers it upside-down — the tune folded back on itself.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, (b % 2 === 0 ? [0,1,2,3] : [0,-1,-2,-3]).map(x => u.start + x))); } },
-  { id:"cascade", name:"Cascade down",
-    desc:"A stepwise tumble that restarts a little lower each bar — a long, settling cascade toward home.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) => layBar(u.B, Q, [3,2,1,0].map(x => u.start + x - b))); } },
-  { id:"seq4", name:"Four-bar climb",
-    desc:"A short figure nudged up a step every bar — a long build that keeps rising across four bars.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,1];
-      return Array.from({ length:u.nBars }, (_, b) => layBar(u.B, Q, fig.map(x => u.start + x + (b % 4)))); } },
-  { id:"qq", name:"Two questions, one answer",
-    desc:"Two rising, unresolved phrases then a falling reply that finally lands — a three-part sentence.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) =>
-        b % 3 === 2 ? layBar(u.B, Q, [2,1,0,0].map(x => u.start + x))
-                    : layBar(u.B, Q, [0,1,2,2].map(x => u.start + x))); } },
-  { id:"climb", name:"Climb to a peak",
-    desc:"Rises steadily across the whole section to a high point — one long crescendo of pitch.",
-    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0; const total = Math.max(1, u.nBars * Q.length - 1);
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + Math.round((n++ / total) * 6)))); } },
-  { id:"drone5", name:"Fifth pedal",
-    desc:"Holds the fifth of the key as a bright high drone on every beat — tension over the moving chords.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + 4))); } },
-  { id:"waltzArp", name:"Waltz lilt",
-    desc:"Three notes a bar lilting up the chord — made for 3/4 and 6/8, but lovely anywhere.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) => {
-        const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g, g+2, g+4]); }); } },
-];
-
-/* ===== melodic narratives =====
-   A melody pattern shapes one section. A *narrative* is a single melodic idea told across the
-   WHOLE song: it writes every section's grid in one go, deciding each section's register, density
-   and contour from what that section IS (verse / chorus / bridge …), which pass of it this is, and
-   where it sits in the running order. That's the difference between a tune and a shape that goes
-   somewhere — the arch of a ballad, the withheld top note, the motif that climbs a step each time.
-
-   Each narrative's `gen(u)` returns one section's bars (same format as MELODY_PATTERNS). Context:
-     u.nBars / u.B      — bars in this section, eighth columns per bar
-     u.nd               — scale degrees available (the grid is one octave: 0 = tonic … nd-1)
-     u.chordDegs        — per-bar diatonic degree of the bar's chord root (null if chromatic)
-     u.role             — section letter: V verse, C chorus, B bridge, P pre-chorus, I intro,
-                          S solo, R refrain, T tag, U build, D drop, K break, O outro, L loop
-     u.pass / u.passes  — which pass of this role (0-based) out of how many
-     u.idx / u.total    — position in the running order; u.frac — 0 at the top, 1 at the end   */
-
-const clampDeg = (d, nd) => Math.max(0, Math.min(nd - 1, Math.round(d)));
-// where notes want to sit in a bar, most-wanted first: downbeat, half-bar, the other beats, off-beats
-const colPrefs = (B, sub = 2) => {
-  const beats = qbeats(B, sub), half = Math.floor(B / 2), offs = [];
-  // offbeats, coarsest first: the half-beat before the sixteenth subdivisions, so a melody
-  // fills the strong positions before it starts syncopating
-  for (let step = sub / 2; step >= 1; step /= 2)
-    for (let i = step; i < B; i += sub) if (Number.isInteger(i)) offs.push(i);
-  const order = B % (sub * 2) === 0 ? [0, half, ...beats, ...offs] : [0, ...beats, half, ...offs];
-  return [...new Set(order)].filter(c => c >= 0 && c < B);
-};
-// n notes in a bar, spread over the strongest available positions
-const nCols = (B, n, sub = 2) => colPrefs(B, sub).slice(0, Math.max(1, Math.min(n, B))).sort((a, b) => a - b);
-// notes per bar by section role — choruses sing out, verses sit back, intros and outros breathe
-const ROLE_N = { I:2, V:3, P:3, C:4, B:2, S:4, R:4, T:3, U:3, D:4, K:2, O:2, A:3, H:3, L:3 };
-const roleN = (role, d = 3) => ROLE_N[role] || d;
-// how high in the octave a section sits: 0 = bottom, 1 = top. The single biggest lever a narrative
-// has — pop's "big chorus" is usually just the same notes sung higher.
-const ROLE_LIFT = { I:0.1, V:0.15, P:0.45, C:0.75, B:0.5, S:0.6, R:0.7, T:0.5, U:0.55, D:0.85,
-  K:0.2, O:0.1, A:0.35, H:0.4, L:0.35 };
-const roleLift = (role, d = 0.35) => (ROLE_LIFT[role] != null ? ROLE_LIFT[role] : d);
-// a section's register window [lo, hi]: `width` (0–1) of the octave, floated by the role's lift
-const winFor = (u, width) => {
-  const span = Math.max(1, Math.min(u.nd - 1, Math.round((u.nd - 1) * width)));
-  const lo = Math.round(roleLift(u.role) * (u.nd - 1 - span));
-  return [lo, lo + span];
-};
-// nearest chord tone to a degree — locks a shaped line onto the harmony under it
-const chordSnap = (deg, cd, nd) => {
-  if (cd == null) return deg;
-  let best = deg, bd = Infinity;
-  for (const t of [cd, cd + 2, cd + 4]) {
-    const x = ((t % nd) + nd) % nd;
-    if (Math.abs(x - deg) < bd) { bd = Math.abs(x - deg); best = x; }
-  }
-  return best;
-};
-// walk a section slot by slot. `colsOf(bar)` picks that bar's columns; `degAt` returns the degree
-// for each slot from { b bar, i note-in-bar, n notes-in-bar, c column, g slot number,
-// t 0→1 through the section, cd the bar's chord degree }.
-const narBars = (u, colsOf, degAt) => {
-  const per = Array.from({ length:u.nBars }, (_, b) => colsOf(b));
-  const N = per.reduce((n, a) => n + a.length, 0) || 1;
-  let g = 0;
-  return per.map((cols, b) => {
-    const bar = Array.from({ length:u.B }, () => []);
-    cols.forEach((c, i) => {
-      const d = degAt({ b, i, n:cols.length, c, g, t: N > 1 ? g / (N - 1) : 0, cd:u.chordDegs[b] });
-      g++;
-      if (d != null) bar[c] = [clampDeg(d, u.nd)];
-    });
-    return bar;
-  });
-};
-const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
-
-const NARRATIVES = [
- { id:"arch", name:"Arch — rise and fall",
-   tip:"Every section is one arch: the line climbs to a peak halfway through and settles back down where it started. The oldest singable shape there is — it breathes like a spoken sentence, and it's why a ballad verse feels complete without a chorus.",
-   refs:"Someone Like You (verse) · Yesterday · Hallelujah",
-   gen(u){ const [lo, hi] = winFor(u, 0.6);
-     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub),
-       s => lo + (hi - lo) * Math.sin(Math.PI * s.t)); } },
-
- { id:"archSong", name:"Song-length arch",
-   tip:"One arch across the whole running order instead of one per phrase: the register creeps up to the middle of the song and eases back down to the outro. Each section stays simple — the story is the long climb and the long fall.",
-   refs:"Bohemian Rhapsody · Stairway to Heaven · A Day in the Life",
-   gen(u){ const lo = Math.round(Math.sin(Math.PI * u.frac) * (u.nd - 3)), hi = lo + 2;
-     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub),
-       s => lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * s.t))); } },
-
- { id:"terraced", name:"Terraced — a step higher each time",
-   tip:"States a short motif, then repeats it a step higher, bar after bar. The most reliable way to build a bridge or a final chorus: nothing changes except the height, so the lift is felt rather than noticed.",
-   refs:"Where the Streets Have No Name · Sigur Rós builds · gospel vamps",
-   gen(u){ const [lo, hi] = winFor(u, 0.55), fig = [0, 2, 1];
-     return narBars(u, () => nCols(u.B, Math.max(3, roleN(u.role)), u.sub),
-       s => lo + fig[s.i % fig.length] + (s.b % Math.max(1, hi - lo))); } },
-
- { id:"expand", name:"Range expansion at the hook",
-   tip:"Verses stay inside two or three notes; the chorus opens the whole octave and leaps to the top. The commonest trick in pop — the hook feels enormous because everything around it was deliberately made small.",
-   refs:"Where the Streets Have No Name · Someone Like You (chorus) · Rolling in the Deep",
-   gen(u){ const top = u.nd - 1;
-     if (!isHook(u.role)) { const fig = [0, 1, 0, -1];        // narrow noodle, low in the octave
-       return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => 1 + fig[s.g % fig.length]); }
-     return narBars(u, () => nCols(u.B, 4, u.sub),                   // leap to the top, then fill back down
-       s => s.i === 0 ? (s.b % 2 ? 2 : 0) : top - (s.i - 1)); } },
-
- { id:"lament", name:"Descending lament",
-   tip:"A stepwise fall, phrase after phrase, each one starting near the top and sinking toward the tonic. Grief music since the Baroque lament bass, and still the default shape for a sad ballad — especially over a descending bass line.",
-   refs:"Dido's Lament · Stay With Me · Hurt",
-   gen(u){ const [lo, hi] = winFor(u, 0.85);
-     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => hi - (s.g % (hi - lo + 1))); } },
-
- { id:"ostinato", name:"Ostinato — one repeating cell",
-   tip:"The melody IS a short cell, repeated unchanged, with the harmony moving underneath doing all the work. Textural rather than narrative — it's the reason a four-chord loop can carry a whole track without the tune ever developing.",
-   refs:"Shape of You · Clocks · most house and minimalism",
-   gen(u){ const [lo] = winFor(u, 0.5), cell = [0, 2, 4, 2, 0, 2, 4, 4];
-     const cols = Array.from({ length:u.B }, (_, i) => i).filter(i => i % 2 === 0 || i % 4 === 1);
-     return narBars(u, () => cols, s => lo + cell[s.i % cell.length]); } },
-
- { id:"climb", name:"Long climb across the song",
-   tip:"Each section sits a little higher than the one before, so the last pass is the highest thing in the song without a single new chord. Register standing in for a key change — cheaper, and it never sounds like a gimmick.",
-   refs:"Hey Jude · Champagne Supernova · Chandelier",
-   gen(u){ const base = Math.round(u.frac * (u.nd - 3)), fig = [0, 2, 1, 2];
-     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => base + fig[s.i % fig.length]); } },
-
- { id:"peak", name:"Withheld peak — save the top note",
-   tip:"Keeps the whole song inside a low, narrow band and spends the top of the octave exactly once, in the final section. The high note lands because you'd never heard it before — restraint is the whole technique.",
-   refs:"Landslide · I Will Always Love You · Wuthering Heights",
-   gen(u){ const last = u.idx >= u.total - 1;
-     if (!last) { const fig = [0, 1, 2, 1];
-       return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => fig[s.g % fig.length]); }
-     return narBars(u, () => nCols(u.B, 4, u.sub), s => (u.nd - 1) - (s.g % 4)); } },
-
- { id:"period", name:"Question & answer phrases",
-   tip:"Two-bar sentences all the way through: the first bar rises and hangs unresolved, the second falls and lands home on the tonic. Classical period form, and the backbone of nearly every tune people can sing back at you.",
-   refs:"Twinkle Twinkle · Let It Be · Don't Look Back in Anger",
-   gen(u){ const [lo, hi] = winFor(u, 0.7);
-     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => {
-       const x = s.n > 1 ? s.i / (s.n - 1) : 0;
-       if (s.b % 2 === 0) return lo + 1 + (hi - lo - 1) * x;         // antecedent — rises, hangs
-       return s.i === s.n - 1 ? 0 : hi - (hi - lo) * x; }); } },     // consequent — falls home
-
- { id:"callResp", name:"Call & response",
-   tip:"A phrase up high answered by a sparser, lower reply in the next bar — the preacher-and-congregation shape that runs through blues, gospel and soul. Keeping the answer thin is what makes it sound like a second voice.",
-   refs:"I Got You (I Feel Good) · Hound Dog · most 12-bar blues",
-   gen(u){ const [lo, hi] = winFor(u, 0.8);
-     return narBars(u, b => nCols(u.B, b % 2 ? 2 : roleN(u.role, 4), u.sub),
-       s => s.b % 2 ? lo + (s.n - 1 - s.i) : hi - s.i); } },
-
- { id:"germ", name:"Motif development (one germ cell)",
-   tip:"States a three-note cell at the top of the song and then works it — the same shape transposed, inverted, stretched, and finally returned. Nothing is new and everything is related: the through-composed way to hold a long song together.",
-   refs:"Beethoven's 5th · Norwegian Wood · Paranoid Android",
-   gen(u){ const v = u.idx % 4;                       // 0 state · 1 transpose · 2 invert · 3 stretch
-     const shape = v === 2 ? [0, -2, -1] : [0, 2, 1];
-     const base = v === 1 ? 2 : v === 2 ? 3 : v === 3 ? 1 : 0;
-     const lift = Math.round(roleLift(u.role) * (u.nd - 4));
-     return narBars(u, () => nCols(u.B, v === 3 ? 2 : 3, u.sub),
-       s => lift + base + shape[(v === 3 ? s.g : s.i) % shape.length] + (s.b % 2 ? 1 : 0)); } },
-
- { id:"pendulum", name:"Widening pendulum",
-   tip:"The line rocks between two notes for the whole song, but the gap between them opens as it grows: a second in the verse, a third by the pre-chorus, a fifth in the last chorus. Motion without actually going anywhere.",
-   refs:"Seven Nation Army · Billie Jean · Take Me Out",
-   gen(u){ const gap = Math.max(1, Math.min(u.nd - 2,
-       1 + Math.round(u.frac * 2 + roleLift(u.role) * 3)));
-     const lo = Math.max(0, Math.min(u.nd - 1 - gap, 1));
-     return narBars(u, () => nCols(u.B, roleN(u.role, 4), u.sub), s => s.g % 2 ? lo + gap : lo); } },
-
- { id:"chant", name:"Chant, then release",
-   tip:"Verses sit on one repeated reciting note — speech on a pitch, with a small drop at the end of each phrase — so the chorus's first real melodic move sounds like the song finally opening its mouth.",
-   refs:"Royals · Subterranean Homesick Blues · psalm tones",
-   gen(u){ if (!isHook(u.role) && u.role !== "T") {
-       const rec = 2;
-       return narBars(u, () => nCols(u.B, Math.max(3, roleN(u.role)), u.sub),
-         s => s.i === s.n - 1 && s.b % 2 ? rec - 1 : rec); }
-     const [lo, hi] = winFor(u, 0.9);
-     return narBars(u, () => nCols(u.B, 4, u.sub), s => lo + (hi - lo) * Math.sin(Math.PI * s.t)); } },
-
- { id:"wave", name:"Waves — long undulation",
-   tip:"A continuous rise and fall that never quite settles, with a longer wavelength in the choruses than the verses: restless underneath the words, expansive under the hook.",
-   refs:"Wichita Lineman · Nothing Compares 2 U · Bittersweet Symphony",
-   gen(u){ const [lo, hi] = winFor(u, 0.75), cyc = isHook(u.role) ? 1 : 2;
-     return narBars(u, () => nCols(u.B, roleN(u.role, 4), u.sub),
-       s => lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * cyc * s.t))); } },
-
- { id:"cascade", name:"Cascading sequence",
-   tip:"One falling figure, restated a step lower every bar — a staircase down. The mirror of the terraced build; spend it on a section that has to lose altitude, like a post-chorus or the way out of a bridge.",
-   refs:"Ain't No Sunshine · While My Guitar Gently Weeps · Für Elise",
-   gen(u){ const [lo, hi] = winFor(u, 0.85), fig = [0, -1, -2];
-     return narBars(u, () => nCols(u.B, 3, u.sub),
-       s => hi - (s.b % Math.max(1, hi - lo)) + fig[s.i % fig.length]); } },
-
- { id:"gapfill", name:"Leap, then fill the gap",
-   tip:"Every phrase jumps a wide interval and then walks stepwise back through the space it just skipped. The shape ears find most satisfying, and the reason a big leap never sounds arbitrary when it's answered.",
-   refs:"Over the Rainbow · Take On Me · Superman theme",
-   gen(u){ const [lo, hi] = winFor(u, 0.95);
-     return narBars(u, () => nCols(u.B, roleN(u.role, 4), u.sub),
-       s => s.i === 0 ? lo : hi - (s.i - 1)); } },
-
- { id:"converse", name:"Speech contour",
-   tip:"Narrow, conversational phrases that drop at the end like a spoken sentence, with air between them. Lets the words lead — the natural home for a lyric-heavy verse, and it makes any sung chorus after it feel like singing.",
-   refs:"Tangled Up in Blue · Tom's Diner · Common People",
-   gen(u){ const base = 2 + Math.round(roleLift(u.role) * 2);
-     return narBars(u, b => nCols(u.B, b % 2 ? 2 : 4, u.sub),
-       s => s.i === s.n - 1 ? base - (s.b % 2 ? 2 : 1) : base + (s.i % 2)); } },
-
- { id:"chordLock", name:"Chord-locked hook",
-   tip:"The same rhythmic cell in every bar, but every note snapped to the chord underneath: the tune only moves because the harmony does. Made for a progression with strong bass movement — the melody spells the changes out.",
-   refs:"Don't Stop Believin' · Let It Be · Dreams",
-   gen(u){ const cell = [0, 2, 1, 2], lift = Math.round(roleLift(u.role) * 3);
-     return narBars(u, () => nCols(u.B, roleN(u.role, 4), u.sub),
-       s => chordSnap(clampDeg(cell[s.i % cell.length] + lift, u.nd), s.cd, u.nd)); } },
-
- { id:"suspend", name:"Suspension chain",
-   tip:"Lands a step above the chord on every downbeat and resolves it down onto a chord tone — then the next chord turns that resolution into a clash again. The ache that keeps a slow song moving when nothing else is happening.",
-   refs:"Bridge Over Troubled Water · Nothing Compares 2 U · Nuvole Bianche",
-   gen(u){ return narBars(u, () => nCols(u.B, 2, u.sub), s => {
-       const tone = chordSnap(3 + Math.round(roleLift(u.role) * 2), s.cd, u.nd);
-       return s.i === 0 ? tone + 1 : tone; }); } },
-];
 
 /* ===== app ===== */
 export default function ProgressionWheel() {
@@ -2711,8 +885,12 @@ export default function ProgressionWheel() {
       const src = (saved && saved.layers && saved.layers.length) ? saved.layers : [{ bars: null, instr: null }];
       const layers = src.map((ly, li) => {
         const bars = adaptBars(saved && saved.ids, ly && ly.bars, ids, samePid);
-        // part 0 always exists; the rest keep whatever bars they were given
-        return { bars, flat: bars.flat(), instr: (ly && ly.instr) || null };
+        // part 0 always exists; the rest keep whatever bars they were given. Register and level
+        // fall back to the defaults for that part index, so older sections gain sane values.
+        return { bars, flat: bars.flat(), instr: (ly && ly.instr) || null,
+          oct: (ly && ly.oct) != null ? ly.oct : (LAYER_DEFAULT_OCT[li] || 0),
+          vol: (ly && ly.vol) != null ? ly.vol : (LAYER_DEFAULT_VOL[li] != null ? LAYER_DEFAULT_VOL[li] : 1),
+          mute: !!(ly && ly.mute), solo: !!(ly && ly.solo) };
       });
       out[d.key] = { ids, layers };
     });
@@ -2724,14 +902,14 @@ export default function ProgressionWheel() {
     const melBase = (tonic > 6 ? 60 : 72) + tonic;
     const loopSec = secMelos.L1 || Object.values(secMelos)[0];
     // pull every note of one layer out independently by its own onset + held length
-    const extract = cols => {
+    const extract = (cols, oct = 0) => {
       if (!cols) return [];
       const on = (i, d) => (cols[i] || []).includes(d);
       const out = [];
       for (let i = 0; i < meloBeats; i++) for (const d of (cols[i] || [])) {
         if (i > 0 && on(i - 1, d)) continue;                    // only at the note's onset
         let run = 1; while (i + run < meloBeats && on(i + run, d)) run++;
-        out.push({ on: i, dur: run, midi: melBase + scaleSemis[d] });
+        out.push({ on: i, dur: run, midi: melBase + 12 * oct + scaleSemis[d] });
       }
       return out;
     };
@@ -2739,7 +917,9 @@ export default function ProgressionWheel() {
       const secm = b.inst != null ? secMelos[b.inst] : loopSec;
       const idx = b.inst != null ? b.mb : bi % ((secm && secm.layers[0] && secm.layers[0].bars.length) || 1);
       // every melody part lands on the same stave, inked by the part it belongs to
-      const per = ((secm && secm.layers) || []).map(ly => extract(ly.bars && ly.bars[idx]));
+      // a muted part is left off the stave, as it is out of the sound
+      const per = ((secm && secm.layers) || []).map(ly =>
+        ly.mute ? [] : extract(ly.bars && ly.bars[idx], ly.oct || 0));
       // notes that share an onset AND length become one clean chord; differing rhythms stay separate
       const groups = {};
       per.forEach((evs, li) => evs.forEach(e => {
@@ -2774,43 +954,53 @@ export default function ProgressionWheel() {
   const putSec = (key, patch) => {
     const secs = melos.progId === progId ? melos.secs : {};
     const sec = secMelos[key], prev = secs[key] || {};
-    const base = sec ? sec.layers.map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr }))
+    const base = sec ? sec.layers.map(l => ({ bars: dupBars(l.bars), instr: l.instr,
+                         oct: l.oct || 0, vol: l.vol == null ? 1 : l.vol, mute: !!l.mute, solo: !!l.solo }))
                      : (prev.layers || [{ bars: [], instr: null }]);
     setMelos({ progId, secs: { ...secs, [key]: {
       ids: sec ? sec.ids : prev.ids,
       layers: "layers" in patch ? patch.layers : base,
     } } });
   };
+  // copy a part, keeping every field. Anything that rebuilds the list goes through this, so a
+  // part's register, level, mute and solo survive edits that only meant to touch its notes.
+  const cloneLayer = ly => ({ bars: dupBars(ly.bars), instr: ly.instr,
+    oct: ly.oct || 0, vol: ly.vol == null ? 1 : ly.vol, mute: !!ly.mute, solo: !!ly.solo });
   // replace one part's bars (the shape almost every melody edit takes)
   const putLayer = (key, L, bars) => {
     const sec = secMelos[key]; if (!sec) return;
-    putSec(key, { layers: sec.layers.map((ly, i) =>
-      i === L ? { bars, instr: ly.instr } : { bars: dupBars(ly.bars), instr: ly.instr }) });
+    putSec(key, { layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), bars } : cloneLayer(ly)) });
+  };
+  // set one field on one part (register, level, mute, solo)
+  const setLayerProp = (key, L, patch) => {
+    const sec = secMelos[key]; if (!sec) return;
+    putSec(key, { layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), ...patch } : cloneLayer(ly)) });
   };
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
     if (!from) return;
     setMelos({ progId, secs: { ...melos.secs, [toKey]: { ids: [...from.ids],
-      layers: (from.layers || []).map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })) } } });
+      layers: (from.layers || []).map(cloneLayer) } } });
   };
   const addLayer = key => {
     const sec = secMelos[key]; if (!sec || nLayers(sec) >= MAX_LAYERS) return;
     const at = nLayers(sec);
-    putSec(key, { layers: [...sec.layers.map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })),
-      { bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: LAYER_DEFAULT_INSTR[at] || null }] });
+    putSec(key, { layers: [...sec.layers.map(cloneLayer),
+      { bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: LAYER_DEFAULT_INSTR[at] || null,
+        oct: LAYER_DEFAULT_OCT[at] || 0, vol: LAYER_DEFAULT_VOL[at] == null ? 1 : LAYER_DEFAULT_VOL[at],
+        mute: false, solo: false }] });
     setMelLayer(at);
   };
   const removeLayer = (key, L) => {
     const sec = secMelos[key]; if (!sec || L === 0 || !layerOf(sec, L)) return;   // part A is the section
-    putSec(key, { layers: sec.layers.filter((_, i) => i !== L)
-      .map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })) });
+    putSec(key, { layers: sec.layers.filter((_, i) => i !== L).map(cloneLayer) });
     setMelLayer(l => (l >= L ? Math.max(0, l - 1) : l));
     if (melSel.key === key && melSel.layer >= L) setMelSel({ key:"", layer:0, notes:{} });
   };
   const setSecInstr = (key, L, val) => {
     const sec = secMelos[key]; if (!sec) return;
     putSec(key, { layers: sec.layers.map((ly, i) =>
-      ({ bars: dupBars(ly.bars), instr: i === L ? (val || null) : ly.instr })) });
+      i === L ? { ...cloneLayer(ly), instr: val || null } : cloneLayer(ly)) });
   };
   meloRef.current = { bySym: secMelos, scale: scaleSemis, tonic, melInstr, legato };
   const tapMelo = (sym, c, deg, L) => {
@@ -3099,7 +1289,7 @@ export default function ProgressionWheel() {
     const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
     const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
     if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, partGain: [], sampler, lastInstr: instrRef.current, lastLead: leadKey,
       leadLoaded: new Set(leadKey ? [leadKey] : []),
       step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     m.timer = setInterval(() => {
@@ -3195,9 +1385,14 @@ export default function ProgressionWheel() {
           if (sec && sec.layers.some(ly => ly.flat.length)) {
             const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
             // play one melody layer's column with its own voice (falling back to the global lead)
-            const playLayer = (flat, voice) => {
-              if (!flat || !flat.length || melStep == null) return;
+            const playLayer = (flat, voice, li, oct, gain) => {
+              if (!flat || !flat.length || melStep == null || !gain) return;
               const N = flat.length, col = (mb * MB + melStep) % N;
+              // each part plays through its own gain into the music bus, so level, mute and solo
+              // apply to the part rather than to individual notes
+              let dest = m.partGain[li];
+              if (!dest) { dest = m.partGain[li] = m.ctx.createGain(); dest.connect(m.music); }
+              dest.gain.setValueAtTime(gain, t);
               const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
               if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
               (flat[col] || []).forEach(deg => {
@@ -3206,20 +1401,22 @@ export default function ProgressionWheel() {
                 if (held && col > 0 && prev.includes(deg)) return; // still ringing from last slot
                 let run = 1;
                 if (held) while (col + run < N && (flat[col + run] || []).includes(deg)) run++;
-                const midi = base + mel.scale[deg];
+                const midi = base + 12 * (oct || 0) + mel.scale[deg];
                 // `run` counts melody columns, so a note's length has to be measured in columns
                 // — on a sixteenth grid a one-column note is a sixteenth, not an eighth
                 const colDur = beat / (subRef.current || 2);
                 const dur = held ? colDur * (run + 0.35) : colDur * 0.92;
-                const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, m.music);
+                const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, dest);
                 if (!sampled) {
                   // GM instrument with no loaded sample → its family's synth voice; else the synth spec itself
                   const kind = isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice;
-                  leadNote(m.ctx, t, midi, dur, kind, held, m.music);
+                  leadNote(m.ctx, t, midi, dur, kind, held, dest);
                 }
               });
             };
-            sec.layers.forEach(ly => playLayer(ly.flat, ly.instr || mel.melInstr));
+            const anySolo = sec.layers.some(ly => ly.solo);
+            sec.layers.forEach((ly, li) =>
+              playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo)));
             const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
             if (melStep != null) {
               const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
@@ -3280,9 +1477,10 @@ export default function ProgressionWheel() {
         const bi2 = b.inst != null ? b.mb : bi % nb;
         for (let p = 0; p < nParts; p++) {
           const ly = secm && secm.layers[p];
-          const barCols = ly && ly.bars[bi2];
+          const barCols = ly && !ly.mute ? ly.bars[bi2] : null;   // a muted part exports silent
+          const oct = (ly && ly.oct) || 0;
           for (let c = 0; c < meloBeats; c++)
-            partCols[p].push(((barCols && barCols[c]) || []).map(d => melBase + scaleSemis[d]));
+            partCols[p].push(((barCols && barCols[c]) || []).map(d => melBase + 12 * oct + scaleSemis[d]));
         }
       });
       // per-bar drum pattern: a section's own kit if it set one, else the global choice
@@ -3616,6 +1814,11 @@ export default function ProgressionWheel() {
         /* a cell carrying two parts is split diagonally between their colours, inline */
         .mcell.colnow { border-color:#EAE2CC; }
         .mcell.colnow:not(.on) { background:#2A3442; }
+        .octval { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#EDE7DA; min-width:22px; text-align:center; font-variant-numeric:tabular-nums; }
+        .lvl { width:104px; accent-color:#54B79D; }
+        .mini.mixon { background:#54B79D; border-color:#54B79D; color:#0c1116; }
+        .mini:disabled { opacity:.35; cursor:default; }
+        .partmix { padding:7px 9px; background:#131924; border:1px solid #222A38; border-radius:8px; }
         .lybtn { font-size:11px; padding:2px 9px; border-radius:999px; border:1px solid #2A3442; background:#161C26; color:#8B94A3; cursor:pointer; }
         .mcell.b0 { border-left:2px solid #3A4656; }
         .mcell.bt { border-left:1px solid #2A3442; }
@@ -4412,6 +2615,38 @@ export default function ProgressionWheel() {
                       {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
                         title={"Remove part " + LAYER_NAMES[secL]}>🗑 {LAYER_NAMES[secL]}</button>}
                     </div>
+
+                    {/* the active part's register and level — what turns six voices into an arrangement */}
+                    {(() => {
+                      const ly = layerOf(sec, secL) || {};
+                      const oct = ly.oct || 0, vol = ly.vol == null ? 1 : ly.vol;
+                      const anySolo = sec.layers.some(l => l.solo);
+                      const set = patch => setLayerProp(d.key, secL, patch);
+                      return (
+                        <div className="row partmix" style={{ gap:10, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
+                          <span className="keytag" style={{ margin:0 }}>Octave</span>
+                          <div className="row" style={{ gap:4, alignItems:"center" }}>
+                            <button className="mini" disabled={oct <= LAYER_OCT_MIN}
+                              onClick={() => set({ oct: Math.max(LAYER_OCT_MIN, oct - 1) })}
+                              title="Drop this part an octave">−</button>
+                            <span className="octval">{oct > 0 ? "+" + oct : oct}</span>
+                            <button className="mini" disabled={oct >= LAYER_OCT_MAX}
+                              onClick={() => set({ oct: Math.min(LAYER_OCT_MAX, oct + 1) })}
+                              title="Lift this part an octave">＋</button>
+                          </div>
+                          <span className="keytag" style={{ margin:0 }}>Level</span>
+                          <input className="lvl" type="range" min="0" max="100" value={Math.round(vol * 100)}
+                            onChange={e => set({ vol: +e.target.value / 100 })}
+                            title={"Level of part " + LAYER_NAMES[secL]} />
+                          <span className="octval">{Math.round(vol * 100)}</span>
+                          <button className={"mini" + (ly.mute ? " mixon" : "")} onClick={() => set({ mute: !ly.mute })}
+                            title="Silence this part">{ly.mute ? "muted" : "mute"}</button>
+                          <button className={"mini" + (ly.solo ? " mixon" : "")} onClick={() => set({ solo: !ly.solo })}
+                            title="Hear this part alone">{ly.solo ? "soloed" : "solo"}</button>
+                          {anySolo && !ly.solo && <span className="keytag" style={{ margin:0, opacity:.75 }}>another part is soloed</span>}
+                        </div>
+                      );
+                    })()}
 
                     <div className="seg" style={{ marginBottom:8 }}>
                       <button className={tab === "write" ? "on" : ""}
