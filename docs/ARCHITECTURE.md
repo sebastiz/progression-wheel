@@ -227,6 +227,11 @@ comfortable fret (`tabFret`, distinct string per onset).
 
 ## MIDI
 
+`GM_PROGRAM` maps each soundfont folder key to its General MIDI program number (the keys *are* the
+GM names, so position in the standard 128 list is the program); `SYNTH_PROGRAM` gives the non-GM
+synth voices a nearest equivalent, and `programOf` resolves either. That is what lets an exported
+file name its instruments instead of opening on piano.
+
 `midiBytes()` writes a minimal SMF type-1 file by hand: tempo meta track, a chord track (bass +
 voicing held per bar), and a channel-10 drum track from the drum pattern (`DRUM_MIDI` maps each
 channel letter to its GM percussion note; a machine kit also emits a `KIT_PROGRAM` program change so

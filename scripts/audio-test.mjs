@@ -464,6 +464,83 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`part mix: octaves ${LAYER_DEFAULT_OCT.join(",")} · levels ${LAYER_DEFAULT_VOL.join(",")} · lowest MIDI ${lowest}`);
 }
 
+/* ---- the exported file names, voices and accents its parts ---- */
+{
+  const bars2 = [{ chord: { root: 0, quality: "min" } }, { chord: { root: 5, quality: "maj" } }];
+  // Alternating pitches, so every column is a fresh onset. The same pitch on consecutive columns
+  // is merged into one held note by design, which would leave a single note-on to measure.
+  const cols = () => Array.from({ length: 2 * 4 * 2 }, (_, i) => [60 + (i % 2)]);
+  const parts = [
+    { cols: cols(), program: M.programOf("flute"), gain: 1 },
+    { cols: cols(), program: M.programOf("synth_bass_1"), gain: 0.5 },
+  ];
+  const bytes = M.midiBytes(120, 4, bars2, M.DRUMS.house909.pattern, parts, "909", 2,
+                            M.programOf("acoustic_grand_piano"));
+  // A real MIDI event walker. Scanning raw bytes for 0x9n picks up delta-time and data bytes as if
+  // they were note-ons, which invents velocities above 127 — parse deltas, running status, meta and
+  // sysex properly so what comes out is actually what the file says.
+  const parseTrack = body => {
+    const t = { progs: [], name: "", vels: [] };
+    let q = 0, running = 0;
+    const vlqAt = () => { let v = 0; while (body[q] & 0x80) { v = (v << 7) | (body[q] & 0x7f); q++; } return (v << 7) | body[q++]; };
+    while (q < body.length) {
+      vlqAt();                                        // delta time
+      let st = body[q];
+      if (st & 0x80) { q++; running = st; } else st = running;
+      if (st === 0xff) {
+        const meta = body[q++], len = vlqAt();
+        if (meta === 0x03) t.name = String.fromCharCode(...body.slice(q, q + len));
+        q += len;
+        if (meta === 0x2f) break;
+      } else if (st === 0xf0 || st === 0xf7) { q += vlqAt(); }
+      else {
+        const hi = st & 0xf0;
+        if (hi === 0xc0) { t.progs.push({ ch: st & 0x0f, prog: body[q] }); q += 1; }
+        else if (hi === 0xd0) { q += 1; }
+        else { if (hi === 0x90 && body[q + 1] > 0) t.vels.push(body[q + 1]); q += 2; }
+      }
+    }
+    return t;
+  };
+  let p = 14; const tracks = [];
+  while (p < bytes.length) {
+    const len = (bytes[p+4]<<24)|(bytes[p+5]<<16)|(bytes[p+6]<<8)|bytes[p+7];
+    tracks.push(parseTrack(bytes.slice(p + 8, p + 8 + len)));
+    p += 8 + len;
+  }
+  const chords = tracks[1], drums = tracks[2], melA = tracks[3], melB = tracks[4];
+  if (chords.name !== "Chords") problems.push(`chord track is named "${chords.name}"`);
+  if (!chords.progs.some(x => x.ch === 0 && x.prog === 0)) problems.push("chord track has no program change");
+  if (!drums.progs.some(x => x.ch === 9)) problems.push("drum track lost its kit program");
+  if (!melA || melA.name !== "Part A") problems.push(`first melody track is named "${melA && melA.name}"`);
+  if (!melB || melB.name !== "Part B") problems.push(`second melody track is named "${melB && melB.name}"`);
+  const wantA = M.programOf("flute"), wantB = M.programOf("synth_bass_1");
+  if (!melA.progs.some(x => x.prog === wantA)) problems.push(`part A not voiced as flute (${wantA})`);
+  if (!melB.progs.some(x => x.prog === wantB)) problems.push(`part B not voiced as synth bass (${wantB})`);
+  // each melody part must sit on its own channel, and its program change on that same channel
+  melA.progs.forEach(x => { if (x.ch !== 1) problems.push(`part A program on channel ${x.ch}, want 1`); });
+  melB.progs.forEach(x => { if (x.ch !== 2) problems.push(`part B program on channel ${x.ch}, want 2`); });
+  // velocity must vary with the accent, and part B at half level must sit below part A
+  const spread = Math.max(...melA.vels) - Math.min(...melA.vels);
+  if (spread < 10) problems.push(`melody velocity barely varies (spread ${spread}) — the accent is not exported`);
+  if (!(Math.max(...melB.vels) < Math.max(...melA.vels))) problems.push("part level did not scale exported velocity");
+  const dspread = Math.max(...drums.vels) - Math.min(...drums.vels);
+  if (dspread < 10) problems.push(`drum velocity barely varies (spread ${dspread})`);
+  if ([...melA.vels, ...melB.vels, ...drums.vels].some(v => v < 1 || v > 127)) problems.push("a velocity fell outside 1..127");
+  console.log(`midi voicing: chords=prog ${chords.progs[0].prog}, ${melA.name}=prog ${melA.progs[0].prog} ch${melA.progs[0].ch}, ${melB.name}=prog ${melB.progs[0].prog} ch${melB.progs[0].ch}`);
+  console.log(`midi velocity: melody ${Math.min(...melA.vels)}–${Math.max(...melA.vels)}, half-level part ${Math.min(...melB.vels)}–${Math.max(...melB.vels)}, drums ${Math.min(...drums.vels)}–${Math.max(...drums.vels)}`);
+  // every catalogue instrument must resolve to a real program
+  const keys = M.GM_CATS.flatMap(([, l]) => l.map(([k]) => k));
+  const bad = keys.filter(k => M.GM_PROGRAM[k] == null);
+  if (bad.length) problems.push(`${bad.length} instruments have no GM program: ${bad.slice(0, 4)}`);
+  if (M.GM_NAMES.length !== 128) problems.push(`the GM list has ${M.GM_NAMES.length} names, want 128`);
+  if (new Set(M.GM_NAMES).size !== 128) problems.push("the GM list has duplicate names");
+  const synths = M.LEAD_VOICES.filter(([id]) => !M.isGM(id)).map(([id]) => id);
+  const unmapped = synths.filter(id => M.SYNTH_PROGRAM[id] == null);
+  if (unmapped.length) problems.push(`synth voices with no GM equivalent: ${unmapped.join(", ")}`);
+  console.log(`instruments: ${keys.length} GM keys + ${synths.length} synth voices, all mapped to programs`);
+}
+
 /* ---- the wav writer produces a file a player will actually open ---- */
 {
   const rate = 44100, frames = 1000;

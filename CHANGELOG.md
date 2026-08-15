@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **Exported MIDI now says which instrument each part is.** Parts already landed on their own tracks
+  and channels, but the file never named the sounds, so a DAW opened every track on its default
+  piano and you assigned them by hand. Each melody part now carries a **General MIDI program** taken
+  from its own instrument, the chord track carries the **Sound (chords)** choice, and every track is
+  named — *Chords*, *Drums*, *Part A*, *Part B*… Open the file and the arrangement is already voiced.
+  - **Velocity is exported too.** Notes used to leave at a flat 92 even though playback has accents.
+    The exported velocity now follows the same accent curve you hear, and is scaled by each part's
+    **Level**, so the file opens roughly balanced rather than with everything at full tilt.
+  - The 89 catalogue instruments map to real GM programs, and the built-in synth voices (which
+    aren't GM at all) map to their nearest equivalent, so nothing exports as a silent or wrong patch.
+  Version bumped to 4.45.0.
 - **↓ Export audio — render the song to a .wav.** Beside Export MIDI. MIDI serves people who
   already have a DAW; a wav is the file you can send, post or play in the car. It renders faster
   than real time and uses the *same* audio graph and the same per-tick scheduler as playback, so

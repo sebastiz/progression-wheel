@@ -3,7 +3,7 @@ import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MINOR_NUM, MODES, MODE_IDS, QSUF, SE
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, UNIVERSAL, letterFor } from "./progressions.js";
 import { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
-import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, sfPrefetch, voiceChord } from "./audio.js";
+import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
@@ -1583,8 +1583,19 @@ export default function ProgressionWheel() {
       const anyDrum = bars.some((_, i) => drumForBar(i));
       const used = partCols.map(cols => cols.some(c => c.length));
       const nUsed = used.filter(Boolean).length;
-      const bytes = midiBytes(effBpm, barBeats, bars, drumForBar,
-        partCols.map((cols, p) => used[p] ? cols : null), kit, meloSub);
+      // each part carries its own instrument and level into the file, so a DAW opens the
+      // arrangement voiced and roughly balanced instead of every track landing on piano
+      const partOf = p => {
+        for (const sec of Object.values(secMelos)) { const ly = sec.layers[p]; if (ly) return ly; }
+        return null;
+      };
+      const parts = partCols.map((cols, p) => {
+        if (!used[p]) return null;
+        const ly = partOf(p) || {};
+        return { cols, program: programOf(ly.instr || melInstr),
+          gain: ly.vol == null ? 1 : ly.vol };
+      });
+      const bytes = midiBytes(effBpm, barBeats, bars, drumForBar, parts, kit, meloSub, programOf(instr));
       const url = URL.createObjectURL(new Blob([bytes], { type:"audio/midi" }));
       const a = document.createElement("a");
       a.href = url; a.download = "progression-wheel.mid";
