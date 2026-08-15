@@ -78,6 +78,20 @@ selected below, it plays the **entire written-out song**, showing the current se
 current chord's pill and its landing-note row light up as it plays. All changes (pattern, drums,
 tempo, chord edits) take effect within about a tenth of a second, mid-playback.
 
+### Melody rhythm
+
+A section's **Suggest** tab has two independent choices: the **melody pattern** (the shape — arch,
+arpeggio, question and answer) and the **Rhythm** (where the notes fall and how long each lasts).
+Keeping them separate is the point: the same shape can be square, syncopated or spacious.
+
+Thirteen cells, from *On the beat* through *Long–short*, *Pushed*, *Off the beat*, *Tresillo*,
+*Charleston* and *Gallop* to *One held note* and *Question & space*. Each is written in beats, so it
+works on an eighth or a sixteenth grid and in 3/4 as well as 4/4.
+
+A whole-song **melodic narrative** picks a rhythm per section from its role — intros hold, verses
+converse, pre-choruses push, choruses land squarely, bridges sit off the beat — so one narrative no
+longer writes the same rhythm everywhere.
+
 ### Melody parts
 
 Each section holds up to **six melody parts** (**A**–**F**), each with its own instrument and its

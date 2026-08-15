@@ -198,6 +198,18 @@ follow their chords through inserts/removals/swaps/key changes), positionally on
 progression. Degrees, not pitches, are stored, so melodies transpose with the key and survive mode
 changes.
 
+## Melody rhythm
+
+`RHYTHMS` are cells describing where notes fall in a bar and how long each lasts, in **beats** rather
+than columns — so one cell resolves onto an eighth grid, a sixteenth grid, 4/4 or 3/4. `rhythmSpots`
+snaps a cell onto the current grid, drops onsets that collide or fall past the bar, and clips each
+length so a held note never runs into the next onset. `layBar` fills a note's columns rather than one,
+which is what gives generated lines actual note lengths.
+
+Generators take `u.cols` / `u.lens` instead of computing beat positions themselves, so contour and
+rhythm are independent. Narratives keep their role-based *density* (`roleN`) but take *placement*
+from `ROLE_RHYTHM[role]` via `pickSpread`, so a whole-song write varies section to section.
+
 ## Melody generation
 
 Two data tables, both producing the same thing — bars of scale-degree columns:

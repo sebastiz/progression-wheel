@@ -253,24 +253,56 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       });
     });
   };
-  for (const [B, sub] of [[8, 2], [16, 4]]) {
-    for (const p of M.MELODY_PATTERNS) {
-      gens++;
-      let bars; try { bars = p.gen({ nBars: 4, B, sub, start: 2, chordDegs }); }
-      catch (e) { problems.push(`melody pattern ${p.id} threw at B=${B}: ${e.message}`); continue; }
-      checkBars(`melody ${p.id} @${B}`, bars, B, 4);
-      if (!bars.some(bar => bar.some(c => c.length))) problems.push(`melody ${p.id} @${B}: wrote nothing`);
+  // every contour, on every rhythm cell, at both resolutions — the combination the app can produce
+  for (const [B, sub, beats] of [[8, 2, 4], [16, 4, 4], [6, 2, 3]]) {
+    for (const r of M.RHYTHMS) {
+      const spots = M.rhythmSpots(r.id, B, sub, beats);
+      if (!spots.length) { problems.push(`rhythm ${r.id} resolves to nothing at B=${B}`); continue; }
+      if (spots.some(x => x.c < 0 || x.c >= B)) problems.push(`rhythm ${r.id} @${B}: a column is off the bar`);
+      if (spots.some((x, i) => i && x.c <= spots[i - 1].c)) problems.push(`rhythm ${r.id} @${B}: onsets not ascending`);
+      if (spots.some((x, i) => x.c + x.len > (i + 1 < spots.length ? spots[i + 1].c : B)))
+        problems.push(`rhythm ${r.id} @${B}: a held note runs into the next onset`);
+      const cols = spots.map(x => x.c), lens = spots.map(x => x.len);
+      for (const p of M.MELODY_PATTERNS) {
+        gens++;
+        let bars; try { bars = p.gen({ nBars: 4, B, sub, cols, lens, start: 2, chordDegs }); }
+        catch (e) { problems.push(`melody ${p.id} on ${r.id} @${B} threw: ${e.message}`); continue; }
+        checkBars(`melody ${p.id}/${r.id} @${B}`, bars, B, 4);
+        if (!bars.some(bar => bar.some(c => c.length))) problems.push(`melody ${p.id} on ${r.id} @${B}: wrote nothing`);
+      }
     }
     for (const nar of M.NARRATIVES) {
-      gens++;
-      let bars;
-      try { bars = nar.gen({ nBars: 4, B, sub, nd: 7, chordDegs, role: "C", pass: 0, passes: 2, idx: 1, total: 4, frac: 0.33 }); }
-      catch (e) { problems.push(`narrative ${nar.id} threw at B=${B}: ${e.message}`); continue; }
-      checkBars(`narrative ${nar.id} @${B}`, bars, B, 4);
-      if (!bars.some(bar => bar.some(c => c.length))) problems.push(`narrative ${nar.id} @${B}: wrote nothing`);
+      for (const role of ["V", "C", "B"]) {
+        gens++;
+        const spots = M.rhythmSpots(M.ROLE_RHYTHM[role], B, sub, beats);
+        let bars;
+        try { bars = nar.gen({ nBars: 4, B, sub, spots, nd: 7, chordDegs, role, pass: 0, passes: 2, idx: 1, total: 4, frac: 0.33 }); }
+        catch (e) { problems.push(`narrative ${nar.id} (${role}) @${B} threw: ${e.message}`); continue; }
+        checkBars(`narrative ${nar.id}/${role} @${B}`, bars, B, 4);
+        if (!bars.some(bar => bar.some(c => c.length))) problems.push(`narrative ${nar.id} (${role}) @${B}: wrote nothing`);
+      }
     }
   }
-  console.log(`melody generators: ${gens} runs across both grids`);
+  console.log(`melody generators: ${gens} runs across ${M.RHYTHMS.length} rhythms × 3 grids`);
+
+  // the point of the whole feature: a non-straight rhythm must not land everything on the beat
+  const onBeatFraction = bars => {
+    let on = 0, all = 0;
+    bars.forEach(bar => bar.forEach((c, i) => { if (!c.length) return; if (i === 0 || bar[i - 1].length === 0) { all++; if (i % 2 === 0) on++; } }));
+    return all ? on / all : 1;
+  };
+  const straightSpots = M.rhythmSpots("straight", 8, 2, 4);
+  const offSpots = M.rhythmSpots("offbeat", 8, 2, 4);
+  const gen = sp => M.MELODY_PATTERNS[0].gen({ nBars: 4, B: 8, sub: 2,
+    cols: sp.map(x => x.c), lens: sp.map(x => x.len), start: 2, chordDegs });
+  const straightOn = onBeatFraction(gen(straightSpots)), offOn = onBeatFraction(gen(offSpots));
+  console.log(`onsets on the beat: straight ${(straightOn * 100).toFixed(0)}%, off-beat cell ${(offOn * 100).toFixed(0)}%`);
+  if (straightOn < 0.99) problems.push("the straight cell should put every onset on a beat");
+  if (offOn > 0.01) problems.push(`the off-beat cell still lands ${(offOn * 100).toFixed(0)}% of onsets on the beat`);
+  // and note lengths must actually vary now
+  const lens = new Set(M.rhythmSpots("longshort", 8, 2, 4).map(x => x.len));
+  if (lens.size < 2) problems.push("long–short produced only one note length");
+  console.log(`note lengths in long–short: ${[...lens].sort().join(", ")} columns`);
 }
 
 /* ---- MIDI at sixteenths: a bar still lasts a bar ---- */
