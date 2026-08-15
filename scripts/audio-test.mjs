@@ -9,8 +9,10 @@ import * as patterns from "../src/patterns.js";
 import * as audio from "../src/audio.js";
 import * as midiMod from "../src/midi.js";
 import * as melody from "../src/melody.js";
+import * as song from "../src/song.js";
+import * as wav from "../src/wav.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -62,6 +64,7 @@ const ctx = {
     n.frequency = mkParam("frequency", "biquad"); n.Q = mkParam("Q", "biquad");
     return n;
   },
+  createDelay(max) { const n = baseNode("delay"); n.delayTime = mkParam("delayTime", "delay"); n._max = max; return n; },
   createBuffer(chs, len, rate) {
     return { length: len, duration: len / rate, getChannelData: () => new Float32Array(len) };
   },
@@ -461,12 +464,148 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`part mix: octaves ${LAYER_DEFAULT_OCT.join(",")} · levels ${LAYER_DEFAULT_VOL.join(",")} · lowest MIDI ${lowest}`);
 }
 
+/* ---- the wav writer produces a file a player will actually open ---- */
+{
+  const rate = 44100, frames = 1000;
+  const buf = { numberOfChannels: 2, length: frames, sampleRate: rate,
+    getChannelData: c => Float32Array.from({ length: frames }, (_, i) =>
+      (c ? -1 : 1) * Math.sin(i / 20) * 0.5) };
+  const bytes = M.audioBufferToWav(buf);
+  const dv = new DataView(bytes.buffer);
+  const tag = o => String.fromCharCode(bytes[o], bytes[o+1], bytes[o+2], bytes[o+3]);
+  if (tag(0) !== "RIFF") problems.push("wav: no RIFF header");
+  if (tag(8) !== "WAVE") problems.push("wav: not a WAVE file");
+  if (tag(12) !== "fmt ") problems.push("wav: no fmt chunk");
+  if (tag(36) !== "data") problems.push("wav: no data chunk");
+  if (dv.getUint16(22, true) !== 2) problems.push("wav: not stereo");
+  if (dv.getUint32(24, true) !== rate) problems.push("wav: wrong sample rate");
+  if (dv.getUint16(34, true) !== 16) problems.push("wav: not 16-bit");
+  const wantBytes = 44 + frames * 2 * 2;
+  if (bytes.length !== wantBytes) problems.push(`wav: ${bytes.length} bytes, want ${wantBytes}`);
+  if (dv.getUint32(4, true) !== wantBytes - 8) problems.push("wav: RIFF size does not match the file");
+  if (dv.getUint32(40, true) !== frames * 2 * 2) problems.push("wav: data size does not match the frames");
+  // channels must stay separate — the two are inverted here, so frame 1 should differ in sign
+  const l = dv.getInt16(44 + 2 * 2, true), r = dv.getInt16(44 + 2 * 2 + 2, true);
+  if (l === r || Math.sign(l) === Math.sign(r)) problems.push("wav: the two channels were not interleaved separately");
+  // clipping must clamp rather than wrap around to the opposite sign
+  const hot = { numberOfChannels: 1, length: 4, sampleRate: rate,
+    getChannelData: () => Float32Array.from([2, -2, 1, -1]) };
+  const hb = new DataView(M.audioBufferToWav(hot).buffer);
+  for (let i = 0; i < 4; i++) {
+    const v = hb.getInt16(44 + i * 2, true);
+    if (Math.abs(v) < 32000) problems.push(`wav: a clipped sample came out at ${v} instead of full scale`);
+    if (Math.sign(v) !== Math.sign([2,-2,1,-1][i])) problems.push("wav: clipping wrapped the sign");
+  }
+  if (Math.abs(M.peakOf(buf) - 0.5) > 0.01) problems.push(`peakOf reported ${M.peakOf(buf)}, want ~0.5`);
+  console.log(`wav writer: ${bytes.length} bytes for ${frames} stereo frames, clipping clamps`);
+}
+
+/* ---- the delay is tempo-synced and always decays ---- */
+{
+  const beat = 60 / 128;                                   // 128 bpm
+  for (const [id, name, beats] of M.DELAY_TIMES) {
+    nodes.length = 0;
+    const dest = baseNode("dest");
+    const d = M.makeDelay(ctx, dest, beat, id);
+    if (!beats) { if (d) problems.push(`delay ${id}: "off" should build nothing`); continue; }
+    if (!d) { problems.push(`delay ${id}: built nothing`); continue; }
+    const want = beats * beat;
+    if (Math.abs(d.time - want) > 1e-9) problems.push(`delay ${id}: ${d.time}s, want ${want}s`);
+    if (d.time > 2) problems.push(`delay ${id}: ${d.time}s exceeds the delay line's 2s maximum`);
+    const fb = nodes.filter(n => n._kind === "gain").map(n => n.gain.value);
+    if (!fb.some(v => v > 0 && v < 1)) problems.push(`delay ${id}: feedback is not below unity — the tail would never die`);
+    console.log(`delay ${id.padEnd(4)} (${name.padEnd(11)}) → ${(d.time * 1000).toFixed(0)}ms at 128bpm`);
+  }
+  // a very slow tempo must not ask for more delay than the line can hold
+  const slow = M.makeDelay(ctx, baseNode("dest"), 60 / 40, "4");
+  if (slow.time > 2) problems.push(`delay clamps: ${slow.time}s at 40bpm exceeds the line`);
+  console.log(`delay at 40bpm, quarter note: ${(slow.time * 1000).toFixed(0)}ms (clamped under the 2s line)`);
+}
+
+/* ---- voice leading actually leads voices ---- */
+{
+  const { voiceChord, VOICE_LO, VOICE_HI } = M;
+  const prog = [{ root: 0, quality: "maj" }, { root: 9, quality: "min" },
+                { root: 5, quality: "maj" }, { root: 7, quality: "maj" }];
+  // root-position stacks, the old behaviour, for comparison
+  const rootPos = c => M.chordIvs(c.quality).map(x => 48 + c.root + x);
+  const motion = list => list.slice(1).reduce((sum, notes, i) => {
+    const prev = list[i];
+    // total distance the voices travel, voice by voice
+    return sum + notes.reduce((d, n, k) => d + Math.abs(n - (prev[k] == null ? n : prev[k])), 0);
+  }, 0);
+  let prev = null; const led = [];
+  for (const c of prog) { prev = voiceChord(c, prev); led.push(prev); }
+  const oldMotion = motion(prog.map(rootPos)), newMotion = motion(led);
+  console.log(`voice leading: ${oldMotion} semitones of movement in root position → ${newMotion} led`);
+  if (!(newMotion < oldMotion)) problems.push(`voice leading did not reduce movement (${oldMotion} → ${newMotion})`);
+  for (const notes of led) {
+    if (new Set(notes).size !== notes.length) problems.push(`a voicing doubles a note: ${notes}`);
+    if (notes.some((n, i) => i && n <= notes[i - 1])) problems.push(`a voicing is not ascending: ${notes}`);
+    if (notes.some(n => n < VOICE_LO || n > VOICE_HI + 5)) problems.push(`a voicing left the register window: ${notes}`);
+  }
+  // every chord quality must voice without throwing or losing a tone
+  for (const q of ["maj","min","dom","maj7","m7","maj9","m9","dom9","add9","madd9","six","m6","sus2","sus4","dom7sus4","dim","aug"]) {
+    const v = voiceChord({ root: 3, quality: q }, [60, 64, 67]);
+    const want = M.chordIvs(q).length;
+    if (v.length !== want) problems.push(`quality ${q}: voiced ${v.length} notes, chord has ${want}`);
+    const pcs = new Set(M.chordIvs(q).map(x => (3 + x) % 12));
+    if (!v.every(n => pcs.has(n % 12))) problems.push(`quality ${q}: voicing introduced a note outside the chord`);
+  }
+  // with no previous chord it must still produce something sane
+  const first = voiceChord({ root: 0, quality: "maj" }, null);
+  if (!first.length) problems.push("voiceChord with no previous chord produced nothing");
+  console.log(`voicings: 17 qualities, all ascending and within ${VOICE_LO}..${VOICE_HI + 5}`);
+}
+
+/* ---- a song survives a save and a link ---- */
+{
+  const bars = [
+    [[0], [], [4], [], [], [2], [], []],
+    [[], [1], [], [], [6], [], [], [3]],
+  ];
+  const rt = M.unpackBars(M.packBars(bars));
+  if (JSON.stringify(rt) !== JSON.stringify(bars)) problems.push("packBars is not a round trip");
+  if (!M.packBars(bars).c.length) problems.push("packBars dropped every note");
+  if (M.unpackBars(null).length !== 0) problems.push("unpackBars of nothing should be empty");
+  // an empty grid must survive too — it is the common case for parts you have not written yet
+  const empty = [[[], []], [[], []]];
+  if (JSON.stringify(M.unpackBars(M.packBars(empty))) !== JSON.stringify(empty))
+    problems.push("an empty melody does not round trip");
+
+  const melos = { progId: "edm", secs: { V1: { ids: ["b0", "b1"], layers: [
+    { bars, instr: "flute", oct: 0, vol: 1, mute: false, solo: false, send: 0.4 },
+    { bars, instr: "synth_bass_1", oct: -2, vol: 0.9, mute: true, solo: false, send: 0 },
+  ] } } };
+  const back = M.unpackMelos(M.packMelos(melos));
+  if (JSON.stringify(back) !== JSON.stringify(melos)) problems.push("melodies do not round trip through a sketch");
+
+  const doc = M.makeSong({ name: "test", progId: "edm", tonic: 0, genre: "House", emotion: null,
+    mode: null, colour: "triads", patId: "house16", drum: "house16d", secDrum: { V: "deep" },
+    instr: "acoustic_grand_piano", melInstr: "flute", kit: "909", pump: "classic",
+    secMove: { C: "drop" }, delayId: "8d", bpm: 128, selStruct: "", contrast: { id: "", sec: "C" },
+    edits: {}, inserts: [], quals: {}, removed: [], order: null, melos });
+  if (!doc.melos) problems.push("makeSong dropped the melodies");
+  const code = await M.encodeSong(doc);
+  const round = await M.decodeSong(code);
+  if (!round) problems.push("a shared link does not decode");
+  else {
+    if (round.progId !== doc.progId || round.bpm !== doc.bpm || round.kit !== doc.kit || round.delayId !== doc.delayId)
+      problems.push("the link lost part of the arrangement");
+    const rm = M.songMelos(round);
+    if (JSON.stringify(rm) !== JSON.stringify(melos)) problems.push("the link lost the melodies");
+  }
+  if (await M.decodeSong("dnot-valid-base64!!") !== null) problems.push("a corrupt link should decode to null, not throw");
+  if (await M.decodeSong("") !== null) problems.push("an empty link should decode to null");
+  console.log(`song document: ${code.length} chars encoded (${code[0] === "d" ? "deflated" : "plain"}), melodies intact`);
+}
+
 /* ---- the module seams hold ----
    Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
@@ -492,26 +631,29 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     }
     return out;
   };
-  const owner = new Map();
+  const exported = new Map(), declaredIn = new Map();
   for (const m of MODS) {
-    const s = readFileSync("src/" + m, "utf8");
-    const exp = s.match(/\nexport \{ (.*) \};/);
+    const src = readFileSync("src/" + m, "utf8");
+    const exp = src.match(/\nexport \{ (.*) \};/);
     if (!exp) { problems.push(`${m}: no export block`); continue; }
-    const exported = new Set(exp[1].split(", "));
-    for (const n of declared(s.split("\nexport {")[0]))
-      if (!exported.has(n)) problems.push(`${m}: declares \`${n}\` but never exports it`);
-    for (const n of exported) owner.set(n, m);
+    for (const n of exp[1].split(", ")) exported.set(n.trim(), m);
+    for (const n of declared(src.split("\nexport {")[0])) declaredIn.set(n, m);
   }
-  // what the component imports vs what it actually uses
+  // what the component imports, and what it actually uses
   const imported = new Set();
   for (const mm of code.matchAll(/^import \{([^}]*)\} from "\.\/[^"]*";$/gm))
     for (const n of mm[1].split(",")) imported.add(n.trim());
   const usedNames = new Set(strip(code.replace(/^import [^\n]*$/gm, "")).match(/[A-Za-z_$][\w$]*/g) || []);
   const localNames = declared(code);
-  for (const n of usedNames)
-    if (owner.has(n) && !imported.has(n) && !localNames.has(n))
-      problems.push(`progression-wheel.jsx uses \`${n}\` from ${owner.get(n)} without importing it`);
-  console.log(`module seams: ${MODS.length} modules, ${owner.size} exports, ${imported.size} imported by the component`);
+  // A module may keep private helpers; what matters is only what the component reaches for.
+  for (const n of usedNames) {
+    if (localNames.has(n)) continue;
+    if (exported.has(n) && !imported.has(n))
+      problems.push(`progression-wheel.jsx uses \`${n}\` from ${exported.get(n)} without importing it`);
+    else if (!exported.has(n) && declaredIn.has(n))
+      problems.push(`progression-wheel.jsx uses \`${n}\`, which ${declaredIn.get(n)} declares but does not export`);
+  }
+  console.log(`module seams: ${MODS.length} modules, ${exported.size} exports, ${imported.size} imported by the component`);
 }
 
 console.log(problems.length ? `\n✗ ${problems.length} PROBLEM(S):\n` + problems.map(p => "  - " + p).join("\n")

@@ -1,6 +1,38 @@
 # Changelog
 
 ## Unreleased
+- **↓ Export audio — render the song to a .wav.** Beside Export MIDI. MIDI serves people who
+  already have a DAW; a wav is the file you can send, post or play in the car. It renders faster
+  than real time and uses the *same* audio graph and the same per-tick scheduler as playback, so
+  what lands in the file is what you heard — voicings, kit, pump, moves, delay and every melody part.
+  Real instrument samples are given a moment to load and fall back to the synth voices exactly as
+  playback does. Version bumped to 4.44.0.
+- **Bigger touch targets on phones.** The part buttons, mixer controls and per-section menus were
+  18–23px tall, which is a miss waiting to happen under a thumb; they're at least 32px on narrow
+  screens now. The desktop layout is unchanged, and the melody grid still scrolls inside its own
+  container rather than pushing the page sideways.
+- **Your melodies are saved now.** A saved sketch stored the chords, the arrangement, the kit and
+  the moves — and not one note of melody. Everything written on the grid was session-only and gone
+  on reload. Sketches now carry every melody part, with its instrument, register, level and mix.
+  This was a bug, not a missing feature. Version bumped to 4.43.0.
+- **🔗 Share — send someone the whole song.** Next to Save. It copies a link that rebuilds the song
+  exactly: chords, structure, rhythm, kit, pump, moves and every melody part. A full song compresses
+  to well under a kilobyte, so it fits in a message. Opening a link loads the song straight away.
+- **Chords are voiced properly.** Every chord used to be a root-position stack, so the whole voicing
+  leapt whenever the root did — the main reason a progression could sound typed rather than played.
+  Each chord now takes the inversion nearest the previous one. On a I–vi–IV–V that cuts the movement
+  between chords from 43 semitones to 9, and it applies to the synth voices, the real samples and
+  the guitar strum alike.
+- **The groove breathes.** Nothing had velocity: every drum hit and every melody note landed at the
+  same level. Hits now lean on the pulse — hardest on the downbeat, then the beat, then the offbeat,
+  then the finer subdivisions.
+- **Delay.** A new **Delay** menu in the top panel sets a tempo-synced echo — dotted eighth (the
+  dance default), eighth, quarter or sixteenth — and each melody part has its own **Echo** send in
+  its mixer row, so you can throw just the lead into it. The delay returns through the section-move
+  filter, so a build sweeps the echoes too.
+- **Undo and redo.** **↶ Undo** / **↷ Redo** beside Save, and ⌘Z / ⇧⌘Z anywhere outside a text box.
+  Sixty steps, covering everything the song document holds — chords, key, arrangement, melodies and
+  the mix.
 - **Melody parts get a register and a level.** Parts shipped with their own instrument, colour and
   MIDI channel — but every part still sounded in the same octave, so a part set to *Synth bass* was
   a mid-register synth rather than a bassline. Each part now has its own **Octave** (−3 to +2) and

@@ -17,6 +17,8 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/midi.js` | writing and reading Standard MIDI Files | theory, patterns |
 | `src/pitch.js` | the McLeod-Pitch-Method transcriber | — |
 | `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
+| `src/song.js` | the serialisable song document, melody packing, link encoding | — |
+| `src/wav.js` | 16-bit PCM wav writing | — |
 | `src/progression-wheel.jsx` | the component, the fingering diagrams and the score | all of the above |
 
 Because the modules are plain ESM with no JSX, `npm test` imports them directly — no build step and
@@ -69,13 +71,28 @@ contrast loops (a second progression assigned to C/B/V sections). Sections are l
 `letterFor()` for the shorthand write-out; odd-length phrases are padded even by holding the last
 chord a bar.
 
+## The song document
+
+`src/song.js` holds one serialisable shape used by *both* the sketch and the shareable link, so
+neither can drift from the other. Melody bars pack to flat `[bar, col, degree]` triples — lossless,
+and an order of magnitude smaller than the mostly-empty nested arrays, which is what lets a whole
+song fit in a URL. `encodeSong` runs JSON through the native `CompressionStream` and base64url; the
+`d`/`u` prefix records whether it was deflated, so old links stay readable if the codec changes.
+
+Undo/redo snapshots this same document from a debounced effect rather than at each call site, so no
+edit path can forget to record itself; a `restoringRef` flag stops a replay becoming history.
+
 ## Audio
 
 Web Audio API throughout, no samples:
 
-- **Scheduler**: `setInterval(20ms)` with a 0.1 s lookahead writing absolute-time events — solid
+- **Scheduler**: split into `buildGraph(ctx, from)` and `emitTick(m, live)`. Live playback runs
+  `setInterval(20ms)` with a 0.1 s lookahead, calling `emitTick` until it is 0.1 s ahead — solid
   timing with ~0.1 s latency for live changes. The AudioContext is created and resumed inside the
   Play tap (iOS unlock), with a silent unlock note.
+- **Rendering to a file** reuses both: `buildGraph` into an `OfflineAudioContext`, then `emitTick`
+  for every tick of the song at once. There is no second implementation to drift, so the wav is what
+  you heard. `emitTick`'s `live` flag only gates the on-screen playhead.
 - Each eighth-slot: click, chord voice (`playHit` — guitar pluck is sawtooth through a closing
   low-pass; piano is fundamental + decaying partials; organ sustains sine drawbars; basses play
   roots), drum hits (`drumSound`), and melody lead notes.
@@ -109,6 +126,11 @@ dest, kit)` voices one letter; `kit` (`acoustic` | `909` | `808`) selects betwee
 from two shared primitives — `nz` (a filtered burst of the shared noise buffer) and `tone` (a pitched
 oscillator with an optional sweep). The buffer is only 0.3 s, so any voice decaying longer than that
 loops it rather than falling silent inside its own envelope.
+
+**Voice leading**: `voiceChord` picks the inversion whose upper voices sit nearest the previous
+chord's, so the harmony moves by step instead of leaping in root position; the bass keeps the root.
+The scheduler recomputes it only on a chord change and hands the result to both the synth and
+sampler paths. `accentAt` supplies positional velocity — nothing had any before.
 
 **Sidechain**: the pitched bus routes `reverb → filter → duck → master` while drums and click
 connect to `master` directly, so the kick lands in the hole it makes instead of ducking itself. `duckAt` writes
