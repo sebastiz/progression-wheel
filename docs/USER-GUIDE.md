@@ -20,8 +20,13 @@ upstream changes.
   - *Parallel swaps* replace a chord with its opposite-quality twin (borrowed from the parallel key).
   - *More colour* groups borrowed chords (iv, ♭VI, ♭VII, ♭III, Neapolitan ♭II), chromatic mediants
     (inserted right after the tonic), and tritone substitutions for any dominant.
-- **Sketch save/load** — captures the full state: key, progression, edits, colour level, pattern,
-  tempo, drums, kit, pump, section moves, instrument, structure and contrast loop.
+- **Sketch save/load** — captures the full song: key, progression, edits, colour level, pattern,
+  tempo, drums, kit, pump, delay, section moves, instrument, structure, contrast loop **and every
+  melody part** with its register and mix.
+- **↶ Undo / ↷ Redo** — sixty steps over everything above. ⌘Z and ⇧⌘Z work anywhere outside a text
+  box.
+- **🔗 Share** — copies a link that rebuilds the whole song, melodies included. A full song fits in
+  well under a kilobyte, so it goes in a message. Opening a link loads that song straight away.
 
 ## The wheel
 
@@ -91,6 +96,14 @@ own colour — enough for a sub bass, a pad, an arp and a topline at once.
   parts already separated onto their own instruments. Register and level carry across; a muted part
   exports silent.
 
+### Delay
+
+The **Delay** menu in the top panel sets a tempo-synced echo — *Dotted 8th* (the dance default),
+*Eighth*, *Quarter* or *Sixteenth*. Nothing is echoed until you send a part into it: each melody
+part has its own **Echo** slider in its mixer row, so you can throw just the lead into the delay and
+leave the bass dry. The delay returns through the section-move filter, so a build sweeps the repeats
+along with everything else.
+
 ### Builds, drops and risers
 
 Every section group carries a **🎛** menu beside its **🥁** one. That's the arrangement move for
@@ -147,7 +160,9 @@ dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling
   plucked-string guitar, a richer drum kit, and reverb on everything. Turn **Real** off to always use
   the synth voices — handy for a guaranteed-offline, zero-download session.
 
-Transport: a sticky **Play** at the very top (with tempo), and MIDI export on the Rhythm panel.
+Transport: a sticky **Play** at the very top (with tempo). **↓ Export MIDI** and **↓ Export audio**
+sit in **Song & melody** — MIDI for a DAW, a .wav for everywhere else. The audio render uses the
+same engine as playback, so it sounds like what you heard.
 **Sound** (the chord instrument) and **Lead** (the melody voice) are chosen above the wheel, next to
 the chord-colour menus. Both offer the full **General MIDI palette — about 90 instruments grouped by
 category** (pianos, mallets, organs, guitars, basses, strings, ensemble & choir, brass, reeds, pipes,

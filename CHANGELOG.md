@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **↓ Export audio — render the song to a .wav.** Beside Export MIDI. MIDI serves people who
+  already have a DAW; a wav is the file you can send, post or play in the car. It renders faster
+  than real time and uses the *same* audio graph and the same per-tick scheduler as playback, so
+  what lands in the file is what you heard — voicings, kit, pump, moves, delay and every melody part.
+  Real instrument samples are given a moment to load and fall back to the synth voices exactly as
+  playback does. Version bumped to 4.44.0.
+- **Bigger touch targets on phones.** The part buttons, mixer controls and per-section menus were
+  18–23px tall, which is a miss waiting to happen under a thumb; they're at least 32px on narrow
+  screens now. The desktop layout is unchanged, and the melody grid still scrolls inside its own
+  container rather than pushing the page sideways.
 - **Your melodies are saved now.** A saved sketch stored the chords, the arrangement, the kit and
   the moves — and not one note of melody. Everything written on the grid was session-only and gone
   on reload. Sketches now carry every melody part, with its instrument, register, level and mix.

@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, UNIVERSAL, letterFor } from "./progressions.js";
 import { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { audioBufferToWav, peakOf } from "./wav.js";
 import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
@@ -1272,43 +1273,42 @@ export default function ProgressionWheel() {
     if (m) { clearInterval(m.timer); try { m.ctx.close(); } catch (e) {} metroRef.current = null; }
     setPlaying(false); setCurStep(-1); setCurBar(-1); setCurLabel(null); setCurQ(null); setCurInst(null);
   };
-  const startMetro = fromBar => {
-    stopMetro();
-    const from = Number.isFinite(fromBar) ? fromBar : 0;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AC();
-    if (ctx.state === "suspended") ctx.resume();   // unlock inside the tap (iOS)
-    const un = ctx.createOscillator(), ug = ctx.createGain();
-    ug.gain.value = 0.0001; un.connect(ug).connect(ctx.destination);
-    un.start(); un.stop(ctx.currentTime + 0.02);
+  // The audio graph, built into whatever context it is given — a live AudioContext for playback,
+  // an OfflineAudioContext for rendering the song to a file. Everything downstream of `master`
+  // is identical either way, so a render sounds like what you heard.
+  const buildGraph = (ctx, from) => {
     const limiter = ctx.createDynamicsCompressor();  // tame peaks so stacked samples don't clip
-    // firm brick-wall limiting: a high ratio + short attack so stacked/ringing voices can't sum
-    // past 0 dBFS and clip into harsh digital distortion (ratio 4 was too gentle to catch peaks)
-    limiter.threshold.value = -5; limiter.knee.value = 3; limiter.ratio.value = 12;
-    limiter.attack.value = 0.002; limiter.release.value = 0.14;
-    limiter.connect(ctx.destination);
-    const master = ctx.createGain(); master.gain.value = 0.65; master.connect(limiter);
-    // Sidechain: everything pitched runs through `duck` on its way to the master, and the kick
-    // pulls it down (see duckAt). Drums and click connect to master directly, so the kick lands
-    // in the hole it just made instead of ducking itself.
-    const duck = ctx.createGain(); duck.gain.value = 1; duck.connect(master);
-    // section-move filter, between the reverb bus and the sidechain: a build sweeps the whole
-    // pitched mix including its reverb tail, which is what makes it sound like the room opening up
-    const filt = ctx.createBiquadFilter();
-    filt.type = "lowpass"; filt.frequency.value = FILTER_OPEN; filt.Q.value = 0.8;
-    filt.connect(duck);
-    const music = makeReverb(ctx, filt);             // reverb bus for pitched instruments + melody
-    // tempo-synced delay, fed by whichever parts have a send. It returns into the move filter, so
-    // a build sweeps the echoes along with everything else.
-    const delay = makeDelay(ctx, filt, 60 / (bpmRef.current || 120), delayRef.current);
-    const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
-    const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
-    if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, partGain: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
-      leadLoaded: new Set(leadKey ? [leadKey] : []),
-      step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
-    m.timer = setInterval(() => {
-      if (m.ctx.state === "suspended") m.ctx.resume();
+  // firm brick-wall limiting: a high ratio + short attack so stacked/ringing voices can't sum
+  // past 0 dBFS and clip into harsh digital distortion (ratio 4 was too gentle to catch peaks)
+  limiter.threshold.value = -5; limiter.knee.value = 3; limiter.ratio.value = 12;
+  limiter.attack.value = 0.002; limiter.release.value = 0.14;
+  limiter.connect(ctx.destination);
+  const master = ctx.createGain(); master.gain.value = 0.65; master.connect(limiter);
+  // Sidechain: everything pitched runs through `duck` on its way to the master, and the kick
+  // pulls it down (see duckAt). Drums and click connect to master directly, so the kick lands
+  // in the hole it just made instead of ducking itself.
+  const duck = ctx.createGain(); duck.gain.value = 1; duck.connect(master);
+  // section-move filter, between the reverb bus and the sidechain: a build sweeps the whole
+  // pitched mix including its reverb tail, which is what makes it sound like the room opening up
+  const filt = ctx.createBiquadFilter();
+  filt.type = "lowpass"; filt.frequency.value = FILTER_OPEN; filt.Q.value = 0.8;
+  filt.connect(duck);
+  const music = makeReverb(ctx, filt);             // reverb bus for pitched instruments + melody
+  // tempo-synced delay, fed by whichever parts have a send. It returns into the move filter, so
+  // a build sweeps the echoes along with everything else.
+  const delay = makeDelay(ctx, filt, 60 / (bpmRef.current || 120), delayRef.current);
+  const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
+  const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
+  if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
+  const m = { ctx, master, music, duck, filt, lastMoveBar: -1, partGain: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+    leadLoaded: new Set(leadKey ? [leadKey] : []),
+    step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
+    return m;
+  };
+  // One tick of the song: chord, drums, melody parts, moves. `live` drives the on-screen
+  // playhead; an offline render passes false because there is nothing to light up.
+  const emitTick = (m, live) => {
+
       // The bar ticks at its finest active resolution; every pattern is sampled onto that grid.
       // `beat` is the musical unit the voices are shaped against (a quarter note), so note
       // lengths and the pump stay put whether the bar is in eighths or sixteenths.
@@ -1318,147 +1318,159 @@ export default function ProgressionWheel() {
       const tick = 60 / bpmRef.current / ticksPerBeat;
       const beat = 60 / bpmRef.current;
       const eighth = beat / 2;                       // the voices' reference length, meter-independent
-      while (m.nextTime < m.ctx.currentTime + 0.1) {
-        const i = m.step % L;
-        const patStep = stepAt(patLen, i, L);        // null when this tick falls between strum steps
-        const MB = melRef.current || patLen;         // melody grid columns per bar
-        const melStep = stepAt(MB, i, L);            // null between melody columns
-        const { list, seq, struct } = chordsRef.current;
-        const loop = loopRef.current;
-        let chord, pillIdx = -1, label = null, instNow = "L1", structBar = -1;
-        if (struct && struct.length) {
-          // confine to the toggled section's bar window when a loop is active
-          const useLoop = loop && loop.len > 0 && loop.from + loop.len <= struct.length;
-          structBar = useLoop
-            ? loop.from + (Math.floor(m.step / L) % loop.len)
-            : Math.floor(m.step / L) % struct.length;
-          const e = struct[structBar];
-          chord = e.chord;
-          pillIdx = list.findIndex(c => c.name === e.chord.name);
-          const lb = useLoop ? structBar - loop.from : structBar;
-          const tb = useLoop ? loop.len : struct.length;
-          label = `${e.inst} ${e.word} · bar ${lb + 1} of ${tb}${useLoop ? " · 🔁 loop" : ""}`;
-          instNow = e.inst;
-        } else {
-          const bar = seq.length ? Math.floor(m.step / L) % seq.length : 0;
-          pillIdx = seq.length ? seq[bar] : 0;
-          chord = list[pillIdx];
-        }
-        const sym = (patStep == null ? null : patRef.current[patStep]) || "-";
-        let t = m.nextTime;
-        // swing delays the offbeat of each strum-pattern pair — on a sixteenth pattern that is
-        // a sixteenth shuffle, which is exactly the garage/2-step feel
-        const strumStride = L / patLen;
-        if (swingRef.current && patStep != null && patStep % 2 === 1) t += tick * strumStride * 0.33;
-        const inst = instrRef.current;
-        if (realRef.current && inst !== m.lastInstr) { m.sampler.load(inst); m.lastInstr = inst; }  // switched voice mid-play
-        if (sym !== "-") {
-          if (clickRef.current) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default
-          if (chord) {
-            // pick the inversion nearest the last chord's, once per chord change, so the voicing
-            // moves by step through the progression instead of leaping in root position
-            if (chord.name !== m.lastChordName) {
-              m.voicing = voiceChord(chord, m.voicing);
-              m.lastChordName = chord.name;
-            }
-            const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.music, m.voicing);
-            if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.music, m.voicing);
-          }
-        }
-        let dpat = drumRef.current;                       // global drum pattern by default
-        if (struct && struct.length && structBar >= 0) {   // a section can override with its own kit
-          const b = struct[structBar];
-          const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
-          if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
-        }
-        // section moves: fire once, on the downbeat of each section instance, scheduling the whole
-        // sweep across that instance's length. Guarded by the bar index so a re-entered bar (or the
-        // lookahead running twice over one tick) can't restack the automation.
-        if (i === 0 && struct && structBar >= 0 && structBar !== m.lastMoveBar) {
-          const b = struct[structBar];
-          if (b && b.mb === 0) {
-            m.lastMoveBar = structBar;
-            const mv = b.base != null ? moveRef.current.moves[b.base] : "";
-            const spec = (MOVES[mv] || {}).spec || null;
-            const nb = (b.inst != null && moveRef.current.instBars[b.inst]) || 1;
-            applyMove(m.ctx, m.filt, spec, t, nb * (patLen / (subRef.current || 2)) * beat, m.noise, m.master);
-          }
-        }
-        const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
-        const accent = accentAt(i, ticksPerBeat);    // lean on the pulse rather than hitting flat
-        if (dstep) {
-          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current, accent);
-          // pump the pitched bus under every kick. Recovery stops just short of the next beat,
-          // so four-on-the-floor breathes fully back in right as the next kick hits.
-          if (pumpRef.current && /[KB]/.test(dstep)) duckAt(m.duck, t, pumpRef.current, beat * 0.8);
-        }
-        const mel = meloRef.current;
-        if (mel) {
-          let sym = null, mb = 0;
-          if (struct && struct.length) {
-            const e = struct[structBar];   // same bar the chord engine chose (honours the loop window)
-            sym = e.inst; mb = e.mb;
-          } else if (mel.bySym.L1) {
-            sym = "L1";
-            const nb = (mel.bySym.L1.layers[0].bars.length) || 1;
-            mb = Math.floor(m.step / L) % nb;
-          }
-          const sec = sym && mel.bySym[sym];
-          if (sec && sec.layers.some(ly => ly.flat.length)) {
-            const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
-            // play one melody layer's column with its own voice (falling back to the global lead)
-            const playLayer = (flat, voice, li, oct, gain, send) => {
-              if (!flat || !flat.length || melStep == null || !gain) return;
-              const N = flat.length, col = (mb * MB + melStep) % N;
-              // each part plays through its own gain into the music bus, so level, mute and solo
-              // apply to the part rather than to individual notes
-              let dest = m.partGain[li];
-              if (!dest) {
-                dest = m.partGain[li] = m.ctx.createGain();
-                dest.connect(m.music);
-                if (m.delay) {                       // a parallel send, so the dry part is untouched
-                  const sd = m.partSend[li] = m.ctx.createGain();
-                  sd.gain.value = 0; dest.connect(sd); sd.connect(m.delay.send);
-                }
-              }
-              dest.gain.setValueAtTime(gain * accent, t);
-              if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, t);
-              const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
-              if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
-              (flat[col] || []).forEach(deg => {
-                const held = mel.legato;
-                const prev = flat[col - 1] || [];
-                if (held && col > 0 && prev.includes(deg)) return; // still ringing from last slot
-                let run = 1;
-                if (held) while (col + run < N && (flat[col + run] || []).includes(deg)) run++;
-                const midi = base + 12 * (oct || 0) + mel.scale[deg];
-                // `run` counts melody columns, so a note's length has to be measured in columns
-                // — on a sixteenth grid a one-column note is a sixteenth, not an eighth
-                const colDur = beat / (subRef.current || 2);
-                const dur = held ? colDur * (run + 0.35) : colDur * 0.92;
-                const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, dest);
-                if (!sampled) {
-                  // GM instrument with no loaded sample → its family's synth voice; else the synth spec itself
-                  const kind = isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice;
-                  leadNote(m.ctx, t, midi, dur, kind, held, dest);
-                }
-              });
-            };
-            const anySolo = sec.layers.some(ly => ly.solo);
-            sec.layers.forEach((ly, li) =>
-              playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo), ly.send || 0));
-            const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
-            if (melStep != null) {
-              const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
-              setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
-            }
-          }
-        }
-        const delay = Math.max(0, (t - m.ctx.currentTime) * 1000);
-        if (patStep != null) setTimeout(() => setCurStep(patStep), delay);   // playhead walks the strum pattern, not the ticks
-        if (i === 0) setTimeout(() => { setCurBar(pillIdx); setCurLabel(label); setCurInst(instNow); }, delay);
-        m.step++; m.nextTime += tick;
+      const i = m.step % L;
+      const patStep = stepAt(patLen, i, L);        // null when this tick falls between strum steps
+      const MB = melRef.current || patLen;         // melody grid columns per bar
+      const melStep = stepAt(MB, i, L);            // null between melody columns
+      const { list, seq, struct } = chordsRef.current;
+      const loop = loopRef.current;
+      let chord, pillIdx = -1, label = null, instNow = "L1", structBar = -1;
+      if (struct && struct.length) {
+        // confine to the toggled section's bar window when a loop is active
+        const useLoop = loop && loop.len > 0 && loop.from + loop.len <= struct.length;
+        structBar = useLoop
+          ? loop.from + (Math.floor(m.step / L) % loop.len)
+          : Math.floor(m.step / L) % struct.length;
+        const e = struct[structBar];
+        chord = e.chord;
+        pillIdx = list.findIndex(c => c.name === e.chord.name);
+        const lb = useLoop ? structBar - loop.from : structBar;
+        const tb = useLoop ? loop.len : struct.length;
+        label = `${e.inst} ${e.word} · bar ${lb + 1} of ${tb}${useLoop ? " · 🔁 loop" : ""}`;
+        instNow = e.inst;
+      } else {
+        const bar = seq.length ? Math.floor(m.step / L) % seq.length : 0;
+        pillIdx = seq.length ? seq[bar] : 0;
+        chord = list[pillIdx];
       }
+      const sym = (patStep == null ? null : patRef.current[patStep]) || "-";
+      let t = m.nextTime;
+      // swing delays the offbeat of each strum-pattern pair — on a sixteenth pattern that is
+      // a sixteenth shuffle, which is exactly the garage/2-step feel
+      const strumStride = L / patLen;
+      if (swingRef.current && patStep != null && patStep % 2 === 1) t += tick * strumStride * 0.33;
+      const inst = instrRef.current;
+      if (realRef.current && inst !== m.lastInstr) { m.sampler.load(inst); m.lastInstr = inst; }  // switched voice mid-play
+      if (sym !== "-") {
+        if (clickRef.current) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default
+        if (chord) {
+          // pick the inversion nearest the last chord's, once per chord change, so the voicing
+          // moves by step through the progression instead of leaping in root position
+          if (chord.name !== m.lastChordName) {
+            m.voicing = voiceChord(chord, m.voicing);
+            m.lastChordName = chord.name;
+          }
+          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.music, m.voicing);
+          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.music, m.voicing);
+        }
+      }
+      let dpat = drumRef.current;                       // global drum pattern by default
+      if (struct && struct.length && structBar >= 0) {   // a section can override with its own kit
+        const b = struct[structBar];
+        const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
+        if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
+      }
+      // section moves: fire once, on the downbeat of each section instance, scheduling the whole
+      // sweep across that instance's length. Guarded by the bar index so a re-entered bar (or the
+      // lookahead running twice over one tick) can't restack the automation.
+      if (i === 0 && struct && structBar >= 0 && structBar !== m.lastMoveBar) {
+        const b = struct[structBar];
+        if (b && b.mb === 0) {
+          m.lastMoveBar = structBar;
+          const mv = b.base != null ? moveRef.current.moves[b.base] : "";
+          const spec = (MOVES[mv] || {}).spec || null;
+          const nb = (b.inst != null && moveRef.current.instBars[b.inst]) || 1;
+          applyMove(m.ctx, m.filt, spec, t, nb * (patLen / (subRef.current || 2)) * beat, m.noise, m.master);
+        }
+      }
+      const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
+      const accent = accentAt(i, ticksPerBeat);    // lean on the pulse rather than hitting flat
+      if (dstep) {
+        for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current, accent);
+        // pump the pitched bus under every kick. Recovery stops just short of the next beat,
+        // so four-on-the-floor breathes fully back in right as the next kick hits.
+        if (pumpRef.current && /[KB]/.test(dstep)) duckAt(m.duck, t, pumpRef.current, beat * 0.8);
+      }
+      const mel = meloRef.current;
+      if (mel) {
+        let sym = null, mb = 0;
+        if (struct && struct.length) {
+          const e = struct[structBar];   // same bar the chord engine chose (honours the loop window)
+          sym = e.inst; mb = e.mb;
+        } else if (mel.bySym.L1) {
+          sym = "L1";
+          const nb = (mel.bySym.L1.layers[0].bars.length) || 1;
+          mb = Math.floor(m.step / L) % nb;
+        }
+        const sec = sym && mel.bySym[sym];
+        if (sec && sec.layers.some(ly => ly.flat.length)) {
+          const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
+          // play one melody layer's column with its own voice (falling back to the global lead)
+          const playLayer = (flat, voice, li, oct, gain, send) => {
+            if (!flat || !flat.length || melStep == null || !gain) return;
+            const N = flat.length, col = (mb * MB + melStep) % N;
+            // each part plays through its own gain into the music bus, so level, mute and solo
+            // apply to the part rather than to individual notes
+            let dest = m.partGain[li];
+            if (!dest) {
+              dest = m.partGain[li] = m.ctx.createGain();
+              dest.connect(m.music);
+              if (m.delay) {                       // a parallel send, so the dry part is untouched
+                const sd = m.partSend[li] = m.ctx.createGain();
+                sd.gain.value = 0; dest.connect(sd); sd.connect(m.delay.send);
+              }
+            }
+            dest.gain.setValueAtTime(gain * accent, t);
+            if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, t);
+            const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
+            if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
+            (flat[col] || []).forEach(deg => {
+              const held = mel.legato;
+              const prev = flat[col - 1] || [];
+              if (held && col > 0 && prev.includes(deg)) return; // still ringing from last slot
+              let run = 1;
+              if (held) while (col + run < N && (flat[col + run] || []).includes(deg)) run++;
+              const midi = base + 12 * (oct || 0) + mel.scale[deg];
+              // `run` counts melody columns, so a note's length has to be measured in columns
+              // — on a sixteenth grid a one-column note is a sixteenth, not an eighth
+              const colDur = beat / (subRef.current || 2);
+              const dur = held ? colDur * (run + 0.35) : colDur * 0.92;
+              const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, dest);
+              if (!sampled) {
+                // GM instrument with no loaded sample → its family's synth voice; else the synth spec itself
+                const kind = isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice;
+                leadNote(m.ctx, t, midi, dur, kind, held, dest);
+              }
+            });
+          };
+          const anySolo = sec.layers.some(ly => ly.solo);
+          sec.layers.forEach((ly, li) =>
+            playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo), ly.send || 0));
+          const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
+          if (melStep != null) {
+            const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
+            setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
+          }
+        }
+      }
+      const delay = Math.max(0, (t - m.ctx.currentTime) * 1000);
+      if (live && patStep != null) setTimeout(() => setCurStep(patStep), delay);   // playhead walks the strum pattern, not the ticks
+      if (live && i === 0) setTimeout(() => { setCurBar(pillIdx); setCurLabel(label); setCurInst(instNow); }, delay);
+      m.step++; m.nextTime += tick;
+  };
+  const startMetro = fromBar => {
+    stopMetro();
+    const from = Number.isFinite(fromBar) ? fromBar : 0;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    if (ctx.state === "suspended") ctx.resume();   // unlock inside the tap (iOS)
+    const un = ctx.createOscillator(), ug = ctx.createGain();
+    ug.gain.value = 0.0001; un.connect(ug).connect(ctx.destination);
+    un.start(); un.stop(ctx.currentTime + 0.02);
+    const m = buildGraph(ctx, from);
+    m.timer = setInterval(() => {
+      if (m.ctx.state === "suspended") m.ctx.resume();
+      while (m.nextTime < m.ctx.currentTime + 0.1) emitTick(m, true);
     }, 20);
     metroRef.current = m;
     setPlaying(true);
@@ -1489,6 +1501,55 @@ export default function ProgressionWheel() {
     } else setInserts({ key:"", list:[] });
     const pats = Object.keys(PATTERNS).filter(k => beatsOf(PATTERNS[k]) === 4);   // 4/4 only, at either resolution
     setPatSel({ key:id, id: pats[Math.floor(Math.random() * pats.length)] });
+  };
+
+  /* ---- render the song to audio ----
+     The same graph and the same per-tick emitter as live playback, run into an OfflineAudioContext
+     as fast as the machine can manage — so what lands in the file is what you heard, not a second
+     implementation that drifts from it. */
+  const [rendering, setRendering] = useState(false);
+  const renderAudio = async () => {
+    if (rendering) return;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) { setIoNote("This browser cannot render audio."); return; }
+    setRendering(true);
+    setIoNote("Rendering…");
+    try {
+      const nBars = (structBars && structBars.length) ? structBars.length : Math.max(1, chords.length);
+      const ticksPerBar = tickRef.current || 8;
+      const secsPerBar = barBeats * 60 / effBpm;
+      const TAIL = 3.5;                                  // let the reverb and delay ring out
+      const rate = 44100;
+      const ctx = new OAC(2, Math.ceil((nBars * secsPerBar + TAIL) * rate), rate);
+      const m = buildGraph(ctx, 0);
+      m.nextTime = 0;                                    // offline starts at zero, no lookahead
+      // give the sampler the same chance it gets live; if the samples aren't ready in time the
+      // render falls back to the synth voices exactly as playback would
+      if (realRef.current) {
+        const wanted = new Set([instrRef.current]);
+        Object.values(secMelos).forEach(sec => sec.layers.forEach(ly => {
+          const v = ly.instr || melInstr; if (isGM(v)) wanted.add(v);
+        }));
+        if (isGM(melInstr)) wanted.add(melInstr);
+        wanted.forEach(k => m.sampler.load(k));
+        const until = Date.now() + 4000;
+        while (Date.now() < until && ![...wanted].every(k => m.sampler.ready(k)))
+          await new Promise(r => setTimeout(r, 100));
+      }
+      for (let n = 0; n < nBars * ticksPerBar; n++) emitTick(m, false);
+      const buf = await ctx.startRendering();
+      const peak = peakOf(buf);
+      if (peak < 1e-4) { setIoNote("Rendered silence — add a drum pattern or a melody first."); return; }
+      const bytes = audioBufferToWav(buf);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = (sketchName.trim() || "progression-wheel") + ".wav";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setIoNote(`Rendered ${buf.duration.toFixed(1)}s · ${(bytes.length / 1048576).toFixed(1)} MB · peak ${(20 * Math.log10(peak)).toFixed(1)} dB.`);
+    } catch (e) {
+      setIoNote("Render failed in this browser — MIDI export still works.");
+    } finally { setRendering(false); }
   };
 
   /* ---- midi export ---- */
@@ -1946,6 +2007,17 @@ export default function ProgressionWheel() {
         .mini.mixon { background:#54B79D; border-color:#54B79D; color:#0c1116; }
         .mini:disabled { opacity:.35; cursor:default; }
         .btn:disabled { opacity:.35; cursor:default; }
+        /* On a phone the part buttons and mixer controls were 18–23px tall — under a thumb that is
+           a miss waiting to happen. Grow the touch targets at narrow widths only; the desktop
+           layout is dense on purpose. */
+        @media (max-width: 560px) {
+          .lybtn { padding:7px 13px; font-size:12px; min-height:32px; }
+          .mini { padding:6px 10px; min-height:32px; }
+          .partmix { gap:8px 12px; padding:9px 10px; }
+          .partmix .lvl { width:120px; height:26px; }
+          label.secdrum select { min-height:32px; padding:5px 6px; }
+          .selwrap select { min-height:34px; }
+        }
         .partmix { padding:7px 9px; background:#131924; border:1px solid #222A38; border-radius:8px; }
         .lybtn { font-size:11px; padding:2px 9px; border-radius:999px; border:1px solid #2A3442; background:#161C26; color:#8B94A3; cursor:pointer; }
         .mcell.b0 { border-left:2px solid #3A4656; }
@@ -2579,6 +2651,9 @@ export default function ProgressionWheel() {
               <div className="sw" /> Legato
             </div>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ Export MIDI</button>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering}
+              title="Render the whole song to a .wav you can send or post — the same sound you hear on Play">
+              {rendering ? "Rendering…" : "↓ Export audio"}</button>
           </div>
           {openMel && (
             <div className="sugmel" style={{ marginTop:8 }}>

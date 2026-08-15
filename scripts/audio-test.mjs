@@ -10,8 +10,9 @@ import * as audio from "../src/audio.js";
 import * as midiMod from "../src/midi.js";
 import * as melody from "../src/melody.js";
 import * as song from "../src/song.js";
+import * as wav from "../src/wav.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -463,6 +464,42 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`part mix: octaves ${LAYER_DEFAULT_OCT.join(",")} · levels ${LAYER_DEFAULT_VOL.join(",")} · lowest MIDI ${lowest}`);
 }
 
+/* ---- the wav writer produces a file a player will actually open ---- */
+{
+  const rate = 44100, frames = 1000;
+  const buf = { numberOfChannels: 2, length: frames, sampleRate: rate,
+    getChannelData: c => Float32Array.from({ length: frames }, (_, i) =>
+      (c ? -1 : 1) * Math.sin(i / 20) * 0.5) };
+  const bytes = M.audioBufferToWav(buf);
+  const dv = new DataView(bytes.buffer);
+  const tag = o => String.fromCharCode(bytes[o], bytes[o+1], bytes[o+2], bytes[o+3]);
+  if (tag(0) !== "RIFF") problems.push("wav: no RIFF header");
+  if (tag(8) !== "WAVE") problems.push("wav: not a WAVE file");
+  if (tag(12) !== "fmt ") problems.push("wav: no fmt chunk");
+  if (tag(36) !== "data") problems.push("wav: no data chunk");
+  if (dv.getUint16(22, true) !== 2) problems.push("wav: not stereo");
+  if (dv.getUint32(24, true) !== rate) problems.push("wav: wrong sample rate");
+  if (dv.getUint16(34, true) !== 16) problems.push("wav: not 16-bit");
+  const wantBytes = 44 + frames * 2 * 2;
+  if (bytes.length !== wantBytes) problems.push(`wav: ${bytes.length} bytes, want ${wantBytes}`);
+  if (dv.getUint32(4, true) !== wantBytes - 8) problems.push("wav: RIFF size does not match the file");
+  if (dv.getUint32(40, true) !== frames * 2 * 2) problems.push("wav: data size does not match the frames");
+  // channels must stay separate — the two are inverted here, so frame 1 should differ in sign
+  const l = dv.getInt16(44 + 2 * 2, true), r = dv.getInt16(44 + 2 * 2 + 2, true);
+  if (l === r || Math.sign(l) === Math.sign(r)) problems.push("wav: the two channels were not interleaved separately");
+  // clipping must clamp rather than wrap around to the opposite sign
+  const hot = { numberOfChannels: 1, length: 4, sampleRate: rate,
+    getChannelData: () => Float32Array.from([2, -2, 1, -1]) };
+  const hb = new DataView(M.audioBufferToWav(hot).buffer);
+  for (let i = 0; i < 4; i++) {
+    const v = hb.getInt16(44 + i * 2, true);
+    if (Math.abs(v) < 32000) problems.push(`wav: a clipped sample came out at ${v} instead of full scale`);
+    if (Math.sign(v) !== Math.sign([2,-2,1,-1][i])) problems.push("wav: clipping wrapped the sign");
+  }
+  if (Math.abs(M.peakOf(buf) - 0.5) > 0.01) problems.push(`peakOf reported ${M.peakOf(buf)}, want ~0.5`);
+  console.log(`wav writer: ${bytes.length} bytes for ${frames} stereo frames, clipping clamps`);
+}
+
 /* ---- the delay is tempo-synced and always decays ---- */
 {
   const beat = 60 / 128;                                   // 128 bpm
@@ -568,7 +605,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
