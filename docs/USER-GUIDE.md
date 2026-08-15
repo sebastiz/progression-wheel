@@ -124,6 +124,23 @@ melody through the whole song. With no structure selected, a single Loop entry c
 strip and a collapsible landing-notes reference sit at the top of the panel. Melodies are stored as
 scale degrees anchored to chords, so they survive edits and transpose with the key.
 
+**Melodic narrative — a whole song's melody in one pick.** Under the structure chooser is a
+**Melodic narrative** menu. A melody pattern (in a section's Suggest tab) shapes one section; a
+narrative is one melodic *idea told across the whole song* — pick one and it writes melody **A** of
+every section at once, choosing each section's register, note density and contour from what that
+section is (verse, chorus, bridge, intro…), which pass of it this is, and where it sits in the
+running order. That's how the shapes differ from patterns: *Range expansion at the hook* keeps
+verses inside two or three notes and opens the whole octave for the chorus; *Withheld peak* spends
+the top note only in the final section; *Terraced* climbs a step per bar; *Long climb* lifts every
+section a little above the last. The 19 narratives cover contour (arch, song-length arch, waves,
+descending lament, cascading sequence, leap-and-fill, speech contour), architecture (question &
+answer, call & response, motif development, terraced build, withheld peak, long climb, range
+expansion), and texture (ostinato cell, widening pendulum, chant-then-release, chord-locked hook,
+suspension chain). Each shows what it does and a few songs that do it. **↻ Rewrite** re-runs it —
+after a key change, a new structure, or edits you'd rather throw away — and **↶ Undo** puts the
+melodies back as they were. It writes to layer A only, so a 2nd melody you've written stays put, and
+everything it writes is ordinary grid notes: edit any section afterwards.
+
 **Loop one section.** Each section entry has a **🔁** toggle. Turn it on and playback confines to that
 section and repeats it (and starts from there if nothing's playing) — handy for drilling a chorus or
 recording a part against a loop. Tap it again to release and let the whole song play through.
