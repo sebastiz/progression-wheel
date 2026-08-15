@@ -1,6 +1,6 @@
 /* midi — Writing a Standard MIDI File by hand, and reading a melody back out of one.
 */
-import { DRUM_MIDI, KIT_PROGRAM } from "./patterns.js";
+import { DRUM_MIDI, KIT_PROGRAM, accentAt } from "./patterns.js";
 import { chordIvs } from "./theory.js";
 
 /* ===== midi export ===== */
@@ -9,8 +9,9 @@ const vlq = n => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) 
 // each column a list of absolute MIDI note numbers. Runs of the same note across
 // adjacent columns are merged into one held note (legato) so the exported line
 // flows the way it plays.
-// `melParts` is a list of column-lists, one per melody part; each gets its own MIDI channel.
-function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2) {
+// `melParts` is a list of { cols, program, gain } — one per melody part, each getting its own MIDI
+// channel, General MIDI program and velocity scale. `chordProgram` voices the chord track.
+function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chordProgram = null) {
   const T = 480, ev = (arr, dt, ...bytes) => arr.push(...vlq(dt), ...bytes);
   const trk = arr => {
     const body = [...arr, 0, 0xff, 0x2f, 0];
@@ -19,6 +20,8 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2) {
   const uspq = Math.round(60000000 / bpm);
   const tempo = []; ev(tempo, 0, 0xff, 0x51, 3, (uspq>>16)&255, (uspq>>8)&255, uspq&255);
   const chordsT = [];
+  ev(chordsT, 0, 0xff, 0x03, 6, 0x43, 0x68, 0x6f, 0x72, 0x64, 0x73);          // track name "Chords"
+  if (chordProgram != null) ev(chordsT, 0, 0xc0, chordProgram & 0x7f);        // voice the chord track
   bars.forEach(b => {
     const notes = [36 + b.chord.root - 12, ...chordIvs(b.chord.quality).map(x => 60 + b.chord.root + x)];
     notes.forEach((n, i) => ev(chordsT, i ? 0 : 0, 0x90, n, 78));
@@ -31,6 +34,7 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2) {
   const drumsT = [];
   if (drumHas) {
     let pend = 0;
+    ev(drumsT, 0, 0xff, 0x03, 5, 0x44, 0x72, 0x75, 0x6d, 0x73);            // track name "Drums"
     if (KIT_PROGRAM[kit] != null) ev(drumsT, 0, 0xc9, KIT_PROGRAM[kit]);   // machine kit on channel 10
     for (let bar = 0; bar < bars.length; bar++) {
       const pat = drumFn(bar);
@@ -43,14 +47,18 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2) {
         const notes = [...((pat && pat[s]) || "")].map(c => DRUM_MIDI[c] || 42);
         if (!notes.length) { pend += stepT; continue; }
         // cymbals and rim sit behind the kick/snare/clap, as they do in the app
-        notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n, [42,46,51,37].includes(n) ? 62 : 92));
+        // the same positional accent the app plays, so the file grooves rather than sitting flat
+        const acc = accentAt(s, steps / beatsPerBar);
+        notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n,
+          Math.max(1, Math.round(([42,46,51,37].includes(n) ? 62 : 92) * acc))));
         notes.forEach((n, i) => ev(drumsT, i ? 0 : gate, 0x89, n, 0));
         pend = stepT - gate;
       }
     }
   }
   // build one melody track from its grid columns; each layer gets its own channel
-  const buildMelo = (cols, chOn, chOff) => {
+  const buildMelo = (cols, chOn, chOff, gain = 1) => {
+    const colsPerBar = Math.max(1, beatsPerBar * sub);
     const arr = []; let has = false;
     if (cols && cols.length) {
       const EI = T / sub, N = cols.length;                        // ticks per grid column
@@ -60,22 +68,31 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2) {
         if (i > 0 && at(i - 1, note)) continue;                   // continuation of a held note
         let run = 1;
         while (i + run < N && at(i + run, note)) run++;
-        evs.push({ t: i * EI, on: 1, note });
+        evs.push({ t: i * EI, on: 1, note, vel: Math.max(1, Math.min(127,
+          Math.round(96 * gain * accentAt(i % colsPerBar, sub)))) });
         evs.push({ t: (i + run) * EI, on: 0, note });
       }
       has = evs.length > 0;
       evs.sort((a, b) => a.t - b.t || a.on - b.on);               // note-offs before note-ons at a tick
       let last = 0;
-      for (const e of evs) { ev(arr, e.t - last, e.on ? chOn : chOff, e.note, e.on ? 92 : 0); last = e.t; }
+      for (const e of evs) { ev(arr, e.t - last, e.on ? chOn : chOff, e.note, e.on ? e.vel : 0); last = e.t; }
     }
     return { arr, has };
   };
   // one track per melody part, on its own channel. Channels 1.. skip 9 (percussion is channel 10
   // in 1-based terms, 9 here), so a part is never voiced as a drum kit by mistake.
   const chanFor = p => { const c = p + 1; return c >= 9 ? c + 1 : c; };
-  const mels = (melParts || []).map((cols, p) => {
+  const NAMES = "ABCDEF";
+  const mels = (melParts || []).map((part, p) => {
     const ch = chanFor(p) & 0x0f;
-    return buildMelo(cols, 0x90 | ch, 0x80 | ch);
+    const cols = part && part.cols !== undefined ? part.cols : part;      // a bare column list still works
+    const m = buildMelo(cols, 0x90 | ch, 0x80 | ch, (part && part.gain) == null ? 1 : part.gain);
+    if (!m.has) return m;
+    // name the track and voice it, so a DAW opens the arrangement already assigned
+    const label = [...("Part " + (NAMES[p] || p + 1))].map(c => c.charCodeAt(0));
+    const head = [...vlq(0), 0xff, 0x03, label.length, ...label];
+    if (part && part.program != null) head.push(...vlq(0), 0xc0 | ch, part.program & 0x7f);
+    return { ...m, arr: [...head, ...m.arr] };
   }).filter(m => m.has);
   const nTrk = 2 + (drumHas ? 1 : 0) + mels.length;
   const head = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0, nTrk, (T>>8)&255, T&255];

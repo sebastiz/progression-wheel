@@ -92,9 +92,9 @@ own colour — enough for a sub bass, a pad, an arp and a topline at once.
   down, the pad one below the lead, the saw lead one above.
 - **Level**, **mute** and **solo** balance the parts against each other. Solo on any part silences
   the others in that section until you turn it off.
-- Exported MIDI gives each part its own track and channel, so a DAW opens the arrangement with the
-  parts already separated onto their own instruments. Register and level carry across; a muted part
-  exports silent.
+- Exported MIDI gives each part its own **named track**, its own channel and its own **General MIDI
+  instrument**, so a DAW opens the arrangement already voiced rather than with every track on piano.
+  Register, level (as velocity) and the accent curve all carry across; a muted part exports silent.
 
 ### Delay
 
