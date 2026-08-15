@@ -7,7 +7,7 @@ import { build } from "esbuild";
 let code = readFileSync("src/progression-wheel.jsx", "utf8");
 code = code.replace(/import \{[^}]*\} from "react";/, "const React = globalThis.React;");
 code = code.replace("export default function ProgressionWheel(", "function ProgressionWheel(");
-code += "\nexport { drumSound, duckAt, midiBytes, makeNoise, DRUMS, DRUM_MIDI, PUMP_AMT, DRUM_KITS, DRUM_DEFAULT, KIT_DEFAULT, PUMP_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, subOf, beatsOf, stepAt, sampleAt, drumBeatsOf, lcm, rescaleBar, qbeats, colPrefs, nCols, blankBars, MELODY_PATTERNS, NARRATIVES };\n";
+code += "\nexport { drumSound, duckAt, midiBytes, makeNoise, DRUMS, DRUM_MIDI, PUMP_AMT, DRUM_KITS, DRUM_DEFAULT, KIT_DEFAULT, PUMP_DEFAULT, KIT_PROGRAM, LAYER_INK, LAYER_NAMES, MAX_LAYERS, LAYER_DEFAULT_INSTR, PATTERNS, PATTERN_DEFAULT, subOf, beatsOf, stepAt, sampleAt, drumBeatsOf, lcm, rescaleBar, qbeats, colPrefs, nCols, blankBars, MELODY_PATTERNS, NARRATIVES };\n";
 writeFileSync("scripts/.test.jsx", code);
 await build({ entryPoints: ["scripts/.test.jsx"], outfile: "scripts/.test.mjs",
   loader: { ".jsx": "jsx" }, jsx: "transform", format: "esm", bundle: false });
@@ -132,7 +132,7 @@ console.log(`drum patterns: ${pats} checked`);
 /* ---- MIDI export with the new channels + a machine kit ---- */
 const bars = [{ chord: { root: 0, quality: "min" } }, { chord: { root: 5, quality: "maj" } }];
 for (const kit of ["acoustic", "909", "808"]) {
-  const bytes = M.midiBytes(124, 4, bars, M.DRUMS.house909.pattern, null, null, kit);
+  const bytes = M.midiBytes(124, 4, bars, M.DRUMS.house909.pattern, null, kit);
   if (!(bytes instanceof Uint8Array)) { problems.push(`midi ${kit}: not a byte array`); continue; }
   const hdr = String.fromCharCode(...bytes.slice(0, 4));
   if (hdr !== "MThd") problems.push(`midi ${kit}: bad header ${hdr}`);
@@ -301,7 +301,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     ["amen break", M.DRUMS.amen.pattern, 4],
   ]) {
     const cols = Array.from({ length: NB * BEATS * sub }, (_, i) => (i % sub === 0 ? [0] : []));
-    const bytes = M.midiBytes(128, BEATS, bars2, pat, cols, null, "909", sub);
+    const bytes = M.midiBytes(128, BEATS, bars2, pat, [cols], "909", sub);
     // the chord track spans the whole song exactly — that is what sets the file's length
     const chordTicks = trackLen(bytes, 1);
     if (chordTicks !== want) problems.push(`${label}: chord track is ${chordTicks} ticks, want exactly ${want}`);
@@ -319,6 +319,40 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (melTicks > want) problems.push(`${label}: melody track overruns the song (${melTicks} > ${want})`);
     console.log(`midi ${label.padEnd(16)} → chords ${chordTicks}/${want}, drums end ${drumTicks}, melody end ${melTicks}`);
   }
+}
+
+/* ---- melody parts each get their own MIDI channel, and never the drum channel ---- */
+{
+  const bars2 = [{ chord: { root: 0, quality: "min" } }];
+  const mk = note => Array.from({ length: 8 }, (_, i) => (i % 2 === 0 ? [note] : []));
+  // six parts is the cap; channel 9 (the 0-based drum channel) must be skipped
+  const parts = [60, 62, 64, 65, 67, 69].map(mk);
+  const bytes = M.midiBytes(120, 4, bars2, null, parts, null, 2);
+  // collect note-on channels per track. Track 0 is tempo and track 1 is the chords (channel 0),
+  // so only tracks from index 2 are melody parts — scanning all of them would count the chord
+  // track's channel as a part and look like a collision.
+  const perTrack = [];
+  let p = 14, tracks = 0;
+  while (p < bytes.length) {
+    const len = (bytes[p+4]<<24)|(bytes[p+5]<<16)|(bytes[p+6]<<8)|bytes[p+7];
+    const body = bytes.slice(p + 8, p + 8 + len);
+    const c = new Set();
+    for (let q = 0; q < body.length; q++) if ((body[q] & 0xf0) === 0x90) c.add(body[q] & 0x0f);
+    perTrack.push(c); p += 8 + len; tracks++;
+  }
+  const chans = new Set(perTrack.slice(2).flatMap(s => [...s]));
+  perTrack.slice(2).forEach((s, i) => { if (s.size > 1) problems.push(`melody part ${i} spans channels ${[...s]}`); });
+  if (tracks !== 2 + parts.length) problems.push(`multi-part export: ${tracks} tracks, want ${2 + parts.length}`);
+  if (bytes[11] !== tracks) problems.push(`multi-part export: header says ${bytes[11]} tracks, found ${tracks}`);
+  if (chans.has(9)) problems.push("a melody part was written onto channel 10 (the drum channel)");
+  if (chans.size !== parts.length) problems.push(`melody parts share channels: ${[...chans].join(",")}`);
+  // a part with no notes must not claim a track
+  const sparse = M.midiBytes(120, 4, bars2, null, [mk(60), null, mk(64)], null, 2);
+  if (sparse[11] !== 4) problems.push(`empty parts still emitted tracks: header says ${sparse[11]}, want 4`);
+  console.log(`melody parts: ${parts.length} parts → channels ${[...chans].sort((a,b)=>a-b).join(",")} (drum channel 9 skipped)`);
+  if (M.LAYER_INK.length < M.MAX_LAYERS) problems.push("not enough part colours for MAX_LAYERS");
+  if (M.LAYER_NAMES.length < M.MAX_LAYERS) problems.push("not enough part names for MAX_LAYERS");
+  if (new Set(M.LAYER_INK).size !== M.LAYER_INK.length) problems.push("two melody parts share an ink colour");
 }
 
 console.log(problems.length ? `\n✗ ${problems.length} PROBLEM(S):\n` + problems.map(p => "  - " + p).join("\n")
