@@ -50,152 +50,218 @@ const rescaleBar = (bar, B) => {
   });
   return out;
 };
-// lay a sequence of degrees onto given columns of one bar
-const layBar = (B, cols, degs) => {
+/* ===== rhythm cells =====
+   Generated melodies used to put one note on every beat, all the same length, which is why they
+   came out stiff no matter which contour you picked. Rhythm is a separate dimension from pitch, so
+   it gets its own table: where notes fall in a bar, and how long each lasts.
+
+   Positions and lengths are in BEATS, not columns, so one cell works on an eighth grid or a
+   sixteenth one, in 4/4 or in 3/4. A cell finer than the current grid snaps onto it and the
+   collisions drop out, so nothing is ever silently mangled. */
+const RHYTHMS = [];
+[
+["straight",  "On the beat",        "One note per beat. Plain, clear, and the way to hear a contour on its own.",
+  [[0,1],[1,1],[2,1],[3,1]]],
+["longshort", "Long–short",         "A held note answered by a short one — probably the most common rhythm in melody.",
+  [[0,1.5],[1.5,0.5],[2,1.5],[3.5,0.5]]],
+["shortlong", "Short–long",         "The mirror: a quick pickup landing on a note that holds.",
+  [[0,0.5],[0.5,1.5],[2,0.5],[2.5,1.5]]],
+["push",      "Pushed",             "Notes arrive just before beats 2 and 4 — the anticipation that makes a line lean forward.",
+  [[0,1],[1,0.5],[1.5,1],[2.5,0.5],[3,1]]],
+["offbeat",   "Off the beat",       "Every note on the “and”. Instantly less square; leaves the beat to the drums.",
+  [[0.5,0.5],[1.5,0.5],[2.5,0.5],[3.5,0.5]]],
+["tresillo",  "Tresillo (3+3+2)",   "The Cuban cell behind reggaeton and half of modern pop.",
+  [[0,0.75],[0.75,0.75],[1.5,0.5],[2,0.75],[2.75,0.75],[3.5,0.5]]],
+["charleston","Charleston",         "Beat one and the “and” of two, then silence. The great syncopated hook rhythm.",
+  [[0,1.5],[1.5,2.5]]],
+["gallop",    "Gallop",             "A long note kicked forward by two quick ones — driving without being busy.",
+  [[0,0.5],[0.5,0.25],[0.75,0.25],[1,1],[2,0.5],[2.5,0.25],[2.75,0.25],[3,1]]],
+["sixteenth", "Running sixteenths", "Continuous motion. Best for arps and runs; needs a 16ths rhythm to show fully.",
+  [[0,0.25],[0.25,0.25],[0.5,0.25],[0.75,0.25],[1,0.25],[1.25,0.25],[1.5,0.25],[1.75,0.25],
+   [2,0.25],[2.25,0.25],[2.5,0.25],[2.75,0.25],[3,0.25],[3.25,0.25],[3.5,0.25],[3.75,0.25]]],
+["pickup",    "Pickup",             "A short note leading into the downbeat, then steady. How a singer actually enters.",
+  [[0,1],[1,1],[2,1],[2.75,0.25],[3,1]]],
+["twonote",   "Two long notes",     "Half the bar each. Space for the chords to speak.",
+  [[0,2],[2,2]]],
+["held",      "One held note",      "A single note across the whole bar — a drone against moving harmony.",
+  [[0,4]]],
+["question",  "Question & space",   "A short phrase, then silence — the half of a melody people forget to write.",
+  [[0,0.5],[0.5,0.5],[1,1],[2,2]]],
+].forEach(([id, name, desc, cell]) => { RHYTHMS[RHYTHMS.length] = { id, name, desc, cell }; });
+const RHYTHM_BY_ID = Object.fromEntries(RHYTHMS.map(r => [r.id, r]));
+// Which cell each kind of section leans on when a narrative writes the whole song. A verse
+// converses, a chorus lands squarely, a bridge sits off the beat, a build runs.
+const ROLE_RHYTHM = { I:"held", V:"longshort", P:"push", C:"straight", B:"offbeat", S:"gallop",
+  R:"straight", T:"twonote", U:"sixteenth", D:"tresillo", K:"held", O:"held", A:"longshort", H:"straight" };
+// Resolve a cell onto this bar's grid: beats → columns, lengths clipped so a held note never runs
+// into the next onset. Onsets past the end of the bar (a 4/4 cell in 3/4) simply drop out.
+const rhythmSpots = (id, B, sub, beats) => {
+  const r = RHYTHM_BY_ID[id] || RHYTHM_BY_ID.straight;
+  const out = [];
+  for (const [off, len] of r.cell) {
+    if (off >= beats) continue;
+    const c = Math.round(off * sub);
+    if (c >= B || out.some(s => s.c === c)) continue;      // snapped onto an occupied column
+    out.push({ c, len: Math.max(1, Math.round(len * sub)) });
+  }
+  out.sort((a, b) => a.c - b.c);
+  out.forEach((s, i) => {
+    const next = i + 1 < out.length ? out[i + 1].c : B;
+    s.len = Math.max(1, Math.min(s.len, next - s.c));
+  });
+  return out;
+};
+// lay a sequence of degrees onto given columns of one bar; `lens` holds a note across columns
+const layBar = (B, cols, degs, lens) => {
   const bar = Array.from({ length: B }, () => []);
-  cols.forEach((c, i) => { if (i < degs.length && degs[i] != null && c < B) bar[c] = [wrap7(degs[i])]; });
+  cols.forEach((c, i) => {
+    if (i >= degs.length || degs[i] == null || c >= B) return;
+    const d = wrap7(degs[i]);
+    const len = Math.max(1, (lens && lens[i]) || 1);
+    for (let k = 0; k < len && c + k < B; k++) bar[c + k] = [d];   // a held note fills its columns
+  });
   return bar;
 };
 const MELODY_PATTERNS = [
   { id:"arpUp", name:"Arpeggio ↑ (chord tones)",
     desc:"Climbs each bar's chord — root, 3rd, 5th, 7th — one note per beat. Follows the chords; the start note fills in over any out-of-key chord.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g, g+2, g+4, g+6]); }); } },
+        return layBar(u.B, Q, [g, g+2, g+4, g+6], u.lens); }); } },
   { id:"arpDown", name:"Arpeggio ↓ (chord tones)",
     desc:"Falls through each bar's chord from the top down — 5th, 3rd, root. A gentler, more resolved shape than climbing.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g+4, g+2, g, g-3]); }); } },
+        return layBar(u.B, Q, [g+4, g+2, g, g-3], u.lens); }); } },
   { id:"arpRoll", name:"Arpeggio ↑↓ (rolling)",
     desc:"Rolls up the chord and back down within every bar — a continuous broken-chord ripple.",
     gen(u){ return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
         const shape = [0,2,4,6,4,2,0,2].map(x => g + x);
-        return layBar(u.B, Array.from({ length:u.B }, (_, i) => i), shape.slice(0, u.B)); }); } },
+        return layBar(u.B, Array.from({ length:u.B }, (_, i) => i), shape.slice(0, u.B), u.lens); }); } },
   { id:"scaleUp", name:"Scale run ↑",
     desc:"A stepwise climb up the scale from your start note, running straight through the whole section.",
-    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0;
+    gen(u){ const Q = u.cols; let n = 0;
       return Array.from({ length:u.nBars }, () =>
-        layBar(u.B, Q, Q.map(() => u.start + n++))); } },
+        layBar(u.B, Q, Q.map(() => u.start + n++), u.lens)); } },
   { id:"scaleDown", name:"Scale run ↓",
     desc:"A stepwise descent from your start note down the scale, running through the whole section.",
-    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0;
+    gen(u){ const Q = u.cols; let n = 0;
       return Array.from({ length:u.nBars }, () =>
-        layBar(u.B, Q, Q.map(() => u.start - n++))); } },
+        layBar(u.B, Q, Q.map(() => u.start - n++), u.lens)); } },
   { id:"wave", name:"Wave (up-and-down contour)",
     desc:"A smooth arch that rises a few steps then falls back, over and over — an easy, singable contour.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const tri = [0,1,2,3,2,1]; let n = 0;
+    gen(u){ const Q = u.cols; const tri = [0,1,2,3,2,1]; let n = 0;
       return Array.from({ length:u.nBars }, () =>
-        layBar(u.B, Q, Q.map(() => u.start + tri[n++ % tri.length]))); } },
+        layBar(u.B, Q, Q.map(() => u.start + tri[n++ % tri.length]), u.lens)); } },
   { id:"neighbor", name:"Neighbour tones",
     desc:"Decorates your start note with its upper and lower neighbours — note, step up, note, step down.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,0,-1]; let n = 0;
+    gen(u){ const Q = u.cols; const fig = [0,1,0,-1]; let n = 0;
       return Array.from({ length:u.nBars }, () =>
-        layBar(u.B, Q, Q.map(() => u.start + fig[n++ % fig.length]))); } },
+        layBar(u.B, Q, Q.map(() => u.start + fig[n++ % fig.length]), u.lens)); } },
   { id:"pedal", name:"Pedal tone (repeated note)",
     desc:"Repeats your start note on every beat — a drone / chant to build tension against the moving chords.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start))); } },
+    gen(u){ const Q = u.cols;
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start), u.lens)); } },
   { id:"callResp", name:"Call & response",
     desc:"A rising question in one bar answered by a falling reply in the next — the two-bar conversation that anchors most tunes.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) =>
-        b % 2 === 0 ? layBar(u.B, Q, [0,1,2,3].map(x => u.start + x))
-                    : layBar(u.B, Q, [2,1,0,0].map(x => u.start + x))); } },
+        b % 2 === 0 ? layBar(u.B, Q, [0,1,2,3].map(x => u.start + x), u.lens)
+                    : layBar(u.B, Q, [2,1,0,0].map(x => u.start + x), u.lens)); } },
   { id:"aa", name:"AA — repeat the motif",
     desc:"States one short motif and repeats it in every bar. The most direct way to make a line stick.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, A.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const A = [0,2,1,0];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, A.map(x => u.start + x), u.lens)); } },
   { id:"ab", name:"AB — alternating motifs",
     desc:"Alternates a low motif (A) with a higher contrasting one (B), bar by bar — statement and counter-statement.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0], B = [4,2,3,4];
+    gen(u){ const Q = u.cols; const A = [0,2,1,0], B = [4,2,3,4];
       return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, (b % 2 === 0 ? A : B).map(x => u.start + x))); } },
+        layBar(u.B, Q, (b % 2 === 0 ? A : B).map(x => u.start + x), u.lens)); } },
   { id:"aaba", name:"AABA — motif with a middle turn",
     desc:"Motif A three times with a contrasting B in the third bar — the classic 32-bar sentence in miniature.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0], B = [4,3,2,4];
+    gen(u){ const Q = u.cols; const A = [0,2,1,0], B = [4,3,2,4];
       return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, (b % 4 === 2 ? B : A).map(x => u.start + x))); } },
+        layBar(u.B, Q, (b % 4 === 2 ? B : A).map(x => u.start + x), u.lens)); } },
   { id:"seqUp", name:"Ascending sequence",
     desc:"Takes one three-note figure and steps it up the scale a degree at a time each bar — builds lift and momentum.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,2];
+    gen(u){ const Q = u.cols; const fig = [0,1,2];
       return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, fig.map(x => u.start + x + b))); } },
+        layBar(u.B, Q, fig.map(x => u.start + x + b), u.lens)); } },
   { id:"seqDown", name:"Descending sequence",
     desc:"A three-note figure stepped down the scale each bar — an easing, settling motion toward resolution.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,-1,-2];
+    gen(u){ const Q = u.cols; const fig = [0,-1,-2];
       return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, fig.map(x => u.start + x - b))); } },
+        layBar(u.B, Q, fig.map(x => u.start + x - b), u.lens)); } },
   { id:"leaps", name:"Leaping (zig-zag)",
     desc:"Zig-zags between your start note and a note a fifth above — wide, angular intervals for a bolder hook.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,4,0,4];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const fig = [0,4,0,4];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x), u.lens)); } },
   { id:"qa", name:"Question & answer (resolves to tonic)",
     desc:"An antecedent phrase that rises and hangs, then a consequent that comes to rest on the tonic — a fully closed two-bar sentence.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) =>
-        b % 2 === 0 ? layBar(u.B, Q, [u.start, u.start+1, u.start+2, u.start+2])
-                    : layBar(u.B, Q, [u.start+1, u.start-1, u.start, 0])); } },
+        b % 2 === 0 ? layBar(u.B, Q, [u.start, u.start+1, u.start+2, u.start+2], u.lens)
+                    : layBar(u.B, Q, [u.start+1, u.start-1, u.start, 0], u.lens)); } },
   { id:"archTwo", name:"Two-bar arch",
     desc:"Rises across the first bar and falls back across the second — a broad, singable two-bar arch.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, (b % 2 === 0 ? [0,1,2,3] : [3,2,1,0]).map(x => u.start + x))); } },
+        layBar(u.B, Q, (b % 2 === 0 ? [0,1,2,3] : [3,2,1,0]).map(x => u.start + x), u.lens)); } },
   { id:"zigTight", name:"Tight zig-zag",
     desc:"Steps up and dips back on every beat — a busy, chattering close-interval line.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,0,2];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const fig = [0,1,0,2];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x), u.lens)); } },
   { id:"thirds", name:"Skipping thirds",
     desc:"Leaps up a third then steps back down, walking the line upward in gentle skips.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,1,3];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const fig = [0,2,1,3];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x), u.lens)); } },
   { id:"gapfill", name:"Leap & fill",
     desc:"Jumps up to a high note then fills the gap with a stepwise descent — a classic melodic shape.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [4,3,2,1];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const fig = [4,3,2,1];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x), u.lens)); } },
   { id:"penta", name:"Pentatonic hook",
     desc:"Stays on the five pentatonic degrees — the notes that sound good over anything — for a foolproof hook.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const pent = [0,2,4,5,4,2,1,0]; let n = 0;
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + pent[n++ % pent.length]))); } },
+    gen(u){ const Q = u.cols; const pent = [0,2,4,5,4,2,1,0]; let n = 0;
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + pent[n++ % pent.length]), u.lens)); } },
   { id:"hook", name:"High-to-low hook",
     desc:"Opens high and tumbles down to the tonic — an instantly memorable pop-hook shape.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [4,4,2,0];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const fig = [4,4,2,0];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x), u.lens)); } },
   { id:"pairs", name:"Repeated pairs",
     desc:"Says each note twice before moving on — a stuttering, insistent way to drill a hook in.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,0,2,2];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const fig = [0,0,2,2];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x), u.lens)); } },
   { id:"turn", name:"Turn (ornament)",
     desc:"Circles the start note — up, home, down, home — the ornamental 'turn' from classical melody.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [1,0,-1,0];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const fig = [1,0,-1,0];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x), u.lens)); } },
   { id:"fanfare", name:"Fanfare (chord leaps)",
     desc:"Bugle-call leaps around each bar's chord — root, fifth, third, fifth — bold and brassy.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g, g+4, g+2, g+4]); }); } },
+        return layBar(u.B, Q, [g, g+4, g+2, g+4], u.lens); }); } },
   { id:"chordDrop", name:"Chord climb, scale fall",
     desc:"Climbs the bar's chord tones then eases back down the scale — outlines the harmony, then smooths it over.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g, g+2, g+4, g+3]); }); } },
+        return layBar(u.B, Q, [g, g+2, g+4, g+3], u.lens); }); } },
   { id:"bluesy", name:"Bluesy lick",
     desc:"Curls around the third and fourth for a lazy, vocal blues inflection.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,3,2];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
+    gen(u){ const Q = u.cols; const fig = [0,2,3,2];
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x), u.lens)); } },
   { id:"offbeat", name:"Off-beat syncopation",
     desc:"Puts the notes on the and-of-each-beat instead of the beat — a syncopated push that pulls against the chords.",
     gen(u){ const off = Array.from({ length:u.B }, (_, i) => i).filter(i => i % 2 === 1); const fig = [0,1,2,3];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, off, fig.map(x => u.start + x))); } },
+      return Array.from({ length:u.nBars }, () => layBar(u.B, off, fig.map(x => u.start + x), u.lens)); } },
   { id:"riff8", name:"Eighth-note riff",
     desc:"A driving eighth-note riff that repeats every bar — motoric and hooky.",
     gen(u){ const cols = Array.from({ length:u.B }, (_, i) => i); const fig = [0,0,2,0,3,2,1,0];
-      return Array.from({ length:u.nBars }, () => layBar(u.B, cols, cols.map((_, i) => u.start + fig[i % fig.length]))); } },
+      return Array.from({ length:u.nBars }, () => layBar(u.B, cols, cols.map((_, i) => u.start + fig[i % fig.length]), u.lens)); } },
   { id:"sparse", name:"Sparse (lots of space)",
     desc:"Just two notes a bar — a call on beat one, a reply halfway through. Leaves room for the groove to breathe.",
     gen(u){ const half = Math.floor(u.B / 2);
@@ -210,37 +276,37 @@ const MELODY_PATTERNS = [
         return bar; }); } },
   { id:"mirror", name:"Rise then mirror",
     desc:"States a rising shape, then answers it upside-down — the tune folded back on itself.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) =>
-        layBar(u.B, Q, (b % 2 === 0 ? [0,1,2,3] : [0,-1,-2,-3]).map(x => u.start + x))); } },
+        layBar(u.B, Q, (b % 2 === 0 ? [0,1,2,3] : [0,-1,-2,-3]).map(x => u.start + x), u.lens)); } },
   { id:"cascade", name:"Cascade down",
     desc:"A stepwise tumble that restarts a little lower each bar — a long, settling cascade toward home.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, (_, b) => layBar(u.B, Q, [3,2,1,0].map(x => u.start + x - b))); } },
+    gen(u){ const Q = u.cols;
+      return Array.from({ length:u.nBars }, (_, b) => layBar(u.B, Q, [3,2,1,0].map(x => u.start + x - b), u.lens)); } },
   { id:"seq4", name:"Four-bar climb",
     desc:"A short figure nudged up a step every bar — a long build that keeps rising across four bars.",
-    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,1];
-      return Array.from({ length:u.nBars }, (_, b) => layBar(u.B, Q, fig.map(x => u.start + x + (b % 4)))); } },
+    gen(u){ const Q = u.cols; const fig = [0,2,1];
+      return Array.from({ length:u.nBars }, (_, b) => layBar(u.B, Q, fig.map(x => u.start + x + (b % 4)), u.lens)); } },
   { id:"qq", name:"Two questions, one answer",
     desc:"Two rising, unresolved phrases then a falling reply that finally lands — a three-part sentence.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) =>
-        b % 3 === 2 ? layBar(u.B, Q, [2,1,0,0].map(x => u.start + x))
-                    : layBar(u.B, Q, [0,1,2,2].map(x => u.start + x))); } },
+        b % 3 === 2 ? layBar(u.B, Q, [2,1,0,0].map(x => u.start + x), u.lens)
+                    : layBar(u.B, Q, [0,1,2,2].map(x => u.start + x), u.lens)); } },
   { id:"climb", name:"Climb to a peak",
     desc:"Rises steadily across the whole section to a high point — one long crescendo of pitch.",
-    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0; const total = Math.max(1, u.nBars * Q.length - 1);
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + Math.round((n++ / total) * 6)))); } },
+    gen(u){ const Q = u.cols; let n = 0; const total = Math.max(1, u.nBars * Q.length - 1);
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + Math.round((n++ / total) * 6)), u.lens)); } },
   { id:"drone5", name:"Fifth pedal",
     desc:"Holds the fifth of the key as a bright high drone on every beat — tension over the moving chords.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
-      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + 4))); } },
+    gen(u){ const Q = u.cols;
+      return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + 4), u.lens)); } },
   { id:"waltzArp", name:"Waltz lilt",
     desc:"Three notes a bar lilting up the chord — made for 3/4 and 6/8, but lovely anywhere.",
-    gen(u){ const Q = qbeats(u.B, u.sub);
+    gen(u){ const Q = u.cols;
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
-        return layBar(u.B, Q, [g, g+2, g+4]); }); } },
+        return layBar(u.B, Q, [g, g+2, g+4], u.lens); }); } },
 ];
 
 /* ===== melodic narratives =====
@@ -299,16 +365,34 @@ const chordSnap = (deg, cd, nd) => {
 // walk a section slot by slot. `colsOf(bar)` picks that bar's columns; `degAt` returns the degree
 // for each slot from { b bar, i note-in-bar, n notes-in-bar, c column, g slot number,
 // t 0→1 through the section, cd the bar's chord degree }.
+// give bare columns a length each: a note holds until the next one starts, rather than every note
+// being the same short stab followed by a rest
+const withLens = (cols, B) => cols.map((c, i) => ({ c, len: Math.max(1, (i + 1 < cols.length ? cols[i + 1] : B) - c) }));
+// take `n` spots spread evenly across a cell, so a sparse section still uses the cell's character
+const pickSpread = (spots, n) => {
+  if (n >= spots.length) return spots;
+  const step = spots.length / n;
+  return Array.from({ length: n }, (_, i) => spots[Math.floor(i * step)]);
+};
+// Narratives choose how MANY notes a section gets (from its role); the rhythm cell chooses WHERE
+// they fall. Keeping those separate is what stops every section coming out on the beat.
 const narBars = (u, colsOf, degAt) => {
-  const per = Array.from({ length:u.nBars }, (_, b) => colsOf(b));
+  const per = Array.from({ length:u.nBars }, (_, b) => {
+    const want = colsOf(b);
+    return (u.spots && u.spots.length)
+      ? pickSpread(u.spots, Math.max(1, Math.min(want.length, u.spots.length)))
+      : withLens(want, u.B);
+  });
   const N = per.reduce((n, a) => n + a.length, 0) || 1;
   let g = 0;
-  return per.map((cols, b) => {
+  return per.map((spots, b) => {
     const bar = Array.from({ length:u.B }, () => []);
-    cols.forEach((c, i) => {
-      const d = degAt({ b, i, n:cols.length, c, g, t: N > 1 ? g / (N - 1) : 0, cd:u.chordDegs[b] });
+    spots.forEach((sp, i) => {
+      const d = degAt({ b, i, n:spots.length, c:sp.c, g, t: N > 1 ? g / (N - 1) : 0, cd:u.chordDegs[b] });
       g++;
-      if (d != null) bar[c] = [clampDeg(d, u.nd)];
+      if (d == null) return;
+      const v = [clampDeg(d, u.nd)];
+      for (let k = 0; k < sp.len && sp.c + k < u.B; k++) bar[sp.c + k] = v;
     });
     return bar;
   });
@@ -460,4 +544,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, ROLE_LIFT, ROLE_N, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, qbeats, rescaleBar, roleLift, roleN, winFor, wrap7 };
+export { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };

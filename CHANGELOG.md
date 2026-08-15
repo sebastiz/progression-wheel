@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+- **Melody rhythm — the generated lines aren't stiff any more.** Every suggested melody used to put
+  one note on every beat, all the same length, so whichever shape you picked came out sounding the
+  same underneath. Rhythm is now its own choice: a **Rhythm** menu sits beside the melody pattern in
+  a section's **Suggest** tab, with thirteen cells — *On the beat*, *Long–short*, *Short–long*,
+  *Pushed*, *Off the beat*, *Tresillo (3+3+2)*, *Charleston*, *Gallop*, *Running sixteenths*,
+  *Pickup*, *Two long notes*, *One held note* and *Question & space*. The shape of the tune and the
+  rhythm it's played in are now independent, so the same arpeggio can be square, syncopated or
+  spacious.
+  - **Notes have length now.** They used to be uniformly short with a rest after each; a cell says
+    how long each note lasts, so lines hold, breathe and land properly.
+  - Cells are written in **beats**, not grid columns, so one cell works on an eighth grid or a
+    sixteenth one and in 3/4 as well as 4/4 — a cell finer than the current grid snaps onto it.
+  - **Whole-song narratives vary too.** Each section takes a rhythm suited to its role — intros hold,
+    verses converse in long–short, pre-choruses push, choruses land squarely, bridges sit off the
+    beat, builds run in sixteenths — while keeping each section's own note density. A narrative no
+    longer writes the same rhythm from top to bottom. Version bumped to 4.46.0.
 - **Exported MIDI now says which instrument each part is.** Parts already landed on their own tracks
   and channels, but the file never named the sounds, so a DAW opened every track on its default
   piano and you assigned them by hand. Each melody part now carries a **General MIDI program** taken

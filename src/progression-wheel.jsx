@@ -7,7 +7,7 @@ import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyM
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
-import { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, blankBars, layerGain, rescaleBar} from "./melody.js";
+import { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots } from "./melody.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -446,7 +446,8 @@ export default function ProgressionWheel() {
   const [melos, setMelos] = useState({ progId:"", secs:{} }); // per-section melodies, chord-anchored
   const [openSecs, setOpenSecs] = useState({});             // which section melody grids are open
   const [melTab, setMelTab] = useState({});                 // per-section: "write" | "suggest"
-  const [sugSel, setSugSel] = useState({});                 // per-section: { pat, start } suggested-melody picks
+  const [sugSel, setSugSel] = useState({});
+  const [rhySel, setRhySel] = useState({});                 // per-section melody rhythm cell                 // per-section: { pat, start } suggested-melody picks
   const [narSel, setNarSel] = useState({ key:"", id:"" });  // melodic narrative written across the whole song
   const [narUndo, setNarUndo] = useState(null);             // melody snapshot from before the last narrative write
   const [showLand, setShowLand] = useState(false);          // landing-notes collapse
@@ -1210,9 +1211,11 @@ export default function ProgressionWheel() {
   };
 
   // write a suggested melody pattern onto a section's grid (overwrites what's there)
-  const applyPattern = (d, sec, patId, start, L) => {
+  const applyPattern = (d, sec, patId, start, L, rhythmId = "straight") => {
     const pat = MELODY_PATTERNS.find(p => p.id === patId) || MELODY_PATTERNS[0];
+    const spots = rhythmSpots(rhythmId, meloBeats, meloSub, barBeats);
     const bars = pat.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, start: start % scaleSemis.length,
+      cols: spots.map(x => x.c), lens: spots.map(x => x.len),
       chordDegs: chordDegsOf(d.cs) });
     putLayer(d.key, L, bars);
     setMelTab({ ...melTab, [d.key]: "write" });   // reveal the result on the grid
@@ -1242,7 +1245,8 @@ export default function ProgressionWheel() {
     sections.insts.forEach((d, idx) => {
       const pass = seen[d.base] = (seen[d.base] || 0);
       seen[d.base] = pass + 1;
-      const bars = nar.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, nd: scaleSemis.length,
+      const spots = rhythmSpots(ROLE_RHYTHM[d.base] || "straight", meloBeats, meloSub, barBeats);
+      const bars = nar.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, nd: scaleSemis.length, spots,
         chordDegs: chordDegsOf(d.cs), role: d.base, pass, passes: passes[d.base],
         idx, total, frac: total > 1 ? idx / (total - 1) : 0 });
       const sec = secMelos[d.key], prev = secs[d.key] || {};
@@ -2804,6 +2808,8 @@ export default function ProgressionWheel() {
                   const tab = melTab[d.key] || "write";
                   const pick = sugSel[d.key] || { pat: MELODY_PATTERNS[0].id, start: 0 };
                   const curPat = MELODY_PATTERNS.find(p => p.id === pick.pat) || MELODY_PATTERNS[0];
+                  const rhy = rhySel[d.key] || "straight";
+                  const curRhy = RHYTHMS.find(r => r.id === rhy) || RHYTHMS[0];
                   const nL = nLayers(sec);
                   const secL = Math.min(melLayer, nL - 1);         // which part this section's edits target
                   // a fresh copy of the melody-voice option list (used by both per-layer instrument menus)
@@ -2898,6 +2904,14 @@ export default function ProgressionWheel() {
                               {MELODY_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
                           </div>
+                          <div className="selwrap" style={{ minWidth:150, flex:"0 0 auto" }}>
+                            <span className="keytag">Rhythm</span>
+                            <select value={rhy}
+                              onChange={e => setRhySel({ ...rhySel, [d.key]: e.target.value })}
+                              title="Where the notes fall in the bar, and how long each lasts — separately from the shape of the tune">
+                              {RHYTHMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </select>
+                          </div>
                           <div className="selwrap" style={{ minWidth:120, flex:"0 0 auto" }}>
                             <span className="keytag">Start note</span>
                             <select value={pick.start}
@@ -2908,11 +2922,12 @@ export default function ProgressionWheel() {
                             </select>
                           </div>
                         </div>
-                        <p className="arrnote" style={{ marginTop:7 }}>Writing to melody <b>{secL === 1 ? "B" : "A"}</b>. {curPat.desc}</p>
+                        <p className="arrnote" style={{ marginTop:7 }}>Writing to melody <b>{LAYER_NAMES[secL]}</b>. {curPat.desc}</p>
+                        <p className="arrnote" style={{ marginTop:3 }}><b>{curRhy.name}</b> — {curRhy.desc}</p>
                         <div className="row" style={{ gap:6, marginTop:8 }}>
-                          <button className="btn" onClick={() => applyPattern(d, sec, pick.pat, pick.start, secL)}>
+                          <button className="btn" onClick={() => applyPattern(d, sec, pick.pat, pick.start, secL, rhy)}>
                             Write to grid</button>
-                          <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {secL === 1 ? "B" : "A"}</button>
+                          <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {LAYER_NAMES[secL]}</button>
                         </div>
                       </div>
                     )}
