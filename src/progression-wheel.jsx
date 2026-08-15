@@ -463,8 +463,38 @@ const DRUMS = {};
 ["kit68","6/8 kit","K H H SH H H"],
 ["shuffle68","6/8 shuffle","KH H H SH H H"],
 ["march68","6/8 march","K H SH H SH H"],
+// 4/4 dance — written for the machine kits: O = open hat, C = clap, P = rim, R = ride,
+// X = crash, B = 808 sub-boom. The offbeat open hat is the engine of house; the clap
+// (not a snare) on 2 and 4 is what stops four-on-the-floor sounding like disco-rock.
+["house909","House (909)","K O KC O K O KC O"],
+["deep","Deep house","KH O KCH O KH O KCH OP"],
+["techhouse","Tech house","KH OP KCH H KH OP KCH O"],
+["techno","Techno","KH H KH H KH H KH O"],
+["trance","Trance","KH O KCH O KH O KCH O"],
+["bigroom","Big room","KHX O KCH O KH O KCH O"],
+["garage","UK garage 2-step","KH H CH KH H C H SH"],
+["disco909","Nu-disco","KH O KCH O KH O KCH OP"],
+["trap","Trap","BH H H CH H BH CH H"],
+["dubstep","Dubstep half-time","KH H H H CH H P H"],
+["electro","Electro house","KH H KCH H KH KH CH H"],
 ].forEach(([id, name, pat]) =>
   DRUMS[id] = { name, pattern: pat ? pat.split(" ").map(s => s === "." ? "" : s) : null });
+
+// Kit voicings for the drum channels above (see drumSound).
+const DRUM_KITS = [["acoustic","Acoustic kit"], ["909","TR-909 · house & techno"], ["808","TR-808 · trap & hip-hop"]];
+// How hard the kick ducks everything pitched. "classic" is the familiar house pump.
+const PUMPS = [["off","No pump"], ["subtle","Subtle"], ["classic","Classic pump"], ["hard","Hard pump"]];
+const PUMP_AMT = { off:0, subtle:0.3, classic:0.6, hard:0.85 };
+// Channel letter → General MIDI percussion note, for the exported channel-10 drum track.
+const DRUM_MIDI = { K:36, B:35, S:38, H:42, O:46, C:39, P:37, R:51, X:49 };
+// GM percussion-set program numbers (0-indexed) so an exported file opens with a kit that
+// matches what you heard. GM has no 909, so it borrows the Electronic set.
+const KIT_PROGRAM = { "909":24, "808":25 };
+// The dance progressions come up already grooving — pick Deep House and press play.
+// Everything else keeps the acoustic kit and no pump, exactly as before.
+const DRUM_DEFAULT = { edm:"house909", deepHouse:"deep", festival:"trance", futureBass:"trap" };
+const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
+const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
 /* ===== sounds ===== */
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
@@ -497,49 +527,113 @@ function clickSound(ctx, t, sym, dest) {
     o2.start(t); o2.stop(t + 0.13);
   }
 }
-function drumSound(ctx, t, ch, noise, dest) {
-  if (ch === "K") {
-    // body: sine with a fast pitch drop; plus a short click transient for the beater
-    const o = ctx.createOscillator();
-    o.type = "sine";
-    o.frequency.setValueAtTime(165, t);
-    o.frequency.exponentialRampToValueAtTime(42, t + 0.09);
-    o.connect(env(ctx, t, 0.62, 0.002, 0.22, true, dest));
-    o.start(t); o.stop(t + 0.24);
-    const click = ctx.createBufferSource(); click.buffer = noise;
-    const cf = ctx.createBiquadFilter(); cf.type = "lowpass"; cf.frequency.value = 3200;
-    click.connect(cf); cf.connect(env(ctx, t, 0.22, 0.001, 0.02, true, dest));
-    click.start(t); click.stop(t + 0.03);
-  } else if (ch === "S") {
-    // two-tone shell + a bright noise crack + a slightly longer wire rattle
-    [175, 330].forEach((hz, k) => {
-      const o = ctx.createOscillator();
-      o.type = "triangle"; o.frequency.value = hz;
-      o.connect(env(ctx, t, k ? 0.09 : 0.14, 0.001, 0.09, true, dest));
-      o.start(t); o.stop(t + 0.1);
-    });
-    const crack = ctx.createBufferSource(); crack.buffer = noise;
-    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1600;
-    crack.connect(hp); hp.connect(env(ctx, t, 0.3, 0.001, 0.055, true, dest));
-    crack.start(t); crack.stop(t + 0.06);
-    const rattle = ctx.createBufferSource(); rattle.buffer = noise;
-    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 3200; bp.Q.value = 0.6;
-    rattle.connect(bp); bp.connect(env(ctx, t, 0.14, 0.002, 0.16, true, dest));
-    rattle.start(t); rattle.stop(t + 0.17);
-  } else if (ch === "H") {
-    // metallic hat: high-passed noise + a ring of inharmonic square partials
+// One drum voice. `ch` is a channel letter from a DRUMS pattern; `kit` picks the voicing.
+// The two machine kits are what dance music is actually built on, and they differ from the
+// acoustic kit in kind, not just tone: the 909's kick is a short punchy thud with a hard
+// click on top, the 808's is a long tuned sub-boom that rings for most of a beat.
+function drumSound(ctx, t, ch, noise, dest, kit) {
+  const K9 = kit === "909", K8 = kit === "808";
+  // one filtered noise burst — the skin/cymbal half of nearly every voice here.
+  // The shared noise buffer is only 0.3 s, so anything ringing longer (ride, crash) has to
+  // loop it or the tail goes silent halfway through its own envelope.
+  const nz = (vol, atk, dec, type, hz, Q) => {
     const n = ctx.createBufferSource(); n.buffer = noise;
-    const f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 7800;
-    n.connect(f); f.connect(env(ctx, t, 0.11, 0.001, 0.04, true, dest));
-    n.start(t); n.stop(t + 0.05);
+    if (dec > 0.25) n.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = hz;
+    if (Q != null) f.Q.value = Q;
+    n.connect(f); f.connect(env(ctx, t, vol, atk, dec, true, dest));
+    n.start(t); n.stop(t + dec + 0.02);
+  };
+  // one pitched tone, optionally sweeping hz0 → hz1 over `sweep` seconds
+  const tone = (type, hz0, hz1, sweep, vol, atk, dec, at = t) => {
+    const o = ctx.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(hz0, at);
+    if (hz1) o.frequency.exponentialRampToValueAtTime(hz1, at + sweep);
+    o.connect(env(ctx, at, vol, atk, dec, true, dest));
+    o.start(at); o.stop(at + dec + 0.02);
+  };
+  if (ch === "K" || ch === "B") {
+    // B is the 808-style sub-boom on any kit — the long tuned tail under a trap beat
+    const sub = ch === "B" || K8;
+    if (sub) {                                   // pure sine, slow drop, long ring
+      tone("sine", ch === "B" ? 105 : 120, 42, 0.06, 0.72, 0.004, ch === "B" ? 1.1 : 0.85);
+      nz(0.05, 0.001, 0.012, "lowpass", 2200);   // barely any beater — the 808 is almost all body
+    } else if (K9) {                             // 909: tight body, hard click on top
+      tone("sine", 200, 48, 0.045, 0.68, 0.001, 0.3);
+      nz(0.3, 0.001, 0.016, "lowpass", 4200);
+    } else {                                     // acoustic: the original kick
+      tone("sine", 165, 42, 0.09, 0.62, 0.002, 0.22);
+      nz(0.22, 0.001, 0.02, "lowpass", 3200);
+    }
+  } else if (ch === "S") {
+    if (K9) {                                    // 909 snare: noise-forward, short, bright
+      tone("triangle", 238, 0, 0, 0.1, 0.001, 0.06);
+      nz(0.34, 0.001, 0.075, "highpass", 1900);
+      nz(0.12, 0.001, 0.13, "bandpass", 4200, 0.7);
+    } else if (K8) {                             // 808 snare: tuned tick + a thin noise puff
+      tone("triangle", 180, 0, 0, 0.16, 0.001, 0.075);
+      nz(0.2, 0.001, 0.055, "highpass", 2400);
+    } else {                                     // acoustic: two-tone shell + crack + wire rattle
+      [175, 330].forEach((hz, k) => tone("triangle", hz, 0, 0, k ? 0.09 : 0.14, 0.001, 0.09));
+      nz(0.3, 0.001, 0.055, "highpass", 1600);
+      nz(0.14, 0.002, 0.16, "bandpass", 3200, 0.6);
+    }
+  } else if (ch === "H" || ch === "O") {
+    // closed vs open hat: the same voice with a longer tail. Machine hats are brighter and
+    // more metallic than the acoustic one, which is most of why a 909 pattern reads as "house".
+    const open = ch === "O";
+    const dec = open ? (K8 ? 0.34 : 0.28) : (K9 ? 0.035 : K8 ? 0.028 : 0.04);
+    const vol = open ? 0.1 : 0.11;
+    nz(vol, 0.001, dec, "highpass", K9 ? 8600 : K8 ? 9200 : 7800);
+    if (K8) return;                              // 808 hats are pure noise — no partial ring
+    // a ring of inharmonic square partials through a shared high-pass gives the metal
     const ring = ctx.createGain(); ring.gain.value = 0.02;
     const rhp = ctx.createBiquadFilter(); rhp.type = "highpass"; rhp.frequency.value = 8500;
-    ring.connect(rhp); rhp.connect(env(ctx, t, 0.5, 0.001, 0.035, true, dest));
-    [2400, 3000, 4700].forEach(hz => {
+    ring.connect(rhp); rhp.connect(env(ctx, t, open ? 0.42 : 0.5, 0.001, open ? dec * 0.9 : 0.035, true, dest));
+    (K9 ? [3100, 4200, 5900] : [2400, 3000, 4700]).forEach(hz => {
       const o = ctx.createOscillator(); o.type = "square"; o.frequency.value = hz;
-      o.connect(ring); o.start(t); o.stop(t + 0.045);
+      o.connect(ring); o.start(t); o.stop(t + dec + 0.01);
     });
+  } else if (ch === "C") {
+    // hand clap: three fast noise slaps a few ms apart (the "spread" that makes it a room
+    // full of hands rather than one pair) plus a longer body tail behind them
+    [0, 0.011, 0.022].forEach((d, i) => {
+      const n = ctx.createBufferSource(); n.buffer = noise;
+      const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1750; f.Q.value = 0.9;
+      n.connect(f); f.connect(env(ctx, t + d, i === 2 ? 0.26 : 0.17, 0.001, 0.028, true, dest));
+      n.start(t + d); n.stop(t + d + 0.04);
+    });
+    nz(0.13, 0.004, 0.16, "bandpass", 2100, 0.8);
+  } else if (ch === "P") {
+    // rim / side-stick: a short woody knock — the off-grid percussion in house and latin house
+    tone("triangle", 1720, 0, 0, 0.13, 0.001, 0.028);
+    nz(0.09, 0.001, 0.022, "bandpass", 2600, 1.4);
+  } else if (ch === "R") {
+    // ride: a sustained wash of high partials, quieter and far longer than a hat
+    nz(0.055, 0.002, 0.5, "highpass", 6200);
+    const ring = ctx.createGain(); ring.gain.value = 0.014;
+    const rhp = ctx.createBiquadFilter(); rhp.type = "highpass"; rhp.frequency.value = 7000;
+    ring.connect(rhp); rhp.connect(env(ctx, t, 0.4, 0.002, 0.45, true, dest));
+    [2100, 3300, 4900, 6100].forEach(hz => {
+      const o = ctx.createOscillator(); o.type = "square"; o.frequency.value = hz;
+      o.connect(ring); o.start(t); o.stop(t + 0.46);
+    });
+  } else if (ch === "X") {
+    // crash: a broad noise swell that rings on — marks the top of a drop or a section change
+    nz(0.17, 0.004, 1.15, "highpass", 3400);
+    nz(0.08, 0.006, 0.9, "bandpass", 6800, 0.4);
   }
+}
+// Sidechain pump. The pitched bus runs through a gain that gets slammed down on every kick
+// and breathes back before the next one — the ducking that defines house, techno and EDM.
+// We schedule the envelope directly instead of running a real compressor with a detector:
+// we already know exactly when each kick lands, so this is sample-accurate and free.
+function duckAt(g, t, amount, rel) {
+  const floor = Math.max(0.05, 1 - amount);
+  g.gain.cancelScheduledValues(t);
+  g.gain.setValueAtTime(1, t);                                  // full level at the hit…
+  g.gain.linearRampToValueAtTime(floor, t + 0.006);             // …down in ~6 ms
+  g.gain.linearRampToValueAtTime(1, t + Math.max(0.09, rel));   // and back up through the gap
 }
 const chordIvs = q => ({ dom:[0,4,7,10], maj7:[0,4,7,11], m7:[0,3,7,10],
   maj9:[0,4,7,11,14], m9:[0,3,7,10,14], dom9:[0,4,7,10,14],
@@ -1238,7 +1332,7 @@ const vlq = n => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) 
 // each column a list of absolute MIDI note numbers. Runs of the same note across
 // adjacent columns are merged into one held note (legato) so the exported line
 // flows the way it plays.
-function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2) {
+function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2, kit) {
   const T = 480, ev = (arr, dt, ...bytes) => arr.push(...vlq(dt), ...bytes);
   const trk = arr => {
     const body = [...arr, 0, 0xff, 0x2f, 0];
@@ -1259,12 +1353,14 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2) {
   const drumsT = [];
   if (drumHas) {
     let pend = 0;
+    if (KIT_PROGRAM[kit] != null) ev(drumsT, 0, 0xc9, KIT_PROGRAM[kit]);   // machine kit on channel 10
     for (let bar = 0; bar < bars.length; bar++) {
       const pat = drumFn(bar);
       for (let s = 0; s < beatsPerBar * 2; s++) {
-        const notes = [...((pat && pat[s]) || "")].map(c => c === "K" ? 36 : c === "S" ? 38 : 42);
+        const notes = [...((pat && pat[s]) || "")].map(c => DRUM_MIDI[c] || 42);
         if (!notes.length) { pend += T / 2; continue; }
-        notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n, n === 42 ? 62 : 92));
+        // cymbals and rim sit behind the kick/snare/clap, as they do in the app
+        notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n, [42,46,51,37].includes(n) ? 62 : 92));
         notes.forEach((n, i) => ev(drumsT, i ? 0 : 60, 0x89, n, 0));
         pend = T / 2 - 60;
       }
@@ -1963,7 +2059,11 @@ export default function ProgressionWheel() {
   const [legato, setLegato] = useState(true);               // merge/flow melody notes
   const [clickOn, setClickOn] = useState(false);            // metronome click on each hit (off by default)
   const [patSel, setPatSel] = useState({ key:"", id:"" });
-  const [drum, setDrum] = useState("off");
+  // drum pattern, kit and pump are keyed by progression like the tempo and strum pattern, so the
+  // dance progressions arrive already grooving while everything else keeps its acoustic default
+  const [drumSt, setDrumSt] = useState({ key:"", val:"" });
+  const [kitSt, setKitSt] = useState({ key:"", val:"" });
+  const [pumpSt, setPumpSt] = useState({ key:"", val:"" });
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
   const [colour, setColour] = useState("triads");           // triads | sevenths
   const [force, setForce] = useState(null);                 // dice override of the progression
@@ -2007,6 +2107,7 @@ export default function ProgressionWheel() {
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(false);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
   const secDrumRef = useRef({});
+  const kitRef = useRef("acoustic"), pumpRef = useRef(0);
   const realRef = useRef(true);
   const clickRef = useRef(false);
   const meloRef = useRef(null);
@@ -2367,9 +2468,13 @@ export default function ProgressionWheel() {
   const patId = patSel.key === progId && PATTERNS[patSel.id] ? patSel.id : (PATTERN_DEFAULT[progId] || "pop");
   const rhythm = PATTERNS[patId];
   const effBpm = bpmSt.key === progId ? bpmSt.val : (BPM_DEFAULT[progId] || 96);
+  const drum = drumSt.key === progId && DRUMS[drumSt.val] ? drumSt.val : (DRUM_DEFAULT[progId] || "off");
+  const kit = kitSt.key === progId ? kitSt.val : (KIT_DEFAULT[progId] || "acoustic");
+  const pump = pumpSt.key === progId ? pumpSt.val : (PUMP_DEFAULT[progId] || "off");
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = !!rhythm.swing;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
   secDrumRef.current = secDrum;
+  kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0;
   clickRef.current = clickOn;
   const meloBeats = rhythm.pattern.length;                  // eighths per bar (6 in waltz time)
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
@@ -2753,11 +2858,15 @@ export default function ProgressionWheel() {
     limiter.attack.value = 0.002; limiter.release.value = 0.14;
     limiter.connect(ctx.destination);
     const master = ctx.createGain(); master.gain.value = 0.65; master.connect(limiter);
-    const music = makeReverb(ctx, master);           // reverb bus for pitched instruments + melody
+    // Sidechain: everything pitched runs through `duck` on its way to the master, and the kick
+    // pulls it down (see duckAt). Drums and click connect to master directly, so the kick lands
+    // in the hole it just made instead of ducking itself.
+    const duck = ctx.createGain(); duck.gain.value = 1; duck.connect(master);
+    const music = makeReverb(ctx, duck);             // reverb bus for pitched instruments + melody
     const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
     const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
     if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-    const m = { ctx, master, music, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+    const m = { ctx, master, music, duck, sampler, lastInstr: instrRef.current, lastLead: leadKey,
       leadLoaded: new Set(leadKey ? [leadKey] : []),
       step: from * (patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     m.timer = setInterval(() => {
@@ -2804,7 +2913,12 @@ export default function ProgressionWheel() {
           const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
           if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
         }
-        if (dpat && dpat[i]) for (const ch of dpat[i]) drumSound(m.ctx, t, ch, m.noise, m.master);
+        if (dpat && dpat[i]) {
+          for (const ch of dpat[i]) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current);
+          // pump the pitched bus under every kick. Recovery stops just short of the next
+          // quarter, so four-on-the-floor breathes fully back in right as the next kick hits.
+          if (pumpRef.current && /[KB]/.test(dpat[i])) duckAt(m.duck, t, pumpRef.current, eighth * 1.6);
+        }
         const mel = meloRef.current;
         if (mel) {
           let sym = null, mb = 0;
@@ -2916,7 +3030,7 @@ export default function ProgressionWheel() {
       };
       const anyDrum = bars.some((_, i) => drumForBar(i));
       const bytes = midiBytes(effBpm, rhythm.pattern.length / 2, bars, drumForBar,
-        anyMelo ? meloCols : null, anyMeloB ? meloColsB : null);
+        anyMelo ? meloCols : null, anyMeloB ? meloColsB : null, kit);
       const url = URL.createObjectURL(new Blob([bytes], { type:"audio/midi" }));
       const a = document.createElement("a");
       a.href = url; a.download = "progression-wheel.mid";
@@ -3066,7 +3180,7 @@ export default function ProgressionWheel() {
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
     const s = { name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr,
-      bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
+      kit, pump, bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
       quals: qmap, removed: remList,
       order: order.key === editKey ? order.list : null };
     const list = [...(sketches || []).filter(x => x.name !== name), s];
@@ -3079,8 +3193,13 @@ export default function ProgressionWheel() {
   };
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
-    setColour(s.colour || "triads"); setInstr(s.instr); setDrum(s.drum); setSecDrum(s.secDrum || {});
+    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {});
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
+    // older sketches predate the kit/pump fields — fall back to the pre-dance defaults so they
+    // reload sounding exactly as they were saved
+    setDrumSt({ key:s.progId, val:s.drum || "off" });
+    setKitSt({ key:s.progId, val:s.kit || "acoustic" });
+    setPumpSt({ key:s.progId, val:s.pump || "off" });
     setSelStruct(s.selStruct || ""); setContrast(s.contrast || { id:"", sec:"C" });
     const eKey = s.progId + ":" + s.tonic;
     setEdits({ key:eKey, map:s.edits || {} }); setInserts({ key:eKey, list:s.inserts || [] });
@@ -3454,8 +3573,24 @@ export default function ProgressionWheel() {
             </label>
             <label className="selwrap" style={{ minWidth:130 }}>
               <span className="lbl" style={{ margin:0 }}>Drums</span>
-              <select value={drum} onChange={e => setDrum(e.target.value)}>
-                {Object.entries(DRUMS).map(([id, d]) => <option key={id} value={id}>{d.name}</option>)}
+              <select value={drum} onChange={e => setDrumSt({ key: progId, val: e.target.value })}>
+                {Object.entries(DRUMS).map(([id, d]) => (
+                  <option key={id} value={id}>{d.name}{id === DRUM_DEFAULT[progId] ? " ★" : ""}</option>
+                ))}
+              </select>
+            </label>
+            <label className="selwrap" style={{ minWidth:150 }}>
+              <span className="lbl" style={{ margin:0 }}>Kit</span>
+              <select value={kit} onChange={e => setKitSt({ key: progId, val: e.target.value })}
+                title="How the drums are voiced — an acoustic kit, or the two drum machines dance music is built on">
+                {DRUM_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+            <label className="selwrap" style={{ minWidth:130 }}>
+              <span className="lbl" style={{ margin:0 }}>Pump</span>
+              <select value={pump} onChange={e => setPumpSt({ key: progId, val: e.target.value })}
+                title="Sidechain ducking — the kick pulls the chords and melody down and lets them breathe back. Needs a drum pattern with a kick in it.">
+                {PUMPS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
             </label>
             <div className={"tog" + (realSounds ? " on" : "")} onClick={() => setRealSounds(v => !v)} style={{ paddingBottom:6 }}

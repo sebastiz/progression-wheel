@@ -1,9 +1,10 @@
 {
   "name": "progression-wheel",
-  "version": "4.37.0",
+  "version": "4.38.0",
   "description": "A circle-of-fifths songwriting sketchpad — progressions, colour moves, structures, rhythm, melody and MIDI export.",
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/audio-test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"

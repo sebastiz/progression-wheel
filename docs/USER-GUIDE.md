@@ -21,7 +21,7 @@ upstream changes.
   - *More colour* groups borrowed chords (iv, ♭VI, ♭VII, ♭III, Neapolitan ♭II), chromatic mediants
     (inserted right after the tonic), and tritone substitutions for any dominant.
 - **Sketch save/load** — captures the full state: key, progression, edits, colour level, pattern,
-  tempo, drums, instrument, structure and contrast loop.
+  tempo, drums, kit, pump, instrument, structure and contrast loop.
 
 ## The wheel
 
@@ -66,11 +66,30 @@ Turns the song into readable music. **Show score**, then choose **Piano** or **G
 ## Rhythm
 
 Pattern (≈30 strums including 3/4, 6/8 and swung feels — ★ marks the progression's suggested one),
-Sound (guitar / piano / organ / bass / double bass), Drums (synthesized kits including 3/4 and 6/8),
-tempo ±5, and Play. Playback runs one chord per bar; if a song structure is selected below, it plays
-the **entire written-out song**, showing the current section and bar. The current chord's pill and
-its landing-note row light up as it plays. All changes (pattern, drums, tempo, chord edits) take
-effect within about a tenth of a second, mid-playback.
+Sound (guitar / piano / organ / bass / double bass), Drums (≈40 patterns including 3/4, 6/8 and
+dance), Kit, Pump, tempo ±5, and Play. Playback runs one chord per bar; if a song structure is
+selected below, it plays the **entire written-out song**, showing the current section and bar. The
+current chord's pill and its landing-note row light up as it plays. All changes (pattern, drums,
+tempo, chord edits) take effect within about a tenth of a second, mid-playback.
+
+### Dance kits and the pump
+
+- **Kit** revoices whatever drum pattern you've chosen. *Acoustic kit* is a normal drum kit;
+  **TR-909** is the house and techno machine — a tight punchy kick with a hard click on top and
+  bright metallic hats; **TR-808** is the trap and hip-hop machine, whose kick is a long tuned
+  sub-boom that rings for most of a beat.
+- **Pump** is sidechain ducking — the kick pulls the chords and melody down and lets them breathe
+  back before the next one. That rhythmic swelling is the pulse under nearly every house, techno
+  and EDM record, and it's what makes four-on-the-floor feel like it's moving rather than just
+  repeating. Try *Classic pump* with the *House (909)* drums. It follows whichever kick is actually
+  playing, so **it needs a drum pattern with a kick in it** — a section you've silenced with its own
+  🥁 menu won't pump.
+- The dance drum patterns (*House (909)*, *Deep house*, *Tech house*, *Techno*, *Trance*, *Big
+  room*, *UK garage 2-step*, *Nu-disco*, *Trap*, *Dubstep half-time*, *Electro house*) use six voices
+  the acoustic patterns don't: open hat, clap, rim, ride, crash and an 808 sub-boom.
+- The four dance progressions — **The EDM anthem**, **Deep-house groove**, **The festival lift** and
+  **Future-bass swell** — arrive with a matching pattern, kit and pump already chosen, so you can
+  pick one and just press Play. Everything else starts on the acoustic kit with no pump.
 
 - **Real** (on by default) — plays real recorded instruments instead of pure synthesis: the chords
   (guitar / piano / organ / bass) and any melody **Lead** marked **◈** (Flute, Strings, Brass,

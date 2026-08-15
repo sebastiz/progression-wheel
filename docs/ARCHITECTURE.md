@@ -54,8 +54,27 @@ Web Audio API throughout, no samples:
   Play tap (iOS unlock), with a silent unlock note.
 - Each eighth-slot: click, chord voice (`playHit` — guitar pluck is sawtooth through a closing
   low-pass; piano is fundamental + decaying partials; organ sustains sine drawbars; basses play
-  roots), drum hits (`drumSound` — pitched-sine kick, filtered-noise snare/hat over a shared noise
-  buffer), and melody lead notes.
+  roots), drum hits (`drumSound`), and melody lead notes.
+
+### Drums and the sidechain
+
+`DRUMS` patterns are strings of channel letters per eighth-slot: `K` kick, `S` snare, `H` closed hat,
+`O` open hat, `C` clap, `P` rim, `R` ride, `X` crash, `B` 808 sub-boom. `drumSound(ctx, t, ch, noise,
+dest, kit)` voices one letter; `kit` (`acoustic` | `909` | `808`) selects between three voicings built
+from two shared primitives — `nz` (a filtered burst of the shared noise buffer) and `tone` (a pitched
+oscillator with an optional sweep). The buffer is only 0.3 s, so any voice decaying longer than that
+loops it rather than falling silent inside its own envelope.
+
+**Sidechain**: the pitched bus routes `reverb → duck → master` while drums and click connect to
+`master` directly, so the kick lands in the hole it makes instead of ducking itself. `duckAt` writes
+the envelope directly — cancel, full level at the hit, ~6 ms linear dip to `1 - amount`, linear
+recovery over ~1.6 eighths — rather than running a real compressor with a detector, because the
+scheduler already knows exactly when each kick lands. The scheduler fires it on any slot containing
+`K` or `B`, so per-section kits and drum-free sections pump correctly for free.
+
+Drum pattern, kit and pump are keyed by progression (like tempo and strum pattern) via
+`DRUM_DEFAULT` / `KIT_DEFAULT` / `PUMP_DEFAULT`, so the dance progressions arrive grooving and
+everything else keeps the acoustic defaults.
 - Swing delays odd eighths by a third of an eighth. Pattern length sets the meter (8 = 4/4, 6 = 3/4).
 - Structure playback maps `step → bar → section entry`; loop playback pads the loop to an even bar
   count.
@@ -119,8 +138,9 @@ comfortable fret (`tabFret`, distinct string per onset).
 ## MIDI
 
 `midiBytes()` writes a minimal SMF type-1 file by hand: tempo meta track, a chord track (bass +
-voicing held per bar), and a channel-10 drum track from the drum pattern. Exported via Blob +
-anchor download.
+voicing held per bar), and a channel-10 drum track from the drum pattern (`DRUM_MIDI` maps each
+channel letter to its GM percussion note; a machine kit also emits a `KIT_PROGRAM` program change so
+the file opens with a matching kit). Exported via Blob + anchor download.
 
 ## Persistence
 

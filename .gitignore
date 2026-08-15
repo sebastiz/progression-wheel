@@ -6,3 +6,5 @@ scripts/.app.jsx
 scripts/.app.min.js
 scripts/.tt.jsx
 scripts/.tt.min.js
+scripts/.test.jsx
+scripts/.test.mjs

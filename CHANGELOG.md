@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+- **Dance kits and the sidechain pump.** The drum engine now speaks dance. Two new controls sit
+  beside **Drums** in the top panel. **Kit** revoices the whole pattern as an *Acoustic kit* (what
+  you had), a **TR-909** (tight punchy kick, hard click, bright metallic hats — house and techno) or
+  a **TR-808** (a long tuned sub-boom that rings for most of a beat — trap and hip-hop). **Pump** is
+  sidechain ducking: the kick pulls the chords and melody down and lets them breathe back before the
+  next one, which is the pulse under nearly every house, techno and EDM record. Four settings —
+  *No pump*, *Subtle*, *Classic pump*, *Hard pump*. The pump follows whichever kick is actually
+  playing, so a section with its own 🥁 kit pumps to that kit, and a section with no drums doesn't
+  pump at all. Six new drum voices came with it — **open hat**, **clap**, **rim**, **ride**,
+  **crash** and an **808 sub-boom** — and eleven new patterns built from them: *House (909)*,
+  *Deep house*, *Tech house*, *Techno*, *Trance*, *Big room*, *UK garage 2-step*, *Nu-disco*,
+  *Trap*, *Dubstep half-time* and *Electro house*. The offbeat open hat and a clap (not a snare) on
+  2 and 4 are what stop four-on-the-floor sounding like disco-rock. The four dance progressions —
+  **The EDM anthem**, **Deep-house groove**, **The festival lift** and **Future-bass swell** — now
+  arrive with a matching pattern, kit and pump already selected (marked ★), so picking Deep House and
+  pressing play sounds like deep house. Every other progression keeps the acoustic kit and no pump,
+  exactly as before, and sketches saved before this release reload sounding as they were saved. Kit
+  and pump are saved with the sketch and written into the exported MIDI, which now emits all the new
+  percussion on channel 10 and sets the matching GM percussion program. Version bumped to 4.38.0.
 - **Melodic narratives — write a whole song's melody in one pick.** A new **Melodic narrative** menu
   sits directly under the song-structure chooser in **Song & melody**. The per-section Suggest tab
   shapes one section; a narrative is a single melodic idea told across the *whole* song — choose one
