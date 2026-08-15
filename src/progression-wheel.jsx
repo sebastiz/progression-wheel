@@ -1,10 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
-import { FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, sfPrefetch } from "./audio.js";
+import { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
+import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
 import { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, blankBars, layerGain, rescaleBar} from "./melody.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
@@ -428,7 +429,13 @@ export default function ProgressionWheel() {
   const [kitSt, setKitSt] = useState({ key:"", val:"" });
   const [pumpSt, setPumpSt] = useState({ key:"", val:"" });
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
-  const [secMove, setSecMove] = useState({});               // per-section-type arrangement move, keyed by base letter
+  const [secMove, setSecMove] = useState({});
+  const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
+  // Undo/redo over the whole song document. Snapshots are cheap (the same shape the sketch and the
+  // link use) and taken after the fact, so a tool you experiment in can always be walked back.
+  const [past, setPast] = useState([]);
+  const [future, setFuture] = useState([]);
+  const restoringRef = useRef(false);               // per-section-type arrangement move, keyed by base letter
   const [colour, setColour] = useState("triads");           // triads | sevenths
   const [force, setForce] = useState(null);                 // dice override of the progression
   const [sketches, setSketches] = useState(null);           // null = not loaded yet
@@ -474,6 +481,7 @@ export default function ProgressionWheel() {
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
   const subRef = useRef(2), melRef = useRef(8);
   const moveRef = useRef({ moves:{}, instBars:{} });
+  const delayRef = useRef("off");
   const realRef = useRef(true);
   const clickRef = useRef(false);
   const meloRef = useRef(null);
@@ -837,10 +845,12 @@ export default function ProgressionWheel() {
   const drum = drumSt.key === progId && DRUMS[drumSt.val] ? drumSt.val : (DRUM_DEFAULT[progId] || "off");
   const kit = kitSt.key === progId ? kitSt.val : (KIT_DEFAULT[progId] || "acoustic");
   const pump = pumpSt.key === progId ? pumpSt.val : (PUMP_DEFAULT[progId] || "off");
+  // a dotted eighth is the dance default; everything else starts dry
+  const delayId = delaySt.key === progId ? delaySt.val : (DRUM_DEFAULT[progId] ? "8d" : "off");
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = !!rhythm.swing;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
   secDrumRef.current = secDrum;
-  kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0;
+  kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0; delayRef.current = delayId;
   clickRef.current = clickOn;
   const meloBeats = rhythm.pattern.length;                  // grid columns per bar (6 in waltz time, 16 on a sixteenth rhythm)
   const meloSub = subOf(rhythm);                            // columns per beat: 2 = eighths, 4 = sixteenths
@@ -890,7 +900,7 @@ export default function ProgressionWheel() {
         return { bars, flat: bars.flat(), instr: (ly && ly.instr) || null,
           oct: (ly && ly.oct) != null ? ly.oct : (LAYER_DEFAULT_OCT[li] || 0),
           vol: (ly && ly.vol) != null ? ly.vol : (LAYER_DEFAULT_VOL[li] != null ? LAYER_DEFAULT_VOL[li] : 1),
-          mute: !!(ly && ly.mute), solo: !!(ly && ly.solo) };
+          mute: !!(ly && ly.mute), solo: !!(ly && ly.solo), send: (ly && ly.send) || 0 };
       });
       out[d.key] = { ids, layers };
     });
@@ -955,7 +965,8 @@ export default function ProgressionWheel() {
     const secs = melos.progId === progId ? melos.secs : {};
     const sec = secMelos[key], prev = secs[key] || {};
     const base = sec ? sec.layers.map(l => ({ bars: dupBars(l.bars), instr: l.instr,
-                         oct: l.oct || 0, vol: l.vol == null ? 1 : l.vol, mute: !!l.mute, solo: !!l.solo }))
+                         oct: l.oct || 0, vol: l.vol == null ? 1 : l.vol, mute: !!l.mute, solo: !!l.solo,
+                         send: l.send || 0 }))
                      : (prev.layers || [{ bars: [], instr: null }]);
     setMelos({ progId, secs: { ...secs, [key]: {
       ids: sec ? sec.ids : prev.ids,
@@ -965,7 +976,8 @@ export default function ProgressionWheel() {
   // copy a part, keeping every field. Anything that rebuilds the list goes through this, so a
   // part's register, level, mute and solo survive edits that only meant to touch its notes.
   const cloneLayer = ly => ({ bars: dupBars(ly.bars), instr: ly.instr,
-    oct: ly.oct || 0, vol: ly.vol == null ? 1 : ly.vol, mute: !!ly.mute, solo: !!ly.solo });
+    oct: ly.oct || 0, vol: ly.vol == null ? 1 : ly.vol, mute: !!ly.mute, solo: !!ly.solo,
+    send: ly.send || 0 });
   // replace one part's bars (the shape almost every melody edit takes)
   const putLayer = (key, L, bars) => {
     const sec = secMelos[key]; if (!sec) return;
@@ -988,7 +1000,7 @@ export default function ProgressionWheel() {
     putSec(key, { layers: [...sec.layers.map(cloneLayer),
       { bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: LAYER_DEFAULT_INSTR[at] || null,
         oct: LAYER_DEFAULT_OCT[at] || 0, vol: LAYER_DEFAULT_VOL[at] == null ? 1 : LAYER_DEFAULT_VOL[at],
-        mute: false, solo: false }] });
+        mute: false, solo: false, send: 0 }] });
     setMelLayer(at);
   };
   const removeLayer = (key, L) => {
@@ -1286,10 +1298,13 @@ export default function ProgressionWheel() {
     filt.type = "lowpass"; filt.frequency.value = FILTER_OPEN; filt.Q.value = 0.8;
     filt.connect(duck);
     const music = makeReverb(ctx, filt);             // reverb bus for pitched instruments + melody
+    // tempo-synced delay, fed by whichever parts have a send. It returns into the move filter, so
+    // a build sweeps the echoes along with everything else.
+    const delay = makeDelay(ctx, filt, 60 / (bpmRef.current || 120), delayRef.current);
     const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
     const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
     if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, partGain: [], sampler, lastInstr: instrRef.current, lastLead: leadKey,
+    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, partGain: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
       leadLoaded: new Set(leadKey ? [leadKey] : []),
       step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     m.timer = setInterval(() => {
@@ -1340,8 +1355,14 @@ export default function ProgressionWheel() {
         if (sym !== "-") {
           if (clickRef.current) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default
           if (chord) {
-            const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.music);
-            if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.music);
+            // pick the inversion nearest the last chord's, once per chord change, so the voicing
+            // moves by step through the progression instead of leaping in root position
+            if (chord.name !== m.lastChordName) {
+              m.voicing = voiceChord(chord, m.voicing);
+              m.lastChordName = chord.name;
+            }
+            const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.music, m.voicing);
+            if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.music, m.voicing);
           }
         }
         let dpat = drumRef.current;                       // global drum pattern by default
@@ -1364,8 +1385,9 @@ export default function ProgressionWheel() {
           }
         }
         const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
+        const accent = accentAt(i, ticksPerBeat);    // lean on the pulse rather than hitting flat
         if (dstep) {
-          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current);
+          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current, accent);
           // pump the pitched bus under every kick. Recovery stops just short of the next beat,
           // so four-on-the-floor breathes fully back in right as the next kick hits.
           if (pumpRef.current && /[KB]/.test(dstep)) duckAt(m.duck, t, pumpRef.current, beat * 0.8);
@@ -1385,14 +1407,22 @@ export default function ProgressionWheel() {
           if (sec && sec.layers.some(ly => ly.flat.length)) {
             const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
             // play one melody layer's column with its own voice (falling back to the global lead)
-            const playLayer = (flat, voice, li, oct, gain) => {
+            const playLayer = (flat, voice, li, oct, gain, send) => {
               if (!flat || !flat.length || melStep == null || !gain) return;
               const N = flat.length, col = (mb * MB + melStep) % N;
               // each part plays through its own gain into the music bus, so level, mute and solo
               // apply to the part rather than to individual notes
               let dest = m.partGain[li];
-              if (!dest) { dest = m.partGain[li] = m.ctx.createGain(); dest.connect(m.music); }
-              dest.gain.setValueAtTime(gain, t);
+              if (!dest) {
+                dest = m.partGain[li] = m.ctx.createGain();
+                dest.connect(m.music);
+                if (m.delay) {                       // a parallel send, so the dry part is untouched
+                  const sd = m.partSend[li] = m.ctx.createGain();
+                  sd.gain.value = 0; dest.connect(sd); sd.connect(m.delay.send);
+                }
+              }
+              dest.gain.setValueAtTime(gain * accent, t);
+              if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, t);
               const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
               if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
               (flat[col] || []).forEach(deg => {
@@ -1416,7 +1446,7 @@ export default function ProgressionWheel() {
             };
             const anySolo = sec.layers.some(ly => ly.solo);
             sec.layers.forEach((ly, li) =>
-              playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo)));
+              playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo), ly.send || 0));
             const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
             if (melStep != null) {
               const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
@@ -1644,12 +1674,74 @@ export default function ProgressionWheel() {
   // warm the sample cache for the chosen instrument + melody voice so the first Play is instant
   useEffect(() => { if (realSounds) sfPrefetch(instr); }, [instr, realSounds]);
   useEffect(() => { if (realSounds && isGM(melInstr)) sfPrefetch(melInstr); }, [melInstr, realSounds]);
+  // one document for both a saved sketch and a shared link — so anything that survives a save
+  // survives a link, and neither can silently drop a field the other keeps
+  const songDoc = name => makeSong({
+    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr, melInstr,
+    kit, pump, secMove, delayId, bpm: effBpm, selStruct, contrast,
+    edits: ovMap, inserts: insList, quals: qmap, removed: remList,
+    order: order.key === editKey ? order.list : null,
+    melos: melos.progId === progId ? melos : null,
+  });
+  /* ---- undo / redo ----
+     One snapshot of the song document per change, taken from a debounced effect rather than at
+     every call site, so no edit path can forget to record itself. Restoring sets a flag the
+     recorder checks, so replaying history doesn't itself become history. */
+  const UNDO_DEPTH = 60;
+  const docJson = useMemo(() => {
+    try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
+  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr, melInstr,
+      kit, pump, secMove, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
+  const lastDocRef = useRef(null);
+  useEffect(() => {
+    if (docJson == null) return;
+    if (lastDocRef.current === null) { lastDocRef.current = docJson; return; }   // first render is the baseline
+    if (docJson === lastDocRef.current) return;
+    const prev = lastDocRef.current;
+    lastDocRef.current = docJson;
+    if (restoringRef.current) { restoringRef.current = false; return; }
+    setPast(p => [...p.slice(-(UNDO_DEPTH - 1)), prev]);
+    setFuture([]);                                     // a fresh edit ends the redo branch
+  }, [docJson]);
+  const restoreDoc = json => {
+    try {
+      const doc = JSON.parse(json);
+      restoringRef.current = true;
+      lastDocRef.current = json;
+      loadSketch({ ...doc, name: doc.name || "" });
+    } catch (e) { setIoNote("Could not undo that step."); }
+  };
+  const undo = () => {
+    setPast(p => {
+      if (!p.length) return p;
+      setFuture(f => [docJson, ...f].slice(0, UNDO_DEPTH));
+      restoreDoc(p[p.length - 1]);
+      return p.slice(0, -1);
+    });
+  };
+  const redo = () => {
+    setFuture(f => {
+      if (!f.length) return f;
+      setPast(p => [...p.slice(-(UNDO_DEPTH - 1)), docJson]);
+      restoreDoc(f[0]);
+      return f.slice(1);
+    });
+  };
+  // Cmd/Ctrl-Z and Cmd/Ctrl-Shift-Z, unless the user is typing in the sketch-name box
+  useEffect(() => {
+    const onKey = e => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      const el = e.target;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      e.preventDefault();
+      if (e.shiftKey) redo(); else undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
-    const s = { name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr,
-      kit, pump, secMove, bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
-      quals: qmap, removed: remList,
-      order: order.key === editKey ? order.list : null };
+    const s = songDoc(name);
     const list = [...(sketches || []).filter(x => x.name !== name), s];
     setSketches(list); setSketchName("");
     try {
@@ -1658,10 +1750,41 @@ export default function ProgressionWheel() {
       setIoNote((hasStore || hasLocal) ? "Saved “" + name + "”." : "Saved for this session only.");
     } catch (e) { setIoNote("Saved for this session only."); }
   };
+  /* ---- shareable link ----
+     The same document, deflated into the URL hash. Opening the link rebuilds the song exactly,
+     including every melody part — which is what makes "here, listen to this" possible at all. */
+  const shareSong = async () => {
+    try {
+      const code = await encodeSong(songDoc(sketchName.trim() || keyLabel + " · " + prog.label));
+      const url = location.origin + location.pathname + "#s=" + code;
+      let copied = false;
+      try { await navigator.clipboard.writeText(url); copied = true; } catch (e) {}
+      if (!copied) {                                   // clipboard blocked (http, or denied)
+        try { history.replaceState(null, "", "#s=" + code); } catch (e) {}
+        setIoNote("Link is in the address bar — copy it from there.");
+        return;
+      }
+      try { history.replaceState(null, "", "#s=" + code); } catch (e) {}
+      setIoNote(`Link copied — ${(url.length / 1024).toFixed(1)} kB, melodies included.`);
+    } catch (e) { setIoNote("Could not build a link in this browser."); }
+  };
+  // a song in the address bar wins over anything else on first load
+  useEffect(() => {
+    const m = (typeof location !== "undefined" ? location.hash : "").match(/[#&]s=([^&]+)/);
+    if (!m) return;
+    let live = true;
+    decodeSong(m[1]).then(doc => {
+      if (!live) return;
+      if (doc) { loadSketch({ ...doc, name: doc.name || "shared song" }); setIoNote("Opened a shared song."); }
+      else setIoNote("That link could not be read.");
+    });
+    return () => { live = false; };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
     setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {});
-    setSecMove(s.secMove || {});                          // absent in sketches saved before moves existed
+    setSecMove(s.secMove || {});
+    setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
     // older sketches predate the kit/pump fields — fall back to the pre-dance defaults so they
     // reload sounding exactly as they were saved
@@ -1673,6 +1796,10 @@ export default function ProgressionWheel() {
     setEdits({ key:eKey, map:s.edits || {} }); setInserts({ key:eKey, list:s.inserts || [] });
     setQuals({ key:eKey, map:s.quals || {} }); setRemoved({ key:eKey, list:s.removed || [] });
     setOrder(s.order ? { key:eKey, list:s.order } : { key:"", list:null }); setPillSel([]);
+    if (s.melInstr) setMelInstr(s.melInstr);
+    // melodies were session-only before this; a sketch without them just loads an empty grid
+    setMelos(s.melos ? songMelos(s) : { progId:"", secs:{} });
+    setMelSel({ key:"", layer:0, notes:{} }); setNarUndo(null);
     setIoNote("Loaded “" + s.name + "”.");
   };
 
@@ -1818,6 +1945,7 @@ export default function ProgressionWheel() {
         .lvl { width:104px; accent-color:#54B79D; }
         .mini.mixon { background:#54B79D; border-color:#54B79D; color:#0c1116; }
         .mini:disabled { opacity:.35; cursor:default; }
+        .btn:disabled { opacity:.35; cursor:default; }
         .partmix { padding:7px 9px; background:#131924; border:1px solid #222A38; border-radius:8px; }
         .lybtn { font-size:11px; padding:2px 9px; border-radius:999px; border:1px solid #2A3442; background:#161C26; color:#8B94A3; cursor:pointer; }
         .mcell.b0 { border-left:2px solid #3A4656; }
@@ -2056,6 +2184,13 @@ export default function ProgressionWheel() {
               </select>
             </label>
             <label className="selwrap" style={{ minWidth:130 }}>
+              <span className="lbl" style={{ margin:0 }}>Delay</span>
+              <select value={delayId} onChange={e => setDelaySt({ key: progId, val: e.target.value })}
+                title="Tempo-synced echo. Set how far each repeat lands, then send a melody part into it from its mixer row.">
+                {DELAY_TIMES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+            <label className="selwrap" style={{ minWidth:130 }}>
               <span className="lbl" style={{ margin:0 }}>Pump</span>
               <select value={pump} onChange={e => setPumpSt({ key: progId, val: e.target.value })}
                 title="Sidechain ducking — the kick pulls the chords and melody down and lets them breathe back. Needs a drum pattern with a kick in it.">
@@ -2075,7 +2210,13 @@ export default function ProgressionWheel() {
           <div className="row" style={{ marginTop:12, gap:8 }}>
             <input className="txt" placeholder="Sketch name…" value={sketchName}
               onChange={e => setSketchName(e.target.value)} />
+            <button className="btn" style={{ padding:"6px 12px" }} onClick={undo} disabled={!past.length}
+              title="Undo the last change (⌘Z)">↶ Undo</button>
+            <button className="btn" style={{ padding:"6px 12px" }} onClick={redo} disabled={!future.length}
+              title="Redo (⇧⌘Z)">↷ Redo</button>
             <button className="btn" style={{ padding:"6px 12px" }} onClick={saveSketch}>Save</button>
+            <button className="btn" style={{ padding:"6px 12px" }} onClick={shareSong}
+              title="Copy a link that rebuilds this whole song — chords, arrangement and every melody part">🔗 Share</button>
             {(sketches || []).length > 0 && (
               <select value="" onChange={e => { const s = (sketches || [])[+e.target.value]; if (s) loadSketch(s); }}>
                 <option value="">Load sketch…</option>
@@ -2639,6 +2780,12 @@ export default function ProgressionWheel() {
                             onChange={e => set({ vol: +e.target.value / 100 })}
                             title={"Level of part " + LAYER_NAMES[secL]} />
                           <span className="octval">{Math.round(vol * 100)}</span>
+                          <span className="keytag" style={{ margin:0 }}>Echo</span>
+                          <input className="lvl" type="range" min="0" max="100" value={Math.round((ly.send || 0) * 100)}
+                            onChange={e => set({ send: +e.target.value / 100 })}
+                            disabled={delayId === "off"}
+                            title={delayId === "off" ? "Pick a Delay time in the top panel first" : "How much of this part is echoed"} />
+                          <span className="octval">{Math.round((ly.send || 0) * 100)}</span>
                           <button className={"mini" + (ly.mute ? " mixon" : "")} onClick={() => set({ mute: !ly.mute })}
                             title="Silence this part">{ly.mute ? "muted" : "mute"}</button>
                           <button className={"mini" + (ly.solo ? " mixon" : "")} onClick={() => set({ solo: !ly.solo })}

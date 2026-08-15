@@ -69,6 +69,16 @@ const sampleAt = (pat, i, ticks) => {
   const s = stepAt(pat.length, i, ticks);
   return s == null ? null : pat[s];
 };
+// Positional accent, 0..1. Nothing in the app had velocity before: every drum hit and every melody
+// note landed at the same level, which is most of why a groove could feel typed. Real playing leans
+// on the pulse — the downbeat hardest, then the beat, then the offbeat, then the subdivisions.
+const accentAt = (i, ticksPerBeat) => {
+  if (i === 0) return 1;
+  if (ticksPerBeat <= 1) return 0.9;
+  if (i % ticksPerBeat === 0) return 0.94;                              // on a beat
+  if (i % (ticksPerBeat / 2) === 0) return 0.82;                        // on an eighth
+  return 0.68;                                                          // a finer subdivision
+};
 // a drum pattern carries no `sub`, so read its meter from its length: 6 steps is three beats
 // (3/4 and 6/8), 8 and 16 are both four
 const drumBeatsOf = pat => (pat && pat.length === 6 ? 3 : 4);
@@ -171,4 +181,4 @@ const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16"
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { PATTERNS, subOf, beatsOf, gcd, lcm, stepAt, sampleAt, drumBeatsOf, PATTERN_DEFAULT, BPM_DEFAULT, DRUMS, DRUM_KITS, PUMPS, PUMP_AMT, DRUM_MIDI, KIT_PROGRAM, DRUM_DEFAULT, KIT_DEFAULT, PUMP_DEFAULT };
+export { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };

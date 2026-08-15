@@ -38,12 +38,13 @@ function clickSound(ctx, t, sym, dest) {
 // The two machine kits are what dance music is actually built on, and they differ from the
 // acoustic kit in kind, not just tone: the 909's kick is a short punchy thud with a hard
 // click on top, the 808's is a long tuned sub-boom that rings for most of a beat.
-function drumSound(ctx, t, ch, noise, dest, kit) {
+function drumSound(ctx, t, ch, noise, dest, kit, vel = 1) {
   const K9 = kit === "909", K8 = kit === "808";
   // one filtered noise burst — the skin/cymbal half of nearly every voice here.
   // The shared noise buffer is only 0.3 s, so anything ringing longer (ride, crash) has to
   // loop it or the tail goes silent halfway through its own envelope.
-  const nz = (vol, atk, dec, type, hz, Q) => {
+  const nz = (vol0, atk, dec, type, hz, Q) => {
+    const vol = vol0 * vel;                          // positional accent, applied to every voice
     const n = ctx.createBufferSource(); n.buffer = noise;
     if (dec > 0.25) n.loop = true;
     const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = hz;
@@ -52,7 +53,8 @@ function drumSound(ctx, t, ch, noise, dest, kit) {
     n.start(t); n.stop(t + dec + 0.02);
   };
   // one pitched tone, optionally sweeping hz0 → hz1 over `sweep` seconds
-  const tone = (type, hz0, hz1, sweep, vol, atk, dec, at = t) => {
+  const tone = (type, hz0, hz1, sweep, vol0, atk, dec, at = t) => {
+    const vol = vol0 * vel;
     const o = ctx.createOscillator(); o.type = type;
     o.frequency.setValueAtTime(hz0, at);
     if (hz1) o.frequency.exponentialRampToValueAtTime(hz1, at + sweep);
@@ -96,7 +98,7 @@ function drumSound(ctx, t, ch, noise, dest, kit) {
     // a ring of inharmonic square partials through a shared high-pass gives the metal
     const ring = ctx.createGain(); ring.gain.value = 0.02;
     const rhp = ctx.createBiquadFilter(); rhp.type = "highpass"; rhp.frequency.value = 8500;
-    ring.connect(rhp); rhp.connect(env(ctx, t, open ? 0.42 : 0.5, 0.001, open ? dec * 0.9 : 0.035, true, dest));
+    ring.connect(rhp); rhp.connect(env(ctx, t, (open ? 0.42 : 0.5) * vel, 0.001, open ? dec * 0.9 : 0.035, true, dest));
     (K9 ? [3100, 4200, 5900] : [2400, 3000, 4700]).forEach(hz => {
       const o = ctx.createOscillator(); o.type = "square"; o.frequency.value = hz;
       o.connect(ring); o.start(t); o.stop(t + dec + 0.01);
@@ -107,7 +109,7 @@ function drumSound(ctx, t, ch, noise, dest, kit) {
     [0, 0.011, 0.022].forEach((d, i) => {
       const n = ctx.createBufferSource(); n.buffer = noise;
       const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1750; f.Q.value = 0.9;
-      n.connect(f); f.connect(env(ctx, t + d, i === 2 ? 0.26 : 0.17, 0.001, 0.028, true, dest));
+      n.connect(f); f.connect(env(ctx, t + d, (i === 2 ? 0.26 : 0.17) * vel, 0.001, 0.028, true, dest));
       n.start(t + d); n.stop(t + d + 0.04);
     });
     nz(0.13, 0.004, 0.16, "bandpass", 2100, 0.8);
@@ -120,7 +122,7 @@ function drumSound(ctx, t, ch, noise, dest, kit) {
     nz(0.055, 0.002, 0.5, "highpass", 6200);
     const ring = ctx.createGain(); ring.gain.value = 0.014;
     const rhp = ctx.createBiquadFilter(); rhp.type = "highpass"; rhp.frequency.value = 7000;
-    ring.connect(rhp); rhp.connect(env(ctx, t, 0.4, 0.002, 0.45, true, dest));
+    ring.connect(rhp); rhp.connect(env(ctx, t, 0.4 * vel, 0.002, 0.45, true, dest));
     [2100, 3300, 4900, 6100].forEach(hz => {
       const o = ctx.createOscillator(); o.type = "square"; o.frequency.value = hz;
       o.connect(ring); o.start(t); o.stop(t + 0.46);
@@ -238,9 +240,57 @@ function ksPluck(ctx, t, freq, dur, vol, bright, dest) {
   src.connect(ig); ig.connect(delay);
   src.start(t); src.stop(t + period + 0.02);
 }
-function strumChord(ctx, t, chord, sym, dest) {
+/* ===== tempo-synced delay =====
+   A dotted-eighth delay is the sound of a produced dance lead: the echo lands three sixteenths
+   later, so it interlocks with the beat instead of blurring it. Built as a send, so a part can be
+   fed into it by amount rather than being replaced by it. Feedback stays well under 1 so the tail
+   always dies away. */
+const DELAY_TIMES = [["off", "No delay", 0], ["8d", "Dotted 8th", 0.75], ["8", "Eighth", 0.5],
+                     ["4", "Quarter", 1], ["16", "Sixteenth", 0.25]];
+const DELAY_BEATS = Object.fromEntries(DELAY_TIMES.map(([id, , b]) => [id, b]));
+function makeDelay(ctx, dest, beatSec, id) {
+  const beats = DELAY_BEATS[id] || 0;
+  if (!beats) return null;
+  const time = Math.min(1.8, beats * beatSec);
+  const dl = ctx.createDelay(2.0); dl.delayTime.value = time;
+  const fb = ctx.createGain(); fb.gain.value = 0.34;         // ~3 audible repeats, always decaying
+  const tone = ctx.createBiquadFilter();                     // each repeat darker than the last
+  tone.type = "lowpass"; tone.frequency.value = 2600;
+  const send = ctx.createGain(); send.gain.value = 1;
+  send.connect(dl); dl.connect(tone); tone.connect(fb); fb.connect(dl);
+  dl.connect(dest);
+  return { send, dl, fb, time };
+}
+
+/* ===== voice leading =====
+   Root-position stacks make every chord change a leap: the whole voicing jumps whenever the root
+   does, which is most of why a progression can sound typed rather than played. Choosing the
+   inversion whose upper voices sit nearest the previous chord's lets the harmony move by step.
+   The bass keeps the root — that movement is the point of the progression, so it is left alone. */
+const VOICE_LO = 55, VOICE_HI = 79;                 // the register the upper voices live in
+const avgOf = a => a.reduce((x, y) => x + y, 0) / (a.length || 1);
+function voiceChord(chord, prev) {
+  const pcs = chordIvs(chord.quality).map(x => (chord.root + x) % 12);
+  let best = null;
+  for (let inv = 0; inv < pcs.length; inv++) {
+    const notes = [];
+    let last = VOICE_LO - 1;
+    for (let k = 0; k < pcs.length; k++) {
+      const pc = pcs[(k + inv) % pcs.length];
+      let m = VOICE_LO + (((pc - VOICE_LO) % 12) + 12) % 12;
+      while (m <= last) m += 12;                     // stack ascending, no doubled position
+      notes.push(m); last = m;
+    }
+    if (notes[notes.length - 1] > VOICE_HI + 5) continue;          // this rotation sits too high
+    // nearest to where the last chord sat; with nothing before it, aim at the middle of the window
+    const cost = Math.abs(avgOf(notes) - (prev && prev.length ? avgOf(prev) : (VOICE_LO + VOICE_HI) / 2));
+    if (!best || cost < best.cost) best = { notes, cost };
+  }
+  return best ? best.notes : pcs.map(pc => VOICE_LO + pc);
+}
+function strumChord(ctx, t, chord, sym, dest, voicing) {
   const base = 48 + chord.root;
-  let notes = [base - 12, ...chordIvs(chord.quality).map(x => base + x)];
+  let notes = [base - 12, ...(voicing || voiceChord(chord))];
   if (sym === "U") notes = notes.slice(2).reverse();
   const vol = sym === ">" ? 0.16 : sym === "U" ? 0.09 : 0.12;
   const dur = sym === ">" ? 1.4 : 0.9;
@@ -267,9 +317,9 @@ function padVoice(ctx, t, mid, sym, slotDur, dest) {
     o.start(t); o.stop(t + dur + 0.1);
   });
 }
-function playHit(ctx, t, chord, sym, instr, slotDur, dest) {
+function playHit(ctx, t, chord, sym, instr, slotDur, dest, voicing) {
   const fam = gmFam(instr);
-  if (fam === "pluck") return strumChord(ctx, t, chord, sym, dest);
+  if (fam === "pluck") return strumChord(ctx, t, chord, sym, dest, voicing);
   const iv = chordIvs(chord.quality), rootMid = 48 + chord.root;
   if (fam === "bass") {
     const o = ctx.createOscillator();
@@ -281,7 +331,8 @@ function playHit(ctx, t, chord, sym, instr, slotDur, dest) {
     o.start(t); o.stop(t + 0.6);
     return;
   }
-  const notes = sym === "U" ? iv.slice(1).map(x => rootMid + x) : [rootMid - 12, ...iv.map(x => rootMid + x)];
+  const led = voicing || voiceChord(chord);
+  const notes = sym === "U" ? led.slice(1) : [rootMid - 12, ...led];
   notes.forEach((mid, j) => {
     if (fam === "organ") {
       [1, 2, 3].forEach((h, hi) => {
@@ -449,17 +500,18 @@ function makeSampler(ctx) {
   return { load, ready, play, covers };
 }
 // note voicing for the sampler, mirroring the synth voicings, by instrument family
-function sampleVoicing(chord, sym, fam) {
+function sampleVoicing(chord, sym, fam, voicing) {
   const iv = chordIvs(chord.quality), root = chord.root;
   if (fam === "bass") return { notes: [36 + root + (sym === "U" ? 7 : 0)], roll: 0.03 };
   const base = 48 + root;
-  const notes = sym === "U" ? iv.slice(1).map(x => base + x) : [base - 12, ...iv.map(x => base + x)];
+  const led = voicing || voiceChord(chord);
+  const notes = sym === "U" ? led.slice(1) : [base - 12, ...led];
   return { notes, roll: fam === "pluck" ? (sym === "U" ? 0.010 : 0.016) : 0.004 };
 }
-function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest) {
+function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest, voicing) {
   if (!sampler || !sampler.ready(instr)) return false;
   const fam = gmFam(instr);
-  const { notes, roll } = sampleVoicing(chord, sym, fam);
+  const { notes, roll } = sampleVoicing(chord, sym, fam, voicing);
   // if any voiced note lacks a nearby loaded anchor (samples still loading), play the whole chord
   // on the synth rather than repitching a distant anchor into a shrill artifact for part of it
   if (!notes.every(mid => sampler.covers(instr, mid))) return false;
@@ -560,4 +612,4 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
   });
 }
 
-export { FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, SF_BASE, SF_NAT, anchorsFor, applyMove, clickSound, drumSound, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeNoise, makeReverb, makeSampler, midiHz, padVoice, playHit, playLeadSampled, playSampled, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord };
+export { DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, SF_BASE, SF_NAT, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, midiHz, padVoice, playHit, playLeadSampled, playSampled, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
