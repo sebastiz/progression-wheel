@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- **Call & response, plus Select-all for notes and chords.** Two more melody-writing helpers and a
+  selection fix. **↩ Answer** (in the melody Move toolbar) takes the selected phrase — the "call" — and
+  echoes it right after itself as a "response" whose final note resolves home to the tonic: instant
+  antecedent → consequent. And because a marquee could only grab what was scrolled on screen, both the
+  melody Move toolbar and the chord **Reorder** bar now have a **Select all** button — one tap selects
+  *every* note in a section (even off-screen) or every chord in the progression, so a transform (repeat,
+  sequence, invert, reverse, time-shift, move, remove) applies across the whole thing. Version bumped to
+  4.35.0.
+- **Melodic-development tools in the melody grid's Move mode.** Select notes (drag a box, or tap one) and
+  the Move toolbar now offers the classic ways to turn a motif into a melody, alongside the existing
+  nudge and **½× / 2× time** (augmentation / diminution): **⧉ Repeat** (copy the selection right after
+  itself), **Seq ▲ / Seq ▼** (copy right after, transposed a scale step — tap again to keep a sequence
+  climbing), **⤯ Invert** (flip the contour upside-down around the first note) and **↤ Reverse**
+  (retrograde — play the selection backwards). Each keeps the new notes selected so you can chain moves.
+  Version bumped to 4.34.0.
 - **Remove chords next to Add; melody tools behind one button; scale readout gone.** Three tidy-ups.
   (1) A **🗑 Remove** button now sits right beside **＋ Add** under the wheel — tap it, then tap any chord
   on the strip or the wheel to delete it (Add / Remove / Reorder are one-tap modes; the last chord can't
