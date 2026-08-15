@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+- **Sixteenth notes.** The whole app used to run on an eighth-note grid — eight slots to a bar in
+  4/4 — which put a floor under how fine a rhythm could get. A rhythm pattern now declares how many
+  columns it divides each beat into, and everything downstream reads the meter from that instead of
+  assuming eighths: the scheduler, the melody grid, note values in the score, and the exported MIDI.
+  Eight new **16ths** rhythms — *Offbeat 16th stabs*, *House chord pump*, *Garage skip*, *Constant
+  sixteenths*, *16th funk scratch*, *Disco chug*, *Swung 16ths* and *Trap sparse* — and ten new
+  sixteenth drum patterns: *House · 16th hats*, *Techno · driving 16ths*, *UK garage 2-step*, *Drum
+  & bass*, *Amen break*, *Big beat breaks*, *Trap · rolling hats*, *Dubstep*, *Hip-hop 16ths* and
+  *Footwork*. Rolling hats, a real breakbeat and the skipping garage kick need this resolution;
+  at eighths they could only be approximated. Sixteenth rhythms are marked **· 16ths** in the
+  Pattern menu.
+  - Picking a 16ths rhythm **doubles the melody grid** to sixteen columns a bar, so you can write
+    16th toplines, arps and offbeat lines. Switching between an eighth and a sixteenth rhythm
+    re-times any melody you've already written so every note stays where it sounds — going finer is
+    lossless, and going back folds notes onto the nearest column.
+  - Patterns of different resolutions now **play together**: an eighth-note strum with a sixteenth
+    drum kit, or a 3/4 rhythm with a waltz kit. Each bar ticks at the finest resolution in play and
+    every pattern is sampled onto it, so nothing gets truncated or stretched.
+  - **Swing** on a sixteenth pattern is a sixteenth shuffle — exactly the UK garage / 2-step feel.
+  - The score engraves sixteenths properly: double flags and double beams, beams grouped inside the
+    beat, and the time signature still reads **4/4** rather than counting columns as beats.
+  - The four dance progressions now open on a sixteenth rhythm and kit — **The EDM anthem** and
+    **The festival lift** on the house chord pump, **Deep-house groove** on offbeat stabs, and
+    **Future-bass swell** on trap.
+  Every existing eighth-note rhythm behaves exactly as before, in playback, notation and export.
+  Version bumped to 4.39.0.
 - **Dance kits and the sidechain pump.** The drum engine now speaks dance. Two new controls sit
   beside **Drums** in the top panel. **Kit** revoices the whole pattern as an *Acoustic kit* (what
   you had), a **TR-909** (tight punchy kick, hard click, bright metallic hats — house and techno) or

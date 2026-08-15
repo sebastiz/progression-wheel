@@ -407,13 +407,50 @@ const PATTERNS = {};
 ["quickwaltz","Quick waltz",">DDDDD","driving downstrokes in three — Viennese momentum, folk-punk at speed"],
 ["jig68","6/8 roll",">UUDUU","two lilting groups of three — folk ballads and sea shanties"],
 ["waltzsway","Jazz waltz","D-DUDU","3/4 with a swung lilt — My Favorite Things territory",1],
-].forEach(([id, name, pat, desc, swing]) =>
-  PATTERNS[id] = { name, pattern: pat.split(""), desc, swing: !!swing });
+// 16ths (sub = 4). Everything above divides the beat in two; these divide it in four, which is
+// where dance rhythm actually lives — the offbeat stab, the skipping garage accent, the 16th
+// funk scratch. Meter still reads pattern.length / sub, so these are all 4/4.
+["stab16","Offbeat 16th stabs","--D---D---D---D-","house piano stabs — land off the beat and keep them short",0,4],
+["house16","House chord pump",">---D---D---D---","a chord on each beat after the first — leaves the downbeat to the kick",0,4],
+["garage16","Garage skip",">--D--D-->-D--D-","the skipping 2-step accent, pulling against the four",0,4],
+["four16","Constant sixteenths","DUDUDUDUDUDUDUDU","the engine of garage and funk — accents live in the wrist",0,4],
+["funk16","16th funk scratch","D-UD-UD-D-UD-UD-","ghost the rests with muted scratches — the groove is what you don't voice",0,4],
+["disco16","Disco chug",">-U->-U->-U->-U-","clipped upstrokes pushing every offbeat — nu-disco guitar",0,4],
+["shuffle16","Swung 16ths","D-UD-UD-D-UD-UD-","16ths with a shuffle — UK garage and 2-step swing",1,4],
+["trap16","Trap sparse",">-------D-------","two chords a bar, everything else left to the drums",0,4],
+].forEach(([id, name, pat, desc, swing, sub]) =>
+  PATTERNS[id] = { name, pattern: pat.split(""), desc, swing: !!swing, sub: sub || 2 });
+
+// Columns per beat for a rhythm pattern: 2 = eighths, 4 = sixteenths. Everything downstream —
+// the scheduler tick, the melody grid, note values in the score, MIDI ticks — reads the meter
+// from these two numbers rather than assuming an eighth-note grid.
+const subOf = p => (p && p.sub) || 2;
+const beatsOf = p => p.pattern.length / subOf(p);
+
+// A bar is divided into as many ticks as the finest pattern in play needs, and every pattern is
+// sampled onto that grid: a pattern of length P fires at tick i only when i·P lands exactly on a
+// step. So an eighth-note strum and a sixteenth-note drum pattern coexist — the strum plays every
+// other tick, the hats every one — without either being truncated or stretched.
+const gcd = (a, b) => b ? gcd(b, a % b) : a;
+const lcm = (a, b) => a / gcd(a, b) * b;
+// index into a length-P pattern at tick i of a `ticks`-tick bar, or null if it falls between steps
+const stepAt = (len, i, ticks) => {
+  const n = i * len;
+  return n % ticks === 0 ? n / ticks : null;
+};
+const sampleAt = (pat, i, ticks) => {
+  if (!pat || !pat.length) return null;
+  const s = stepAt(pat.length, i, ticks);
+  return s == null ? null : pat[s];
+};
+// a drum pattern carries no `sub`, so read its meter from its length: 6 steps is three beats
+// (3/4 and 6/8), 8 and 16 are both four
+const drumBeatsOf = pat => (pat && pat.length === 6 ? 3 : 4);
 
 const PATTERN_DEFAULT = { axis:"pop", axisMinor:"drive", three:"rock8", blues:"shuffle",
   doowop:"sway12", jazz:"fourbar", mixo:"push", andalusian:"latin", pachelbel:"arp",
   dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop",
-  flamenco:"latin", edm:"stomp", deepHouse:"stomp", festival:"stomp", futureBass:"halftime",
+  flamenco:"latin", edm:"house16", deepHouse:"stab16", festival:"house16", futureBass:"trap16",
   montuno:"tresillo", rhythm:"charleston", bossa:"bossa", guajira:"tresillo", bolero:"arp",
   gospel:"sway12", neoSoul:"funk",
   rockRiff:"rock8", grunge:"drive", britpop:"pop", emo:"rock8", country:"boomchick",
@@ -477,6 +514,18 @@ const DRUMS = {};
 ["trap","Trap","BH H H CH H BH CH H"],
 ["dubstep","Dubstep half-time","KH H H H CH H P H"],
 ["electro","Electro house","KH H KCH H KH KH CH H"],
+// 4/4 at sixteenths — sixteen steps. This is the resolution the rolling hats, the skipping
+// garage kick and a real breakbeat need; at eighths they can only be approximated.
+["house16d","House · 16th hats","K H H H KC H H H K H H H KC H H O"],
+["techno16","Techno · driving 16ths","KH H H H KH H H H KH H H H KH H H OH"],
+["garage16d","UK garage 2-step","KH H H H CH H H H H H KH H CH H H H"],
+["dnb","Drum & bass","KH H H H SH H H H H H KH H SH H H H"],
+["amen","Amen break","KH H KH H SH H H SH H H KH H SH H SH H"],
+["breaks16","Big beat breaks","KH H H H SH H KH H KH H H H SH H KH H"],
+["trap16d","Trap · rolling hats","BH H H H H H H H CH H BH H H H H H"],
+["dubstep16","Dubstep","KH H H H H H H H CH H H H H H KH H"],
+["hiphop16","Hip-hop 16ths","KH H H H SH H KH H H KH H H SH H H H"],
+["footwork","Footwork","K H K H CH H K H K H K H CH H K H"],
 ].forEach(([id, name, pat]) =>
   DRUMS[id] = { name, pattern: pat ? pat.split(" ").map(s => s === "." ? "" : s) : null });
 
@@ -492,7 +541,7 @@ const DRUM_MIDI = { K:36, B:35, S:38, H:42, O:46, C:39, P:37, R:51, X:49 };
 const KIT_PROGRAM = { "909":24, "808":25 };
 // The dance progressions come up already grooving — pick Deep House and press play.
 // Everything else keeps the acoustic kit and no pump, exactly as before.
-const DRUM_DEFAULT = { edm:"house909", deepHouse:"deep", festival:"trance", futureBass:"trap" };
+const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16", futureBass:"trap16d" };
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
@@ -1123,8 +1172,10 @@ function tabOctaveShift(allMids) {
   return bestShift;
 }
 
-// One measure worth of notation. `mel` = [{on, dur, mids:[...]}] (onset eighth, duration in eighths).
-function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
+// One measure worth of notation. `mel` = [{on, dur, mids:[...]}], onset and duration in grid
+// columns. `sub` is columns per beat (2 = eighths, 4 = sixteenths), which is what turns a column
+// count into an actual note value — one column is an eighth on one grid and a sixteenth on the other.
+function NotationScore({ measures, instr, meloBeats, sub = 2, perSystem = 4 }) {
   const INK = "#EDE7DA", FAINT = "#3A4453", SYM = "#EAE2CC";
   const LG = 9;                                   // staff line gap
   const staffH = 4 * LG;
@@ -1154,13 +1205,21 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
     return steps.reduce((a, b) => a + b, 0) / steps.length <= midStep;
   };
   const LAY = LAV;                                             // 2nd-melody (layer B) colour
+  // note values, in grid columns: a beat is `sub` columns, so a quarter is `sub`, a half 2·sub,
+  // a whole 4·sub. Flags/beams: none at a quarter or longer, one at an eighth, two at a sixteenth.
+  const WHOLE = 4 * sub, HALF = 2 * sub;
+  const flagsOf = dur => dur >= sub ? 0 : dur >= sub / 2 ? 1 : 2;
+  const flagPath = (sx, y2, up, n) => Array.from({ length: n }, (_, k) => {
+    const o = (up ? 1 : -1) * k * (LG * 0.62);
+    return up ? `M ${sx} ${y2 + o} q 8 3 6 12` : `M ${sx} ${y2 + o} q 8 -3 6 -12`;
+  }).join(" ");
   // draw just the noteheads (+ accidentals + ledgers) for one onset; return nodes + geometry.
   // colOf(midi) picks the ink per note (layer B → violet); stemCol colours stems/beams/flags.
   const drawHeads = (mids, x, dur, clef, colOf = () => INK) => {
     const nodes = [];
     const yFn = clef === "bass" ? yBass : yTreble;
     const topLine = clef === "bass" ? 26 : 38, botLine = clef === "bass" ? 18 : 30;
-    const open = dur >= 4;                                     // half/whole = hollow head
+    const open = dur >= HALF;                                  // half/whole = hollow head
     const filled = !open;
     let minY = Infinity, maxY = -Infinity;
     mids.forEach(m => {
@@ -1170,7 +1229,7 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
       for (let k = botLine - 2; k >= s; k -= 2) nodes.push(<line key={"lg"+uid++} x1={x - 9} y1={yFn(k)} x2={x + 9} y2={yFn(k)} stroke={col} strokeWidth="1" />);
       nodes.push(<ellipse key={"nh"+uid++} cx={x} cy={cy} rx={rx} ry={ry} transform={`rotate(-18 ${x} ${cy})`}
         fill={filled ? col : "none"} stroke={col} strokeWidth={open ? 1.5 : 0} />);
-      if (dur >= 8) nodes.push(<ellipse key={"nw"+uid++} cx={x} cy={cy} rx={rx * 0.5} ry={ry * 0.85} fill="#171E28" />);
+      if (dur >= WHOLE) nodes.push(<ellipse key={"nw"+uid++} cx={x} cy={cy} rx={rx * 0.5} ry={ry * 0.85} fill="#171E28" />);
       if (acc) nodes.push(<text key={"ac"+uid++} x={x - rx - 4} y={cy + 4} textAnchor="end" fill={col} fontSize="14" fontFamily="serif">{acc < 0 ? "♭" : "♯"}</text>);
     });
     return { nodes, minY, maxY, steps: mids.map(stepOfMidi), x };
@@ -1179,13 +1238,13 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
   const drawNotes = (mids, x, dur, clef, colOf = () => INK, stemCol = INK) => {
     const g = drawHeads(mids, x, dur, clef, colOf);
     const nodes = g.nodes;
-    if (dur < 8) {                                            // stem (skip whole notes)
+    if (dur < WHOLE) {                                        // stem (skip whole notes)
       const up = stemUpFor(g.steps, clef);
       const sx = up ? x + rx - 0.5 : x - rx + 0.5;
       const y1 = up ? g.minY : g.maxY, y2 = up ? g.maxY - STEM : g.minY + STEM;
       nodes.push(<line key={"st"+uid++} x1={sx} y1={y1} x2={sx} y2={y2} stroke={stemCol} strokeWidth="1.4" />);
-      if (dur < 2) nodes.push(<path key={"fl"+uid++} d={up                       // lone eighth → flag
-        ? `M ${sx} ${y2} q 8 3 6 12` : `M ${sx} ${y2} q 8 -3 6 -12`} fill="none" stroke={stemCol} strokeWidth="1.6" />);
+      const nf = flagsOf(dur);                                // 1 flag = eighth, 2 = sixteenth
+      if (nf) nodes.push(<path key={"fl"+uid++} d={flagPath(sx, y2, up, nf)} fill="none" stroke={stemCol} strokeWidth="1.6" />);
     }
     return nodes;
   };
@@ -1198,25 +1257,30 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
     const evCol = ev => (ev.mids.length && ev.mids.every(m => ev.bMids && ev.bMids.has(m))) ? LAY : INK;
     const geo = events.map(ev => ({ g: drawHeads(ev.mids, xOf(ev.on), ev.dur, clef, colOf(ev)), ev }));
     geo.forEach(e => nodes.push(...e.g.nodes));
-    // beam groups: an eighth on a beat (even eighth index) + the eighth on its off-beat, both dur 1
+    // beam groups: runs of flagged notes inside a single beat, so beams never cross a beat line
+    // (the convention that makes the pulse readable). A quarter or longer breaks the run.
     const byOn = {}; geo.forEach((e, i) => { byOn[e.ev.on] = i; });
     const beamed = new Set();
     const groups = [];
-    for (let k = 0; 2 * k + 1 < meloBeats; k++) {
-      const a = byOn[2 * k], b = byOn[2 * k + 1];
-      if (a != null && b != null && geo[a].ev.dur === 1 && geo[b].ev.dur === 1) {
-        groups.push([a, b]); beamed.add(a); beamed.add(b);
+    const flush = run => { if (run.length > 1) { groups.push([...run]); run.forEach(x => beamed.add(x)); } run.length = 0; };
+    for (let b = 0; b * sub < meloBeats; b++) {
+      const run = [];
+      for (let c = b * sub; c < Math.min((b + 1) * sub, meloBeats); c++) {
+        const idx = byOn[c];
+        if (idx == null) continue;                            // a rest or a held note: no new stem here
+        if (flagsOf(geo[idx].ev.dur) > 0) run.push(idx); else flush(run);
       }
+      flush(run);
     }
     // lone notes: own stem + flag (violet when the note is 2nd-melody only)
     geo.forEach((e, i) => {
-      if (beamed.has(i) || e.ev.dur >= 8) return;
+      if (beamed.has(i) || e.ev.dur >= WHOLE) return;
       const up = stemUpFor(e.g.steps, clef), sc = evCol(e.ev);
       const sx = up ? e.g.x + rx - 0.5 : e.g.x - rx + 0.5;
       const y1 = up ? e.g.minY : e.g.maxY, y2 = up ? e.g.maxY - STEM : e.g.minY + STEM;
       nodes.push(<line key={"st"+uid++} x1={sx} y1={y1} x2={sx} y2={y2} stroke={sc} strokeWidth="1.4" />);
-      if (e.ev.dur < 2) nodes.push(<path key={"fl"+uid++} d={up
-        ? `M ${sx} ${y2} q 8 3 6 12` : `M ${sx} ${y2} q 8 -3 6 -12`} fill="none" stroke={sc} strokeWidth="1.6" />);
+      const nf = flagsOf(e.ev.dur);
+      if (nf) nodes.push(<path key={"fl"+uid++} d={flagPath(sx, y2, up, nf)} fill="none" stroke={sc} strokeWidth="1.6" />);
     });
     // beams: one shared stem direction per group, stems run to a level beam bar
     groups.forEach(idxs => {
@@ -1230,7 +1294,25 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
         const yNote = up ? g.maxY : g.minY;                   // stem meets the far notehead
         nodes.push(<line key={"bs"+uid++} x1={sxs[j]} y1={yNote} x2={sxs[j]} y2={beamY} stroke={sc} strokeWidth="1.4" />);
       });
-      nodes.push(<line key={"bm"+uid++} x1={sxs[0]} y1={beamY} x2={sxs[sxs.length - 1]} y2={beamY} stroke={sc} strokeWidth={LG * 0.5} strokeLinecap="butt" />);
+      // primary beam spans the group; each extra level (sixteenths and finer) is drawn only over
+      // the notes that actually need it, stubbing out when a single note carries it alone
+      const fl = idxs.map(i => flagsOf(geo[i].ev.dur));
+      const bar = (x1, x2, y) => nodes.push(<line key={"bm"+uid++} x1={x1} y1={y} x2={x2} y2={y}
+        stroke={sc} strokeWidth={LG * 0.5} strokeLinecap="butt" />);
+      bar(sxs[0], sxs[sxs.length - 1], beamY);
+      for (let lvl = 1; lvl < Math.max(...fl); lvl++) {
+        const y = beamY + (up ? 1 : -1) * lvl * (LG * 0.62);
+        let s = -1;
+        for (let j = 0; j <= fl.length; j++) {
+          const on = j < fl.length && fl[j] > lvl;
+          if (on && s < 0) s = j;
+          else if (!on && s >= 0) {
+            if (j - s > 1) bar(sxs[s], sxs[j - 1], y);
+            else bar(sxs[s], sxs[s] + (s > 0 ? -1 : 1) * Math.min(10, Math.abs(sxs[1] - sxs[0]) / 2), y);
+            s = -1;
+          }
+        }
+      }
     });
     return nodes;
   };
@@ -1255,7 +1337,9 @@ function NotationScore({ measures, instr, meloBeats, perSystem = 4 }) {
     else parts.push(<text key="tab" x={padL + 6} y={lowerTop + tabH * 0.62} fill={INK} fontSize={tabH * 0.5} fontWeight="700" fontFamily="Archivo" style={{ letterSpacing: "-2px" }}>TAB</text>);
     // time signature on the first system
     if (sy === 0) {
-      const num = meloBeats % 2 === 0 ? meloBeats / 2 : meloBeats, den = meloBeats % 2 === 0 ? 4 : 8;
+      // beats per bar over the beat unit — a sixteenth grid is still 4/4, just finer
+      const even = meloBeats % sub === 0;
+      const num = even ? meloBeats / sub : meloBeats, den = even ? 4 : 8;
       parts.push(<text key="tsn" x={clefW + 2} y={yTreble(36)} textAnchor="middle" fill={INK} fontSize="15" fontWeight="700" fontFamily="serif">{num}</text>);
       parts.push(<text key="tsd" x={clefW + 2} y={yTreble(31)} textAnchor="middle" fill={INK} fontSize="15" fontWeight="700" fontFamily="serif">{den}</text>);
     }
@@ -1332,7 +1416,7 @@ const vlq = n => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) 
 // each column a list of absolute MIDI note numbers. Runs of the same note across
 // adjacent columns are merged into one held note (legato) so the exported line
 // flows the way it plays.
-function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2, kit) {
+function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2, kit, sub = 2) {
   const T = 480, ev = (arr, dt, ...bytes) => arr.push(...vlq(dt), ...bytes);
   const trk = arr => {
     const body = [...arr, 0, 0xff, 0x2f, 0];
@@ -1356,21 +1440,26 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2, kit) {
     if (KIT_PROGRAM[kit] != null) ev(drumsT, 0, 0xc9, KIT_PROGRAM[kit]);   // machine kit on channel 10
     for (let bar = 0; bar < bars.length; bar++) {
       const pat = drumFn(bar);
-      for (let s = 0; s < beatsPerBar * 2; s++) {
+      // each bar's pattern sets its own step count, so a sixteenth-note kit and an eighth-note
+      // one can sit in the same exported file and both come out at the right speed
+      const steps = (pat && pat.length) || beatsPerBar * 2;
+      const stepT = beatsPerBar * T / steps;
+      const gate = Math.min(60, stepT * 0.5);            // note length; short enough to fit a 16th step
+      for (let s = 0; s < steps; s++) {
         const notes = [...((pat && pat[s]) || "")].map(c => DRUM_MIDI[c] || 42);
-        if (!notes.length) { pend += T / 2; continue; }
+        if (!notes.length) { pend += stepT; continue; }
         // cymbals and rim sit behind the kick/snare/clap, as they do in the app
         notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n, [42,46,51,37].includes(n) ? 62 : 92));
-        notes.forEach((n, i) => ev(drumsT, i ? 0 : 60, 0x89, n, 0));
-        pend = T / 2 - 60;
+        notes.forEach((n, i) => ev(drumsT, i ? 0 : gate, 0x89, n, 0));
+        pend = stepT - gate;
       }
     }
   }
-  // build one melody track from its eighth-columns; each layer gets its own channel
+  // build one melody track from its grid columns; each layer gets its own channel
   const buildMelo = (cols, chOn, chOff) => {
     const arr = []; let has = false;
     if (cols && cols.length) {
-      const EI = T / 2, N = cols.length;                          // ticks per eighth
+      const EI = T / sub, N = cols.length;                        // ticks per grid column
       const at = (i, note) => (cols[i] || []).includes(note);
       const evs = [];
       for (let i = 0; i < N; i++) for (const note of (cols[i] || [])) {
@@ -1621,9 +1710,25 @@ function recToEvents(notes) {
   return out;
 }
 
-// the "strong" beat columns of a bar (every other eighth): [0,2,4,6] in 4/4
-const qbeats = B => Array.from({ length: Math.ceil(B / 2) }, (_, i) => i * 2).filter(x => x < B);
+// the "strong" beat columns of a bar — one per beat: [0,2,4,6] on an eighth grid in 4/4,
+// [0,4,8,12] on a sixteenth grid. `sub` is columns per beat.
+const qbeats = (B, sub = 2) => Array.from({ length: Math.ceil(B / sub) }, (_, i) => i * sub).filter(x => x < B);
 const blankBars = (nBars, B) => Array.from({ length: nBars }, () => Array.from({ length: B }, () => []));
+// Re-time one stored bar onto a grid of B columns. A bar remembers its own resolution in its
+// length, so switching between an eighth and a sixteenth rhythm keeps every note where it sounds
+// rather than sliding it into the wrong half of the bar. Going finer is lossless; going coarser
+// folds notes onto the nearest column (two can land on one, which is what the ear would do too).
+const rescaleBar = (bar, B) => {
+  if (!bar || !bar.length) return Array.from({ length: B }, () => []);
+  if (bar.length === B) return bar.map(col => [...(col || [])]);
+  const out = Array.from({ length: B }, () => []);
+  bar.forEach((col, c) => {
+    if (!col || !col.length) return;
+    const nc = Math.min(B - 1, Math.round(c * B / bar.length));
+    for (const d of col) if (!out[nc].includes(d)) out[nc].push(d);
+  });
+  return out;
+};
 // lay a sequence of degrees onto given columns of one bar
 const layBar = (B, cols, degs) => {
   const bar = Array.from({ length: B }, () => []);
@@ -1633,13 +1738,13 @@ const layBar = (B, cols, degs) => {
 const MELODY_PATTERNS = [
   { id:"arpUp", name:"Arpeggio ↑ (chord tones)",
     desc:"Climbs each bar's chord — root, 3rd, 5th, 7th — one note per beat. Follows the chords; the start note fills in over any out-of-key chord.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
         return layBar(u.B, Q, [g, g+2, g+4, g+6]); }); } },
   { id:"arpDown", name:"Arpeggio ↓ (chord tones)",
     desc:"Falls through each bar's chord from the top down — 5th, 3rd, root. A gentler, more resolved shape than climbing.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
         return layBar(u.B, Q, [g+4, g+2, g, g-3]); }); } },
@@ -1651,116 +1756,116 @@ const MELODY_PATTERNS = [
         return layBar(u.B, Array.from({ length:u.B }, (_, i) => i), shape.slice(0, u.B)); }); } },
   { id:"scaleUp", name:"Scale run ↑",
     desc:"A stepwise climb up the scale from your start note, running straight through the whole section.",
-    gen(u){ const Q = qbeats(u.B); let n = 0;
+    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0;
       return Array.from({ length:u.nBars }, () =>
         layBar(u.B, Q, Q.map(() => u.start + n++))); } },
   { id:"scaleDown", name:"Scale run ↓",
     desc:"A stepwise descent from your start note down the scale, running through the whole section.",
-    gen(u){ const Q = qbeats(u.B); let n = 0;
+    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0;
       return Array.from({ length:u.nBars }, () =>
         layBar(u.B, Q, Q.map(() => u.start - n++))); } },
   { id:"wave", name:"Wave (up-and-down contour)",
     desc:"A smooth arch that rises a few steps then falls back, over and over — an easy, singable contour.",
-    gen(u){ const Q = qbeats(u.B); const tri = [0,1,2,3,2,1]; let n = 0;
+    gen(u){ const Q = qbeats(u.B, u.sub); const tri = [0,1,2,3,2,1]; let n = 0;
       return Array.from({ length:u.nBars }, () =>
         layBar(u.B, Q, Q.map(() => u.start + tri[n++ % tri.length]))); } },
   { id:"neighbor", name:"Neighbour tones",
     desc:"Decorates your start note with its upper and lower neighbours — note, step up, note, step down.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,1,0,-1]; let n = 0;
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,0,-1]; let n = 0;
       return Array.from({ length:u.nBars }, () =>
         layBar(u.B, Q, Q.map(() => u.start + fig[n++ % fig.length]))); } },
   { id:"pedal", name:"Pedal tone (repeated note)",
     desc:"Repeats your start note on every beat — a drone / chant to build tension against the moving chords.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start))); } },
   { id:"callResp", name:"Call & response",
     desc:"A rising question in one bar answered by a falling reply in the next — the two-bar conversation that anchors most tunes.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) =>
         b % 2 === 0 ? layBar(u.B, Q, [0,1,2,3].map(x => u.start + x))
                     : layBar(u.B, Q, [2,1,0,0].map(x => u.start + x))); } },
   { id:"aa", name:"AA — repeat the motif",
     desc:"States one short motif and repeats it in every bar. The most direct way to make a line stick.",
-    gen(u){ const Q = qbeats(u.B); const A = [0,2,1,0];
+    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, A.map(x => u.start + x))); } },
   { id:"ab", name:"AB — alternating motifs",
     desc:"Alternates a low motif (A) with a higher contrasting one (B), bar by bar — statement and counter-statement.",
-    gen(u){ const Q = qbeats(u.B); const A = [0,2,1,0], B = [4,2,3,4];
+    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0], B = [4,2,3,4];
       return Array.from({ length:u.nBars }, (_, b) =>
         layBar(u.B, Q, (b % 2 === 0 ? A : B).map(x => u.start + x))); } },
   { id:"aaba", name:"AABA — motif with a middle turn",
     desc:"Motif A three times with a contrasting B in the third bar — the classic 32-bar sentence in miniature.",
-    gen(u){ const Q = qbeats(u.B); const A = [0,2,1,0], B = [4,3,2,4];
+    gen(u){ const Q = qbeats(u.B, u.sub); const A = [0,2,1,0], B = [4,3,2,4];
       return Array.from({ length:u.nBars }, (_, b) =>
         layBar(u.B, Q, (b % 4 === 2 ? B : A).map(x => u.start + x))); } },
   { id:"seqUp", name:"Ascending sequence",
     desc:"Takes one three-note figure and steps it up the scale a degree at a time each bar — builds lift and momentum.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,1,2];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,2];
       return Array.from({ length:u.nBars }, (_, b) =>
         layBar(u.B, Q, fig.map(x => u.start + x + b))); } },
   { id:"seqDown", name:"Descending sequence",
     desc:"A three-note figure stepped down the scale each bar — an easing, settling motion toward resolution.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,-1,-2];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,-1,-2];
       return Array.from({ length:u.nBars }, (_, b) =>
         layBar(u.B, Q, fig.map(x => u.start + x - b))); } },
   { id:"leaps", name:"Leaping (zig-zag)",
     desc:"Zig-zags between your start note and a note a fifth above — wide, angular intervals for a bolder hook.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,4,0,4];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,4,0,4];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
   { id:"qa", name:"Question & answer (resolves to tonic)",
     desc:"An antecedent phrase that rises and hangs, then a consequent that comes to rest on the tonic — a fully closed two-bar sentence.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) =>
         b % 2 === 0 ? layBar(u.B, Q, [u.start, u.start+1, u.start+2, u.start+2])
                     : layBar(u.B, Q, [u.start+1, u.start-1, u.start, 0])); } },
   { id:"archTwo", name:"Two-bar arch",
     desc:"Rises across the first bar and falls back across the second — a broad, singable two-bar arch.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) =>
         layBar(u.B, Q, (b % 2 === 0 ? [0,1,2,3] : [3,2,1,0]).map(x => u.start + x))); } },
   { id:"zigTight", name:"Tight zig-zag",
     desc:"Steps up and dips back on every beat — a busy, chattering close-interval line.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,1,0,2];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,1,0,2];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
   { id:"thirds", name:"Skipping thirds",
     desc:"Leaps up a third then steps back down, walking the line upward in gentle skips.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,2,1,3];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,1,3];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
   { id:"gapfill", name:"Leap & fill",
     desc:"Jumps up to a high note then fills the gap with a stepwise descent — a classic melodic shape.",
-    gen(u){ const Q = qbeats(u.B); const fig = [4,3,2,1];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [4,3,2,1];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
   { id:"penta", name:"Pentatonic hook",
     desc:"Stays on the five pentatonic degrees — the notes that sound good over anything — for a foolproof hook.",
-    gen(u){ const Q = qbeats(u.B); const pent = [0,2,4,5,4,2,1,0]; let n = 0;
+    gen(u){ const Q = qbeats(u.B, u.sub); const pent = [0,2,4,5,4,2,1,0]; let n = 0;
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + pent[n++ % pent.length]))); } },
   { id:"hook", name:"High-to-low hook",
     desc:"Opens high and tumbles down to the tonic — an instantly memorable pop-hook shape.",
-    gen(u){ const Q = qbeats(u.B); const fig = [4,4,2,0];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [4,4,2,0];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
   { id:"pairs", name:"Repeated pairs",
     desc:"Says each note twice before moving on — a stuttering, insistent way to drill a hook in.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,0,2,2];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,0,2,2];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
   { id:"turn", name:"Turn (ornament)",
     desc:"Circles the start note — up, home, down, home — the ornamental 'turn' from classical melody.",
-    gen(u){ const Q = qbeats(u.B); const fig = [1,0,-1,0];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [1,0,-1,0];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
   { id:"fanfare", name:"Fanfare (chord leaps)",
     desc:"Bugle-call leaps around each bar's chord — root, fifth, third, fifth — bold and brassy.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
         return layBar(u.B, Q, [g, g+4, g+2, g+4]); }); } },
   { id:"chordDrop", name:"Chord climb, scale fall",
     desc:"Climbs the bar's chord tones then eases back down the scale — outlines the harmony, then smooths it over.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
         return layBar(u.B, Q, [g, g+2, g+4, g+3]); }); } },
   { id:"bluesy", name:"Bluesy lick",
     desc:"Curls around the third and fourth for a lazy, vocal blues inflection.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,2,3,2];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,3,2];
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, fig.map(x => u.start + x))); } },
   { id:"offbeat", name:"Off-beat syncopation",
     desc:"Puts the notes on the and-of-each-beat instead of the beat — a syncopated push that pulls against the chords.",
@@ -1784,34 +1889,34 @@ const MELODY_PATTERNS = [
         return bar; }); } },
   { id:"mirror", name:"Rise then mirror",
     desc:"States a rising shape, then answers it upside-down — the tune folded back on itself.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) =>
         layBar(u.B, Q, (b % 2 === 0 ? [0,1,2,3] : [0,-1,-2,-3]).map(x => u.start + x))); } },
   { id:"cascade", name:"Cascade down",
     desc:"A stepwise tumble that restarts a little lower each bar — a long, settling cascade toward home.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) => layBar(u.B, Q, [3,2,1,0].map(x => u.start + x - b))); } },
   { id:"seq4", name:"Four-bar climb",
     desc:"A short figure nudged up a step every bar — a long build that keeps rising across four bars.",
-    gen(u){ const Q = qbeats(u.B); const fig = [0,2,1];
+    gen(u){ const Q = qbeats(u.B, u.sub); const fig = [0,2,1];
       return Array.from({ length:u.nBars }, (_, b) => layBar(u.B, Q, fig.map(x => u.start + x + (b % 4)))); } },
   { id:"qq", name:"Two questions, one answer",
     desc:"Two rising, unresolved phrases then a falling reply that finally lands — a three-part sentence.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) =>
         b % 3 === 2 ? layBar(u.B, Q, [2,1,0,0].map(x => u.start + x))
                     : layBar(u.B, Q, [0,1,2,2].map(x => u.start + x))); } },
   { id:"climb", name:"Climb to a peak",
     desc:"Rises steadily across the whole section to a high point — one long crescendo of pitch.",
-    gen(u){ const Q = qbeats(u.B); let n = 0; const total = Math.max(1, u.nBars * Q.length - 1);
+    gen(u){ const Q = qbeats(u.B, u.sub); let n = 0; const total = Math.max(1, u.nBars * Q.length - 1);
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + Math.round((n++ / total) * 6)))); } },
   { id:"drone5", name:"Fifth pedal",
     desc:"Holds the fifth of the key as a bright high drone on every beat — tension over the moving chords.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, () => layBar(u.B, Q, Q.map(() => u.start + 4))); } },
   { id:"waltzArp", name:"Waltz lilt",
     desc:"Three notes a bar lilting up the chord — made for 3/4 and 6/8, but lovely anywhere.",
-    gen(u){ const Q = qbeats(u.B);
+    gen(u){ const Q = qbeats(u.B, u.sub);
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
         return layBar(u.B, Q, [g, g+2, g+4]); }); } },
@@ -1835,14 +1940,17 @@ const MELODY_PATTERNS = [
 
 const clampDeg = (d, nd) => Math.max(0, Math.min(nd - 1, Math.round(d)));
 // where notes want to sit in a bar, most-wanted first: downbeat, half-bar, the other beats, off-beats
-const colPrefs = B => {
-  const beats = qbeats(B), half = Math.floor(B / 2), offs = [];
-  for (let i = 1; i < B; i += 2) offs.push(i);
-  const order = B % 4 === 0 ? [0, half, ...beats, ...offs] : [0, ...beats, half, ...offs];
+const colPrefs = (B, sub = 2) => {
+  const beats = qbeats(B, sub), half = Math.floor(B / 2), offs = [];
+  // offbeats, coarsest first: the half-beat before the sixteenth subdivisions, so a melody
+  // fills the strong positions before it starts syncopating
+  for (let step = sub / 2; step >= 1; step /= 2)
+    for (let i = step; i < B; i += sub) if (Number.isInteger(i)) offs.push(i);
+  const order = B % (sub * 2) === 0 ? [0, half, ...beats, ...offs] : [0, ...beats, half, ...offs];
   return [...new Set(order)].filter(c => c >= 0 && c < B);
 };
 // n notes in a bar, spread over the strongest available positions
-const nCols = (B, n) => colPrefs(B).slice(0, Math.max(1, Math.min(n, B))).sort((a, b) => a - b);
+const nCols = (B, n, sub = 2) => colPrefs(B, sub).slice(0, Math.max(1, Math.min(n, B))).sort((a, b) => a - b);
 // notes per bar by section role — choruses sing out, verses sit back, intros and outros breathe
 const ROLE_N = { I:2, V:3, P:3, C:4, B:2, S:4, R:4, T:3, U:3, D:4, K:2, O:2, A:3, H:3, L:3 };
 const roleN = (role, d = 3) => ROLE_N[role] || d;
@@ -1891,21 +1999,21 @@ const NARRATIVES = [
    tip:"Every section is one arch: the line climbs to a peak halfway through and settles back down where it started. The oldest singable shape there is — it breathes like a spoken sentence, and it's why a ballad verse feels complete without a chorus.",
    refs:"Someone Like You (verse) · Yesterday · Hallelujah",
    gen(u){ const [lo, hi] = winFor(u, 0.6);
-     return narBars(u, () => nCols(u.B, roleN(u.role)),
+     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub),
        s => lo + (hi - lo) * Math.sin(Math.PI * s.t)); } },
 
  { id:"archSong", name:"Song-length arch",
    tip:"One arch across the whole running order instead of one per phrase: the register creeps up to the middle of the song and eases back down to the outro. Each section stays simple — the story is the long climb and the long fall.",
    refs:"Bohemian Rhapsody · Stairway to Heaven · A Day in the Life",
    gen(u){ const lo = Math.round(Math.sin(Math.PI * u.frac) * (u.nd - 3)), hi = lo + 2;
-     return narBars(u, () => nCols(u.B, roleN(u.role)),
+     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub),
        s => lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * s.t))); } },
 
  { id:"terraced", name:"Terraced — a step higher each time",
    tip:"States a short motif, then repeats it a step higher, bar after bar. The most reliable way to build a bridge or a final chorus: nothing changes except the height, so the lift is felt rather than noticed.",
    refs:"Where the Streets Have No Name · Sigur Rós builds · gospel vamps",
    gen(u){ const [lo, hi] = winFor(u, 0.55), fig = [0, 2, 1];
-     return narBars(u, () => nCols(u.B, Math.max(3, roleN(u.role))),
+     return narBars(u, () => nCols(u.B, Math.max(3, roleN(u.role)), u.sub),
        s => lo + fig[s.i % fig.length] + (s.b % Math.max(1, hi - lo))); } },
 
  { id:"expand", name:"Range expansion at the hook",
@@ -1913,15 +2021,15 @@ const NARRATIVES = [
    refs:"Where the Streets Have No Name · Someone Like You (chorus) · Rolling in the Deep",
    gen(u){ const top = u.nd - 1;
      if (!isHook(u.role)) { const fig = [0, 1, 0, -1];        // narrow noodle, low in the octave
-       return narBars(u, () => nCols(u.B, roleN(u.role)), s => 1 + fig[s.g % fig.length]); }
-     return narBars(u, () => nCols(u.B, 4),                   // leap to the top, then fill back down
+       return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => 1 + fig[s.g % fig.length]); }
+     return narBars(u, () => nCols(u.B, 4, u.sub),                   // leap to the top, then fill back down
        s => s.i === 0 ? (s.b % 2 ? 2 : 0) : top - (s.i - 1)); } },
 
  { id:"lament", name:"Descending lament",
    tip:"A stepwise fall, phrase after phrase, each one starting near the top and sinking toward the tonic. Grief music since the Baroque lament bass, and still the default shape for a sad ballad — especially over a descending bass line.",
    refs:"Dido's Lament · Stay With Me · Hurt",
    gen(u){ const [lo, hi] = winFor(u, 0.85);
-     return narBars(u, () => nCols(u.B, roleN(u.role)), s => hi - (s.g % (hi - lo + 1))); } },
+     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => hi - (s.g % (hi - lo + 1))); } },
 
  { id:"ostinato", name:"Ostinato — one repeating cell",
    tip:"The melody IS a short cell, repeated unchanged, with the harmony moving underneath doing all the work. Textural rather than narrative — it's the reason a four-chord loop can carry a whole track without the tune ever developing.",
@@ -1934,21 +2042,21 @@ const NARRATIVES = [
    tip:"Each section sits a little higher than the one before, so the last pass is the highest thing in the song without a single new chord. Register standing in for a key change — cheaper, and it never sounds like a gimmick.",
    refs:"Hey Jude · Champagne Supernova · Chandelier",
    gen(u){ const base = Math.round(u.frac * (u.nd - 3)), fig = [0, 2, 1, 2];
-     return narBars(u, () => nCols(u.B, roleN(u.role)), s => base + fig[s.i % fig.length]); } },
+     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => base + fig[s.i % fig.length]); } },
 
  { id:"peak", name:"Withheld peak — save the top note",
    tip:"Keeps the whole song inside a low, narrow band and spends the top of the octave exactly once, in the final section. The high note lands because you'd never heard it before — restraint is the whole technique.",
    refs:"Landslide · I Will Always Love You · Wuthering Heights",
    gen(u){ const last = u.idx >= u.total - 1;
      if (!last) { const fig = [0, 1, 2, 1];
-       return narBars(u, () => nCols(u.B, roleN(u.role)), s => fig[s.g % fig.length]); }
-     return narBars(u, () => nCols(u.B, 4), s => (u.nd - 1) - (s.g % 4)); } },
+       return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => fig[s.g % fig.length]); }
+     return narBars(u, () => nCols(u.B, 4, u.sub), s => (u.nd - 1) - (s.g % 4)); } },
 
  { id:"period", name:"Question & answer phrases",
    tip:"Two-bar sentences all the way through: the first bar rises and hangs unresolved, the second falls and lands home on the tonic. Classical period form, and the backbone of nearly every tune people can sing back at you.",
    refs:"Twinkle Twinkle · Let It Be · Don't Look Back in Anger",
    gen(u){ const [lo, hi] = winFor(u, 0.7);
-     return narBars(u, () => nCols(u.B, roleN(u.role)), s => {
+     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => {
        const x = s.n > 1 ? s.i / (s.n - 1) : 0;
        if (s.b % 2 === 0) return lo + 1 + (hi - lo - 1) * x;         // antecedent — rises, hangs
        return s.i === s.n - 1 ? 0 : hi - (hi - lo) * x; }); } },     // consequent — falls home
@@ -1957,7 +2065,7 @@ const NARRATIVES = [
    tip:"A phrase up high answered by a sparser, lower reply in the next bar — the preacher-and-congregation shape that runs through blues, gospel and soul. Keeping the answer thin is what makes it sound like a second voice.",
    refs:"I Got You (I Feel Good) · Hound Dog · most 12-bar blues",
    gen(u){ const [lo, hi] = winFor(u, 0.8);
-     return narBars(u, b => nCols(u.B, b % 2 ? 2 : roleN(u.role, 4)),
+     return narBars(u, b => nCols(u.B, b % 2 ? 2 : roleN(u.role, 4), u.sub),
        s => s.b % 2 ? lo + (s.n - 1 - s.i) : hi - s.i); } },
 
  { id:"germ", name:"Motif development (one germ cell)",
@@ -1967,7 +2075,7 @@ const NARRATIVES = [
      const shape = v === 2 ? [0, -2, -1] : [0, 2, 1];
      const base = v === 1 ? 2 : v === 2 ? 3 : v === 3 ? 1 : 0;
      const lift = Math.round(roleLift(u.role) * (u.nd - 4));
-     return narBars(u, () => nCols(u.B, v === 3 ? 2 : 3),
+     return narBars(u, () => nCols(u.B, v === 3 ? 2 : 3, u.sub),
        s => lift + base + shape[(v === 3 ? s.g : s.i) % shape.length] + (s.b % 2 ? 1 : 0)); } },
 
  { id:"pendulum", name:"Widening pendulum",
@@ -1976,57 +2084,57 @@ const NARRATIVES = [
    gen(u){ const gap = Math.max(1, Math.min(u.nd - 2,
        1 + Math.round(u.frac * 2 + roleLift(u.role) * 3)));
      const lo = Math.max(0, Math.min(u.nd - 1 - gap, 1));
-     return narBars(u, () => nCols(u.B, roleN(u.role, 4)), s => s.g % 2 ? lo + gap : lo); } },
+     return narBars(u, () => nCols(u.B, roleN(u.role, 4), u.sub), s => s.g % 2 ? lo + gap : lo); } },
 
  { id:"chant", name:"Chant, then release",
    tip:"Verses sit on one repeated reciting note — speech on a pitch, with a small drop at the end of each phrase — so the chorus's first real melodic move sounds like the song finally opening its mouth.",
    refs:"Royals · Subterranean Homesick Blues · psalm tones",
    gen(u){ if (!isHook(u.role) && u.role !== "T") {
        const rec = 2;
-       return narBars(u, () => nCols(u.B, Math.max(3, roleN(u.role))),
+       return narBars(u, () => nCols(u.B, Math.max(3, roleN(u.role)), u.sub),
          s => s.i === s.n - 1 && s.b % 2 ? rec - 1 : rec); }
      const [lo, hi] = winFor(u, 0.9);
-     return narBars(u, () => nCols(u.B, 4), s => lo + (hi - lo) * Math.sin(Math.PI * s.t)); } },
+     return narBars(u, () => nCols(u.B, 4, u.sub), s => lo + (hi - lo) * Math.sin(Math.PI * s.t)); } },
 
  { id:"wave", name:"Waves — long undulation",
    tip:"A continuous rise and fall that never quite settles, with a longer wavelength in the choruses than the verses: restless underneath the words, expansive under the hook.",
    refs:"Wichita Lineman · Nothing Compares 2 U · Bittersweet Symphony",
    gen(u){ const [lo, hi] = winFor(u, 0.75), cyc = isHook(u.role) ? 1 : 2;
-     return narBars(u, () => nCols(u.B, roleN(u.role, 4)),
+     return narBars(u, () => nCols(u.B, roleN(u.role, 4), u.sub),
        s => lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * cyc * s.t))); } },
 
  { id:"cascade", name:"Cascading sequence",
    tip:"One falling figure, restated a step lower every bar — a staircase down. The mirror of the terraced build; spend it on a section that has to lose altitude, like a post-chorus or the way out of a bridge.",
    refs:"Ain't No Sunshine · While My Guitar Gently Weeps · Für Elise",
    gen(u){ const [lo, hi] = winFor(u, 0.85), fig = [0, -1, -2];
-     return narBars(u, () => nCols(u.B, 3),
+     return narBars(u, () => nCols(u.B, 3, u.sub),
        s => hi - (s.b % Math.max(1, hi - lo)) + fig[s.i % fig.length]); } },
 
  { id:"gapfill", name:"Leap, then fill the gap",
    tip:"Every phrase jumps a wide interval and then walks stepwise back through the space it just skipped. The shape ears find most satisfying, and the reason a big leap never sounds arbitrary when it's answered.",
    refs:"Over the Rainbow · Take On Me · Superman theme",
    gen(u){ const [lo, hi] = winFor(u, 0.95);
-     return narBars(u, () => nCols(u.B, roleN(u.role, 4)),
+     return narBars(u, () => nCols(u.B, roleN(u.role, 4), u.sub),
        s => s.i === 0 ? lo : hi - (s.i - 1)); } },
 
  { id:"converse", name:"Speech contour",
    tip:"Narrow, conversational phrases that drop at the end like a spoken sentence, with air between them. Lets the words lead — the natural home for a lyric-heavy verse, and it makes any sung chorus after it feel like singing.",
    refs:"Tangled Up in Blue · Tom's Diner · Common People",
    gen(u){ const base = 2 + Math.round(roleLift(u.role) * 2);
-     return narBars(u, b => nCols(u.B, b % 2 ? 2 : 4),
+     return narBars(u, b => nCols(u.B, b % 2 ? 2 : 4, u.sub),
        s => s.i === s.n - 1 ? base - (s.b % 2 ? 2 : 1) : base + (s.i % 2)); } },
 
  { id:"chordLock", name:"Chord-locked hook",
    tip:"The same rhythmic cell in every bar, but every note snapped to the chord underneath: the tune only moves because the harmony does. Made for a progression with strong bass movement — the melody spells the changes out.",
    refs:"Don't Stop Believin' · Let It Be · Dreams",
    gen(u){ const cell = [0, 2, 1, 2], lift = Math.round(roleLift(u.role) * 3);
-     return narBars(u, () => nCols(u.B, roleN(u.role, 4)),
+     return narBars(u, () => nCols(u.B, roleN(u.role, 4), u.sub),
        s => chordSnap(clampDeg(cell[s.i % cell.length] + lift, u.nd), s.cd, u.nd)); } },
 
  { id:"suspend", name:"Suspension chain",
    tip:"Lands a step above the chord on every downbeat and resolves it down onto a chord tone — then the next chord turns that resolution into a clash again. The ache that keeps a slow song moving when nothing else is happening.",
    refs:"Bridge Over Troubled Water · Nothing Compares 2 U · Nuvole Bianche",
-   gen(u){ return narBars(u, () => nCols(u.B, 2), s => {
+   gen(u){ return narBars(u, () => nCols(u.B, 2, u.sub), s => {
        const tone = chordSnap(3 + Math.round(roleLift(u.role) * 2), s.cd, u.nd);
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
@@ -2107,7 +2215,8 @@ export default function ProgressionWheel() {
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(false);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
   const secDrumRef = useRef({});
-  const kitRef = useRef("acoustic"), pumpRef = useRef(0);
+  const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
+  const subRef = useRef(2), melRef = useRef(8);
   const realRef = useRef(true);
   const clickRef = useRef(false);
   const meloRef = useRef(null);
@@ -2476,7 +2585,19 @@ export default function ProgressionWheel() {
   secDrumRef.current = secDrum;
   kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0;
   clickRef.current = clickOn;
-  const meloBeats = rhythm.pattern.length;                  // eighths per bar (6 in waltz time)
+  const meloBeats = rhythm.pattern.length;                  // grid columns per bar (6 in waltz time, 16 on a sixteenth rhythm)
+  const meloSub = subOf(rhythm);                            // columns per beat: 2 = eighths, 4 = sixteenths
+  const barBeats = beatsOf(rhythm);                         // 4 in common time, 3 in waltz time
+  // How finely the scheduler has to tick this bar: enough for the strum pattern and for every
+  // drum pattern that could play (the global one plus any per-section override). Computed over
+  // the whole song rather than per bar, so the step counter stays coherent as sections change.
+  const tickCount = useMemo(() => {
+    const lens = [DRUMS[drum], ...Object.values(secDrum).map(id => DRUMS[id])]
+      .filter(d => d && d.pattern && drumBeatsOf(d.pattern) === barBeats)
+      .map(d => d.pattern.length);
+    return lens.reduce((a, b) => lcm(a, b), meloBeats);
+  }, [drum, secDrum, meloBeats, barBeats]);
+  tickRef.current = tickCount; subRef.current = meloSub; melRef.current = meloBeats;
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
   const chordId = (c, i) => c.inserted ? c.baseName
     : c.c2 ? "c" + c.bi
@@ -2492,7 +2613,7 @@ export default function ProgressionWheel() {
         const idx = savedIds.indexOf(id, p);
         if (idx >= 0) { bar = savedBars[idx]; p = idx + 1; }
       } else if (savedBars && savedBars.length) bar = savedBars[bi] || null;
-      return Array.from({ length: meloBeats }, (_, c) => (bar && bar[c] ? [...bar[c]] : []));
+      return rescaleBar(bar, meloBeats);
     });
   };
   const secMelos = useMemo(() => {
@@ -2783,7 +2904,7 @@ export default function ProgressionWheel() {
   // write a suggested melody pattern onto a section's grid (overwrites what's there)
   const applyPattern = (d, sec, patId, start, L) => {
     const pat = MELODY_PATTERNS.find(p => p.id === patId) || MELODY_PATTERNS[0];
-    const bars = pat.gen({ nBars: d.cs.length, B: meloBeats, start: start % scaleSemis.length,
+    const bars = pat.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, start: start % scaleSemis.length,
       chordDegs: chordDegsOf(d.cs) });
     putSec(d.key, L ? { barsB: bars } : { bars });
     setMelTab({ ...melTab, [d.key]: "write" });   // reveal the result on the grid
@@ -2813,7 +2934,7 @@ export default function ProgressionWheel() {
     sections.insts.forEach((d, idx) => {
       const pass = seen[d.base] = (seen[d.base] || 0);
       seen[d.base] = pass + 1;
-      const bars = nar.gen({ nBars: d.cs.length, B: meloBeats, nd: scaleSemis.length,
+      const bars = nar.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, nd: scaleSemis.length,
         chordDegs: chordDegsOf(d.cs), role: d.base, pass, passes: passes[d.base],
         idx, total, frac: total > 1 ? idx / (total - 1) : 0 });
       const sec = secMelos[d.key], prev = secs[d.key] || {};
@@ -2868,12 +2989,23 @@ export default function ProgressionWheel() {
     if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
     const m = { ctx, master, music, duck, sampler, lastInstr: instrRef.current, lastLead: leadKey,
       leadLoaded: new Set(leadKey ? [leadKey] : []),
-      step: from * (patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
+      step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     m.timer = setInterval(() => {
       if (m.ctx.state === "suspended") m.ctx.resume();
-      const eighth = 60 / bpmRef.current / 2;
+      // The bar ticks at its finest active resolution; every pattern is sampled onto that grid.
+      // `beat` is the musical unit the voices are shaped against (a quarter note), so note
+      // lengths and the pump stay put whether the bar is in eighths or sixteenths.
+      const L = tickRef.current || patRef.current.length || 8;
+      const patLen = patRef.current.length || 8;
+      const ticksPerBeat = L / (patLen / (subRef.current || 2));
+      const tick = 60 / bpmRef.current / ticksPerBeat;
+      const beat = 60 / bpmRef.current;
+      const eighth = beat / 2;                       // the voices' reference length, meter-independent
       while (m.nextTime < m.ctx.currentTime + 0.1) {
-        const L = patRef.current.length || 8, i = m.step % L;
+        const i = m.step % L;
+        const patStep = stepAt(patLen, i, L);        // null when this tick falls between strum steps
+        const MB = melRef.current || patLen;         // melody grid columns per bar
+        const melStep = stepAt(MB, i, L);            // null between melody columns
         const { list, seq, struct } = chordsRef.current;
         const loop = loopRef.current;
         let chord, pillIdx = -1, label = null, instNow = "L1", structBar = -1;
@@ -2895,9 +3027,12 @@ export default function ProgressionWheel() {
           pillIdx = seq.length ? seq[bar] : 0;
           chord = list[pillIdx];
         }
-        const sym = patRef.current[i] || "-";
+        const sym = (patStep == null ? null : patRef.current[patStep]) || "-";
         let t = m.nextTime;
-        if (swingRef.current && i % 2 === 1) t += eighth * 0.33;
+        // swing delays the offbeat of each strum-pattern pair — on a sixteenth pattern that is
+        // a sixteenth shuffle, which is exactly the garage/2-step feel
+        const strumStride = L / patLen;
+        if (swingRef.current && patStep != null && patStep % 2 === 1) t += tick * strumStride * 0.33;
         const inst = instrRef.current;
         if (realRef.current && inst !== m.lastInstr) { m.sampler.load(inst); m.lastInstr = inst; }  // switched voice mid-play
         if (sym !== "-") {
@@ -2913,11 +3048,12 @@ export default function ProgressionWheel() {
           const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
           if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
         }
-        if (dpat && dpat[i]) {
-          for (const ch of dpat[i]) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current);
-          // pump the pitched bus under every kick. Recovery stops just short of the next
-          // quarter, so four-on-the-floor breathes fully back in right as the next kick hits.
-          if (pumpRef.current && /[KB]/.test(dpat[i])) duckAt(m.duck, t, pumpRef.current, eighth * 1.6);
+        const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
+        if (dstep) {
+          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current);
+          // pump the pitched bus under every kick. Recovery stops just short of the next beat,
+          // so four-on-the-floor breathes fully back in right as the next kick hits.
+          if (pumpRef.current && /[KB]/.test(dstep)) duckAt(m.duck, t, pumpRef.current, beat * 0.8);
         }
         const mel = meloRef.current;
         if (mel) {
@@ -2935,8 +3071,8 @@ export default function ProgressionWheel() {
             const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
             // play one melody layer's column with its own voice (falling back to the global lead)
             const playLayer = (flat, voice) => {
-              if (!flat || !flat.length) return;
-              const N = flat.length, col = (mb * L + i) % N;
+              if (!flat || !flat.length || melStep == null) return;
+              const N = flat.length, col = (mb * MB + melStep) % N;
               const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
               if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
               (flat[col] || []).forEach(deg => {
@@ -2946,7 +3082,10 @@ export default function ProgressionWheel() {
                 let run = 1;
                 if (held) while (col + run < N && (flat[col + run] || []).includes(deg)) run++;
                 const midi = base + mel.scale[deg];
-                const dur = held ? eighth * (run + 0.35) : eighth * 0.92;
+                // `run` counts melody columns, so a note's length has to be measured in columns
+                // — on a sixteenth grid a one-column note is a sixteenth, not an eighth
+                const colDur = beat / (subRef.current || 2);
+                const dur = held ? colDur * (run + 0.35) : colDur * 0.92;
                 const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, m.music);
                 if (!sampled) {
                   // GM instrument with no loaded sample → its family's synth voice; else the synth spec itself
@@ -2958,14 +3097,16 @@ export default function ProgressionWheel() {
             playLayer(sec.flat, sec.instr || mel.melInstr);
             playLayer(sec.flatB, sec.instrB || mel.melInstr);
             const Nq = sec.flat.length || (sec.flatB ? sec.flatB.length : 0);
-            const q = { sym, col: Nq ? (mb * L + i) % Nq : 0 };
-            setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
+            if (melStep != null) {
+              const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
+              setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
+            }
           }
         }
         const delay = Math.max(0, (t - m.ctx.currentTime) * 1000);
-        setTimeout(() => setCurStep(i), delay);
+        if (patStep != null) setTimeout(() => setCurStep(patStep), delay);   // playhead walks the strum pattern, not the ticks
         if (i === 0) setTimeout(() => { setCurBar(pillIdx); setCurLabel(label); setCurInst(instNow); }, delay);
-        m.step++; m.nextTime += eighth;
+        m.step++; m.nextTime += tick;
       }
     }, 20);
     metroRef.current = m;
@@ -2995,7 +3136,7 @@ export default function ProgressionWheel() {
       setInserts({ key:eKey, list:[{ before:idx, root:((key + off + 7) % 12), quality:"dom",
         tag:"V/" + p.numerals[idx].replace(/7$/, "") }] });
     } else setInserts({ key:"", list:[] });
-    const pats = Object.keys(PATTERNS).filter(k => PATTERNS[k].pattern.length === 8);
+    const pats = Object.keys(PATTERNS).filter(k => beatsOf(PATTERNS[k]) === 4);   // 4/4 only, at either resolution
     setPatSel({ key:id, id: pats[Math.floor(Math.random() * pats.length)] });
   };
 
@@ -3029,8 +3170,8 @@ export default function ProgressionWheel() {
         return DRUMS[id] ? DRUMS[id].pattern : null;
       };
       const anyDrum = bars.some((_, i) => drumForBar(i));
-      const bytes = midiBytes(effBpm, rhythm.pattern.length / 2, bars, drumForBar,
-        anyMelo ? meloCols : null, anyMeloB ? meloColsB : null, kit);
+      const bytes = midiBytes(effBpm, barBeats, bars, drumForBar,
+        anyMelo ? meloCols : null, anyMeloB ? meloColsB : null, kit, meloSub);
       const url = URL.createObjectURL(new Blob([bytes], { type:"audio/midi" }));
       const a = document.createElement("a");
       a.href = url; a.download = "progression-wheel.mid";
@@ -3068,12 +3209,16 @@ export default function ProgressionWheel() {
       return best;
     };
     let placed = 0, dropped = 0;
+    // imported and recorded lines are quantised to eighths; on a finer grid one eighth is more
+    // than one column, so stretch them rather than letting the tune play back at double speed
+    const scale = meloSub / 2;
     events.forEach(ev => {
       const deg = degOf(ev.midi);
-      for (let c = ev.startE; c < ev.startE + ev.durE; c++) {
+      const startE = Math.round(ev.startE * scale), durE = Math.max(1, Math.round(ev.durE * scale));
+      for (let c = startE; c < startE + durE; c++) {
         if (c >= totalCols) { dropped++; break; }
         bars[Math.floor(c / meloBeats)][c % meloBeats] = [deg];  // monophonic
-        if (c === ev.startE) placed++;
+        if (c === startE) placed++;
       }
     });
     putSec(sec.key, { bars });                            // preserves the 2nd layer + instrument choices
@@ -3566,7 +3711,7 @@ export default function ProgressionWheel() {
               <select value={patId} onChange={e => setPatSel({ key: progId, id: e.target.value })}>
                 {Object.entries(PATTERNS).map(([id, p]) => (
                   <option key={id} value={id}>
-                    {p.name}{id === (PATTERN_DEFAULT[progId] || "pop") ? " ★" : ""}{p.swing ? " (swung)" : ""}
+                    {p.name}{id === (PATTERN_DEFAULT[progId] || "pop") ? " ★" : ""}{p.swing ? " (swung)" : ""}{subOf(p) === 4 ? " · 16ths" : ""}
                   </option>
                 ))}
               </select>
@@ -3902,7 +4047,7 @@ export default function ProgressionWheel() {
           </div>
           {showScore && (<>
             <div className="scorewrap">
-              <NotationScore measures={scoreMeasures} instr={scoreInstr} meloBeats={meloBeats} />
+              <NotationScore measures={scoreMeasures} instr={scoreInstr} meloBeats={meloBeats} sub={meloSub} />
             </div>
             {tips && <div className="hint" style={{ padding:"2px 10px 4px" }}>
               {scoreInstr === "piano"
@@ -4229,7 +4374,7 @@ export default function ProgressionWheel() {
                               className={"mcell" + (onA ? " on" : "") + (onB ? " onB" : "") + (melMove ? " mv" : "")
                                 + (isSel ? " msel" : "") + (isGhost ? " mghost" : "") + (inBox ? " mbox" : "")
                                 + (playing && curQ && curQ.sym === d.key && curQ.col === c ? " colnow" : "")
-                                + (c % meloBeats === 0 && c > 0 ? " b0" : c % 2 === 0 && c > 0 ? " bt" : "")} />
+                                + (c % meloBeats === 0 && c > 0 ? " b0" : c % meloSub === 0 && c > 0 ? " bt" : "")} />
                             );
                           })}
                         </div>

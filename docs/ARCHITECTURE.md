@@ -52,6 +52,27 @@ Web Audio API throughout, no samples:
 - **Scheduler**: `setInterval(20ms)` with a 0.1 s lookahead writing absolute-time events — solid
   timing with ~0.1 s latency for live changes. The AudioContext is created and resumed inside the
   Play tap (iOS unlock), with a silent unlock note.
+
+### Grid resolution
+
+A rhythm pattern carries `sub` — columns per beat, 2 for eighths and 4 for sixteenths — so
+`beatsOf(p) = pattern.length / sub` is the meter. Nothing assumes an eighth-note grid: the melody
+grid is `meloBeats` columns wide (the pattern's length), note values in the score are read as
+multiples of `sub`, and MIDI writes `T / sub` ticks per column.
+
+Patterns of different lengths coexist because each **bar ticks at the finest resolution in play** —
+`tickCount` is the lcm of the strum pattern and every drum pattern that could sound (global plus
+per-section), computed over the whole song so the step counter stays coherent across sections. Each
+pattern is then sampled onto that grid by `sampleAt`/`stepAt`: a length-P pattern fires at tick `i`
+only when `i·P` lands exactly on a step. When lengths match, the stride is 1 and the path is
+bit-for-bit what it was before — which is how every existing eighth-note song is unaffected.
+
+`rescaleBar` re-times a stored melody bar when the resolution changes. A bar remembers its own
+resolution in its length, so switching rhythms moves each note to the column that keeps it at the
+same point in the bar (lossless going finer; folded onto the nearest column going coarser).
+
+Swing delays the offbeat of each *strum-pattern* pair, so on a sixteenth pattern it is a sixteenth
+shuffle rather than an eighth one.
 - Each eighth-slot: click, chord voice (`playHit` — guitar pluck is sawtooth through a closing
   low-pass; piano is fundamental + decaying partials; organ sustains sine drawbars; basses play
   roots), drum hits (`drumSound`), and melody lead notes.
@@ -128,7 +149,9 @@ Two data tables, both producing the same thing — bars of scale-degree columns:
 ## Notation
 
 `NotationScore` draws the song on a staff in hand-built SVG (no engraving library), matching the
-app's other hand-drawn diagrams. Pitches are placed by diatonic *step* (`stepOfMidi`, one step per
+app's other hand-drawn diagrams. Durations arrive in grid columns, so the `sub` prop is what turns
+them into note values (`WHOLE = 4·sub`, `HALF = 2·sub`, `flagsOf` → 0/1/2 flags); beams group inside
+the beat, with secondary beams drawn only over the notes that carry them. Pitches are placed by diatonic *step* (`stepOfMidi`, one step per
 line-or-space, flat-spelled via `SPELL`), so ledger lines, accidentals and clef anchoring are simple
 arithmetic. `scoreMeasures` reuses the MIDI flatten to pair each bar's chord with its melody events
 (onset eighth + run length). Piano renders a grand staff (RH melody / LH chord voicing); guitar
