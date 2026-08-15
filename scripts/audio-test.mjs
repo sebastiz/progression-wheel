@@ -7,7 +7,7 @@ import { build } from "esbuild";
 let code = readFileSync("src/progression-wheel.jsx", "utf8");
 code = code.replace(/import \{[^}]*\} from "react";/, "const React = globalThis.React;");
 code = code.replace("export default function ProgressionWheel(", "function ProgressionWheel(");
-code += "\nexport { drumSound, duckAt, midiBytes, makeNoise, DRUMS, DRUM_MIDI, PUMP_AMT, DRUM_KITS, DRUM_DEFAULT, KIT_DEFAULT, PUMP_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, subOf, beatsOf, stepAt, sampleAt, drumBeatsOf, lcm, rescaleBar, qbeats, colPrefs, nCols, blankBars, MELODY_PATTERNS, NARRATIVES };\n";
+code += "\nexport { drumSound, duckAt, midiBytes, makeNoise, DRUMS, DRUM_MIDI, PUMP_AMT, DRUM_KITS, DRUM_DEFAULT, KIT_DEFAULT, PUMP_DEFAULT, KIT_PROGRAM, MOVES, applyMove, FILTER_OPEN, LAYER_INK, LAYER_NAMES, MAX_LAYERS, LAYER_DEFAULT_INSTR, PATTERNS, PATTERN_DEFAULT, subOf, beatsOf, stepAt, sampleAt, drumBeatsOf, lcm, rescaleBar, qbeats, colPrefs, nCols, blankBars, MELODY_PATTERNS, NARRATIVES };\n";
 writeFileSync("scripts/.test.jsx", code);
 await build({ entryPoints: ["scripts/.test.jsx"], outfile: "scripts/.test.mjs",
   loader: { ".jsx": "jsx" }, jsx: "transform", format: "esm", bundle: false });
@@ -34,8 +34,11 @@ const mkParam = (name, node) => {
   return p;
 };
 const nodes = [];
-const baseNode = (type) => {
-  const n = { type, _conns: [], connect(d) { this._conns.push(d); return d; }, disconnect() {} };
+// NB: the kind marker must NOT be called `type` — real nodes use `.type` for the oscillator
+// waveform and the filter mode, and the code under test sets it, which would clobber the marker
+// and silently exclude those nodes from every assertion below.
+const baseNode = (kind) => {
+  const n = { _kind: kind, _conns: [], connect(d) { this._conns.push(d); return d; }, disconnect() {} };
   nodes.push(n); return n;
 };
 const ctx = {
@@ -85,13 +88,13 @@ for (const [kitId] of M.DRUM_KITS) {
     const before = problems.length;
     try { M.drumSound(ctx, 1.5, ch, noise, dest, kitId); }
     catch (e) { problems.push(`${kitId}/${ch} threw: ${e.message}`); continue; }
-    const sources = nodes.filter(n => n.type === "osc" || n.type === "buf");
+    const sources = nodes.filter(n => n._kind === "osc" || n._kind === "buf");
     if (!sources.length) { problems.push(`${kitId}/${ch} produced no sound sources`); continue; }
     for (const s of sources) {
-      if (!s._started) problems.push(`${kitId}/${ch} has an unstarted ${s.type}`);
-      if (s._t1 == null) problems.push(`${kitId}/${ch} has a ${s.type} that never stops`);
+      if (!s._started) problems.push(`${kitId}/${ch} has an unstarted ${s._kind}`);
+      if (s._t1 == null) problems.push(`${kitId}/${ch} has a ${s._kind} that never stops`);
       // a non-looping noise source must not be asked to ring past its buffer
-      if (s.type === "buf" && !s.loop && s._t1 - s._t0 > noiseDur + 1e-9)
+      if (s._kind === "buf" && !s.loop && s._t1 - s._t0 > noiseDur + 1e-9)
         problems.push(`${kitId}/${ch} noise rings ${(s._t1-s._t0).toFixed(2)}s > ${noiseDur}s buffer without loop`);
     }
     if (problems.length === before) voiced++;
@@ -132,7 +135,7 @@ console.log(`drum patterns: ${pats} checked`);
 /* ---- MIDI export with the new channels + a machine kit ---- */
 const bars = [{ chord: { root: 0, quality: "min" } }, { chord: { root: 5, quality: "maj" } }];
 for (const kit of ["acoustic", "909", "808"]) {
-  const bytes = M.midiBytes(124, 4, bars, M.DRUMS.house909.pattern, null, null, kit);
+  const bytes = M.midiBytes(124, 4, bars, M.DRUMS.house909.pattern, null, kit);
   if (!(bytes instanceof Uint8Array)) { problems.push(`midi ${kit}: not a byte array`); continue; }
   const hdr = String.fromCharCode(...bytes.slice(0, 4));
   if (hdr !== "MThd") problems.push(`midi ${kit}: bad header ${hdr}`);
@@ -301,7 +304,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     ["amen break", M.DRUMS.amen.pattern, 4],
   ]) {
     const cols = Array.from({ length: NB * BEATS * sub }, (_, i) => (i % sub === 0 ? [0] : []));
-    const bytes = M.midiBytes(128, BEATS, bars2, pat, cols, null, "909", sub);
+    const bytes = M.midiBytes(128, BEATS, bars2, pat, [cols], "909", sub);
     // the chord track spans the whole song exactly — that is what sets the file's length
     const chordTicks = trackLen(bytes, 1);
     if (chordTicks !== want) problems.push(`${label}: chord track is ${chordTicks} ticks, want exactly ${want}`);
@@ -319,6 +322,91 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (melTicks > want) problems.push(`${label}: melody track overruns the song (${melTicks} > ${want})`);
     console.log(`midi ${label.padEnd(16)} → chords ${chordTicks}/${want}, drums end ${drumTicks}, melody end ${melTicks}`);
   }
+}
+
+/* ---- melody parts each get their own MIDI channel, and never the drum channel ---- */
+{
+  const bars2 = [{ chord: { root: 0, quality: "min" } }];
+  const mk = note => Array.from({ length: 8 }, (_, i) => (i % 2 === 0 ? [note] : []));
+  // six parts is the cap; channel 9 (the 0-based drum channel) must be skipped
+  const parts = [60, 62, 64, 65, 67, 69].map(mk);
+  const bytes = M.midiBytes(120, 4, bars2, null, parts, null, 2);
+  // collect note-on channels per track. Track 0 is tempo and track 1 is the chords (channel 0),
+  // so only tracks from index 2 are melody parts — scanning all of them would count the chord
+  // track's channel as a part and look like a collision.
+  const perTrack = [];
+  let p = 14, tracks = 0;
+  while (p < bytes.length) {
+    const len = (bytes[p+4]<<24)|(bytes[p+5]<<16)|(bytes[p+6]<<8)|bytes[p+7];
+    const body = bytes.slice(p + 8, p + 8 + len);
+    const c = new Set();
+    for (let q = 0; q < body.length; q++) if ((body[q] & 0xf0) === 0x90) c.add(body[q] & 0x0f);
+    perTrack.push(c); p += 8 + len; tracks++;
+  }
+  const chans = new Set(perTrack.slice(2).flatMap(s => [...s]));
+  perTrack.slice(2).forEach((s, i) => { if (s.size > 1) problems.push(`melody part ${i} spans channels ${[...s]}`); });
+  if (tracks !== 2 + parts.length) problems.push(`multi-part export: ${tracks} tracks, want ${2 + parts.length}`);
+  if (bytes[11] !== tracks) problems.push(`multi-part export: header says ${bytes[11]} tracks, found ${tracks}`);
+  if (chans.has(9)) problems.push("a melody part was written onto channel 10 (the drum channel)");
+  if (chans.size !== parts.length) problems.push(`melody parts share channels: ${[...chans].join(",")}`);
+  // a part with no notes must not claim a track
+  const sparse = M.midiBytes(120, 4, bars2, null, [mk(60), null, mk(64)], null, 2);
+  if (sparse[11] !== 4) problems.push(`empty parts still emitted tracks: header says ${sparse[11]}, want 4`);
+  console.log(`melody parts: ${parts.length} parts → channels ${[...chans].sort((a,b)=>a-b).join(",")} (drum channel 9 skipped)`);
+  if (M.LAYER_INK.length < M.MAX_LAYERS) problems.push("not enough part colours for MAX_LAYERS");
+  if (M.LAYER_NAMES.length < M.MAX_LAYERS) problems.push("not enough part names for MAX_LAYERS");
+  if (new Set(M.LAYER_INK).size !== M.LAYER_INK.length) problems.push("two melody parts share an ink colour");
+}
+
+/* ---- section moves: sweeps land on the section boundary and never ramp through zero ---- */
+{
+  const DUR = 8;            // an 8-second section
+  for (const [id, mv] of Object.entries(M.MOVES)) {
+    nodes.length = 0;
+    const dest = baseNode("dest");
+    const filt = ctx.createBiquadFilter();
+    const before = problems.length;
+    try { M.applyMove(ctx, filt, mv.spec, 3, DUR, noise, dest); }
+    catch (e) { problems.push(`move ${id} threw: ${e.message}`); continue; }
+    const evs = filt.frequency._events;
+    if (!evs.length) { problems.push(`move ${id}: scheduled nothing on the filter`); continue; }
+    // no cutoff may be <= 0 (exponential ramps throw) or above Nyquist at 44.1k
+    for (const e of evs) {
+      if (e.kind === "cancel") continue;
+      if (!(e.v > 0)) problems.push(`move ${id}: cutoff ${e.v} Hz is not positive`);
+      if (e.v > 22050) problems.push(`move ${id}: cutoff ${e.v} Hz is above Nyquist`);
+      if (e.t < 3 - 1e-9 || e.t > 3 + DUR + 1e-9) problems.push(`move ${id}: event at ${e.t}s is outside the section (3..${3 + DUR})`);
+    }
+    // a move with a sweep must actually end where it says
+    const spec = mv.spec;
+    if (spec && !spec.peak && spec.to !== spec.from) {
+      const last = evs.filter(e => e.kind !== "cancel").pop();
+      if (Math.abs(last.v - spec.to) > 1) problems.push(`move ${id}: ends at ${last.v} Hz, want ${spec.to}`);
+      if (Math.abs(last.t - (3 + DUR)) > 1e-6) problems.push(`move ${id}: sweep ends at ${last.t}s, want the section boundary ${3 + DUR}s`);
+    }
+    // the riser and impact must start and stop inside the section
+    const srcs = nodes.filter(n => n._kind === "buf" || n._kind === "osc");
+    for (const s of srcs) {
+      if (!s._started) problems.push(`move ${id}: unstarted ${s._kind}`);
+      if (s._t1 == null) problems.push(`move ${id}: a ${s._kind} never stops`);
+      if (s._kind === "buf" && !s.loop && s._t1 - s._t0 > noiseDur + 1e-9)
+        problems.push(`move ${id}: noise rings past its buffer without looping`);
+    }
+    if (spec && spec.riser && !srcs.length) problems.push(`move ${id}: riser scheduled no sound`);
+    if (spec && spec.impact && srcs.length < 2) problems.push(`move ${id}: impact should be a boom plus a crash`);
+    if (problems.length === before)
+      console.log(`move ${id.padEnd(7) || "(none)"} → ${evs.filter(e => e.kind !== "cancel").map(e => Math.round(e.v)).join(" → ")} Hz${spec && spec.riser ? " + riser" : ""}${spec && spec.impact ? " + impact" : ""}`);
+  }
+  // a very short section must still keep its riser inside the section
+  nodes.length = 0;
+  const dest = baseNode("dest");
+  const filt2 = ctx.createBiquadFilter();
+  M.applyMove(ctx, filt2, M.MOVES.riser.spec, 0, 1.2, noise, dest);
+  for (const s of nodes.filter(n => n._kind === "buf")) {
+    if (s._t0 < -1e-9) problems.push(`short section: riser starts before the section (${s._t0}s)`);
+    if (s._t0 > 1.2) problems.push(`short section: riser starts after the section ends`);
+  }
+  console.log(`moves: ${Object.keys(M.MOVES).length} checked, including a 1.2s section`);
 }
 
 console.log(problems.length ? `\n✗ ${problems.length} PROBLEM(S):\n` + problems.map(p => "  - " + p).join("\n")

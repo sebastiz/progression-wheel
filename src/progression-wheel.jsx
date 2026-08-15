@@ -673,6 +673,71 @@ function drumSound(ctx, t, ch, noise, dest, kit) {
     nz(0.08, 0.006, 0.9, "bandpass", 6800, 0.4);
   }
 }
+/* ===== section moves (arrangement automation) =====
+   A build isn't a chord change — it's a filter opening over eight bars, a riser underneath and a
+   crash on the downbeat of the drop. These are the moves that shape dance arrangements, attached
+   to a section so they run for exactly that section's length however long it is.
+   `lo`/`hi` are filter cutoffs in Hz; every value stays above zero because the sweeps are
+   exponential (an exponential ramp to or from 0 throws). */
+const MOVES = {};
+[
+["",       "— no move —",             null],
+["build",  "Build · filter opens",    { from: 260, to: 16000 }],
+["riser",  "Build + riser",           { from: 260, to: 16000, riser: true }],
+["drop",   "Drop · slam open + crash",{ from: 16000, to: 16000, impact: true }],
+["fade",   "Fade · filter closes",    { from: 16000, to: 300 }],
+["under",  "Underwater · stays shut", { from: 600, to: 600 }],
+["swell",  "Swell · opens then shuts",{ from: 400, to: 400, peak: 14000 }],
+].forEach(([id, name, spec]) => { MOVES[id] = { name, spec }; });
+const FILTER_OPEN = 18000;                       // "no filtering", still inside Nyquist at 44.1k
+
+// Schedule one section move: the cutoff envelope across the section, plus the riser and impact
+// that go with it. `dur` is the whole section's length in seconds, so the sweep always lands on
+// the section boundary whether it is four bars or sixteen.
+function applyMove(ctx, filt, spec, t, dur, noise, dest) {
+  if (!spec) {                                   // no move → make sure nothing is left filtered
+    filt.frequency.cancelScheduledValues(t);
+    filt.frequency.setValueAtTime(FILTER_OPEN, t);
+    return;
+  }
+  const f = filt.frequency;
+  f.cancelScheduledValues(t);
+  f.setValueAtTime(Math.max(20, spec.from), t);
+  if (spec.peak) {                               // open to the peak by halfway, then close again
+    f.exponentialRampToValueAtTime(spec.peak, t + dur * 0.5);
+    f.exponentialRampToValueAtTime(Math.max(20, spec.to), t + dur);
+  } else if (spec.to !== spec.from) {
+    f.exponentialRampToValueAtTime(Math.max(20, spec.to), t + dur);
+  }
+  if (spec.impact) {
+    // crash + a short sub boom on the downbeat — the hit that lands a drop
+    const boom = ctx.createOscillator(); boom.type = "sine";
+    boom.frequency.setValueAtTime(90, t);
+    boom.frequency.exponentialRampToValueAtTime(34, t + 0.5);
+    boom.connect(env(ctx, t, 0.5, 0.004, 0.75, true, dest));
+    boom.start(t); boom.stop(t + 0.8);
+    const cr = ctx.createBufferSource(); cr.buffer = noise; cr.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 3200;
+    cr.connect(hp); hp.connect(env(ctx, t, 0.2, 0.005, 1.3, true, dest));
+    cr.start(t); cr.stop(t + 1.35);
+  }
+  if (spec.riser) {
+    // noise sweeping up through the last two bars (or the last third of a short section),
+    // swelling as it goes — the tension that makes the drop land
+    const rise = Math.min(dur * 0.34, 4);
+    const t0 = t + dur - rise;
+    const n = ctx.createBufferSource(); n.buffer = noise; n.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(400, t0);
+    bp.frequency.exponentialRampToValueAtTime(9000, t0 + rise);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.16, t0 + rise * 0.92);
+    g.gain.linearRampToValueAtTime(0.0001, t0 + rise);   // cut right on the boundary
+    n.connect(bp); bp.connect(g); g.connect(dest);
+    n.start(t0); n.stop(t0 + rise + 0.05);
+  }
+}
 // Sidechain pump. The pitched bus runs through a gain that gets slammed down on every kick
 // and breathes back before the next one — the ducking that defines house, techno and EDM.
 // We schedule the envelope directly instead of running a real compressor with a detector:
@@ -1253,8 +1318,10 @@ function NotationScore({ measures, instr, meloBeats, sub = 2, perSystem = 4 }) {
     const nodes = [];
     if (!events || !events.length) return nodes;
     const xOf = on => inner + (on / meloBeats) * span;
-    const colOf = ev => m => (ev.bMids && ev.bMids.has(m)) ? LAY : INK;   // per-note ink
-    const evCol = ev => (ev.mids.length && ev.mids.every(m => ev.bMids && ev.bMids.has(m))) ? LAY : INK;
+    // per-note ink: each note is drawn in the colour of the melody part it belongs to
+    const colOf = ev => m => ev.inkOf ? ev.inkOf(m) : ((ev.bMids && ev.bMids.has(m)) ? LAY : INK);
+    // stems, flags and beams take the group's colour when every note agrees, else the lead's
+    const evCol = ev => { const cs = new Set(ev.mids.map(colOf(ev))); return cs.size === 1 ? [...cs][0] : INK; };
     const geo = events.map(ev => ({ g: drawHeads(ev.mids, xOf(ev.on), ev.dur, clef, colOf(ev)), ev }));
     geo.forEach(e => nodes.push(...e.g.nodes));
     // beam groups: runs of flagged notes inside a single beat, so beams never cross a beat line
@@ -1416,7 +1483,8 @@ const vlq = n => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) 
 // each column a list of absolute MIDI note numbers. Runs of the same note across
 // adjacent columns are merged into one held note (legato) so the exported line
 // flows the way it plays.
-function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2, kit, sub = 2) {
+// `melParts` is a list of column-lists, one per melody part; each gets its own MIDI channel.
+function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2) {
   const T = 480, ev = (arr, dt, ...bytes) => arr.push(...vlq(dt), ...bytes);
   const trk = arr => {
     const body = [...arr, 0, 0xff, 0x2f, 0];
@@ -1476,12 +1544,17 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, meloCols, meloCols2, kit, su
     }
     return { arr, has };
   };
-  const melA = buildMelo(meloCols, 0x91, 0x81);                   // layer A → channel 1
-  const melB = buildMelo(meloCols2, 0x92, 0x82);                 // layer B → channel 2
-  const nTrk = 2 + (drumHas ? 1 : 0) + (melA.has ? 1 : 0) + (melB.has ? 1 : 0);
+  // one track per melody part, on its own channel. Channels 1.. skip 9 (percussion is channel 10
+  // in 1-based terms, 9 here), so a part is never voiced as a drum kit by mistake.
+  const chanFor = p => { const c = p + 1; return c >= 9 ? c + 1 : c; };
+  const mels = (melParts || []).map((cols, p) => {
+    const ch = chanFor(p) & 0x0f;
+    return buildMelo(cols, 0x90 | ch, 0x80 | ch);
+  }).filter(m => m.has);
+  const nTrk = 2 + (drumHas ? 1 : 0) + mels.length;
   const head = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0, nTrk, (T>>8)&255, T&255];
   return new Uint8Array([...head, ...trk(tempo), ...trk(chordsT),
-    ...(drumHas ? trk(drumsT) : []), ...(melA.has ? trk(melA.arr) : []), ...(melB.has ? trk(melB.arr) : [])]);
+    ...(drumHas ? trk(drumsT) : []), ...mels.flatMap(m => trk(m.arr))]);
 }
 
 /* ===== midi import ===== */
@@ -1714,6 +1787,14 @@ function recToEvents(notes) {
 // [0,4,8,12] on a sixteenth grid. `sub` is columns per beat.
 const qbeats = (B, sub = 2) => Array.from({ length: Math.ceil(B / sub) }, (_, i) => i * sub).filter(x => x < B);
 const blankBars = (nBars, B) => Array.from({ length: nBars }, () => Array.from({ length: B }, () => []));
+// Melody parts. A section holds a list of them — a dance arrangement wants a sub bass, a pad, an
+// arp and a topline all at once, not one tune and an optional harmony. Part 0 is the lead; the
+// defaults after it are picked to be audibly distinct from each other out of the box.
+const MAX_LAYERS = 6;
+const LAYER_NAMES = ["A", "B", "C", "D", "E", "F"];
+// grid + notation ink per part, in order. A is the app's green; the rest stay clearly separable.
+const LAYER_INK = ["#54B79D", "#B98CF0", "#E8A33D", "#6EA8FF", "#E0687F", "#5FCBC3"];
+const LAYER_DEFAULT_INSTR = ["", "ep", "synth_bass_1", "pad_2_warm", "lead_2_sawtooth", "vibraphone"];
 // Re-time one stored bar onto a grid of B columns. A bar remembers its own resolution in its
 // length, so switching between an eighth and a sixteenth rhythm keeps every note where it sounds
 // rather than sliding it into the wrong half of the bar. Going finer is lossless; going coarser
@@ -2173,6 +2254,7 @@ export default function ProgressionWheel() {
   const [kitSt, setKitSt] = useState({ key:"", val:"" });
   const [pumpSt, setPumpSt] = useState({ key:"", val:"" });
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
+  const [secMove, setSecMove] = useState({});               // per-section-type arrangement move, keyed by base letter
   const [colour, setColour] = useState("triads");           // triads | sevenths
   const [force, setForce] = useState(null);                 // dice override of the progression
   const [sketches, setSketches] = useState(null);           // null = not loaded yet
@@ -2217,6 +2299,7 @@ export default function ProgressionWheel() {
   const secDrumRef = useRef({});
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
   const subRef = useRef(2), melRef = useRef(8);
+  const moveRef = useRef({ moves:{}, instBars:{} });
   const realRef = useRef(true);
   const clickRef = useRef(false);
   const meloRef = useRef(null);
@@ -2598,6 +2681,9 @@ export default function ProgressionWheel() {
     return lens.reduce((a, b) => lcm(a, b), meloBeats);
   }, [drum, secDrum, meloBeats, barBeats]);
   tickRef.current = tickCount; subRef.current = meloSub; melRef.current = meloBeats;
+  // bars per section instance, so a move's sweep can span exactly one instance
+  moveRef.current = { moves: secMove,
+    instBars: Object.fromEntries(sections.insts.map(d => [d.key, d.cs.length])) };
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
   const chordId = (c, i) => c.inserted ? c.baseName
     : c.c2 ? "c" + c.bi
@@ -2622,11 +2708,13 @@ export default function ProgressionWheel() {
     sections.insts.forEach(d => {
       const ids = d.cs.map(chordId);
       const saved = melos.secs[d.key];
-      const bars = adaptBars(saved && saved.ids, saved && saved.bars, ids, samePid);
-      const barsB = (saved && saved.barsB) ? adaptBars(saved.ids, saved.barsB, ids, samePid) : null;
-      out[d.key] = { ids, bars, flat: bars.flat(),
-        barsB, flatB: barsB ? barsB.flat() : null,
-        instr: (saved && saved.instr) || null, instrB: (saved && saved.instrB) || null };
+      const src = (saved && saved.layers && saved.layers.length) ? saved.layers : [{ bars: null, instr: null }];
+      const layers = src.map((ly, li) => {
+        const bars = adaptBars(saved && saved.ids, ly && ly.bars, ids, samePid);
+        // part 0 always exists; the rest keep whatever bars they were given
+        return { bars, flat: bars.flat(), instr: (ly && ly.instr) || null };
+      });
+      out[d.key] = { ids, layers };
     });
     return out;
   }, [melos, progId, sections, meloBeats]);
@@ -2649,20 +2737,22 @@ export default function ProgressionWheel() {
     };
     return bars.map((b, bi) => {
       const secm = b.inst != null ? secMelos[b.inst] : loopSec;
-      const idx = b.inst != null ? b.mb : bi % ((secm && secm.bars.length) || 1);
-      // BOTH melody layers (A + the optional 2nd melody B) land on the same stave
-      const evA = extract(secm && secm.bars[idx]);
-      const evB = extract(secm && secm.barsB && secm.barsB[idx]);
+      const idx = b.inst != null ? b.mb : bi % ((secm && secm.layers[0] && secm.layers[0].bars.length) || 1);
+      // every melody part lands on the same stave, inked by the part it belongs to
+      const per = ((secm && secm.layers) || []).map(ly => extract(ly.bars && ly.bars[idx]));
       // notes that share an onset AND length become one clean chord; differing rhythms stay separate
       const groups = {};
-      const add = (e, layer) => { const k = e.on + "_" + e.dur;
-        const g = groups[k] = groups[k] || { on: e.on, dur: e.dur, a: new Set(), b: new Set() };
-        g[layer].add(e.midi); };
-      evA.forEach(e => add(e, "a")); evB.forEach(e => add(e, "b"));
+      per.forEach((evs, li) => evs.forEach(e => {
+        const k = e.on + "_" + e.dur;
+        const g = groups[k] = groups[k] || { on: e.on, dur: e.dur, byL: new Map() };
+        // a pitch keeps the lowest-numbered part that plays it, so part A always reads as the lead
+        if (!g.byL.has(e.midi)) g.byL.set(e.midi, li);
+      }));
       const mel = Object.values(groups).sort((a, c) => a.on - c.on || a.dur - c.dur).map(g => ({
         on: g.on, dur: g.dur,
-        mids: [...new Set([...g.a, ...g.b])].sort((x, y) => x - y),
-        bMids: new Set([...g.b].filter(m => !g.a.has(m))),   // notes that are 2nd-melody only → violet
+        mids: [...g.byL.keys()].sort((x, y) => x - y),
+        inkOf: m => LAYER_INK[g.byL.get(m) || 0] || LAYER_INK[0],
+        bMids: new Set([...g.byL.entries()].filter(([, li]) => li > 0).map(([m]) => m)),
       }));
       return { chord: b.chord, name: b.chord.name, word: b.inst != null ? (b.mb === 0 ? b.word : null) : null, mel };
     });
@@ -2671,42 +2761,53 @@ export default function ProgressionWheel() {
   const scoreHasB = scoreMeasures.some(m => m.mel.some(ev => ev.bMids && ev.bMids.size));
 
   const dupBars = b => (b ? b.map(bar => bar.map(a => [...a])) : null);
-  const barsOf = (sec, L) => (L ? sec.barsB : sec.bars);
-  const flatOf = (sec, L) => (L ? (sec.flatB || []) : sec.flat);
-  // second-layer default lead — a contrasting voice so B is audibly distinct from A out of the box
-  const LAYER_B_INSTR = "ep";
-  // write a section entry, keeping both layers in the current chord-id coordinates and preserving
-  // the layer / instrument fields the caller isn't changing
+  const layerOf = (sec, L) => (sec && sec.layers && sec.layers[L]) || null;
+  const barsOf = (sec, L) => { const ly = layerOf(sec, L); return ly ? ly.bars : null; };
+  const flatOf = (sec, L) => { const ly = layerOf(sec, L); return ly ? ly.flat : []; };
+  const nLayers = sec => (sec && sec.layers ? sec.layers.length : 0);
+  // write a section entry, keeping every part in the current chord-id coordinates and preserving
+  // the parts the caller isn't changing. `patch.layers` replaces the whole list.
   const putSec = (key, patch) => {
     const secs = melos.progId === progId ? melos.secs : {};
     const sec = secMelos[key], prev = secs[key] || {};
-    const entry = {
+    const base = sec ? sec.layers.map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr }))
+                     : (prev.layers || [{ bars: [], instr: null }]);
+    setMelos({ progId, secs: { ...secs, [key]: {
       ids: sec ? sec.ids : prev.ids,
-      bars:  "bars"   in patch ? patch.bars   : (sec ? dupBars(sec.bars)  : prev.bars || []),
-      barsB: "barsB"  in patch ? patch.barsB  : (sec ? dupBars(sec.barsB) : prev.barsB || null),
-      instr:  "instr"  in patch ? patch.instr  : (prev.instr  || null),
-      instrB: "instrB" in patch ? patch.instrB : (prev.instrB || null),
-    };
-    setMelos({ progId, secs: { ...secs, [key]: entry } });
+      layers: "layers" in patch ? patch.layers : base,
+    } } });
+  };
+  // replace one part's bars (the shape almost every melody edit takes)
+  const putLayer = (key, L, bars) => {
+    const sec = secMelos[key]; if (!sec) return;
+    putSec(key, { layers: sec.layers.map((ly, i) =>
+      i === L ? { bars, instr: ly.instr } : { bars: dupBars(ly.bars), instr: ly.instr }) });
   };
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
     if (!from) return;
     setMelos({ progId, secs: { ...melos.secs, [toKey]: { ids: [...from.ids],
-      bars: dupBars(from.bars), barsB: dupBars(from.barsB),
-      instr: from.instr || null, instrB: from.instrB || null } } });
+      layers: (from.layers || []).map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })) } } });
   };
-  const addLayerB = key => {
-    const sec = secMelos[key]; if (!sec || sec.barsB) return;
-    putSec(key, { barsB: blankBars(sec.bars.length, meloBeats), instrB: LAYER_B_INSTR });
-    setMelLayer(1);
+  const addLayer = key => {
+    const sec = secMelos[key]; if (!sec || nLayers(sec) >= MAX_LAYERS) return;
+    const at = nLayers(sec);
+    putSec(key, { layers: [...sec.layers.map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })),
+      { bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: LAYER_DEFAULT_INSTR[at] || null }] });
+    setMelLayer(at);
   };
-  const removeLayerB = key => {
-    putSec(key, { barsB: null, instrB: null });
-    setMelLayer(0);
-    if (melSel.key === key && melSel.layer === 1) setMelSel({ key:"", layer:0, notes:{} });
+  const removeLayer = (key, L) => {
+    const sec = secMelos[key]; if (!sec || L === 0 || !layerOf(sec, L)) return;   // part A is the section
+    putSec(key, { layers: sec.layers.filter((_, i) => i !== L)
+      .map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr })) });
+    setMelLayer(l => (l >= L ? Math.max(0, l - 1) : l));
+    if (melSel.key === key && melSel.layer >= L) setMelSel({ key:"", layer:0, notes:{} });
   };
-  const setSecInstr = (key, L, val) => putSec(key, L ? { instrB: val || null } : { instr: val || null });
+  const setSecInstr = (key, L, val) => {
+    const sec = secMelos[key]; if (!sec) return;
+    putSec(key, { layers: sec.layers.map((ly, i) =>
+      ({ bars: dupBars(ly.bars), instr: i === L ? (val || null) : ly.instr })) });
+  };
   meloRef.current = { bySym: secMelos, scale: scaleSemis, tonic, melInstr, legato };
   const tapMelo = (sym, c, deg, L) => {
     const sec = secMelos[sym]; if (!sec) return;
@@ -2714,7 +2815,7 @@ export default function ProgressionWheel() {
     const cell = bars[Math.floor(c / meloBeats)][c % meloBeats];
     const at = cell.indexOf(deg);
     if (at >= 0) cell.splice(at, 1); else cell.push(deg);
-    putSec(sym, L ? { barsB: bars } : { bars });
+    putLayer(sym, L, bars);
   };
 
   /* ---- melody grid: select several notes and drag them as a group ---- */
@@ -2737,7 +2838,7 @@ export default function ProgressionWheel() {
     const colOf = c => bars[Math.floor(c / meloBeats)][c % meloBeats];
     notes.forEach(n => { const cell = colOf(n.c); const at = cell.indexOf(n.deg); if (at >= 0) cell.splice(at, 1); });
     notes.forEach(n => { const cell = colOf(n.c + dc), nd = n.deg + dd; if (!cell.includes(nd)) cell.push(nd); });
-    putSec(key, layer ? { barsB: bars } : { bars });
+    putLayer(key, layer, bars);
     setSelFrom(key, layer, notes.map(n => ({ c: n.c + dc, deg: n.deg + dd })));
   };
   const nudgeMel = (dc, dd) => { if (melSel.key && Object.keys(melSel.notes).length) doMelMove(melSel.key, melSel.layer, melSel.notes, dc, dd); };
@@ -2747,7 +2848,7 @@ export default function ProgressionWheel() {
     if (!sec || !notes.length) return;
     const bars = dupBars(barsOf(sec, layer)); if (!bars) return;
     notes.forEach(n => { const cell = bars[Math.floor(n.c / meloBeats)][n.c % meloBeats]; const at = cell.indexOf(n.deg); if (at >= 0) cell.splice(at, 1); });
-    putSec(key, layer ? { barsB: bars } : { bars });
+    putLayer(key, layer, bars);
     setMelSel({ key:"", layer:0, notes:{} });
   };
   // time-scale the selection about its first note: factor 0.5 = double-time (pack into half the
@@ -2768,7 +2869,7 @@ export default function ProgressionWheel() {
       const cell = colOf(nc); if (!cell.includes(n.deg)) cell.push(n.deg);
       placed.push({ c: nc, deg: n.deg });
     });
-    putSec(key, layer ? { barsB: bars } : { bars });
+    putLayer(key, layer, bars);
     setSelFrom(key, layer, placed);
   };
   // ---- melodic development on the selection (motif → melody) ----
@@ -2792,7 +2893,7 @@ export default function ProgressionWheel() {
       const cell = colOf(nc); if (!cell.includes(nd)) cell.push(nd);
       placed.push({ c: nc, deg: nd });
     });
-    putSec(key, layer ? { barsB: bars } : { bars });
+    putLayer(key, layer, bars);
     if (placed.length) setSelFrom(key, layer, placed);
   };
   // copy the selection immediately after itself, transposed by dd scale-steps (0 = repeat, ±1 = sequence)
@@ -2813,7 +2914,7 @@ export default function ProgressionWheel() {
       const cell = colOf(nc); if (!cell.includes(nd)) cell.push(nd);
       placed.push({ c: nc, deg: nd });
     });
-    putSec(key, layer ? { barsB: bars } : { bars });
+    putLayer(key, layer, bars);
     if (placed.length) setSelFrom(key, layer, placed);        // keep the copy selected → chain sequences
   };
   const invertMel  = () => transformMel((n, { pivot }) => ({ c: n.c, deg: 2 * pivot - n.deg }));  // flip contour
@@ -2837,7 +2938,7 @@ export default function ProgressionWheel() {
       const cell = colOf(nc); if (!cell.includes(nd)) cell.push(nd);
       placed.push({ c: nc, deg: nd });
     });
-    putSec(key, layer ? { barsB: bars } : { bars });
+    putLayer(key, layer, bars);
     if (placed.length) setSelFrom(key, layer, placed);
   };
   // select every note in a section's melody (across the whole grid, not just what's scrolled into view)
@@ -2906,11 +3007,11 @@ export default function ProgressionWheel() {
     const pat = MELODY_PATTERNS.find(p => p.id === patId) || MELODY_PATTERNS[0];
     const bars = pat.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, start: start % scaleSemis.length,
       chordDegs: chordDegsOf(d.cs) });
-    putSec(d.key, L ? { barsB: bars } : { bars });
+    putLayer(d.key, L, bars);
     setMelTab({ ...melTab, [d.key]: "write" });   // reveal the result on the grid
   };
   const clearMelody = (d, sec, L) => {
-    putSec(d.key, L ? { barsB: blankBars(d.cs.length, meloBeats) } : { bars: blankBars(d.cs.length, meloBeats) });
+    putLayer(d.key, L, blankBars(d.cs.length, meloBeats));
   };
 
   /* ---- melodic narrative: one shape written across every section at once ---- */
@@ -2938,9 +3039,11 @@ export default function ProgressionWheel() {
         chordDegs: chordDegsOf(d.cs), role: d.base, pass, passes: passes[d.base],
         idx, total, frac: total > 1 ? idx / (total - 1) : 0 });
       const sec = secMelos[d.key], prev = secs[d.key] || {};
-      secs[d.key] = { ids: sec ? sec.ids : prev.ids, bars,
-        barsB: sec ? dupBars(sec.barsB) : (prev.barsB || null),
-        instr: prev.instr || null, instrB: prev.instrB || null };
+      // a narrative writes part A of every section; the other parts are left exactly as they are
+      const keep = sec ? sec.layers.map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr }))
+                       : (prev.layers || [{ bars: [], instr: null }]);
+      secs[d.key] = { ids: sec ? sec.ids : prev.ids,
+        layers: keep.map((ly, i) => i === 0 ? { bars, instr: ly.instr } : ly) };
     });
     setNarUndo(melos);                       // one step back, in case it wrote over something good
     setMelos({ progId, secs });
@@ -2983,11 +3086,16 @@ export default function ProgressionWheel() {
     // pulls it down (see duckAt). Drums and click connect to master directly, so the kick lands
     // in the hole it just made instead of ducking itself.
     const duck = ctx.createGain(); duck.gain.value = 1; duck.connect(master);
-    const music = makeReverb(ctx, duck);             // reverb bus for pitched instruments + melody
+    // section-move filter, between the reverb bus and the sidechain: a build sweeps the whole
+    // pitched mix including its reverb tail, which is what makes it sound like the room opening up
+    const filt = ctx.createBiquadFilter();
+    filt.type = "lowpass"; filt.frequency.value = FILTER_OPEN; filt.Q.value = 0.8;
+    filt.connect(duck);
+    const music = makeReverb(ctx, filt);             // reverb bus for pitched instruments + melody
     const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
     const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
     if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-    const m = { ctx, master, music, duck, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, sampler, lastInstr: instrRef.current, lastLead: leadKey,
       leadLoaded: new Set(leadKey ? [leadKey] : []),
       step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     m.timer = setInterval(() => {
@@ -3048,6 +3156,19 @@ export default function ProgressionWheel() {
           const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
           if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
         }
+        // section moves: fire once, on the downbeat of each section instance, scheduling the whole
+        // sweep across that instance's length. Guarded by the bar index so a re-entered bar (or the
+        // lookahead running twice over one tick) can't restack the automation.
+        if (i === 0 && struct && structBar >= 0 && structBar !== m.lastMoveBar) {
+          const b = struct[structBar];
+          if (b && b.mb === 0) {
+            m.lastMoveBar = structBar;
+            const mv = b.base != null ? moveRef.current.moves[b.base] : "";
+            const spec = (MOVES[mv] || {}).spec || null;
+            const nb = (b.inst != null && moveRef.current.instBars[b.inst]) || 1;
+            applyMove(m.ctx, m.filt, spec, t, nb * (patLen / (subRef.current || 2)) * beat, m.noise, m.master);
+          }
+        }
         const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
         if (dstep) {
           for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current);
@@ -3063,11 +3184,11 @@ export default function ProgressionWheel() {
             sym = e.inst; mb = e.mb;
           } else if (mel.bySym.L1) {
             sym = "L1";
-            const nb = mel.bySym.L1.bars.length || 1;
+            const nb = (mel.bySym.L1.layers[0].bars.length) || 1;
             mb = Math.floor(m.step / L) % nb;
           }
           const sec = sym && mel.bySym[sym];
-          if (sec && (sec.flat.length || (sec.flatB && sec.flatB.length))) {
+          if (sec && sec.layers.some(ly => ly.flat.length)) {
             const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
             // play one melody layer's column with its own voice (falling back to the global lead)
             const playLayer = (flat, voice) => {
@@ -3094,9 +3215,8 @@ export default function ProgressionWheel() {
                 }
               });
             };
-            playLayer(sec.flat, sec.instr || mel.melInstr);
-            playLayer(sec.flatB, sec.instrB || mel.melInstr);
-            const Nq = sec.flat.length || (sec.flatB ? sec.flatB.length : 0);
+            sec.layers.forEach(ly => playLayer(ly.flat, ly.instr || mel.melInstr));
+            const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
             if (melStep != null) {
               const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
               setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
@@ -3147,20 +3267,18 @@ export default function ProgressionWheel() {
       // flatten the per-section melody grids into eighth-columns aligned to `bars`
       const melBase = (tonic > 6 ? 60 : 72) + tonic;
       const loopSec = secMelos.L1 || Object.values(secMelos)[0];
-      const meloCols = [], meloColsB = [];
-      let anyMelo = false, anyMeloB = false;
+      // one column list per melody part, each destined for its own MIDI channel
+      const nParts = Math.max(1, ...Object.values(secMelos).map(s => nLayers(s)));
+      const partCols = Array.from({ length: nParts }, () => []);
       bars.forEach((b, bi) => {
         const secm = b.inst != null ? secMelos[b.inst] : loopSec;
-        const bi2 = b.inst != null ? b.mb : bi % ((secm && secm.bars.length) || 1);
-        const barCols = secm && secm.bars[bi2];
-        const barColsB = secm && secm.barsB && secm.barsB[bi2];
-        for (let c = 0; c < meloBeats; c++) {
-          const degs = (barCols && barCols[c]) || [];
-          if (degs.length) anyMelo = true;
-          meloCols.push(degs.map(d => melBase + scaleSemis[d]));
-          const degsB = (barColsB && barColsB[c]) || [];
-          if (degsB.length) anyMeloB = true;
-          meloColsB.push(degsB.map(d => melBase + scaleSemis[d]));
+        const nb = (secm && secm.layers[0] && secm.layers[0].bars.length) || 1;
+        const bi2 = b.inst != null ? b.mb : bi % nb;
+        for (let p = 0; p < nParts; p++) {
+          const ly = secm && secm.layers[p];
+          const barCols = ly && ly.bars[bi2];
+          for (let c = 0; c < meloBeats; c++)
+            partCols[p].push(((barCols && barCols[c]) || []).map(d => melBase + scaleSemis[d]));
         }
       });
       // per-bar drum pattern: a section's own kit if it set one, else the global choice
@@ -3170,15 +3288,17 @@ export default function ProgressionWheel() {
         return DRUMS[id] ? DRUMS[id].pattern : null;
       };
       const anyDrum = bars.some((_, i) => drumForBar(i));
+      const used = partCols.map(cols => cols.some(c => c.length));
+      const nUsed = used.filter(Boolean).length;
       const bytes = midiBytes(effBpm, barBeats, bars, drumForBar,
-        anyMelo ? meloCols : null, anyMeloB ? meloColsB : null, kit, meloSub);
+        partCols.map((cols, p) => used[p] ? cols : null), kit, meloSub);
       const url = URL.createObjectURL(new Blob([bytes], { type:"audio/midi" }));
       const a = document.createElement("a");
       a.href = url; a.download = "progression-wheel.mid";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       setIoNote("MIDI exported — chords" + (anyDrum ? " + drums" : "")
-        + (anyMelo ? " + melody" : "") + (anyMeloB ? " + melody 2" : "") + " at " + effBpm + " bpm.");
+        + (nUsed ? ` + ${nUsed} melody part${nUsed === 1 ? "" : "s"}` : "") + " at " + effBpm + " bpm.");
     } catch (e) { setIoNote("Export failed in this viewer — try on desktop."); }
   };
 
@@ -3325,7 +3445,7 @@ export default function ProgressionWheel() {
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
     const s = { name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr,
-      kit, pump, bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
+      kit, pump, secMove, bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
       quals: qmap, removed: remList,
       order: order.key === editKey ? order.list : null };
     const list = [...(sketches || []).filter(x => x.name !== name), s];
@@ -3339,6 +3459,7 @@ export default function ProgressionWheel() {
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
     setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {});
+    setSecMove(s.secMove || {});                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
     // older sketches predate the kit/pump fields — fall back to the pre-dance defaults so they
     // reload sounding exactly as they were saved
@@ -3486,16 +3607,12 @@ export default function ProgressionWheel() {
         .mnote { font-size:11px; color:#8B94A3; text-align:right; padding-right:2px; }
         .mcell { height:22px; background:#10151D; border:1px solid #232C3A; border-radius:6px; cursor:pointer; transition:all .08s; }
         .mcell:hover { border-color:#4A5668; }
+        /* a filled cell takes its melody part's colour inline (see LAYER_INK); this is the fallback */
         .mcell.on { background:#54B79D; border-color:#54B79D; }
-        .mcell.onB { background:#B98CF0; border-color:#B98CF0; }
-        /* a cell carrying both layers: layer A fill with a layer-B wedge in the top-right corner */
-        .mcell.on.onB { background:linear-gradient(135deg, #54B79D 0 55%, #B98CF0 55% 100%); border-color:#B98CF0; }
+        /* a cell carrying two parts is split diagonally between their colours, inline */
         .mcell.colnow { border-color:#EAE2CC; }
-        .mcell.on.colnow, .mcell.onB.colnow { background:#EAE2CC; }
-        .mcell.on.onB.colnow { background:linear-gradient(135deg, #EAE2CC 0 55%, #d9c2ff 55% 100%); }
+        .mcell.colnow:not(.on) { background:#2A3442; }
         .lybtn { font-size:11px; padding:2px 9px; border-radius:999px; border:1px solid #2A3442; background:#161C26; color:#8B94A3; cursor:pointer; }
-        .lybtn.onA { background:#54B79D; border-color:#54B79D; color:#0c1116; }
-        .lybtn.onB { background:#B98CF0; border-color:#B98CF0; color:#0c1116; }
         .mcell.b0 { border-left:2px solid #3A4656; }
         .mcell.bt { border-left:1px solid #2A3442; }
         .mcell.mv { touch-action:none; }
@@ -4054,7 +4171,7 @@ export default function ProgressionWheel() {
                 ? <>Grand staff — right hand plays the melody{scoreHasMelody ? "" : " (add one in the melody grid below)"}, left hand holds the chord voicing. Chord symbols sit above each bar.</>
                 : <>Guitar lead sheet — chord symbols above, the melody on the treble staff{scoreHasMelody ? ", with fret numbers on the tab below fingered low on the neck (first position, sounding lower)" : " — write a melody below and its tab appears here"}.</>}
               {structSel ? " Following the selected song structure." : " Following the loop."}
-              {scoreHasB && <> The <b style={{ color:LAV }}>2nd melody</b> is shown in violet.</>}
+              {scoreHasB && <> Melody parts beyond <b>A</b> are inked in their own colours.</>}
             </div>}
           </>)}
         </div>
@@ -4198,12 +4315,19 @@ export default function ProgressionWheel() {
                       {Object.entries(DRUMS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
                     </select>
                   </label>
+                  <label className="secdrum" title="Arrangement move for this section — a filter sweep, riser or drop, run across the section's whole length">
+                    <span aria-hidden="true">🎛</span>
+                    <select value={secMove[g.base] || ""}
+                      onChange={e => setSecMove({ ...secMove, [g.base]: e.target.value })}>
+                      {Object.entries(MOVES).map(([id, mv]) => <option key={id} value={id}>{mv.name}</option>)}
+                    </select>
+                  </label>
                 </div>
                 {g.items.map((d, di) => {
             const sec = secMelos[d.key] || { flat: [] };
             const cols = d.cs.length * meloBeats;
             const open = !!openSecs[d.key];
-            const has = sec.flat.some(a => a.length) || (sec.flatB && sec.flatB.some(a => a.length));
+            const has = sec.layers.some(ly => ly.flat.some(a => a.length));
             const donor = !has && sections.insts.find(o => o.base === d.base && o.key !== d.key
               && (secMelos[o.key] || { flat: [] }).flat.some(a => a.length));
             const now = playing && curInst === d.key;
@@ -4246,8 +4370,8 @@ export default function ProgressionWheel() {
                   const tab = melTab[d.key] || "write";
                   const pick = sugSel[d.key] || { pat: MELODY_PATTERNS[0].id, start: 0 };
                   const curPat = MELODY_PATTERNS.find(p => p.id === pick.pat) || MELODY_PATTERNS[0];
-                  const hasB = !!sec.barsB;
-                  const secL = (melLayer === 1 && hasB) ? 1 : 0;   // which layer this section's edits target
+                  const nL = nLayers(sec);
+                  const secL = Math.min(melLayer, nL - 1);         // which part this section's edits target
                   // a fresh copy of the melody-voice option list (used by both per-layer instrument menus)
                   const leadOpts = () => (<>
                     <option value="">Lead default</option>
@@ -4264,21 +4388,25 @@ export default function ProgressionWheel() {
                   <div style={{ marginTop:8 }}>
                     {/* layer switch + the active layer's own instrument */}
                     <div className="row" style={{ gap:6, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
-                      <span className="keytag" style={{ margin:0 }}>Layer</span>
-                      <button className="lybtn onA" style={secL === 0 ? null : { opacity:.5 }}
-                        onClick={() => setMelLayer(0)} title="Melody A">A</button>
-                      {hasB
-                        ? <button className="lybtn onB" style={secL === 1 ? null : { opacity:.5 }}
-                            onClick={() => setMelLayer(1)} title="Melody B">B</button>
-                        : <button className="lybtn" onClick={() => addLayerB(d.key)} title="Add a second melody">＋ 2nd melody</button>}
+                      <span className="keytag" style={{ margin:0 }}>Part</span>
+                      {sec.layers.map((ly, li) => (
+                        <button key={li} className="lybtn" title={"Melody part " + LAYER_NAMES[li]}
+                          style={{ background: LAYER_INK[li], borderColor: LAYER_INK[li], color:"#0c1116",
+                            opacity: secL === li ? 1 : .45 }}
+                          onClick={() => setMelLayer(li)}>{LAYER_NAMES[li]}</button>
+                      ))}
+                      {nL < MAX_LAYERS &&
+                        <button className="lybtn" onClick={() => addLayer(d.key)}
+                          title="Add another melody part — a bassline, a pad, an arp">＋ part</button>}
                       <div className="selwrap" style={{ minWidth:150, marginLeft:6 }}>
-                        <span className="keytag">{secL === 1 ? "B" : "A"} instrument</span>
-                        <select value={(secL === 1 ? sec.instrB : sec.instr) || ""}
+                        <span className="keytag">{LAYER_NAMES[secL]} instrument</span>
+                        <select value={(layerOf(sec, secL) || {}).instr || ""}
                           onChange={e => setSecInstr(d.key, secL, e.target.value)}>
                           {leadOpts()}
                         </select>
                       </div>
-                      {hasB && secL === 1 && <button className="mini" onClick={() => removeLayerB(d.key)} title="Remove melody B">🗑 B</button>}
+                      {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
+                        title={"Remove part " + LAYER_NAMES[secL]}>🗑 {LAYER_NAMES[secL]}</button>}
                     </div>
 
                     <div className="seg" style={{ marginBottom:8 }}>
@@ -4361,8 +4489,13 @@ export default function ProgressionWheel() {
                         <div key={deg} className="mline" style={{ gridTemplateColumns:`36px repeat(${cols}, minmax(15px,1fr))` }}>
                           <span className="mnote">{spell((tonic + scaleSemis[deg]) % 12, tonic, effMode)}</span>
                           {Array.from({ length: cols }, (_, c) => {
-                            const onA = (sec.flat[c] || []).includes(deg);
-                            const onB = !!(sec.flatB && (sec.flatB[c] || []).includes(deg));
+                            // which parts sound this note here; the cell takes the first one's ink,
+                            // and a note shared by two parts is split diagonally between them
+                            const hits = sec.layers.reduce((a, ly, li) =>
+                              ((ly.flat[c] || []).includes(deg) ? [...a, li] : a), []);
+                            const onA = hits.length > 0;
+                            const inkA = onA ? LAYER_INK[hits[0]] : null;
+                            const inkB = hits.length > 1 ? LAYER_INK[hits[1]] : null;
                             const isSel = melMove && melSel.key === d.key && melSel.layer === secL && melSel.notes[nKey(c, deg)];
                             const inBox = melBox && melBox.key === d.key && c >= melBox.c0 && c <= melBox.c1 && deg >= melBox.d0 && deg <= melBox.d1;
                             const isGhost = melGhost && melGhost.key === d.key && melSel.key === d.key && melSel.layer === secL
@@ -4371,7 +4504,14 @@ export default function ProgressionWheel() {
                             <div key={c} data-mk={d.key} data-c={c} data-deg={deg}
                               onClick={() => { if (!melMove) tapMelo(d.key, c, deg, secL); }}
                               onPointerDown={e => melDown(e, d.key, c, deg, sec, secL)}
-                              className={"mcell" + (onA ? " on" : "") + (onB ? " onB" : "") + (melMove ? " mv" : "")
+                              // the inline colour would beat the .colnow CSS, so the playhead
+                              // highlight has to be decided here too
+                              style={!onA ? null : (playing && curQ && curQ.sym === d.key && curQ.col === c)
+                                ? { background: inkB ? "linear-gradient(135deg, #EAE2CC 0 55%, #d9c2ff 55% 100%)" : "#EAE2CC",
+                                    borderColor: "#EAE2CC" }
+                                : { background: inkB ? `linear-gradient(135deg, ${inkA} 0 55%, ${inkB} 55% 100%)` : inkA,
+                                    borderColor: inkB || inkA }}
+                              className={"mcell" + (onA ? " on" : "") + (melMove ? " mv" : "")
                                 + (isSel ? " msel" : "") + (isGhost ? " mghost" : "") + (inBox ? " mbox" : "")
                                 + (playing && curQ && curQ.sym === d.key && curQ.col === c ? " colnow" : "")
                                 + (c % meloBeats === 0 && c > 0 ? " b0" : c % meloSub === 0 && c > 0 ? " bt" : "")} />

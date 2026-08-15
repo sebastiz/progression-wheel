@@ -21,7 +21,7 @@ upstream changes.
   - *More colour* groups borrowed chords (iv, ♭VI, ♭VII, ♭III, Neapolitan ♭II), chromatic mediants
     (inserted right after the tonic), and tritone substitutions for any dominant.
 - **Sketch save/load** — captures the full state: key, progression, edits, colour level, pattern,
-  tempo, drums, kit, pump, instrument, structure and contrast loop.
+  tempo, drums, kit, pump, section moves, instrument, structure and contrast loop.
 
 ## The wheel
 
@@ -72,6 +72,32 @@ sixteenths), Kit, Pump, tempo ±5, and Play. Playback runs one chord per bar; if
 selected below, it plays the **entire written-out song**, showing the current section and bar. The
 current chord's pill and its landing-note row light up as it plays. All changes (pattern, drums,
 tempo, chord edits) take effect within about a tenth of a second, mid-playback.
+
+### Melody parts
+
+Each section holds up to **six melody parts** (**A**–**F**), each with its own instrument and its
+own colour — enough for a sub bass, a pad, an arp and a topline at once.
+
+- **＋ part** adds one; **🗑** removes the part you're on. Part **A** is the section's lead and
+  can't be removed.
+- The **Part** buttons pick which one your edits, patterns and recordings write to.
+- Grid cells are coloured by the part that owns them; a cell two parts share is split diagonally.
+- Exported MIDI gives each part its own track and channel, so a DAW opens the arrangement with the
+  parts already separated onto their own instruments.
+
+### Builds, drops and risers
+
+Every section group carries a **🎛** menu beside its **🥁** one. That's the arrangement move for
+that section — the thing that makes dance music move without the chords changing:
+
+- **Build · filter opens** — the mix starts muffled and opens up across the section.
+- **Build + riser** — the same, with a noise sweep rising underneath into the next section.
+- **Drop · slam open + crash** — full brightness plus a crash and a sub boom on the downbeat.
+- **Fade · filter closes**, **Underwater · stays shut**, **Swell · opens then shuts**.
+
+The sweep runs across the section's **whole length**, so it lands exactly on the boundary whether
+that section is four bars or sixteen — change the structure and the move re-times itself. Put
+*Build + riser* on a pre-chorus and *Drop* on the chorus to hear the point of it.
 
 ### Sixteenths
 
