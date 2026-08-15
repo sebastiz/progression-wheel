@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **Fixed: the app went blank when a song structure was showing.** Choosing a structure — or
+  changing anything that re-rendered the section list underneath it — blanked the interface while
+  playback carried on. Three places in the **Song & melody** panel still read a section's melody
+  the way it was stored before melody parts existed, and reading it that way now throws, taking the
+  whole render down with it. Nothing was lost when it happened: the audio never stopped, and a
+  reload brought the sketch back. Fixed to 4.40.1.
 - **Section moves — builds, drops and risers.** A build isn't a chord change; it's a filter opening
   over eight bars with a riser underneath and a crash on the downbeat of the drop. Every section
   group in **Song & melody** now carries a **🎛** menu next to its 🥁 one, with seven moves:

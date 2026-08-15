@@ -409,6 +409,31 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`moves: ${Object.keys(M.MOVES).length} checked, including a 1.2s section`);
 }
 
+/* ---- no leftovers of the pre-parts section shape ----
+   A section is `{ ids, layers:[{bars, flat, instr}] }`. The old shape put bars/flat/instr on the
+   section itself with a barsB/flatB/instrB twin. A single missed fallback of the old shape blanks
+   the whole UI at render time (`undefined.some(...)`), and no amount of audio testing catches it,
+   so guard the source directly. */
+{
+  const bad = [
+    [/\bbarsB\b/, "barsB (parts are a list now)"],
+    [/\binstrB\b/, "instrB (parts are a list now)"],
+    [/\bflatB\b/, "flatB (parts are a list now)"],
+    [/\|\|\s*\{\s*flat\s*:\s*\[\s*\]\s*\}(?!\s*\)\.flat\.length)/, "a `|| { flat: [] }` section fallback"],
+    [/secMelos\[[^\]]+\]\s*\|\|\s*\{\s*flat/, "a secMelos fallback using the old flat shape"],
+  ];
+  const lines = code.split("\n");
+  for (const [re, what] of bad) {
+    lines.forEach((ln, i) => {
+      if (re.test(ln)) problems.push(`src line ${i + 1}: ${what} — ${ln.trim().slice(0, 80)}`);
+    });
+  }
+  // and every section-shaped read in the render path should go through the helpers
+  const strayFlat = lines.filter(ln => /\bsec\.flat\b|\bsec\.bars\b|\bsecm\.bars\b/.test(ln));
+  strayFlat.forEach(ln => problems.push(`src: section read bypasses layers — ${ln.trim().slice(0, 80)}`));
+  console.log(`source shape guard: ${bad.length + 1} patterns checked`);
+}
+
 console.log(problems.length ? `\n✗ ${problems.length} PROBLEM(S):\n` + problems.map(p => "  - " + p).join("\n")
                             : "\n✓ all audio checks passed");
 process.exit(problems.length ? 1 : 0);

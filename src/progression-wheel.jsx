@@ -2765,6 +2765,10 @@ export default function ProgressionWheel() {
   const barsOf = (sec, L) => { const ly = layerOf(sec, L); return ly ? ly.bars : null; };
   const flatOf = (sec, L) => { const ly = layerOf(sec, L); return ly ? ly.flat : []; };
   const nLayers = sec => (sec && sec.layers ? sec.layers.length : 0);
+  // does this section carry any notes, in any part? Tolerates a missing section, which happens
+  // for a render or two after the structure changes and before secMelos catches up.
+  const secHasNotes = sec => !!(sec && sec.layers && sec.layers.some(ly => ly.flat.some(a => a.length)));
+  const EMPTY_SEC = { ids: [], layers: [{ bars: [], flat: [], instr: null }] };
   // write a section entry, keeping every part in the current chord-id coordinates and preserving
   // the parts the caller isn't changing. `patch.layers` replaces the whole list.
   const putSec = (key, patch) => {
@@ -4206,7 +4210,7 @@ export default function ProgressionWheel() {
                 <span className="keytag" style={{ display:"block" }}>
                   Written onto melody <b>A</b> of all {sections.insts.length} section{sections.insts.length > 1 ? "s" : ""} —
                   edit any of them below; the narrative is a first draft, not a cage.
-                  {sections.insts.some(d => !(secMelos[d.key] || { flat:[] }).flat.some(a => a.length))
+                  {sections.insts.some(d => !secHasNotes(secMelos[d.key]))
                     && <> Some sections are empty — the structure changed since it was written, so tap <b>↻ Rewrite</b>.</>}
                 </span></p>
             : tips && <p className="arrnote" style={{ marginTop:6 }}>
@@ -4324,12 +4328,12 @@ export default function ProgressionWheel() {
                   </label>
                 </div>
                 {g.items.map((d, di) => {
-            const sec = secMelos[d.key] || { flat: [] };
+            const sec = secMelos[d.key] || EMPTY_SEC;
             const cols = d.cs.length * meloBeats;
             const open = !!openSecs[d.key];
-            const has = sec.layers.some(ly => ly.flat.some(a => a.length));
+            const has = secHasNotes(sec);
             const donor = !has && sections.insts.find(o => o.base === d.base && o.key !== d.key
-              && (secMelos[o.key] || { flat: [] }).flat.some(a => a.length));
+              && secHasNotes(secMelos[o.key]));
             const now = playing && curInst === d.key;
             const acc = SEC_COL[d.base] || "#EDE7DA";
             return (
