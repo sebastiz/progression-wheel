@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+- **Section moves — builds, drops and risers.** A build isn't a chord change; it's a filter opening
+  over eight bars with a riser underneath and a crash on the downbeat of the drop. Every section
+  group in **Song & melody** now carries a **🎛** menu next to its 🥁 one, with seven moves:
+  *Build · filter opens*, *Build + riser*, *Drop · slam open + crash*, *Fade · filter closes*,
+  *Underwater · stays shut*, *Swell · opens then shuts*, and no move at all. The sweep is scheduled
+  across the section's **whole length**, so it lands exactly on the boundary whether that section is
+  four bars or sixteen — change the structure and the move re-times itself. The filter sits between
+  the reverb bus and the sidechain, so a build sweeps the reverb tail too, which is what makes it
+  sound like the room opening up rather than a tone control. Moves are saved with the sketch.
+  Version bumped to 4.40.0.
+- **Melody parts — up to six per section.** A section used to hold one melody and an optional
+  second. A dance arrangement wants a sub bass, a pad, an arp and a topline all at once, so the
+  **A / B** pair is now a list of up to six parts (**A**–**F**), each with its own instrument and
+  its own colour. **＋ part** adds one, **🗑** removes it (part A is the section, so it stays).
+  Grid cells take their part's colour, and a note two parts share is split diagonally between them;
+  the score inks each note by the part that plays it. MIDI export writes one track per part on its
+  own channel — skipping the drum channel — so a DAW opens the arrangement with the parts already
+  separated.
 - **Sixteenth notes.** The whole app used to run on an eighth-note grid — eight slots to a bar in
   4/4 — which put a floor under how fine a rhythm could get. A rhythm pattern now declares how many
   columns it divides each beat into, and everything downstream reads the meter from that instead of

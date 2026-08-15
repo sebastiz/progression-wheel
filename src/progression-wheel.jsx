@@ -673,6 +673,71 @@ function drumSound(ctx, t, ch, noise, dest, kit) {
     nz(0.08, 0.006, 0.9, "bandpass", 6800, 0.4);
   }
 }
+/* ===== section moves (arrangement automation) =====
+   A build isn't a chord change — it's a filter opening over eight bars, a riser underneath and a
+   crash on the downbeat of the drop. These are the moves that shape dance arrangements, attached
+   to a section so they run for exactly that section's length however long it is.
+   `lo`/`hi` are filter cutoffs in Hz; every value stays above zero because the sweeps are
+   exponential (an exponential ramp to or from 0 throws). */
+const MOVES = {};
+[
+["",       "— no move —",             null],
+["build",  "Build · filter opens",    { from: 260, to: 16000 }],
+["riser",  "Build + riser",           { from: 260, to: 16000, riser: true }],
+["drop",   "Drop · slam open + crash",{ from: 16000, to: 16000, impact: true }],
+["fade",   "Fade · filter closes",    { from: 16000, to: 300 }],
+["under",  "Underwater · stays shut", { from: 600, to: 600 }],
+["swell",  "Swell · opens then shuts",{ from: 400, to: 400, peak: 14000 }],
+].forEach(([id, name, spec]) => { MOVES[id] = { name, spec }; });
+const FILTER_OPEN = 18000;                       // "no filtering", still inside Nyquist at 44.1k
+
+// Schedule one section move: the cutoff envelope across the section, plus the riser and impact
+// that go with it. `dur` is the whole section's length in seconds, so the sweep always lands on
+// the section boundary whether it is four bars or sixteen.
+function applyMove(ctx, filt, spec, t, dur, noise, dest) {
+  if (!spec) {                                   // no move → make sure nothing is left filtered
+    filt.frequency.cancelScheduledValues(t);
+    filt.frequency.setValueAtTime(FILTER_OPEN, t);
+    return;
+  }
+  const f = filt.frequency;
+  f.cancelScheduledValues(t);
+  f.setValueAtTime(Math.max(20, spec.from), t);
+  if (spec.peak) {                               // open to the peak by halfway, then close again
+    f.exponentialRampToValueAtTime(spec.peak, t + dur * 0.5);
+    f.exponentialRampToValueAtTime(Math.max(20, spec.to), t + dur);
+  } else if (spec.to !== spec.from) {
+    f.exponentialRampToValueAtTime(Math.max(20, spec.to), t + dur);
+  }
+  if (spec.impact) {
+    // crash + a short sub boom on the downbeat — the hit that lands a drop
+    const boom = ctx.createOscillator(); boom.type = "sine";
+    boom.frequency.setValueAtTime(90, t);
+    boom.frequency.exponentialRampToValueAtTime(34, t + 0.5);
+    boom.connect(env(ctx, t, 0.5, 0.004, 0.75, true, dest));
+    boom.start(t); boom.stop(t + 0.8);
+    const cr = ctx.createBufferSource(); cr.buffer = noise; cr.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 3200;
+    cr.connect(hp); hp.connect(env(ctx, t, 0.2, 0.005, 1.3, true, dest));
+    cr.start(t); cr.stop(t + 1.35);
+  }
+  if (spec.riser) {
+    // noise sweeping up through the last two bars (or the last third of a short section),
+    // swelling as it goes — the tension that makes the drop land
+    const rise = Math.min(dur * 0.34, 4);
+    const t0 = t + dur - rise;
+    const n = ctx.createBufferSource(); n.buffer = noise; n.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(400, t0);
+    bp.frequency.exponentialRampToValueAtTime(9000, t0 + rise);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.16, t0 + rise * 0.92);
+    g.gain.linearRampToValueAtTime(0.0001, t0 + rise);   // cut right on the boundary
+    n.connect(bp); bp.connect(g); g.connect(dest);
+    n.start(t0); n.stop(t0 + rise + 0.05);
+  }
+}
 // Sidechain pump. The pitched bus runs through a gain that gets slammed down on every kick
 // and breathes back before the next one — the ducking that defines house, techno and EDM.
 // We schedule the envelope directly instead of running a real compressor with a detector:
@@ -2189,6 +2254,7 @@ export default function ProgressionWheel() {
   const [kitSt, setKitSt] = useState({ key:"", val:"" });
   const [pumpSt, setPumpSt] = useState({ key:"", val:"" });
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
+  const [secMove, setSecMove] = useState({});               // per-section-type arrangement move, keyed by base letter
   const [colour, setColour] = useState("triads");           // triads | sevenths
   const [force, setForce] = useState(null);                 // dice override of the progression
   const [sketches, setSketches] = useState(null);           // null = not loaded yet
@@ -2233,6 +2299,7 @@ export default function ProgressionWheel() {
   const secDrumRef = useRef({});
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
   const subRef = useRef(2), melRef = useRef(8);
+  const moveRef = useRef({ moves:{}, instBars:{} });
   const realRef = useRef(true);
   const clickRef = useRef(false);
   const meloRef = useRef(null);
@@ -2614,6 +2681,9 @@ export default function ProgressionWheel() {
     return lens.reduce((a, b) => lcm(a, b), meloBeats);
   }, [drum, secDrum, meloBeats, barBeats]);
   tickRef.current = tickCount; subRef.current = meloSub; melRef.current = meloBeats;
+  // bars per section instance, so a move's sweep can span exactly one instance
+  moveRef.current = { moves: secMove,
+    instBars: Object.fromEntries(sections.insts.map(d => [d.key, d.cs.length])) };
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
   const chordId = (c, i) => c.inserted ? c.baseName
     : c.c2 ? "c" + c.bi
@@ -3016,11 +3086,16 @@ export default function ProgressionWheel() {
     // pulls it down (see duckAt). Drums and click connect to master directly, so the kick lands
     // in the hole it just made instead of ducking itself.
     const duck = ctx.createGain(); duck.gain.value = 1; duck.connect(master);
-    const music = makeReverb(ctx, duck);             // reverb bus for pitched instruments + melody
+    // section-move filter, between the reverb bus and the sidechain: a build sweeps the whole
+    // pitched mix including its reverb tail, which is what makes it sound like the room opening up
+    const filt = ctx.createBiquadFilter();
+    filt.type = "lowpass"; filt.frequency.value = FILTER_OPEN; filt.Q.value = 0.8;
+    filt.connect(duck);
+    const music = makeReverb(ctx, filt);             // reverb bus for pitched instruments + melody
     const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
     const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
     if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-    const m = { ctx, master, music, duck, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+    const m = { ctx, master, music, duck, filt, lastMoveBar: -1, sampler, lastInstr: instrRef.current, lastLead: leadKey,
       leadLoaded: new Set(leadKey ? [leadKey] : []),
       step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     m.timer = setInterval(() => {
@@ -3080,6 +3155,19 @@ export default function ProgressionWheel() {
           const b = struct[structBar];
           const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
           if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
+        }
+        // section moves: fire once, on the downbeat of each section instance, scheduling the whole
+        // sweep across that instance's length. Guarded by the bar index so a re-entered bar (or the
+        // lookahead running twice over one tick) can't restack the automation.
+        if (i === 0 && struct && structBar >= 0 && structBar !== m.lastMoveBar) {
+          const b = struct[structBar];
+          if (b && b.mb === 0) {
+            m.lastMoveBar = structBar;
+            const mv = b.base != null ? moveRef.current.moves[b.base] : "";
+            const spec = (MOVES[mv] || {}).spec || null;
+            const nb = (b.inst != null && moveRef.current.instBars[b.inst]) || 1;
+            applyMove(m.ctx, m.filt, spec, t, nb * (patLen / (subRef.current || 2)) * beat, m.noise, m.master);
+          }
         }
         const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
         if (dstep) {
@@ -3357,7 +3445,7 @@ export default function ProgressionWheel() {
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
     const s = { name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr,
-      kit, pump, bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
+      kit, pump, secMove, bpm: effBpm, selStruct, contrast, edits: ovMap, inserts: insList,
       quals: qmap, removed: remList,
       order: order.key === editKey ? order.list : null };
     const list = [...(sketches || []).filter(x => x.name !== name), s];
@@ -3371,6 +3459,7 @@ export default function ProgressionWheel() {
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
     setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {});
+    setSecMove(s.secMove || {});                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
     // older sketches predate the kit/pump fields — fall back to the pre-dance defaults so they
     // reload sounding exactly as they were saved
@@ -4224,6 +4313,13 @@ export default function ProgressionWheel() {
                       onChange={e => setSecDrum({ ...secDrum, [g.base]: e.target.value })}>
                       <option value="">global drums</option>
                       {Object.entries(DRUMS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="secdrum" title="Arrangement move for this section — a filter sweep, riser or drop, run across the section's whole length">
+                    <span aria-hidden="true">🎛</span>
+                    <select value={secMove[g.base] || ""}
+                      onChange={e => setSecMove({ ...secMove, [g.base]: e.target.value })}>
+                      {Object.entries(MOVES).map(([id, mv]) => <option key={id} value={id}>{mv.name}</option>)}
                     </select>
                   </label>
                 </div>

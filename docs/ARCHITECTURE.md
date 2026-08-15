@@ -86,8 +86,8 @@ from two shared primitives — `nz` (a filtered burst of the shared noise buffer
 oscillator with an optional sweep). The buffer is only 0.3 s, so any voice decaying longer than that
 loops it rather than falling silent inside its own envelope.
 
-**Sidechain**: the pitched bus routes `reverb → duck → master` while drums and click connect to
-`master` directly, so the kick lands in the hole it makes instead of ducking itself. `duckAt` writes
+**Sidechain**: the pitched bus routes `reverb → filter → duck → master` while drums and click
+connect to `master` directly, so the kick lands in the hole it makes instead of ducking itself. `duckAt` writes
 the envelope directly — cancel, full level at the hit, ~6 ms linear dip to `1 - amount`, linear
 recovery over ~1.6 eighths — rather than running a real compressor with a detector, because the
 scheduler already knows exactly when each kick lands. The scheduler fires it on any slot containing
@@ -96,6 +96,23 @@ scheduler already knows exactly when each kick lands. The scheduler fires it on 
 Drum pattern, kit and pump are keyed by progression (like tempo and strum pattern) via
 `DRUM_DEFAULT` / `KIT_DEFAULT` / `PUMP_DEFAULT`, so the dance progressions arrive grooving and
 everything else keeps the acoustic defaults.
+
+### Section moves
+
+`MOVES` are arrangement automations attached to a section letter (like `secDrum`). `applyMove`
+schedules the whole thing at the section's downbeat: an exponential cutoff envelope on the
+move filter, plus the optional riser (noise through a rising bandpass, cut on the boundary) and
+impact (sub boom + crash). The duration passed in is the section instance's own length, so a sweep
+always lands on the boundary and re-times itself when the structure changes. The scheduler fires it
+once per instance, guarded by the bar index so the lookahead can't restack the automation. Cutoffs
+never reach zero because the ramps are exponential.
+
+### Melody parts
+
+A section holds `layers: [{bars, flat, instr}]` — up to `MAX_LAYERS`, each with its own instrument
+and its own `LAYER_INK` colour. Every melody edit goes through `barsOf`/`flatOf`/`putLayer`, so the
+edit operations are resolution- and part-agnostic. MIDI export gives each part its own track and
+channel, skipping channel 9 (percussion) so a part is never voiced as a drum kit.
 - Swing delays odd eighths by a third of an eighth. Pattern length sets the meter (8 = 4/4, 6 = 3/4).
 - Structure playback maps `step → bar → section entry`; loop playback pads the loop to an even bar
   count.
