@@ -1,0 +1,174 @@
+/* patterns — Strum patterns, drum patterns, kits and pump depths, plus the grid-resolution helpers
+   (subOf / beatsOf / sampleAt) that let patterns of different subdivisions share one bar.
+*/
+/* ===== rhythm + drums ===== */
+const PATTERNS = {};
+[
+["pop","Campfire pop strum",">-DU-UDU","the universal acoustic pattern — miss the beat-2 down, let it ring"],
+["drive","Brooding drive",">-D-DUDU","heavier front, busier back half — leans into the minor"],
+["rock8","Straight-eight rock",">DDD>DDD","all down-strums, accents on 1 and 3 — punk energy comes from the wrist"],
+["shuffle","Shuffle",">UDUDUDU","long-short swung eighths — the engine of every 12-bar",1],
+["sway12","12/8 sway",">UDU>UDU","slow triplet lilt — Stand by Me lives here",1],
+["fourbar","Four-to-the-bar","D-D-D-D-","Freddie Green comping — even quarters, swing implied not stated",1],
+["push","Pushed rock",">-DUU-D-","the chord change lands early on the 'and' — that push is the swagger"],
+["latin","Latin clip",">-DUD-DU","clipped and percussive — mute the strings between strums"],
+["arp","Slow arpeggio pulse","D-U-D-U-","gentle alternation — or pick through the chord tones instead"],
+["quarters","Straight quarters","D-D-D-D-","metronomic — the best pattern for learning the changes"],
+["skank","Reggae skank","-U-U-U-U","all off-beats, everything else muted — instant island"],
+["ballad","Sparse ballad",">---D---","two hits a bar — space is the arrangement"],
+["boomchick","Country boom-chick",">-DU>-DU","pick the bass note on 1 and 3 if you can — chord answers on 2 and 4"],
+["busy8","Constant eighths","DUDUDUDU","surf and indie jangle — the accents live in your wrist, not the pattern"],
+["charleston","Charleston","D--U----","beat 1 and the 'and' of 2, then silence — the great jazz comping rhythm"],
+["tresillo","Tresillo (3+3+2)",">--D--D-","the Cuban cell behind reggaeton and half of modern pop"],
+["halftime","Half-time rock","D--->-DU","the big accent waits for beat 3 — everything feels twice as heavy"],
+["stomp","Four-beat stomp",">->->->-","accented quarters — glam-rock floor stomp"],
+["bossa","Bossa brush","D-U--U-U","gentle and syncopated — thumb the bass, brush the rest"],
+["funk","Funk scratch","D-U--UD-","ghost the rests with muted scratches — the groove is in what you don't voice"],
+["drone","Whole-note wash",">-------","one strum, let it drone — for pads, ambience and doom"],
+["waltz","Waltz (3/4)",">-D-D-","one-two-three, strong on one — three beats to the bar"],
+["slowwaltz","Slow waltz",">---D-","just beats one and three — stately, lots of air"],
+["waltzpick","Flowing waltz","DUDUDU","constant 3/4 eighths — works beautifully picked through the chord"],
+["countrywaltz","Country waltz",">-DUDU","bass note on one, brushed answers after — Tennessee Waltz territory"],
+["mazurka","Mazurka","D->-D-","3/4 with the accent displaced onto two — instantly old-world"],
+["quickwaltz","Quick waltz",">DDDDD","driving downstrokes in three — Viennese momentum, folk-punk at speed"],
+["jig68","6/8 roll",">UUDUU","two lilting groups of three — folk ballads and sea shanties"],
+["waltzsway","Jazz waltz","D-DUDU","3/4 with a swung lilt — My Favorite Things territory",1],
+// 16ths (sub = 4). Everything above divides the beat in two; these divide it in four, which is
+// where dance rhythm actually lives — the offbeat stab, the skipping garage accent, the 16th
+// funk scratch. Meter still reads pattern.length / sub, so these are all 4/4.
+["stab16","Offbeat 16th stabs","--D---D---D---D-","house piano stabs — land off the beat and keep them short",0,4],
+["house16","House chord pump",">---D---D---D---","a chord on each beat after the first — leaves the downbeat to the kick",0,4],
+["garage16","Garage skip",">--D--D-->-D--D-","the skipping 2-step accent, pulling against the four",0,4],
+["four16","Constant sixteenths","DUDUDUDUDUDUDUDU","the engine of garage and funk — accents live in the wrist",0,4],
+["funk16","16th funk scratch","D-UD-UD-D-UD-UD-","ghost the rests with muted scratches — the groove is what you don't voice",0,4],
+["disco16","Disco chug",">-U->-U->-U->-U-","clipped upstrokes pushing every offbeat — nu-disco guitar",0,4],
+["shuffle16","Swung 16ths","D-UD-UD-D-UD-UD-","16ths with a shuffle — UK garage and 2-step swing",1,4],
+["trap16","Trap sparse",">-------D-------","two chords a bar, everything else left to the drums",0,4],
+].forEach(([id, name, pat, desc, swing, sub]) =>
+  PATTERNS[id] = { name, pattern: pat.split(""), desc, swing: !!swing, sub: sub || 2 });
+
+// Columns per beat for a rhythm pattern: 2 = eighths, 4 = sixteenths. Everything downstream —
+// the scheduler tick, the melody grid, note values in the score, MIDI ticks — reads the meter
+// from these two numbers rather than assuming an eighth-note grid.
+const subOf = p => (p && p.sub) || 2;
+const beatsOf = p => p.pattern.length / subOf(p);
+
+// A bar is divided into as many ticks as the finest pattern in play needs, and every pattern is
+// sampled onto that grid: a pattern of length P fires at tick i only when i·P lands exactly on a
+// step. So an eighth-note strum and a sixteenth-note drum pattern coexist — the strum plays every
+// other tick, the hats every one — without either being truncated or stretched.
+const gcd = (a, b) => b ? gcd(b, a % b) : a;
+const lcm = (a, b) => a / gcd(a, b) * b;
+// index into a length-P pattern at tick i of a `ticks`-tick bar, or null if it falls between steps
+const stepAt = (len, i, ticks) => {
+  const n = i * len;
+  return n % ticks === 0 ? n / ticks : null;
+};
+const sampleAt = (pat, i, ticks) => {
+  if (!pat || !pat.length) return null;
+  const s = stepAt(pat.length, i, ticks);
+  return s == null ? null : pat[s];
+};
+// a drum pattern carries no `sub`, so read its meter from its length: 6 steps is three beats
+// (3/4 and 6/8), 8 and 16 are both four
+const drumBeatsOf = pat => (pat && pat.length === 6 ? 3 : 4);
+
+const PATTERN_DEFAULT = { axis:"pop", axisMinor:"drive", three:"rock8", blues:"shuffle",
+  doowop:"sway12", jazz:"fourbar", mixo:"push", andalusian:"latin", pachelbel:"arp",
+  dorian:"latin", lydian:"arp", phrygian:"drive", aeolian:"pop",
+  flamenco:"latin", edm:"house16", deepHouse:"stab16", festival:"house16", futureBass:"trap16",
+  montuno:"tresillo", rhythm:"charleston", bossa:"bossa", guajira:"tresillo", bolero:"arp",
+  gospel:"sway12", neoSoul:"funk",
+  rockRiff:"rock8", grunge:"drive", britpop:"pop", emo:"rock8", country:"boomchick",
+  celtic:"busy8", motownTurn:"boomchick", rnbSlow:"funk" };
+const BPM_DEFAULT = { axis:96, axisMinor:84, three:140, blues:92, doowop:66, jazz:120,
+  mixo:112, andalusian:104, pachelbel:72,
+  dorian:100, lydian:84, phrygian:128, aeolian:92,
+  flamenco:120, edm:128, deepHouse:122, festival:138, futureBass:150,
+  montuno:96, rhythm:160, bossa:132, guajira:100, bolero:76, gospel:76, neoSoul:88,
+  rockRiff:128, grunge:120, britpop:116, emo:144, country:108, celtic:116, motownTurn:128, rnbSlow:76 };
+
+const DRUMS = {};
+[
+["off","No drums",null],
+// 4/4 — eight eighth-note steps
+["rock","Rock backbeat","KH H SH H KH H SH H"],
+["pop","Pop punch","KH H SH KH H KH SH H"],
+["four","Four-on-the-floor","K H KS H K H KS H"],
+["shuffle","Shuffle backbeat","K H S H K H S H"],
+["train","Train beat","KS S S S KS S S S"],
+["halftime","Half-time","KH H H H SH H H H"],
+["driving","Driving eighths","KH KH SH KH KH KH SH KH"],
+["funk","Funk groove","KH H SKH H H KH SH H"],
+["disco","Disco","KH H KSH H KH H KSH H"],
+["boombap","Hip-hop boom-bap","KH H SH H H KH SH H"],
+["breakbeat","Breakbeat","KH H SH KH H KSH H SH"],
+["rnb","R&B swing","KH H SH H KH H SKH H"],
+["motown","Motown backbeat","KH SH KSH SH KH SH KSH SH"],
+["reggae","Reggae one-drop",". H . H KSH H . H"],
+["ska","Ska upbeat","K SH . SH K SH . SH"],
+["bossa","Bossa nova","KH H H SH H KH SH H"],
+["samba","Samba","KSH H KH SH KSH H KH SH"],
+["tresillo","Tresillo (3-3-2)","KH H H KH H H KH H"],
+["surf","Surf","KH H SH KH KH H SH H"],
+["punk","Punk d-beat","KH SH KH SH KH SH KH SH"],
+["newwave","New wave","K H SH H KH H SH H"],
+["anthem","Anthem","KH H SH H KH KH SH H"],
+["stomp","Stomp-clap","K K SH . K K SH ."],
+["march","March","K H SH H K H SH H"],
+["twostep","Country two-step","KS H S H KS H S H"],
+["ballad","Ballad (sparse)","K . . . SH . . ."],
+// 3/4 — six steps
+["waltzkit","Waltz kit (3/4)","K . SH . SH ."],
+["jazzwaltz","Jazz waltz (3/4)","KH H SH H SH H"],
+["waltzballad","Waltz ballad (3/4)","K H H SH H H"],
+// 6/8 — six steps
+["kit68","6/8 kit","K H H SH H H"],
+["shuffle68","6/8 shuffle","KH H H SH H H"],
+["march68","6/8 march","K H SH H SH H"],
+// 4/4 dance — written for the machine kits: O = open hat, C = clap, P = rim, R = ride,
+// X = crash, B = 808 sub-boom. The offbeat open hat is the engine of house; the clap
+// (not a snare) on 2 and 4 is what stops four-on-the-floor sounding like disco-rock.
+["house909","House (909)","K O KC O K O KC O"],
+["deep","Deep house","KH O KCH O KH O KCH OP"],
+["techhouse","Tech house","KH OP KCH H KH OP KCH O"],
+["techno","Techno","KH H KH H KH H KH O"],
+["trance","Trance","KH O KCH O KH O KCH O"],
+["bigroom","Big room","KHX O KCH O KH O KCH O"],
+["garage","UK garage 2-step","KH H CH KH H C H SH"],
+["disco909","Nu-disco","KH O KCH O KH O KCH OP"],
+["trap","Trap","BH H H CH H BH CH H"],
+["dubstep","Dubstep half-time","KH H H H CH H P H"],
+["electro","Electro house","KH H KCH H KH KH CH H"],
+// 4/4 at sixteenths — sixteen steps. This is the resolution the rolling hats, the skipping
+// garage kick and a real breakbeat need; at eighths they can only be approximated.
+["house16d","House · 16th hats","K H H H KC H H H K H H H KC H H O"],
+["techno16","Techno · driving 16ths","KH H H H KH H H H KH H H H KH H H OH"],
+["garage16d","UK garage 2-step","KH H H H CH H H H H H KH H CH H H H"],
+["dnb","Drum & bass","KH H H H SH H H H H H KH H SH H H H"],
+["amen","Amen break","KH H KH H SH H H SH H H KH H SH H SH H"],
+["breaks16","Big beat breaks","KH H H H SH H KH H KH H H H SH H KH H"],
+["trap16d","Trap · rolling hats","BH H H H H H H H CH H BH H H H H H"],
+["dubstep16","Dubstep","KH H H H H H H H CH H H H H H KH H"],
+["hiphop16","Hip-hop 16ths","KH H H H SH H KH H H KH H H SH H H H"],
+["footwork","Footwork","K H K H CH H K H K H K H CH H K H"],
+].forEach(([id, name, pat]) =>
+  DRUMS[id] = { name, pattern: pat ? pat.split(" ").map(s => s === "." ? "" : s) : null });
+
+// Kit voicings for the drum channels above (see drumSound).
+const DRUM_KITS = [["acoustic","Acoustic kit"], ["909","TR-909 · house & techno"], ["808","TR-808 · trap & hip-hop"]];
+// How hard the kick ducks everything pitched. "classic" is the familiar house pump.
+const PUMPS = [["off","No pump"], ["subtle","Subtle"], ["classic","Classic pump"], ["hard","Hard pump"]];
+const PUMP_AMT = { off:0, subtle:0.3, classic:0.6, hard:0.85 };
+// Channel letter → General MIDI percussion note, for the exported channel-10 drum track.
+const DRUM_MIDI = { K:36, B:35, S:38, H:42, O:46, C:39, P:37, R:51, X:49 };
+// GM percussion-set program numbers (0-indexed) so an exported file opens with a kit that
+// matches what you heard. GM has no 909, so it borrows the Electronic set.
+const KIT_PROGRAM = { "909":24, "808":25 };
+// The dance progressions come up already grooving — pick Deep House and press play.
+// Everything else keeps the acoustic kit and no pump, exactly as before.
+const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16", futureBass:"trap16d" };
+const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
+const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
+
+export { PATTERNS, subOf, beatsOf, gcd, lcm, stepAt, sampleAt, drumBeatsOf, PATTERN_DEFAULT, BPM_DEFAULT, DRUMS, DRUM_KITS, PUMPS, PUMP_AMT, DRUM_MIDI, KIT_PROGRAM, DRUM_DEFAULT, KIT_DEFAULT, PUMP_DEFAULT };

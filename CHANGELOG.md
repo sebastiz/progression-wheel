@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **Internal: the source is now modules, not one file.** No behaviour change — the app builds and
+  plays exactly as before. `src/progression-wheel.jsx` had grown to 4,600 lines, and the blank-screen
+  bug in 4.40.1 was the predictable result: a refactor with call sites too scattered to sweep by eye.
+  The logic now lives in seven plain modules (`theory`, `progressions`, `patterns`, `audio`, `midi`,
+  `pitch`, `melody`) with a clean one-way dependency graph, leaving the component at 2,774 lines.
+  Because those modules are plain JavaScript with no JSX, the test suite imports them directly — no
+  build step and no React stub — and the build no longer writes intermediate files. Two mistakes that
+  bundling used to hide, a module forgetting to export something and the component using a symbol it
+  never imported, are now caught by `npm test` instead of appearing as a blank screen. Version bumped
+  to 4.41.0.
 - **Fixed: the app went blank when a song structure was showing.** Choosing a structure — or
   changing anything that re-rendered the section list underneath it — blanked the interface while
   playback carried on. Three places in the **Song & melody** panel still read a section's melody

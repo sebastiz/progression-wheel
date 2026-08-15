@@ -1,8 +1,32 @@
 # Architecture
 
-One file, one component: `src/progression-wheel.jsx`. The design is aggressively data-driven —
-almost every feature is a table plus a small amount of derivation, so adding content rarely means
-adding logic.
+The design is aggressively data-driven — almost every feature is a table plus a small amount of
+derivation, so adding content rarely means adding logic.
+
+## Layout
+
+The logic lives in plain `.js` modules; only the component itself is JSX. The dependency graph is a
+DAG, so any module can be read (or tested) without loading the app:
+
+| Module | Holds | Imports |
+| --- | --- | --- |
+| `src/theory.js` | pitch classes, chord qualities and intervals, modes, key spelling | — |
+| `src/progressions.js` | the progression catalogue, genre/emotion index, structure plans | — |
+| `src/patterns.js` | strum and drum patterns, kits, pumps, grid-resolution helpers | — |
+| `src/audio.js` | synth voices, drum kits, sidechain, section moves, the GM sampler | theory |
+| `src/midi.js` | writing and reading Standard MIDI Files | theory, patterns |
+| `src/pitch.js` | the McLeod-Pitch-Method transcriber | — |
+| `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
+| `src/progression-wheel.jsx` | the component, the fingering diagrams and the score | all of the above |
+
+Because the modules are plain ESM with no JSX, `npm test` imports them directly — no build step and
+no React stub. `scripts/build.mjs` feeds the component through esbuild via stdin with
+`resolveDir: "src"`, bundling as an IIFE, so nothing lands in global scope and no intermediate files
+are written.
+
+Two failure modes that bundling hides — a module that declares something without exporting it, and
+the component using a module's symbol without importing it (esbuild silently assumes a global) —
+are checked by `npm test`, because both surface at runtime as a blank screen.
 
 ## Music-theory core
 
@@ -52,6 +76,9 @@ Web Audio API throughout, no samples:
 - **Scheduler**: `setInterval(20ms)` with a 0.1 s lookahead writing absolute-time events — solid
   timing with ~0.1 s latency for live changes. The AudioContext is created and resumed inside the
   Play tap (iOS unlock), with a silent unlock note.
+- Each eighth-slot: click, chord voice (`playHit` — guitar pluck is sawtooth through a closing
+  low-pass; piano is fundamental + decaying partials; organ sustains sine drawbars; basses play
+  roots), drum hits (`drumSound`), and melody lead notes.
 
 ### Grid resolution
 
@@ -73,9 +100,6 @@ same point in the bar (lossless going finer; folded onto the nearest column goin
 
 Swing delays the offbeat of each *strum-pattern* pair, so on a sixteenth pattern it is a sixteenth
 shuffle rather than an eighth one.
-- Each eighth-slot: click, chord voice (`playHit` — guitar pluck is sawtooth through a closing
-  low-pass; piano is fundamental + decaying partials; organ sustains sine drawbars; basses play
-  roots), drum hits (`drumSound`), and melody lead notes.
 
 ### Drums and the sidechain
 

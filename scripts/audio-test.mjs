@@ -1,19 +1,18 @@
 // Exercises the new drum voices + sidechain against a recording stub of the Web Audio API.
 // Catches the classic footguns: exponential ramps to zero, NaN frequencies, un-started
 // sources, and envelopes that outlive their buffer.
-import { readFileSync, writeFileSync } from "fs";
-import { build } from "esbuild";
+// Since the logic lives in plain .js modules, this imports them directly — no build step, no
+// JSX transform, no React stub. Only the component file needs compiling, and nothing here needs it.
+import { readFileSync } from "fs";
+import * as theory from "../src/theory.js";
+import * as patterns from "../src/patterns.js";
+import * as audio from "../src/audio.js";
+import * as midiMod from "../src/midi.js";
+import * as melody from "../src/melody.js";
 
-let code = readFileSync("src/progression-wheel.jsx", "utf8");
-code = code.replace(/import \{[^}]*\} from "react";/, "const React = globalThis.React;");
-code = code.replace("export default function ProgressionWheel(", "function ProgressionWheel(");
-code += "\nexport { drumSound, duckAt, midiBytes, makeNoise, DRUMS, DRUM_MIDI, PUMP_AMT, DRUM_KITS, DRUM_DEFAULT, KIT_DEFAULT, PUMP_DEFAULT, KIT_PROGRAM, MOVES, applyMove, FILTER_OPEN, LAYER_INK, LAYER_NAMES, MAX_LAYERS, LAYER_DEFAULT_INSTR, PATTERNS, PATTERN_DEFAULT, subOf, beatsOf, stepAt, sampleAt, drumBeatsOf, lcm, rescaleBar, qbeats, colPrefs, nCols, blankBars, MELODY_PATTERNS, NARRATIVES };\n";
-writeFileSync("scripts/.test.jsx", code);
-await build({ entryPoints: ["scripts/.test.jsx"], outfile: "scripts/.test.mjs",
-  loader: { ".jsx": "jsx" }, jsx: "transform", format: "esm", bundle: false });
-
-globalThis.React = { createElement: () => null };
-const M = await import("../scripts/.test.mjs");
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody };
+// the component source, read as text for the shape guard at the end
+const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
 /* ---- recording stub ---- */
 const problems = [];
@@ -432,6 +431,59 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const strayFlat = lines.filter(ln => /\bsec\.flat\b|\bsec\.bars\b|\bsecm\.bars\b/.test(ln));
   strayFlat.forEach(ln => problems.push(`src: section read bypasses layers — ${ln.trim().slice(0, 80)}`));
   console.log(`source shape guard: ${bad.length + 1} patterns checked`);
+}
+
+/* ---- the module seams hold ----
+   Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
+   declares something but forgets to export it, and the component referencing a module's symbol
+   without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
+{
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js"];
+  const strip = t => t
+    .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/`(?:[^`\\]|\\.)*`/g, "``").replace(/\.\.\./g, " ");
+  // top-level names, including the later declarators of `const A = …, B = …`
+  const declared = text => {
+    const out = new Set();
+    for (const ln of text.split("\n")) {
+      const d = ln.match(/^(?:const|let|var)\s+(.*)$/);
+      if (d) {
+        let depth = 0, cur = "";
+        const parts = [];
+        for (const ch of d[1]) {
+          if ("([{".includes(ch)) depth++;
+          else if (")]}".includes(ch)) depth--;
+          if (ch === "," && depth === 0) { parts.push(cur); cur = ""; } else cur += ch;
+        }
+        parts.push(cur);
+        for (const p of parts) { const n = p.match(/^\s*([A-Za-z_$][\w$]*)\s*=/); if (n) out.add(n[1]); }
+      }
+      const f = ln.match(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
+      if (f) out.add(f[1]);
+    }
+    return out;
+  };
+  const owner = new Map();
+  for (const m of MODS) {
+    const s = readFileSync("src/" + m, "utf8");
+    const exp = s.match(/\nexport \{ (.*) \};/);
+    if (!exp) { problems.push(`${m}: no export block`); continue; }
+    const exported = new Set(exp[1].split(", "));
+    for (const n of declared(s.split("\nexport {")[0]))
+      if (!exported.has(n)) problems.push(`${m}: declares \`${n}\` but never exports it`);
+    for (const n of exported) owner.set(n, m);
+  }
+  // what the component imports vs what it actually uses
+  const imported = new Set();
+  for (const mm of code.matchAll(/^import \{([^}]*)\} from "\.\/[^"]*";$/gm))
+    for (const n of mm[1].split(",")) imported.add(n.trim());
+  const usedNames = new Set(strip(code.replace(/^import [^\n]*$/gm, "")).match(/[A-Za-z_$][\w$]*/g) || []);
+  const localNames = declared(code);
+  for (const n of usedNames)
+    if (owner.has(n) && !imported.has(n) && !localNames.has(n))
+      problems.push(`progression-wheel.jsx uses \`${n}\` from ${owner.get(n)} without importing it`);
+  console.log(`module seams: ${MODS.length} modules, ${owner.size} exports, ${imported.size} imported by the component`);
 }
 
 console.log(problems.length ? `\n✗ ${problems.length} PROBLEM(S):\n` + problems.map(p => "  - " + p).join("\n")
