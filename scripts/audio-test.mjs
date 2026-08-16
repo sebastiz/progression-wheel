@@ -12,8 +12,9 @@ import * as melody from "../src/melody.js";
 import * as progs from "../src/progressions.js";
 import * as song from "../src/song.js";
 import * as wav from "../src/wav.js";
+import * as zip from "../src/zip.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -808,12 +809,95 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`longest structure: ${longest.n} at ${longest.b} bars on a four-chord loop`);
 }
 
+/* ---- the zip writer, and the stem gating that fills it ----
+   A malformed archive is the worst failure mode here: the download succeeds, and the producer
+   only finds out when their unarchiver refuses it. So the bytes get parsed back structurally
+   rather than eyeballed. */
+{
+  // the ZIP CRC-32 is the standard one; "123456789" is its documented check value
+  const check = M.crc32(new TextEncoder().encode("123456789"));
+  if (check !== 0xcbf43926) problems.push(`crc32 check value is ${check.toString(16)}, expected cbf43926`);
+  if (M.crc32(new Uint8Array(0)) !== 0) problems.push("crc32 of empty input is not 0");
+
+  const enc = new TextEncoder();
+  const files = [
+    { name: "01-drums.wav", bytes: enc.encode("RIFF....drums") },
+    { name: "02-chords-piano.wav", bytes: Uint8Array.from({ length: 5000 }, (_, i) => i & 255) },
+    { name: "03-part-A-lead.wav", bytes: new Uint8Array(0) },   // a legal, if pointless, entry
+  ];
+  const buf = M.makeZip(files);
+  const rd16 = at => buf[at] | (buf[at + 1] << 8);
+  const rd32 = at => (buf[at] | (buf[at + 1] << 8) | (buf[at + 2] << 16) | (buf[at + 3] << 24)) >>> 0;
+
+  // walk in from the end-of-central-directory record, the way an unarchiver does
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0; i--) if (rd32(i) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) problems.push("zip: no end-of-central-directory record");
+  else {
+    if (rd16(eocd + 10) !== files.length) problems.push(`zip: EOCD claims ${rd16(eocd + 10)} entries, wrote ${files.length}`);
+    const dirSize = rd32(eocd + 12), dirAt = rd32(eocd + 16);
+    if (dirAt + dirSize !== eocd) problems.push("zip: central directory size/offset do not meet the EOCD");
+    let at = dirAt, n = 0;
+    while (at < dirAt + dirSize) {
+      if (rd32(at) !== 0x02014b50) { problems.push(`zip: bad central header at ${at}`); break; }
+      const method = rd16(at + 10), crc = rd32(at + 16), csize = rd32(at + 20), usize = rd32(at + 24);
+      const nameLen = rd16(at + 28), local = rd32(at + 42);
+      const name = new TextDecoder().decode(buf.subarray(at + 46, at + 46 + nameLen));
+      const want = files[n];
+      if (!want) { problems.push("zip: more central entries than files"); break; }
+      if (name !== want.name) problems.push(`zip: entry ${n} named "${name}", expected "${want.name}"`);
+      if (method !== 0) problems.push(`zip: entry ${n} uses method ${method}, expected 0 (stored)`);
+      if (crc !== M.crc32(want.bytes)) problems.push(`zip: entry ${n} CRC mismatch`);
+      if (csize !== want.bytes.length || usize !== want.bytes.length)
+        problems.push(`zip: entry ${n} sizes ${csize}/${usize}, expected ${want.bytes.length}`);
+      // the local header the directory points at must agree, and the payload must be byte-exact
+      if (rd32(local) !== 0x04034b50) problems.push(`zip: entry ${n} local offset ${local} is not a local header`);
+      else {
+        const dataAt = local + 30 + rd16(local + 26) + rd16(local + 28);
+        const got = buf.subarray(dataAt, dataAt + usize);
+        if (got.length !== want.bytes.length || got.some((b, i) => b !== want.bytes[i]))
+          problems.push(`zip: entry ${n} payload does not round-trip`);
+      }
+      at += 46 + nameLen + rd16(at + 30) + rd16(at + 32);
+      n++;
+    }
+    if (n !== files.length) problems.push(`zip: walked ${n} central entries, wrote ${files.length}`);
+    console.log(`zip writer: ${files.length} entries, ${buf.length} bytes, central directory walks clean`);
+  }
+  // filenames have to survive Windows and macOS alike, and never come out empty
+  for (const [raw, want] of [["chords-acoustic_guitar_steel", "chords-acoustic_guitar_steel"],
+                             ["part A / lead?", "part-A-lead"], ["  ", "stem"], ["***", "stem"],
+                             ["...", "stem"], [".hidden", "hidden"], ["a".repeat(90), "a".repeat(60)]]) {
+    const got = M.safeName(raw);
+    if (got !== want) problems.push(`safeName(${JSON.stringify(raw)}) = ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`);
+  }
+  if (/[\\/:*?"<>|]/.test(M.safeName('a:b*c?"d<e>f|g\\h/i'))) problems.push("safeName leaves a reserved filename character");
+
+  /* The stems only sum back to the mix if every source in emitTick is gated on `m.stem`.
+     A source that forgets the gate leaks into every stem; one that gates too hard goes missing
+     from all of them. Both are silent bugs, so the source shape is checked here. */
+  const tickBody = code.slice(code.indexOf("const emitTick ="), code.indexOf("const startMetro ="));
+  const GATES = [
+    [/if \(chord && \(!m\.stem \|\| m\.stem\.kind === "chords"\)\)/, "chords are not gated on m.stem"],
+    [/if \(!m\.stem \|\| m\.stem\.kind === "drums"\)\s*\n\s*for \(const ch of dstep\)/, "drum voices are not gated on m.stem"],
+    [/if \(m\.stem && !\(m\.stem\.kind === "part" && m\.stem\.i === li\)\) return;/, "melody parts are not gated on m.stem"],
+    [/if \(clickRef\.current && !m\.stem\)/, "the metronome click is not excluded from stems"],
+  ];
+  for (const [re, msg] of GATES) if (!re.test(tickBody)) problems.push(`stem gating: ${msg}`);
+  // the pump is deliberately outside the drum gate — it shapes the pitched bus, so it belongs in
+  // every pitched stem even though the kick triggering it does not
+  const pumpLine = tickBody.match(/^.*duckAt\(m\.duck.*$/m);
+  if (!pumpLine) problems.push("stem gating: the sidechain pump has moved out of emitTick");
+  else if (/m\.stem/.test(pumpLine[0])) problems.push("stem gating: the pump is gated on m.stem — pitched stems would lose the sidechain");
+  console.log(`stem gating: ${GATES.length} sources gated, pump left on the pitched bus`);
+}
+
 /* ---- the module seams hold ----
    Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "progressions.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "progressions.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")

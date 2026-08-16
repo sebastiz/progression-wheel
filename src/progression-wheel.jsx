@@ -8,6 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
 import { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots } from "./melody.js";
+import { makeZip, safeName } from "./zip.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -1282,14 +1283,23 @@ export default function ProgressionWheel() {
   // The audio graph, built into whatever context it is given — a live AudioContext for playback,
   // an OfflineAudioContext for rendering the song to a file. Everything downstream of `master`
   // is identical either way, so a render sounds like what you heard.
-  const buildGraph = (ctx, from) => {
+  const buildGraph = (ctx, from, stem) => {
+  // Stems are pre-master: the limiter is a compressor, and compression is not linear, so
+  // limiting each stem on its own could never add back up to a limited mix. Bypassing it means
+  // the stems sum to the raw mix sample for sample, and the DAW's own master chain does the
+  // limiting — which is what a producer wants from stems anyway.
+  let master;
+  if (stem) {
+    master = ctx.createGain(); master.gain.value = 0.65; master.connect(ctx.destination);
+  } else {
     const limiter = ctx.createDynamicsCompressor();  // tame peaks so stacked samples don't clip
   // firm brick-wall limiting: a high ratio + short attack so stacked/ringing voices can't sum
   // past 0 dBFS and clip into harsh digital distortion (ratio 4 was too gentle to catch peaks)
   limiter.threshold.value = -5; limiter.knee.value = 3; limiter.ratio.value = 12;
   limiter.attack.value = 0.002; limiter.release.value = 0.14;
   limiter.connect(ctx.destination);
-  const master = ctx.createGain(); master.gain.value = 0.65; master.connect(limiter);
+  master = ctx.createGain(); master.gain.value = 0.65; master.connect(limiter);
+  }
   // Sidechain: everything pitched runs through `duck` on its way to the master, and the kick
   // pulls it down (see duckAt). Drums and click connect to master directly, so the kick lands
   // in the hole it just made instead of ducking itself.
@@ -1306,7 +1316,7 @@ export default function ProgressionWheel() {
   const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
   const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
   if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-  const m = { ctx, master, music, duck, filt, lastMoveBar: -1, partGain: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+  const m = { ctx, master, music, duck, filt, stem: stem || null, lastMoveBar: -1, partGain: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
     leadLoaded: new Set(leadKey ? [leadKey] : []),
     step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     return m;
@@ -1358,8 +1368,8 @@ export default function ProgressionWheel() {
       const inst = instrRef.current;
       if (realRef.current && inst !== m.lastInstr) { m.sampler.load(inst); m.lastInstr = inst; }  // switched voice mid-play
       if (sym !== "-") {
-        if (clickRef.current) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default
-        if (chord) {
+        if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
+        if (chord && (!m.stem || m.stem.kind === "chords")) {
           // pick the inversion nearest the last chord's, once per chord change, so the voicing
           // moves by step through the progression instead of leaping in root position
           if (chord.name !== m.lastChordName) {
@@ -1392,9 +1402,12 @@ export default function ProgressionWheel() {
       const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
       const accent = accentAt(i, ticksPerBeat);    // lean on the pulse rather than hitting flat
       if (dstep) {
-        for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current, accent);
+        if (!m.stem || m.stem.kind === "drums")
+          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current, accent);
         // pump the pitched bus under every kick. Recovery stops just short of the next beat,
         // so four-on-the-floor breathes fully back in right as the next kick hits.
+        // The pump belongs to the pitched bus, so it stays in every pitched stem even though the
+        // kick that triggers it does not — that is what makes the stems sum back to the mix.
         if (pumpRef.current && /[KB]/.test(dstep)) duckAt(m.duck, t, pumpRef.current, beat * 0.8);
       }
       const mel = meloRef.current;
@@ -1450,8 +1463,10 @@ export default function ProgressionWheel() {
             });
           };
           const anySolo = sec.layers.some(ly => ly.solo);
-          sec.layers.forEach((ly, li) =>
-            playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo), ly.send || 0));
+          sec.layers.forEach((ly, li) => {
+            if (m.stem && !(m.stem.kind === "part" && m.stem.i === li)) return;
+            playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo), ly.send || 0);
+          });
           const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
           if (melStep != null) {
             const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
@@ -1514,6 +1529,44 @@ export default function ProgressionWheel() {
      as fast as the machine can manage — so what lands in the file is what you heard, not a second
      implementation that drifts from it. */
   const [rendering, setRendering] = useState(false);
+  /* Render the whole song, or one stem of it, into an OfflineAudioContext.
+     `stem` is null for the full mix, or { kind:"chords"|"drums"|"part", i } to isolate one
+     source. Everything else — graph, tick emitter, tail — is shared, so a stem is the mix with
+     the other sources muted rather than a separate rendering path. */
+  // every real-sample voice this song reaches for
+  const wantedVoices = () => {
+    const w = new Set([instrRef.current]);
+    Object.values(secMelos).forEach(sec => sec.layers.forEach(ly => {
+      const v = ly.instr || melInstr; if (isGM(v)) w.add(v);
+    }));
+    if (isGM(melInstr)) w.add(melInstr);
+    return w;
+  };
+  // give the sampler the same chance it gets live; if the samples aren't ready in time the render
+  // falls back to the synth voices exactly as playback would
+  const waitSamples = async sampler => {
+    const wanted = wantedVoices();
+    wanted.forEach(k => sampler.load(k));
+    const until = Date.now() + 4000;
+    while (Date.now() < until && ![...wanted].every(k => sampler.ready(k)))
+      await new Promise(r => setTimeout(r, 100));
+  };
+  const renderOffline = async stem => {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const nBars = (structBars && structBars.length) ? structBars.length : Math.max(1, chords.length);
+    const ticksPerBar = tickRef.current || 8;
+    const secsPerBar = barBeats * 60 / effBpm;
+    const TAIL = 3.5;                                  // let the reverb and delay ring out
+    const rate = 44100;
+    const ctx = new OAC(2, Math.ceil((nBars * secsPerBar + TAIL) * rate), rate);
+    const m = buildGraph(ctx, 0, stem || null);
+    m.nextTime = 0;                                    // offline starts at zero, no lookahead
+    // give the sampler the same chance it gets live; if the samples aren't ready in time the
+    // render falls back to the synth voices exactly as playback would
+    if (realRef.current) await waitSamples(m.sampler);
+    for (let n = 0; n < nBars * ticksPerBar; n++) emitTick(m, false);
+    return ctx.startRendering();
+  };
   const renderAudio = async () => {
     if (rendering) return;
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
@@ -1521,29 +1574,7 @@ export default function ProgressionWheel() {
     setRendering(true);
     setIoNote("Rendering…");
     try {
-      const nBars = (structBars && structBars.length) ? structBars.length : Math.max(1, chords.length);
-      const ticksPerBar = tickRef.current || 8;
-      const secsPerBar = barBeats * 60 / effBpm;
-      const TAIL = 3.5;                                  // let the reverb and delay ring out
-      const rate = 44100;
-      const ctx = new OAC(2, Math.ceil((nBars * secsPerBar + TAIL) * rate), rate);
-      const m = buildGraph(ctx, 0);
-      m.nextTime = 0;                                    // offline starts at zero, no lookahead
-      // give the sampler the same chance it gets live; if the samples aren't ready in time the
-      // render falls back to the synth voices exactly as playback would
-      if (realRef.current) {
-        const wanted = new Set([instrRef.current]);
-        Object.values(secMelos).forEach(sec => sec.layers.forEach(ly => {
-          const v = ly.instr || melInstr; if (isGM(v)) wanted.add(v);
-        }));
-        if (isGM(melInstr)) wanted.add(melInstr);
-        wanted.forEach(k => m.sampler.load(k));
-        const until = Date.now() + 4000;
-        while (Date.now() < until && ![...wanted].every(k => m.sampler.ready(k)))
-          await new Promise(r => setTimeout(r, 100));
-      }
-      for (let n = 0; n < nBars * ticksPerBar; n++) emitTick(m, false);
-      const buf = await ctx.startRendering();
+      const buf = await renderOffline(null);
       const peak = peakOf(buf);
       if (peak < 1e-4) { setIoNote("Rendered silence — add a drum pattern or a melody first."); return; }
       const bytes = audioBufferToWav(buf);
@@ -1556,6 +1587,69 @@ export default function ProgressionWheel() {
     } catch (e) {
       setIoNote("Render failed in this browser — MIDI export still works.");
     } finally { setRendering(false); }
+  };
+
+  /* ---- stem export ----
+     One wav per source — drums, chords, and each melody part — zipped into a single download.
+     This is the handoff a DAW actually wants: drop the folder on the timeline and every source
+     lands on its own track, already aligned, instead of one flattened mix you can't unpick.
+     Each stem is rendered by muting the others, so they sum back to the mix bar for bar. */
+  const [stemming, setStemming] = useState(false);
+  const stemList = () => {
+    const out = [];
+    if (drumRef.current && drumRef.current.length) out.push({ kind:"drums", name:"drums" });
+    if (chords.length) out.push({ kind:"chords", name:"chords-" + instr });
+    // parts are per-section, so a part index counts if any section has notes on it
+    const nParts = Math.max(0, ...Object.values(secMelos).map(s => nLayers(s)));
+    for (let i = 0; i < nParts; i++) {
+      const secs = Object.values(secMelos);
+      if (!secs.some(s => s.layers[i] && s.layers[i].flat && s.layers[i].flat.length)) continue;
+      const withNotes = secs.find(s => s.layers[i] && s.layers[i].flat && s.layers[i].flat.length);
+      const voice = (withNotes.layers[i].instr) || melInstr;
+      out.push({ kind:"part", i, name:"part-" + LAYER_NAMES[i] + "-" + voice });
+    }
+    return out;
+  };
+  const exportStems = async () => {
+    if (stemming || rendering) return;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) { setIoNote("This browser cannot render audio."); return; }
+    const stems = stemList();
+    if (!stems.length) { setIoNote("Nothing to bounce — add a drum pattern, chords or a melody first."); return; }
+    setStemming(true);
+    try {
+      // Warm the sample cache once up front. Each render waits for samples on its own, but that
+      // wait can time out on the first stem and succeed on the second — which would leave the
+      // stems disagreeing about whether a part is a real instrument or its synth stand-in, and
+      // they would no longer sum to the mix. One warm-up first, and they all see the same thing.
+      if (realRef.current) {
+        setIoNote("Loading instruments…");
+        const warm = new OAC(1, 512, 44100);
+        await waitSamples(makeSampler(warm));
+      }
+      const files = [];
+      let silent = 0;
+      for (let n = 0; n < stems.length; n++) {
+        setIoNote(`Bouncing stem ${n + 1} of ${stems.length} — ${stems[n].name}…`);
+        // sequential, not parallel: several full-length OfflineAudioContexts at once is how a
+        // phone runs out of memory mid-export
+        const buf = await renderOffline(stems[n]);
+        if (peakOf(buf) < 1e-4) { silent++; continue; }   // a muted or empty source is not worth a file
+        files.push({ name: String(n + 1).padStart(2, "0") + "-" + safeName(stems[n].name) + ".wav",
+          bytes: audioBufferToWav(buf) });
+      }
+      if (!files.length) { setIoNote("Every stem rendered silent — check mutes and levels."); return; }
+      const zip = makeZip(files);
+      const url = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = safeName(sketchName.trim() || "progression-wheel") + "-stems.zip";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setIoNote(`${files.length} stem${files.length === 1 ? "" : "s"} · ${(zip.length / 1048576).toFixed(1)} MB`
+        + (silent ? ` · ${silent} silent, skipped` : "") + " — unzip and drop the lot onto a DAW timeline.");
+    } catch (e) {
+      setIoNote("Stem export failed in this browser — the single-file audio export still works.");
+    } finally { setStemming(false); }
   };
 
   /* ---- midi export ---- */
@@ -2694,9 +2788,12 @@ export default function ProgressionWheel() {
               <div className="sw" /> Legato
             </div>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ Export MIDI</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering}
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming}
               title="Render the whole song to a .wav you can send or post — the same sound you hear on Play">
               {rendering ? "Rendering…" : "↓ Export audio"}</button>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportStems} disabled={rendering || stemming}
+              title="Bounce drums, chords and each melody part to separate .wav files, zipped — drop them straight onto a DAW timeline">
+              {stemming ? "Bouncing…" : "↓ Export stems"}</button>
           </div>
           {openMel && (
             <div className="sugmel" style={{ marginTop:8 }}>

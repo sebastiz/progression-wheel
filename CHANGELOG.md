@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+- **Stem export — the sketch arrives in your DAW as separate tracks.** A new **↓ Export stems**
+  button beside *Export audio* bounces the drums, the chords and each melody part to its own .wav
+  and hands you all of them as a single .zip. Drop the unzipped folder on a timeline and every
+  source is on its own track, already aligned: re-balance it, replace the drums, keep only the
+  bassline. Until now the only way out as audio was one flattened mix you couldn't unpick.
+  - Files are numbered and named for what they are — `01-drums.wav`,
+    `02-chords-acoustic_guitar_steel.wav`, `03-part-A-flute.wav`.
+  - A part that is muted or has no notes is skipped rather than shipped as a silent file.
+  - The stems **sum back to exactly the mix** — verified in a browser to within 16-bit rounding.
+  - They are **pre-master**: the peak limiter is off, because your DAW's master chain should be
+    doing that. The sidechain pump stays in the pitched stems even though the kick that triggers it
+    lives only in the drum stem, so an isolated pad still breathes the way it did on Play.
+  - Stems render one at a time, so a phone doesn't run out of memory halfway through.
+  Version bumped to 4.48.0.
 - **Fifty song structures, and sixteen of them are dance.** There were 24, of which exactly one was
   a dance form. The picker is now grouped — the ones written for your progression, then **Song
   forms**, **Dance & electronic** and **Club edits**.

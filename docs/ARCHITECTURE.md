@@ -19,6 +19,7 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
 | `src/song.js` | the serialisable song document, melody packing, link encoding | — |
 | `src/wav.js` | 16-bit PCM wav writing | — |
+| `src/zip.js` | a store-only ZIP writer, for the stem archive | — |
 | `src/progression-wheel.jsx` | the component, the fingering diagrams and the score | all of the above |
 
 Because the modules are plain ESM with no JSX, `npm test` imports them directly — no build step and
@@ -92,13 +93,29 @@ edit path can forget to record itself; a `restoringRef` flag stops a replay beco
 
 Web Audio API throughout, no samples:
 
-- **Scheduler**: split into `buildGraph(ctx, from)` and `emitTick(m, live)`. Live playback runs
+- **Scheduler**: split into `buildGraph(ctx, from, stem)` and `emitTick(m, live)`. Live playback runs
   `setInterval(20ms)` with a 0.1 s lookahead, calling `emitTick` until it is 0.1 s ahead — solid
   timing with ~0.1 s latency for live changes. The AudioContext is created and resumed inside the
   Play tap (iOS unlock), with a silent unlock note.
 - **Rendering to a file** reuses both: `buildGraph` into an `OfflineAudioContext`, then `emitTick`
   for every tick of the song at once. There is no second implementation to drift, so the wav is what
   you heard. `emitTick`'s `live` flag only gates the on-screen playhead.
+- **Stems** reuse the same two functions once more. `renderOffline(stem)` passes a descriptor —
+  `null` for the mix, or `{ kind: "chords" | "drums" | "part", i }` — which `emitTick` consults at
+  each of its four sources: chords, drum voices, melody parts (matched on layer index) and the
+  metronome click, which is excluded from every stem. Two things are deliberately *not* gated:
+  - The **sidechain pump** (`duckAt`) shapes the pitched bus, so it stays in every pitched stem even
+    though the kick triggering it lives only in the drum stem. Without that, the pitched stems would
+    lose their pumping the moment they were isolated.
+  - The **master limiter** is *bypassed* for stems (`buildGraph`'s `stem` argument). Compression is
+    non-linear, so limiting each stem separately could never sum back to a limited mix; stems come
+    out pre-master and the DAW's own chain does the limiting. Verified in a browser: the stems sum
+    to the (pre-limiter) mix to within 16-bit quantisation.
+
+  Stems render sequentially rather than in parallel — several full-length `OfflineAudioContext`s at
+  once is how a phone runs out of memory — and any stem that renders silent is dropped rather than
+  shipped as an empty file. `src/zip.js` packages the result: store-only (wav does not deflate
+  usefully) with a fixed 1980 timestamp so archives are reproducible.
 - Each eighth-slot: click, chord voice (`playHit` — guitar pluck is sawtooth through a closing
   low-pass; piano is fundamental + decaying partials; organ sustains sine drawbars; basses play
   roots), drum hits (`drumSound`), and melody lead notes.

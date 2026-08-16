@@ -184,9 +184,23 @@ dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling
   plucked-string guitar, a richer drum kit, and reverb on everything. Turn **Real** off to always use
   the synth voices — handy for a guaranteed-offline, zero-download session.
 
-Transport: a sticky **Play** at the very top (with tempo). **↓ Export MIDI** and **↓ Export audio**
-sit in **Song & melody** — MIDI for a DAW, a .wav for everywhere else. The audio render uses the
-same engine as playback, so it sounds like what you heard.
+Transport: a sticky **Play** at the very top (with tempo). **↓ Export MIDI**, **↓ Export audio** and
+**↓ Export stems** sit in **Song & melody** — MIDI for a DAW, a .wav for everywhere else, stems for
+when you want to keep working on it. The audio render uses the same engine as playback, so it sounds
+like what you heard.
+
+**↓ Export stems** bounces the drums, the chords and every melody part to its own .wav and hands you
+the lot as one .zip. Unzip it, drag the files onto a DAW timeline, and each source lands on its own
+track already lined up — so you can re-balance the mix, swap the drums for your own, or keep only
+the bassline. The files are numbered and named for what they are
+(`01-drums.wav`, `02-chords-acoustic_guitar_steel.wav`, `03-part-A-flute.wav`), and a part that is
+muted or empty is left out rather than shipped as a silent file.
+
+Two things worth knowing about the stems. They add back up to exactly the mix you hear, so nothing
+is lost by working from them instead of the .wav. And they're **pre-master** — the limiter that
+catches peaks on the single-file export is deliberately off, because your DAW's own master chain
+should be doing that job. Expect them to sound a touch quieter and more dynamic than the .wav until
+you put something across the master bus.
 
 The MIDI file carries the **arrangement**, not just the notes: a marker at every section boundary so
 *Intro / Build / Drop* land on your DAW's timeline, plus the time signature and key signature. Open
