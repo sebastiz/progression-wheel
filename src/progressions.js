@@ -384,14 +384,25 @@ const STRUCT_FAMILIES = ["Song forms", "Dance & electronic", "Club edits"];
 
 const LETTER_WORD = { I:"intro", V:"verse", P:"pre-chorus", C:"chorus", B:"bridge", S:"solo", G:"groove",
   R:"refrain", T:"tag", O:"outro", U:"build", D:"drop", K:"break", A:"A section", H:"head" };
+/* A section name to its letter code. Falls back to the name's initial, so an unknown section still
+   gets a stable letter — and to "L" (loop) for an empty or missing name, because `sec[0]` on an
+   empty string is undefined and taking .toUpperCase() of it took the whole app down. */
+/* A section name to its letter code. Codes index SEC_COL and LETTER_WORD and are concatenated into
+   section instance keys, so this must always return a single A–Z letter whatever it is handed. It
+   used to end in `sec[0].toUpperCase()`, which throws on an empty string — and an empty name is
+   exactly what the arrangement editor holds when no structure is picked, so pressing Edit on a
+   plain loop took the whole app down. */
 function letterFor(sec) {
-  const s = sec.toLowerCase();
+  const s = String(sec == null ? "" : sec).trim().toLowerCase();
+  if (!s) return "L";
   for (const [k, L] of [["pre","P"],["chorus","C"],["intro","I"],["verse","V"],["bridge","B"],["middle","B"],
     ["solo","S"],["instrumental","S"],["refrain","R"],["tag","T"],["build","U"],["drop","D"],["break","K"],
     ["hook","C"],["groove","G"],["pulse","G"],["layer","U"],["release","D"],["rap","V"],["vocal","V"],
     ["call","V"],["response","R"],["mid","B"],["drift","G"],["swell","U"],["still","K"],["roll","K"],["fade","O"],
     ["outro","O"],["out","O"],["head","H"]]) if (s.includes(k)) return L;
-  return sec[0].toUpperCase();
+  const c = s[0].toUpperCase();
+  return /[A-Z]/.test(c) ? c : "L";
 }
+
 
 export { BLUES12, BLUES12Q, CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, defStruct, letterFor, mkPlan };

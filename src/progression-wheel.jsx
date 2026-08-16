@@ -3409,17 +3409,23 @@ export default function ProgressionWheel() {
                     <div className="tlhead" style={{ left: (curSongBar / total * 100) + "%" }} />}
                 </div>
               </div>
-              {/* the arrangement editor: a picked structure is a starting point, not a cage */}
+              {/* The arrangement editor: a picked structure is a starting point, not a cage. There is
+                  nothing to edit without one — a plain loop has no plan, only the loop — so the
+                  button is not offered rather than opening onto an empty toolbar. */}
               <div className="row" style={{ gap:"6px 8px", alignItems:"center", flexWrap:"wrap", marginTop:8 }}>
-                <button className={"mini" + (editArr ? " mixon" : "")} onClick={() => setEditArr(v => !v)}
-                  title="Reorder sections, change how many passes each gets, add and remove them">
-                  {editArr ? "✎ Editing" : "✎ Edit arrangement"}
-                </button>
+                {effPlan && effPlan.length
+                  ? <button className={"mini" + (editArr ? " mixon" : "")} onClick={() => setEditArr(v => !v)}
+                      title="Reorder sections, change how many passes each gets, add and remove them">
+                      {editArr ? "✎ Editing" : "✎ Edit arrangement"}
+                    </button>
+                  : tips && <span className="keytag" style={{ margin:0 }}>
+                      Pick a song structure above to build an arrangement you can edit.
+                    </span>}
                 {customPlan && <span className="keytag" style={{ margin:0, color:GOLD }}>edited</span>}
                 {customPlan && <button className="mini" onClick={resetPlan}
                   title="Throw the edits away and go back to the structure as written">↺ Reset</button>}
-                {editArr && (() => {
-                  const rows = effPlan || [];
+                {editArr && effPlan && effPlan.length > 0 && (() => {
+                  const rows = effPlan;
                   const cur = rows[selRow] || rows[0] || {};
                   const at = Math.min(selRow, rows.length - 1);
                   return (<>

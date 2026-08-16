@@ -958,6 +958,20 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`song structures: ${checked} checked (${M.UNIVERSAL.length} universal, ${all.length - M.UNIVERSAL.length} per-progression)`);
   // every letter a structure can produce needs a word, or the write-out reads as a bare letter
   const letters = new Set(all.flatMap(st => st.plan.map(r => M.letterFor(r.sec))));
+  /* letterFor is called from the scheduler, the strip, the chart and the arrangement editor, so it
+     has to survive whatever any of them hands it. It used to end in `sec[0].toUpperCase()`, which
+     throws on an empty string — and an empty section name is exactly what the arrangement editor
+     holds when no structure is picked, so pressing Edit on a plain loop blanked the whole app. */
+  for (const bad of ["", "   ", null, undefined, 0]) {
+    let got;
+    try { got = M.letterFor(bad); }
+    catch (e) { problems.push(`letterFor(${JSON.stringify(bad)}) threw: ${e.message}`); continue; }
+    if (!/^[A-Z]$/.test(got)) problems.push(`letterFor(${JSON.stringify(bad)}) gave ${JSON.stringify(got)}, not a single letter`);
+  }
+  // and an unknown name still has to letter to something stable rather than blowing up
+  if (M.letterFor("Zither solo interlude") !== "S") problems.push("letterFor stopped matching on a contained keyword");
+  if (M.letterFor("Zzz") !== "Z") problems.push("letterFor no longer falls back to the initial");
+
   const noWord = [...letters].filter(L => !M.LETTER_WORD[L]);
   if (noWord.length) problems.push(`section letters with no word: ${noWord.join(", ")}`);
   console.log(`section letters in use: ${[...letters].sort().join("")} — all named`);

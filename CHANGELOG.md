@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **Fixed: pressing ✎ Edit arrangement on a plain loop blanked the screen.** `letterFor` ended in
+  `sec[0].toUpperCase()`, which throws on an empty string — and an empty section name is exactly
+  what the editor holds when no structure is picked. Introduced in 4.53.0, when the arrangement
+  strip started showing for a single loop as well as a structure.
+  - `letterFor` now returns a letter whatever it is handed, and `npm test` checks that for empty,
+    blank, null, undefined and non-string input. It is called from the scheduler, the strip, the
+    chord chart and the editor, so it has to survive all of them.
+  - The **✎ Edit arrangement** button is no longer offered when there is no plan to edit — a plain
+    loop has only the loop — rather than opening onto an empty toolbar. Switching back to *No
+    structure* while still editing is safe too; that path would have crashed the same way.
+  Version bumped to 4.55.1.
 - **Files that say what they are.** Every download is now named for the sketch, its key and its
   tempo — *Night Drive Cm 128bpm.mid* rather than *progression-wheel.mid*. Applies to MIDI, audio,
   stems and the new chart.
