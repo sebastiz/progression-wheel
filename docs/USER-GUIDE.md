@@ -128,6 +128,23 @@ part has its own **Echo** slider in its mixer row, so you can throw just the lea
 leave the bass dry. The delay returns through the section-move filter, so a build sweeps the repeats
 along with everything else.
 
+### The arrangement strip
+
+Above the section list, once a structure is chosen, is the whole song on one line: a block per
+section, as wide as that section is long, with the bar numbers along the top. Repeats are one block
+— *Chorus ×2*, *Drop ×8* — because that is how you think about them.
+
+Under the blocks is a lane for each thing that can play: **Drums**, **Chords**, and one per melody
+part (**A**, **B**, …). A lane is lit where that element is playing and dark where it isn't, so the
+picture tells you what the song's dynamics actually are: drums dropping out for the verses, the pad
+only arriving at the chorus, the bassline sitting out the breakdown. A half-lit lane means the
+element is on for some passes of that section but not others. **Tap any block to play from there**,
+and a gold playhead runs across every lane as it goes.
+
+This is the quickest way to spot the thing that makes a sketch sound flat — every lane lit end to
+end, nothing entering, nothing dropping out. Mute a part on a verse, or give a section **no drums**
+from its **🥁** menu, and you can see the arrangement get some shape.
+
 ### Builds, drops and risers
 
 Every section group carries a **🎛** menu beside its **🥁** one. That's the arrangement move for

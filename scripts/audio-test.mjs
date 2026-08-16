@@ -791,6 +791,27 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (noWord.length) problems.push(`section letters with no word: ${noWord.join(", ")}`);
   console.log(`section letters in use: ${[...letters].sort().join("")} — all named`);
 
+  /* Every letter also needs a colour. The arrangement strip draws the song as coloured blocks, so
+     a letter missing from SEC_COL falls through to grey — and a dance structure whose sections are
+     all uncoloured reads as one grey smear with no shape at all, which is how this was found. */
+  const colBlock = code.match(/const SEC_COL = \{([\s\S]*?)\n\};/);
+  if (!colBlock) problems.push("SEC_COL not found in the component");
+  else {
+    const coloured = new Set([...colBlock[1].matchAll(/(\w+)\s*:\s*"#[0-9A-Fa-f]{6}"/g)].map(m => m[1]));
+    const noCol = [...letters].filter(L => !coloured.has(L));
+    if (noCol.length) problems.push(`section letters with no colour in SEC_COL: ${noCol.join(", ")}`);
+    // and the colours must be distinguishable, or two different sections look like one block
+    const hexes = [...colBlock[1].matchAll(/(\w+)\s*:\s*"(#[0-9A-Fa-f]{6})"/g)];
+    const byHex = {};
+    for (const [, L, hex] of hexes) (byHex[hex] = byHex[hex] || []).push(L);
+    // intro/outro/loop deliberately share the same grey — they are all "not the song proper"
+    const NEUTRAL = "IOL";
+    for (const [hex, ls] of Object.entries(byHex))
+      if (ls.length > 1 && !ls.every(L => NEUTRAL.includes(L)))
+        problems.push(`SEC_COL: ${ls.join(" and ")} share ${hex}`);
+    console.log(`section colours: ${coloured.size} letters, ${Object.keys(byHex).length} distinct`);
+  }
+
   // the point of the dance structures: DJ-mixable ends and phrases in 8s
   const dance = M.UNIVERSAL.filter(u => u.family === "Dance & electronic" || u.family === "Club edits");
   if (dance.length < 15) problems.push(`only ${dance.length} dance structures`);

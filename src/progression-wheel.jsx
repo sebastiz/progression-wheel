@@ -383,7 +383,19 @@ const GOLD = "#E5B554", LAV = "#A493EE", PATH = "#F2EDE0";
 const POS_MAJ = [0,7,2,9,4,11,6,1,8,3,10,5];
 
 // section-type accent colours for the song write-out grouping
-const SEC_COL = { V:"#54B79D", C:"#E0B85A", B:"#B7A6E0", P:"#7FB4D8", I:"#8B94A3", O:"#8B94A3", L:"#8B94A3" };
+/* One colour per section letter. Chosen by function rather than prettiness, so the arrangement
+   strip reads as a shape: statements green, hooks gold, lifts blue/pink, the drop hot, the quiet
+   parts cold, and the topping-and-tailing sections grey. Every letter `letterFor` can return needs
+   an entry — a section that falls through to grey is invisible in a strip full of grey. */
+const SEC_COL = {
+  V:"#54B79D", A:"#4FA894", G:"#79A85F", H:"#B3894A",   // statements: verse, A section, groove, head
+  C:"#E0B85A", R:"#E6C98A",                              // hooks: chorus, refrain
+  P:"#7FB4D8", U:"#D98BC0",                              // lifts: pre-chorus, build
+  D:"#E8794F",                                           // the drop
+  K:"#4E7FA0",                                           // break / breakdown — the cold one
+  B:"#B7A6E0", S:"#C77DD9",                              // departures: bridge, solo
+  I:"#8B94A3", O:"#8B94A3", L:"#8B94A3", T:"#9A8F7E",    // intro, outro, loop, tag
+};
 
 /* ===== discovery tools ===== */
 // borrowed + mediant menus: [tag, semitone offset, quality, where] — where: 0 = before the tonic's
@@ -454,6 +466,7 @@ export default function ProgressionWheel() {
   const [showLand, setShowLand] = useState(false);          // landing-notes collapse
   const [curQ, setCurQ] = useState(null);                   // {sym, col} playhead in melody grids
   const [curInst, setCurInst] = useState(null);             // instance key currently playing
+  const [curSongBar, setCurSongBar] = useState(-1);         // absolute bar in the song, for the timeline playhead
   const [order, setOrder] = useState({ key:"", list:null }); // reordered chord sequence (keys)
   const [reorder, setReorder] = useState(false);            // pill reorder mode on/off
   const [pillSel, setPillSel] = useState([]);               // selected pill indices (reorder mode)
@@ -1278,7 +1291,7 @@ export default function ProgressionWheel() {
   const stopMetro = () => {
     const m = metroRef.current;
     if (m) { clearInterval(m.timer); try { m.ctx.close(); } catch (e) {} metroRef.current = null; }
-    setPlaying(false); setCurStep(-1); setCurBar(-1); setCurLabel(null); setCurQ(null); setCurInst(null);
+    setPlaying(false); setCurStep(-1); setCurBar(-1); setCurLabel(null); setCurQ(null); setCurInst(null); setCurSongBar(-1);
   };
   // The audio graph, built into whatever context it is given — a live AudioContext for playback,
   // an OfflineAudioContext for rendering the song to a file. Everything downstream of `master`
@@ -1476,7 +1489,7 @@ export default function ProgressionWheel() {
       }
       const delay = Math.max(0, (t - m.ctx.currentTime) * 1000);
       if (live && patStep != null) setTimeout(() => setCurStep(patStep), delay);   // playhead walks the strum pattern, not the ticks
-      if (live && i === 0) setTimeout(() => { setCurBar(pillIdx); setCurLabel(label); setCurInst(instNow); }, delay);
+      if (live && i === 0) setTimeout(() => { setCurBar(pillIdx); setCurLabel(label); setCurInst(instNow); setCurSongBar(structBar); }, delay);
       m.step++; m.nextTime += tick;
   };
   const startMetro = fromBar => {
@@ -2159,6 +2172,32 @@ export default function ProgressionWheel() {
         .melmodebar .rlbl { font-size:12.5px; color:#8B94A3; margin:0 2px; }
         .mscroll { overflow-x:auto; padding-bottom:4px; }
         .sugmel { background:#10151D; border:1px solid #2A3442; border-radius:12px; padding:10px 12px; margin-bottom:10px; }
+        /* the arrangement strip: a fixed label gutter beside a proportional track area */
+        .tl { display:flex; gap:8px; align-items:stretch; margin-top:11px; padding:9px 11px 10px;
+          background:#10151D; border:1px solid #2A3442; border-radius:13px; }
+        .tlgut { flex:0 0 56px; display:flex; flex-direction:column; }
+        .tlglbl { height:13px; margin-bottom:3px; font-size:9.5px; font-weight:700; letter-spacing:.1em;
+          text-transform:uppercase; color:#8B94A3; line-height:13px; text-align:right; overflow:hidden; }
+        .tlgruler { height:14px; }
+        .tlgsec { height:26px; line-height:26px; color:${GOLD}; letter-spacing:.04em; }
+        .tltrk { position:relative; flex:1; min-width:0; }
+        .tlruler { position:relative; height:14px; }
+        .tltick { position:absolute; top:0; font-size:9.5px; color:#5C6675; transform:translateX(-1px);
+          padding-left:3px; border-left:1px solid #2A3442; line-height:14px; }
+        .tlrow { display:flex; gap:2px; height:13px; margin-bottom:3px; }
+        .tlsecs { height:26px; }
+        .tlsec { position:relative; min-width:0; padding:0 3px; border:1px solid; border-radius:5px; cursor:pointer;
+          display:flex; align-items:center; justify-content:flex-start; gap:2px; overflow:hidden; }
+        .tlsec:hover { filter:brightness(1.35); }
+        .tlsec.looped { outline:1.5px solid #6EA8FF; outline-offset:-1.5px; }
+        .tlsecl { font-size:10px; font-weight:700; letter-spacing:.02em; white-space:nowrap;
+          text-transform:capitalize; overflow:hidden; }
+        .tlmv { font-size:8px; opacity:.75; }
+        .tlcell { min-width:0; border-radius:3px; background:#1A222E; }
+        /* the playhead sits above every lane so you can read the whole column at once */
+        .tlhead { position:absolute; top:14px; bottom:0; width:2px; background:${GOLD}; border-radius:2px;
+          pointer-events:none; box-shadow:0 0 6px ${GOLD}AA; }
+        @media (max-width:560px) { .tlgut { flex-basis:44px; } .tlglbl { font-size:8.5px; } }
         .sgrp { border:1.5px solid #2A3442; border-radius:13px; padding:2px 11px 9px; margin-top:11px; }
         .sgrp .arr:first-of-type { border-top:none; padding-top:2px; }
         .arr.playnow { background:#161F2C; border-radius:10px; padding:9px 10px 10px; border-top-color:transparent; margin-top:6px; }
@@ -2856,6 +2895,104 @@ export default function ProgressionWheel() {
             melody grid · <b>▸ melody</b> open the grid. Pick <b>🎸 Guitar / 🎤 Voice</b> above.
             Each section's <b>🥁</b> menu gives it its own drum kit (or silence) for contrast — build
             dynamics by dropping the drums out on a verse and bringing them back for the chorus.
+          </p>}
+          {/* ---- the arrangement at a glance ----
+              The section list below tells you everything, one section at a time, which is no way
+              to see whether the song has a shape. This is the whole thing on one line: blocks
+              sized by how long each section actually is, and a lane per element underneath, so
+              the drops, the drum drop-outs and the parts coming in are visible as a picture. */}
+          {sections.insts.length > 1 && (() => {
+            const total = sections.totalBars || 1;
+            // what each section actually plays, resolved the same way the scheduler resolves it
+            const drumsIn = base => {
+              const dd = DRUMS[secDrum[base] || drum];
+              return !!(dd && dd.pattern);
+            };
+            const nParts = Math.max(0, ...Object.values(secMelos).map(s => nLayers(s)));
+            const partIn = (d, i) => {
+              const sec = secMelos[d.key];
+              const ly = sec && sec.layers[i];
+              if (!ly || !ly.flat || !ly.flat.length) return false;
+              return layerGain(ly, sec.layers.some(x => x.solo)) > 0;   // mute and solo both count
+            };
+            const lanes = [
+              { name: "Drums", on: d => drumsIn(d.base) },
+              { name: "Chords", on: () => true },
+              ...Array.from({ length: nParts }, (_, i) => ({ name: LAYER_NAMES[i], on: d => partIn(d, i) })),
+            ];
+            // One block per *run* of consecutive same-section instances, not per instance. Eight
+            // passes of a drop is one 32-bar drop to anybody reading the arrangement, and drawing
+            // it as eight slivers turns a 200-bar structure into unreadable confetti.
+            // Runs are keyed on the structure's own name for the section, not its letter — a plan
+            // can call two adjacent letter-U sections "Layer up" and "Build", and they are not the
+            // same thing to read even though they colour alike.
+            const runs = [];
+            sections.insts.forEach(d => {
+              const r = runs[runs.length - 1];
+              if (r && r.sec === d.sec) { r.items.push(d); r.bars += d.nbars; }
+              else runs.push({ base: d.base, sec: d.sec, word: d.word, items: [d], bars: d.nbars, startBar: d.startBar });
+            });
+            // a lane is full, empty, or partly on across the run's instances
+            const laneState = (l, r) => {
+              const n = r.items.filter(l.on).length;
+              return n === 0 ? "off" : n === r.items.length ? "on" : "part";
+            };
+            // a ruler tick roughly every eighth of the song, rounded to a sensible bar count
+            const step = [4, 8, 16, 32, 64].find(s => total / s <= 12) || 128;
+            const ticks = [];
+            for (let bar = 0; bar < total; bar += step) ticks.push(bar);
+            return (
+              <div className="tl">
+                <div className="tlgut">
+                  <div className="tlglbl tlgruler" />
+                  <div className="tlglbl tlgsec">{total} bars</div>
+                  {lanes.map(l => <div key={l.name} className="tlglbl">{l.name}</div>)}
+                </div>
+                <div className="tltrk">
+                  <div className="tlruler">
+                    {ticks.map(bar => <span key={bar} className="tltick" style={{ left: (bar / total * 100) + "%" }}>{bar + 1}</span>)}
+                  </div>
+                  <div className="tlrow tlsecs">
+                    {runs.map(r => {
+                      const acc = SEC_COL[r.base] || "#8B94A3";
+                      const now = playing && r.items.some(d => d.key === curInst);
+                      const looped = r.items.some(d => d.key === loopSec);
+                      const mv = secMove[r.base] && MOVES[secMove[r.base]];
+                      const n = r.items.length;
+                      return (
+                        <button key={r.startBar} className={"tlsec" + (now ? " now" : "") + (looped ? " looped" : "")}
+                          style={{ flex: r.bars + " 0 0%", background: acc + (now ? "44" : "22"), borderColor: acc + (now ? "" : "77") }}
+                          onClick={() => startMetro(r.startBar)}
+                          title={`${r.sec}${n > 1 ? ` ×${n}` : ""} · ${r.bars} bar${r.bars > 1 ? "s" : ""} from bar ${r.startBar + 1}`
+                            + (mv ? ` · ${mv.name}` : "") + (looped ? " · looping" : "") + " — tap to play from here"}>
+                          {/* the label is left-aligned and clipped rather than centred, so a narrow
+                              block truncates to its first letters instead of showing a word's middle */}
+                          <span className="tlsecl" style={{ color: acc }}>{r.sec}{n > 1 ? " ×" + n : ""}</span>
+                          {mv && <span className="tlmv" aria-hidden="true">🎛</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {lanes.map(l => (
+                    <div key={l.name} className="tlrow">
+                      {runs.map(r => {
+                        const st = laneState(l, r);
+                        return <div key={r.startBar} className={"tlcell " + st} style={{ flex: r.bars + " 0 0%",
+                          background: st === "off" ? undefined
+                            : (SEC_COL[r.base] || "#8B94A3") + (st === "on" ? "AA" : "55") }} />;
+                      })}
+                    </div>
+                  ))}
+                  {curSongBar >= 0 &&
+                    <div className="tlhead" style={{ left: (curSongBar / total * 100) + "%" }} />}
+                </div>
+              </div>
+            );
+          })()}
+          {tips && sections.insts.length > 1 && <p className="keytag" style={{ marginTop:6 }}>
+            The strip above is the whole song end to end — each block is a section, as wide as it is
+            long, and the lanes under it show what is playing where. Gaps in a lane are a part
+            sitting out. Tap a block to play from there.
           </p>}
           {(() => {
             const groups = [];

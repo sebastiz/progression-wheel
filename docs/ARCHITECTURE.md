@@ -78,6 +78,25 @@ contrast loops (a second progression assigned to C/B/V sections). Sections are l
 `letterFor()` for the shorthand write-out; odd-length phrases are padded even by holding the last
 chord a bar.
 
+### The arrangement strip
+
+A horizontal view of the whole song above the section list: one block per section, sized by bar
+count, with a lane per element (drums, chords, each melody part) underneath and a playhead across
+all of them (`curSongBar`, set on each bar's downbeat).
+
+Blocks are **runs of consecutive instances sharing a section name**, not instances. `reps` makes one
+instance per pass, so an eight-pass drop is eight instances; drawn separately, a 200-bar dance
+structure becomes 52 slivers of confetti. Merged, it reads as *Drop ×8*. Runs key on the plan row's
+own `sec` name rather than its letter, because a plan can call two adjacent letter-`U` sections
+"Layer up" and "Build". A lane cell over a multi-instance run is `on`, `off`, or `part` when the
+instances disagree.
+
+Widths are `flex-grow: <bars>` against `flex-basis: 0`, so the strip always fits its container and
+never scrolls sideways; labels are left-aligned and clipped, which truncates to a word's first
+letters instead of showing its middle. `SEC_COL` needs an entry for every letter `letterFor()` can
+return — a missing one falls through to grey, and `npm test` checks both coverage and that no two
+non-neutral letters share a colour.
+
 ## The song document
 
 `src/song.js` holds one serialisable shape used by *both* the sketch and the shareable link, so

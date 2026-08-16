@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+- **The arrangement strip — see the whole song at once.** Above the section list, a horizontal view
+  of the song end to end: one block per section, as wide as that section is long, with bar numbers
+  across the top. Repeated sections are one block, so a dance structure reads as *Groove ×8 · Drop
+  ×8* rather than fifty-two identical slivers. Tap a block to play from there; a playhead runs
+  across it as it plays.
+  - **A lane per element** underneath — Drums, Chords and each melody part — lit where it plays and
+    dark where it doesn't. This is the bit that earns its place: an arrangement with every lane lit
+    end to end is exactly the one that sounds flat, and now you can see that without pressing Play.
+    A half-lit lane means the part is in for some passes of a section and out for others.
+  - **Every section type has its own colour now**, chosen by what it does — statements green, hooks
+    gold, lifts blue and pink, the drop hot, breakdowns cold. Nine of the sixteen section types had
+    no colour at all, which meant a dance structure drew as one grey smear; `npm test` now checks
+    every section letter has a colour and that no two of them collide.
+  Version bumped to 4.49.0.
 - **Stem export — the sketch arrives in your DAW as separate tracks.** A new **↓ Export stems**
   button beside *Export audio* bounces the drums, the chords and each melody part to its own .wav
   and hands you all of them as a single .zip. Drop the unzipped folder on a timeline and every
