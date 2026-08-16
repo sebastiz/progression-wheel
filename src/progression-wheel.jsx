@@ -3387,7 +3387,7 @@ export default function ProgressionWheel() {
             <select value={varyAmt} onChange={e => { const v = +e.target.value;
                 setVarySt({ key: progId, val: v }); if (narId) applyNarrative(narId, v); }}
               style={{ flex:"0 1 150px" }}
-              title="How much each repeat of a section differs from its first time round — a new landing note, a pushed phrase, a note taken away. The first time is always left alone.">
+              title="How much each repeat of a section differs from its first time round — a new landing note, a note added or taken away, a phrase pushed early, a held note broken in two. The first time is always left alone.">
               {VARY_LEVELS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
             </select>
             {narUndo && narSel.key === progId && <button className="mini" onClick={undoNarrative}

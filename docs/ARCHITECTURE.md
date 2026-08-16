@@ -438,20 +438,33 @@ Two data tables, both producing the same thing — bars of scale-degree columns:
 
 A narrative writes the same tune into every pass of a section, so four choruses came back note for
 note the same. `varyBars` edits the later passes — pass 0 is left alone, because it is the thing the
-others are variations of. Seven small edits (`VARIATIONS`) cover both pitch and rhythm: a different
-landing note (`ending`) or opening note, a passing note through a leap the phrase already makes, a
-phrase pushed a column early, an interior note lifted to its neighbour, a note taken away, and a held
-note released early (`clip` — the only one with anywhere to go in a bar of two long notes). Each
-returns whether it found somewhere to act, and `varyBars` walks a rotation of the list until it has
-made `amount` edits, so two edits are always two *different* kinds of edit.
+others are variations of. Thirteen small edits (`VARIATIONS`) move a repeat along three axes:
+
+| Axis | Edits |
+| --- | --- |
+| Pitch | `ending`, `opening` (a different landing or starting note), `neighbour` (one note lifted a step) |
+| Rhythm | `clip` / `extend` (a held note released early or run on), `push` / `delay` (a phrase early or late) |
+| Note count | `add`, `passing`, `split`, `turn` add notes; `thin`, `merge` take them away |
+
+Each returns whether it found somewhere to act. `varyBars` walks one trip round a rotation of the
+list until it has made `amount` edits, so two edits are always two *different* kinds of edit. Three
+pairs are each other's mirror (`clip`/`extend`, `push`/`delay`, `split`/`merge`), so an edit counts
+only if it actually changed the bars, and the walk carries on past `amount` while the result still
+matches where it started — otherwise two edits could cancel and hand back an identical repeat.
 
 The one subtlety worth keeping: **every hash is seeded from the role alone, never from the pass.**
 The pass is then added as a plain `+ pass` to each choice — which variation, which bar, which note,
 which landing. That makes consecutive repeats step one place along by construction. Folding the pass
 into the hash instead scrambles the choices, and two repeats then coincide often enough to hear it
-(9% of narrative × role combinations in the test, against 0% now). `nearDegs` reaches outwards rather
-than clamping at the edges of the scale for the same reason: a phrase ending on the tonic at the
-bottom of the octave has nothing below it, and clamping would give every pass the same note.
+(9% of narrative × role combinations in the test, against 0% now). Two consequences of the same
+reasoning: `nearDegs` reaches outwards rather than clamping at the edges of the scale, because a
+phrase ending on the tonic at the bottom of the octave has nothing below it and clamping would give
+every pass the same note; and `thin` and `neighbour` index over *every* note in a bar rather than the
+interior ones, because a three-note bar has exactly one interior note and every pass would edit it.
+
+`wouldMerge` is the counterpart on the other side: a note given the same degree as a note touching it
+is absorbed into it, so "move one note" quietly becomes "lose one note". Any edit that repitches an
+existing note excludes the degrees its abutting neighbours already hold.
 
 The amount is a UI-level choice (`varySt`, like `narSel`) rather than part of the song document —
 what gets saved is the melodies it produced.
