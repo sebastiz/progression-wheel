@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+- **The app is in four tabs now, instead of one very long page.** **Write**, **Sound**, **Arrange**
+  and **Save**. Choosing a key, drawing automation and exporting stems used to share one column, so
+  you scrolled past the wheel — a whole screen you stop needing after the first minute — to reach
+  the arrangement every single time.
+
+  | | Before | After |
+  | --- | --- | --- |
+  | Opening screen | 2,283px · 58 controls | 968–1,576px · 31 controls |
+  | Working on a song | **4,613px (5.1 screens) · 190 controls** | **3,055px on the busiest tab · 21–30 controls on the others** |
+
+  - **Play, tempo, tap, A/B, undo and redo moved into the transport bar** and stay on every tab —
+    they act on the song, not on the page you happen to be looking at. The keyboard shortcuts were
+    already global and still are.
+  - **◑ Hide wheel** folds the circle away on Write once you've picked a progression, taking that
+    tab from 1.8 screens to 1.1. The chord strip stays either way, since that is the part you edit.
+  - **The Sound tab is grouped** — *Instruments*, *Groove*, *Feel & space* — rather than four
+    undifferentiated rows of dropdowns. The time signature menu no longer clips its own labels.
+  Version bumped to 4.58.0.
 - **Choose how many chords the loop has.** A **Chords** menu next to **Key**, from two to eight.
   Fewer takes the first few of the progression; more adds diatonic chords it hasn't used yet, so a
   four-chord axis grown to six gains a ii and a iii rather than simply repeating. Per-chord edits,
