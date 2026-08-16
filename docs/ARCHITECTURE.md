@@ -17,7 +17,7 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/midi.js` | writing and reading Standard MIDI Files | theory, patterns |
 | `src/pitch.js` | the McLeod-Pitch-Method transcriber | — |
 | `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
-| `src/song.js` | the serialisable song document, melody packing, link encoding | — |
+| `src/song.js` | the serialisable song document, melody packing, link encoding | melody |
 | `src/wav.js` | 16-bit PCM wav writing | — |
 | `src/zip.js` | a store-only ZIP writer, for the stem archive | — |
 | `src/progression-wheel.jsx` | the component, the fingering diagrams and the score | all of the above |
@@ -158,7 +158,18 @@ resolution in its length, so switching rhythms moves each note to the column tha
 same point in the bar (lossless going finer; folded onto the nearest column going coarser).
 
 Swing delays the offbeat of each *strum-pattern* pair, so on a sixteenth pattern it is a sixteenth
-shuffle rather than an eighth one.
+shuffle rather than an eighth one. It is a continuous amount (0 → ~0.6 of a step), seeded from the
+pattern's own `swing` flag; **Feel** (humanise) adds a few milliseconds of push/pull and some
+velocity variation on top.
+
+Both humanise and the "random" arpeggiator draw from `hash01(n)` — a deterministic integer hash —
+rather than `Math.random`. The variation has to be *fixed*, or a stem bounce would drift out of
+time with the mix it came from and the two would no longer sum.
+
+An arpeggiator or a note gate is a rhythm too, and can be finer than anything else in the song, so
+`fxTicks` folds their resolution into the scheduler's tick count (an lcm, as with the patterns).
+Without it the extra steps fall between ticks and are dropped — which sounds exactly like an arp
+running at half the rate you asked for.
 
 ### Drums and the sidechain
 
@@ -174,12 +185,22 @@ chord's, so the harmony moves by step instead of leaping in root position; the b
 The scheduler recomputes it only on a chord change and hands the result to both the synth and
 sampler paths. `accentAt` supplies positional velocity — nothing had any before.
 
-**Sidechain**: the pitched bus routes `reverb → filter → duck → master` while drums and click
-connect to `master` directly, so the kick lands in the hole it makes instead of ducking itself. `duckAt` writes
-the envelope directly — cancel, full level at the hit, ~6 ms linear dip to `1 - amount`, linear
-recovery over ~1.6 eighths — rather than running a real compressor with a detector, because the
-scheduler already knows exactly when each kick lands. The scheduler fires it on any slot containing
-`K` or `B`, so per-section kits and drum-free sections pump correctly for free.
+**Sidechain**: ducking happens **per source**, not on the master. Each pitched source has its own
+duck node on the way into the reverb bus — `cduck` for the chords, `partDuck[i]` for each melody
+part — and the reverb *return* has one too (`wetDuck`, at the global amount) so the tail keeps
+breathing the way it did when a single duck sat on the master. Drums and click connect to `master`
+directly, so the kick lands in the hole it makes instead of ducking itself.
+
+This started as one gain node on the master path, which meant every pitched source pumped by
+exactly the same amount. Per-source nodes are what let a bassline duck hard under a pad that barely
+moves — `layerFx(ly).duck` is the part's own depth, and `null` means "follow the global Pump".
+Ducks are plain scheduled gains, so they stay linear and the stems still sum to the mix.
+
+`duckAt` writes the envelope directly — cancel, full level at the hit, ~6 ms linear dip to
+`1 - amount`, linear recovery over ~1.6 eighths — rather than running a real compressor with a
+detector, because the scheduler already knows exactly when each kick lands. The scheduler fires it
+on any slot containing `K` or `B`, so per-section kits and drum-free sections pump correctly for
+free.
 
 Drum pattern, kit and pump are keyed by progression (like tempo and strum pattern) via
 `DRUM_DEFAULT` / `KIT_DEFAULT` / `PUMP_DEFAULT`, so the dance progressions arrive grooving and
@@ -197,15 +218,35 @@ never reach zero because the ramps are exponential.
 
 ### Melody parts
 
-A section holds `layers: [{bars, flat, instr, oct, vol, mute, solo}]` — up to `MAX_LAYERS`, each with
+A section holds `layers: [{bars, flat, instr, oct, vol, mute, solo, send, ...LAYER_FX}]` — up to
+`MAX_LAYERS`, each with
 its own instrument and its own `LAYER_INK` colour. `oct` is what separates a bassline from a topline,
 since the grid itself only ever shows one octave of scale degrees; it is applied in three places
 (playback, `scoreMeasures`, MIDI export). `layerGain` folds level, mute and any solo in the section
 into one number, and each part plays through its own gain node into the music bus. Every rebuild of
-the list goes through `cloneLayer`, so an edit meant for a part's notes cannot drop its mix settings. Every melody edit goes through `barsOf`/`flatOf`/`putLayer`, so the
+the list goes through `cloneLayer`, so an edit meant for a part's notes cannot drop its mix settings.
+
+Everything a part carries beyond its notes lives in `LAYER_FX` (melody.js) — one list of
+`[field, default]` pairs, read by the normaliser, `cloneLayer`, `putSec` and song.js's
+`packLayer`/`unpackLayer`. Adding an effect is one line rather than five edits, four of which are
+easy to forget; melodies once vanished from saved sketches for exactly that reason. Only fields that
+differ from their default are written, so a shared link stays short.
+
+**Arpeggiator** (`ARPS`): an arped part ignores its grid and walks the notes of the chord under the
+current bar, in the chosen order, through `arpOct` octaves at `arpRate` notes per beat. It reads
+`m.voicing`, which is why the voicing is computed on every tick where the chord changes rather than
+inside the chord-playing branch — a part stem plays no chords, and an arp that saw a stale voicing
+there would follow a different harmony from the one it followed in the mix. Step indices come from
+the absolute tick, so the line is reproducible.
+
+**Note gate** (`GATES`): a 16-step open/shut pattern on the part's own gate node, read four steps
+per beat so one pattern means the same thing in 3/4 as in 4/4, and applied with `setTargetAtTime`
+because a hard step clicks. A part's chain is `gain (level·mute·solo) → gate → duck → bus`, with the
+echo send taken after the gate so a gated part throws gated repeats. Since a gate is a *sustained*
+open/shut, an all-open pattern would be a menu entry that does nothing — `npm test` rejects one. Every melody edit goes through `barsOf`/`flatOf`/`putLayer`, so the
 edit operations are resolution- and part-agnostic. MIDI export gives each part its own track and
 channel, skipping channel 9 (percussion) so a part is never voiced as a drum kit.
-- Swing delays odd eighths by a third of an eighth. Pattern length sets the meter (8 = 4/4, 6 = 3/4).
+- Swing delays odd eighths by the **Swing** amount. Pattern length sets the meter (8 = 4/4, 6 = 3/4).
 - Structure playback maps `step → bar → section entry`; loop playback pads the loop to an even bar
   count.
 

@@ -287,6 +287,45 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   }
   console.log(`melody generators: ${gens} runs across ${M.RHYTHMS.length} rhythms × 3 grids`);
 
+  /* The basslines bring their own rhythm rather than taking it from the Rhythm menu, so they need
+     their own check: each one must actually articulate. Two of the same pitch on adjacent columns
+     is how the grid stores a *tie*, so a pattern that fills every column is one held note however
+     many "notes" it thinks it wrote — which is exactly how "driving eighths" first came out as a
+     whole note on an eighth grid. */
+  {
+    const noteCount = bar => {
+      let n = 0;
+      for (let i = 0; i < bar.length; i++) {
+        const d = bar[i][0];
+        if (d == null) continue;
+        const prev = bar[i - 1] && bar[i - 1][0];
+        if (i === 0 || prev !== d) n++;
+      }
+      return n;
+    };
+    const basses = M.MELODY_PATTERNS.filter(p => /^bass/.test(p.id));
+    if (basses.length < 5) problems.push(`only ${basses.length} bassline patterns`);
+    for (const p of basses) {
+      for (const [B, sub, meter] of [[8, 2, "4/4 eighths"], [16, 4, "4/4 sixteenths"], [6, 2, "3/4"]]) {
+        const bars = p.gen({ nBars: 2, B, sub, start: 0, cols: [0, 2, 4, 6], lens: [1, 1, 1, 1], chordDegs: [0, 3] });
+        if (bars.length !== 2 || bars.some(b => b.length !== B)) { problems.push(`${p.id} on ${meter}: wrong shape`); continue; }
+        for (const bar of bars) {
+          for (const c of bar) for (const d of c)
+            if (!Number.isInteger(d) || d < 0 || d > 6) problems.push(`${p.id} on ${meter}: degree ${d} out of range`);
+          // "root on the one" is meant to be one held note; everything else has to move
+          const n = noteCount(bar);
+          if (p.id !== "bassRoot" && n < 2) problems.push(`${p.id} on ${meter}: ${n} note per bar — it fills every column, so it reads as one tied note`);
+        }
+        // and it has to follow the harmony, not sit on one degree through a chord change
+        if (p.id !== "bassRoot" && bars[0].some(c => c.length) && bars[1].some(c => c.length)) {
+          const first = bars[0].find(c => c.length)[0], second = bars[1].find(c => c.length)[0];
+          if (first === second) problems.push(`${p.id} on ${meter}: does not follow the chord change`);
+        }
+      }
+    }
+    console.log(`basslines: ${basses.length} patterns × 3 meters, all articulating and following the chords`);
+  }
+
   // the point of the whole feature: a non-straight rhythm must not land everything on the beat
   const onBeatFraction = bars => {
     let on = 0, all = 0;
@@ -729,12 +768,25 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (JSON.stringify(M.unpackBars(M.packBars(empty))) !== JSON.stringify(empty))
     problems.push("an empty melody does not round trip");
 
+  // key order is an implementation detail; compare on content so a reordered field is not a failure
+  const canon = v => Array.isArray(v) ? v.map(canon)
+    : (v && typeof v === "object") ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
+  const same = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+  // Effects are stored per part, so they have to survive a save and a link as surely as the notes
+  // do — a shared arp that comes back as a plain grid is the same class of bug as a lost melody.
+  const withFx = (ly, fx = {}) => ({ ...ly,
+    ...Object.fromEntries(M.LAYER_FX.map(([k, d]) => [k, fx[k] != null ? fx[k] : d])) });
   const melos = { progId: "edm", secs: { V1: { ids: ["b0", "b1"], layers: [
-    { bars, instr: "flute", oct: 0, vol: 1, mute: false, solo: false, send: 0.4 },
-    { bars, instr: "synth_bass_1", oct: -2, vol: 0.9, mute: true, solo: false, send: 0 },
+    withFx({ bars, instr: "flute", oct: 0, vol: 1, mute: false, solo: false, send: 0.4 },
+      { arp: "updown", arpRate: 6, arpOct: 3, gate: "tri", duck: 0.72 }),
+    withFx({ bars, instr: "synth_bass_1", oct: -2, vol: 0.9, mute: true, solo: false, send: 0 }),
   ] } } };
   const back = M.unpackMelos(M.packMelos(melos));
-  if (JSON.stringify(back) !== JSON.stringify(melos)) problems.push("melodies do not round trip through a sketch");
+  if (!same(back, melos)) problems.push("melodies do not round trip through a sketch");
+  // and every effect must come back with the value it went in with, not its default
+  for (const [k] of M.LAYER_FX)
+    if (JSON.stringify(back.secs.V1.layers[0][k]) !== JSON.stringify(melos.secs.V1.layers[0][k]))
+      problems.push(`part effect \`${k}\` does not survive a save (got ${JSON.stringify(back.secs.V1.layers[0][k])})`);
 
   const doc = M.makeSong({ name: "test", progId: "edm", tonic: 0, genre: "House", emotion: null,
     mode: null, colour: "triads", patId: "house16", drum: "house16d", secDrum: { V: "deep" },
@@ -749,7 +801,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (round.progId !== doc.progId || round.bpm !== doc.bpm || round.kit !== doc.kit || round.delayId !== doc.delayId)
       problems.push("the link lost part of the arrangement");
     const rm = M.songMelos(round);
-    if (JSON.stringify(rm) !== JSON.stringify(melos)) problems.push("the link lost the melodies");
+    if (!same(rm, melos)) problems.push("the link lost the melodies");
   }
   if (await M.decodeSong("dnot-valid-base64!!") !== null) problems.push("a corrupt link should decode to null, not throw");
   if (await M.decodeSong("") !== null) problems.push("an empty link should decode to null");
@@ -830,6 +882,101 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`longest structure: ${longest.n} at ${longest.b} bars on a four-chord loop`);
 }
 
+/* ---- the melody lead voices ----
+   Every voice in the Lead menu, played across the range it will actually be asked for. The dance
+   voices added filter envelopes and pitch bends, both of which are easy to get wrong in ways that
+   throw in real Web Audio and never in a stub — a cutoff above Nyquist and an exponential ramp
+   through zero are the two classics. */
+{
+  const NYQ = 44100 / 2;
+  let checked = 0;
+  for (const [id] of M.LEAD_VOICES) {
+    if (M.isGM(id)) continue;                       // sampled voices are not leadNote's business
+    for (const midi of [36, 48, 60, 72, 84]) {      // sub-bass up to a topline
+      nodes.length = 0;
+      const dest = baseNode("dest");
+      const before = problems.length;
+      try { M.leadNote(ctx, 1.5, midi, 0.4, id, false, dest); }
+      catch (e) { problems.push(`lead ${id}@${midi} threw: ${e.message}`); continue; }
+      const oscs = nodes.filter(n => n._kind === "osc");
+      if (!oscs.length) { problems.push(`lead ${id} produced no oscillators`); continue; }
+      for (const o of oscs) {
+        if (!o._started) problems.push(`lead ${id} has an unstarted oscillator`);
+        if (o._t1 == null) problems.push(`lead ${id} has an oscillator that never stops`);
+        const hz = o.frequency.value;
+        if (!(hz > 0) || !Number.isFinite(hz)) problems.push(`lead ${id}@${midi} oscillator at ${hz} Hz`);
+        if (hz > NYQ) problems.push(`lead ${id}@${midi} oscillator above Nyquist (${Math.round(hz)} Hz)`);
+      }
+      // a filter sweep that runs past Nyquist throws when the browser applies it
+      for (const f of nodes.filter(n => n._kind === "biquad"))
+        for (const ev of f.frequency._events.concat([{ v: f.frequency.value }]))
+          if (ev.v > NYQ) problems.push(`lead ${id}@${midi} filter cutoff ${Math.round(ev.v)} Hz is above Nyquist`);
+      if (problems.length === before) checked++;
+    }
+  }
+  console.log(`lead voices: ${checked} voice×register combinations clean`);
+  // the dance voices are the point of the new ones — check they are actually distinct in character
+  const S = M.LEAD_SPECS;
+  for (const id of ["supersaw", "hoover", "acid", "reese", "sub", "stab"])
+    if (!S[id]) problems.push(`dance voice ${id} is missing from LEAD_SPECS`);
+  if (S.supersaw && S.supersaw.parts.length < 5) problems.push("a supersaw needs a stack of detuned saws");
+  // detuning is the whole sound: the saws must not all sit on the same frequency
+  if (S.supersaw && new Set(S.supersaw.parts.map(p => p[1])).size !== S.supersaw.parts.length)
+    problems.push("supersaw has duplicate detune multiples");
+  if (S.acid && !(S.acid.q > 8)) problems.push("the acid voice needs a resonant filter");
+  if (S.acid && !S.acid.fenv) problems.push("the acid voice needs a filter envelope");
+}
+
+/* ---- arpeggiators and note gates ---- */
+{
+  // An arp index out of the pool is either a silent step or a crash, depending on the pool. Every
+  // mode is checked across every pool size it can meet — a triad through four octaves is 3..24.
+  let combos = 0;
+  for (const a of M.ARPS) {
+    for (let n = 1; n <= 24; n++) {
+      const base = Math.max(1, Math.min(n, 3));
+      const seen = new Set();
+      for (let i = 0; i < 64; i++) {
+        const k = a.seq(i, n, base);
+        if (!Number.isInteger(k) || k < 0 || k >= n) {
+          problems.push(`arp ${a.id}: step ${i} of a ${n}-note pool gave index ${k}`);
+          break;
+        }
+        seen.add(k);
+      }
+      // a mode that only ever lands on one note is not an arpeggio
+      if (n > 2 && seen.size < 2) problems.push(`arp ${a.id} never leaves note ${[...seen][0]} of ${n}`);
+      combos++;
+    }
+    // determinism is what lets a stem bounce match the mix it came from
+    const once = Array.from({ length: 32 }, (_, i) => a.seq(i, 7, 3));
+    const again = Array.from({ length: 32 }, (_, i) => a.seq(i, 7, 3));
+    if (once.join() !== again.join()) problems.push(`arp ${a.id} is not deterministic`);
+  }
+  console.log(`arpeggiators: ${M.ARPS.length} modes × ${combos / M.ARPS.length} pool sizes, all in range`);
+  // hash01 stands in for randomness everywhere that has to stay reproducible
+  if (M.hash01(12345) !== M.hash01(12345)) problems.push("hash01 is not deterministic");
+  const hs = Array.from({ length: 2000 }, (_, i) => M.hash01(i));
+  if (hs.some(h => !(h >= 0 && h < 1))) problems.push("hash01 escaped 0..1");
+  const buckets = new Array(10).fill(0);
+  hs.forEach(h => buckets[Math.floor(h * 10)]++);
+  if (buckets.some(b => b < 120)) problems.push(`hash01 is lumpy: ${buckets.join(",")}`);
+  console.log(`hash01: 2000 values, flattest bucket ${Math.min(...buckets)}, fullest ${Math.max(...buckets)}`);
+
+  const RATES = M.ARP_RATES.map(([r]) => r);
+  if (!RATES.includes(4)) problems.push("no 1/16 arp rate");
+  for (const [r] of M.ARP_RATES) if (!(r > 0) || !Number.isInteger(r)) problems.push(`arp rate ${r} is not a whole number of notes per beat`);
+
+  for (const g of M.GATES) {
+    if (!/^[x-]+$/.test(g.pat)) problems.push(`gate ${g.id} has characters other than x and -`);
+    if (g.pat.length !== 16) problems.push(`gate ${g.id} is ${g.pat.length} steps, expected 16`);
+    // an all-shut gate silences the part for good, which no menu entry should be able to do
+    if (!g.pat.includes("x")) problems.push(`gate ${g.id} never opens`);
+    if (!g.pat.includes("-")) problems.push(`gate ${g.id} never closes — it does nothing`);
+  }
+  console.log(`note gates: ${M.GATES.length} patterns, ${M.GATES.map(g => g.pat.split("x").length - 1).join("/")} open steps`);
+}
+
 /* ---- the zip writer, and the stem gating that fills it ----
    A malformed archive is the worst failure mode here: the download succeeds, and the producer
    only finds out when their unarchiver refuses it. So the bytes get parsed back structurally
@@ -905,11 +1052,21 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     [/if \(clickRef\.current && !m\.stem\)/, "the metronome click is not excluded from stems"],
   ];
   for (const [re, msg] of GATES) if (!re.test(tickBody)) problems.push(`stem gating: ${msg}`);
+  /* The chord voicing is shared state, not sound: an arpeggiated part reads it to know what the
+     chord is made of. If the update sat inside the chords-only branch, a part stem — which plays
+     no chords — would arpeggiate a stale voicing and follow different harmony from the mix. So the
+     update has to come *before* the `m.stem` gate, not inside it. */
+  const voiceAt = tickBody.indexOf("m.voicing = voiceChord");
+  const chordGateAt = tickBody.indexOf('m.stem.kind === "chords"');
+  if (voiceAt < 0) problems.push("stem gating: the voicing update has moved out of emitTick");
+  else if (chordGateAt >= 0 && voiceAt > chordGateAt)
+    problems.push("stem gating: the voicing is computed inside the chords-only branch — an arp in a part stem would follow the wrong chord");
   // the pump is deliberately outside the drum gate — it shapes the pitched bus, so it belongs in
   // every pitched stem even though the kick triggering it does not
-  const pumpLine = tickBody.match(/^.*duckAt\(m\.duck.*$/m);
-  if (!pumpLine) problems.push("stem gating: the sidechain pump has moved out of emitTick");
-  else if (/m\.stem/.test(pumpLine[0])) problems.push("stem gating: the pump is gated on m.stem — pitched stems would lose the sidechain");
+  const pumpLines = [...tickBody.matchAll(/^.*duckAt\(m\.(cduck|wetDuck|partDuck\[li\]).*$/gm)].map(x => x[0]);
+  if (pumpLines.length < 3) problems.push(`stem gating: expected the pump on the chord bus, the reverb return and each part; found ${pumpLines.length}`);
+  for (const ln of pumpLines)
+    if (/m\.stem/.test(ln)) problems.push("stem gating: a sidechain duck is gated on m.stem — that stem would lose its pumping");
   console.log(`stem gating: ${GATES.length} sources gated, pump left on the pitched bus`);
 }
 

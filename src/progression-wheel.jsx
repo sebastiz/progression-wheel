@@ -7,7 +7,7 @@ import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyM
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
-import { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
@@ -445,6 +445,8 @@ export default function ProgressionWheel() {
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
   const [secMove, setSecMove] = useState({});
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
+  const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
+  const [humanise, setHumanise] = useState(0);                  // timing + velocity looseness, 0..1
   // Undo/redo over the whole song document. Snapshots are cheap (the same shape the sketch and the
   // link use) and taken after the fact, so a tool you experiment in can always be walked back.
   const [past, setPast] = useState([]);
@@ -491,7 +493,8 @@ export default function ProgressionWheel() {
   const loopRef = useRef(null);                             // { from, len } bar window the scheduler confines to
   const melDragRef = useRef(null);
   const metroRef = useRef(null);
-  const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(false);
+  const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(0);
+  const humRef = useRef(0), barBeatsRef = useRef(4);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
   const secDrumRef = useRef({});
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
@@ -865,7 +868,11 @@ export default function ProgressionWheel() {
   const pump = pumpSt.key === progId ? pumpSt.val : (PUMP_DEFAULT[progId] || "off");
   // a dotted eighth is the dance default; everything else starts dry
   const delayId = delaySt.key === progId ? delaySt.val : (DRUM_DEFAULT[progId] ? "8d" : "off");
-  bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = !!rhythm.swing;
+  // Swing is a dial now, not a switch. The rhythm pattern's own `swing` flag sets the starting
+  // point; the user can then push it anywhere from straight to nearly triplet.
+  const swingAmt = swingSt.key === progId ? swingSt.val : (rhythm.swing ? 0.33 : 0);
+  bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = swingAmt;
+  humRef.current = humanise;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
   secDrumRef.current = secDrum;
   kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0; delayRef.current = delayId;
@@ -873,6 +880,7 @@ export default function ProgressionWheel() {
   const meloBeats = rhythm.pattern.length;                  // grid columns per bar (6 in waltz time, 16 on a sixteenth rhythm)
   const meloSub = subOf(rhythm);                            // columns per beat: 2 = eighths, 4 = sixteenths
   const barBeats = beatsOf(rhythm);                         // 4 in common time, 3 in waltz time
+  barBeatsRef.current = barBeats;
   // How finely the scheduler has to tick this bar: enough for the strum pattern and for every
   // drum pattern that could play (the global one plus any per-section override). Computed over
   // the whole song rather than per bar, so the step counter stays coherent as sections change.
@@ -882,7 +890,7 @@ export default function ProgressionWheel() {
       .map(d => d.pattern.length);
     return lens.reduce((a, b) => lcm(a, b), meloBeats);
   }, [drum, secDrum, meloBeats, barBeats]);
-  tickRef.current = tickCount; subRef.current = meloSub; melRef.current = meloBeats;
+  subRef.current = meloSub; melRef.current = meloBeats;
   // bars per section instance, so a move's sweep can span exactly one instance
   moveRef.current = { moves: secMove,
     instBars: Object.fromEntries(sections.insts.map(d => [d.key, d.cs.length])) };
@@ -918,12 +926,28 @@ export default function ProgressionWheel() {
         return { bars, flat: bars.flat(), instr: (ly && ly.instr) || null,
           oct: (ly && ly.oct) != null ? ly.oct : (LAYER_DEFAULT_OCT[li] || 0),
           vol: (ly && ly.vol) != null ? ly.vol : (LAYER_DEFAULT_VOL[li] != null ? LAYER_DEFAULT_VOL[li] : 1),
-          mute: !!(ly && ly.mute), solo: !!(ly && ly.solo), send: (ly && ly.send) || 0 };
+          mute: !!(ly && ly.mute), solo: !!(ly && ly.solo), send: (ly && ly.send) || 0,
+          ...layerFx(ly) };
       });
       out[d.key] = { ids, layers };
     });
     return out;
   }, [melos, progId, sections, meloBeats]);
+  /* An arp or a note gate is a rhythm too, and can be finer than anything else in the song: a 1/32
+     arp wants eight ticks a beat, a gate four. Folded into the scheduler's resolution here rather
+     than in `tickCount` above, because the parts that carry them are only known once `secMelos` has
+     been normalised. Without this the extra steps fall between ticks and are silently dropped —
+     which sounds like an arp running at half the rate you asked for. */
+  const fxTicks = useMemo(() => {
+    let n = 1;
+    Object.values(secMelos).forEach(sec => sec.layers.forEach(ly => {
+      const fx = layerFx(ly);
+      if (fx.arp) n = lcm(n, fx.arpRate * barBeats);
+      if (fx.gate) n = lcm(n, 4 * barBeats);
+    }));
+    return n;
+  }, [secMelos, barBeats]);
+  tickRef.current = lcm(tickCount, fxTicks);
   // measures for the staff notation: chord + melody events per bar, mirroring the MIDI flatten
   const scoreMeasures = useMemo(() => {
     const bars = (structBars && structBars.length) ? structBars : chords.map(c => ({ chord: c }));
@@ -984,7 +1008,7 @@ export default function ProgressionWheel() {
     const sec = secMelos[key], prev = secs[key] || {};
     const base = sec ? sec.layers.map(l => ({ bars: dupBars(l.bars), instr: l.instr,
                          oct: l.oct || 0, vol: l.vol == null ? 1 : l.vol, mute: !!l.mute, solo: !!l.solo,
-                         send: l.send || 0 }))
+                         send: l.send || 0, ...layerFx(l) }))
                      : (prev.layers || [{ bars: [], instr: null }]);
     setMelos({ progId, secs: { ...secs, [key]: {
       ids: sec ? sec.ids : prev.ids,
@@ -995,7 +1019,7 @@ export default function ProgressionWheel() {
   // part's register, level, mute and solo survive edits that only meant to touch its notes.
   const cloneLayer = ly => ({ bars: dupBars(ly.bars), instr: ly.instr,
     oct: ly.oct || 0, vol: ly.vol == null ? 1 : ly.vol, mute: !!ly.mute, solo: !!ly.solo,
-    send: ly.send || 0 });
+    send: ly.send || 0, ...layerFx(ly) });
   // replace one part's bars (the shape almost every melody edit takes)
   const putLayer = (key, L, bars) => {
     const sec = secMelos[key]; if (!sec) return;
@@ -1313,23 +1337,29 @@ export default function ProgressionWheel() {
   limiter.connect(ctx.destination);
   master = ctx.createGain(); master.gain.value = 0.65; master.connect(limiter);
   }
-  // Sidechain: everything pitched runs through `duck` on its way to the master, and the kick
-  // pulls it down (see duckAt). Drums and click connect to master directly, so the kick lands
-  // in the hole it just made instead of ducking itself.
-  const duck = ctx.createGain(); duck.gain.value = 1; duck.connect(master);
-  // section-move filter, between the reverb bus and the sidechain: a build sweeps the whole
-  // pitched mix including its reverb tail, which is what makes it sound like the room opening up
+  // section-move filter: a build sweeps the whole pitched mix including its reverb tail, which is
+  // what makes it sound like the room opening up
   const filt = ctx.createBiquadFilter();
   filt.type = "lowpass"; filt.frequency.value = FILTER_OPEN; filt.Q.value = 0.8;
-  filt.connect(duck);
-  const music = makeReverb(ctx, filt);             // reverb bus for pitched instruments + melody
+  filt.connect(master);
+  /* Sidechain. This used to be one gain node on the master path, which meant every pitched source
+     pumped by exactly the same amount — fine for a demo, useless for writing dance music, where
+     the bass ducks hard and the pad barely moves. Each source now ducks on its own node on the way
+     into the reverb bus: `cduck` for the chords, one per melody part. Drums and click go straight
+     to the master, so the kick lands in the hole it just made rather than ducking itself.
+     The reverb *return* keeps a duck of its own, at the global amount, so the tail still breathes
+     the way it did when the duck sat on the master. */
+  const wetDuck = ctx.createGain(); wetDuck.gain.value = 1; wetDuck.connect(filt);
+  const music = makeReverb(ctx, filt, 1.6, 0.16, wetDuck);   // reverb bus for pitched sources
+  const cduck = ctx.createGain(); cduck.gain.value = 1; cduck.connect(music);
   // tempo-synced delay, fed by whichever parts have a send. It returns into the move filter, so
   // a build sweeps the echoes along with everything else.
   const delay = makeDelay(ctx, filt, 60 / (bpmRef.current || 120), delayRef.current);
   const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
   const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
   if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-  const m = { ctx, master, music, duck, filt, stem: stem || null, lastMoveBar: -1, partGain: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+  const m = { ctx, master, music, cduck, wetDuck, filt, stem: stem || null, lastMoveBar: -1,
+    partGain: [], partGate: [], partDuck: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
     leadLoaded: new Set(leadKey ? [leadKey] : []),
     step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     return m;
@@ -1377,20 +1407,34 @@ export default function ProgressionWheel() {
       // swing delays the offbeat of each strum-pattern pair — on a sixteenth pattern that is
       // a sixteenth shuffle, which is exactly the garage/2-step feel
       const strumStride = L / patLen;
-      if (swingRef.current && patStep != null && patStep % 2 === 1) t += tick * strumStride * 0.33;
+      if (swingRef.current && patStep != null && patStep % 2 === 1) t += tick * strumStride * swingRef.current;
+      // Humanise: a few milliseconds of push and pull, and a little velocity variation, so a
+      // pattern stops sounding typed. Derived from a hash of the tick rather than Math.random, so
+      // the "randomness" is identical on every play, render and stem bounce — otherwise a stem
+      // would drift out of time with the mix it was supposed to come from.
+      const hum = humRef.current || 0;
+      const jitter = (salt, amt) => hum ? (hash01(m.step * 131 + salt) - 0.5) * amt * hum : 0;
+      // clamped at zero: an offline render starts at t=0, and a jitter that pulled the first tick
+      // early would schedule at a negative time, which throws rather than rounding up
+      if (hum) t = Math.max(0, t + jitter(1, 0.024));
+      const humVel = v => v * (1 + jitter(2, 0.34));
       const inst = instrRef.current;
       if (realRef.current && inst !== m.lastInstr) { m.sampler.load(inst); m.lastInstr = inst; }  // switched voice mid-play
+      // The voicing is shared state, not sound: an arpeggiated part reads it to know which notes
+      // the chord is made of. It must therefore update in *every* stem, including ones where the
+      // chords themselves are silent — otherwise an arp in a part stem would follow a different
+      // chord from the one it followed in the mix.
+      if (chord && chord.name !== m.lastChordName) {
+        // pick the inversion nearest the last chord's, so the voicing moves by step through the
+        // progression instead of leaping in root position
+        m.voicing = voiceChord(chord, m.voicing);
+        m.lastChordName = chord.name;
+      }
       if (sym !== "-") {
         if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
         if (chord && (!m.stem || m.stem.kind === "chords")) {
-          // pick the inversion nearest the last chord's, once per chord change, so the voicing
-          // moves by step through the progression instead of leaping in root position
-          if (chord.name !== m.lastChordName) {
-            m.voicing = voiceChord(chord, m.voicing);
-            m.lastChordName = chord.name;
-          }
-          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.music, m.voicing);
-          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.music, m.voicing);
+          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.cduck, m.voicing);
+          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.cduck, m.voicing);
         }
       }
       let dpat = drumRef.current;                       // global drum pattern by default
@@ -1414,14 +1458,19 @@ export default function ProgressionWheel() {
       }
       const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
       const accent = accentAt(i, ticksPerBeat);    // lean on the pulse rather than hitting flat
+      const kickNow = !!dstep && /[KB]/.test(dstep);
       if (dstep) {
         if (!m.stem || m.stem.kind === "drums")
-          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current, accent);
-        // pump the pitched bus under every kick. Recovery stops just short of the next beat,
-        // so four-on-the-floor breathes fully back in right as the next kick hits.
-        // The pump belongs to the pitched bus, so it stays in every pitched stem even though the
-        // kick that triggers it does not — that is what makes the stems sum back to the mix.
-        if (pumpRef.current && /[KB]/.test(dstep)) duckAt(m.duck, t, pumpRef.current, beat * 0.8);
+          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current, humVel(accent));
+        // Pump the pitched sources under every kick. Recovery stops just short of the next beat, so
+        // four-on-the-floor breathes fully back in right as the next kick hits. The pump belongs to
+        // the pitched sources, so it stays in every pitched stem even though the kick that triggers
+        // it does not — that is what makes the stems sum back to the mix. Melody parts duck on
+        // their own nodes further down, each by its own amount.
+        if (pumpRef.current && kickNow) {
+          duckAt(m.cduck, t, pumpRef.current, beat * 0.8);
+          duckAt(m.wetDuck, t, pumpRef.current, beat * 0.8);
+        }
       }
       const mel = meloRef.current;
       if (mel) {
@@ -1435,24 +1484,34 @@ export default function ProgressionWheel() {
           mb = Math.floor(m.step / L) % nb;
         }
         const sec = sym && mel.bySym[sym];
-        if (sec && sec.layers.some(ly => ly.flat.length)) {
+        // an arpeggiated part has no written notes of its own, so "does this section sound?"
+        // has to count arps as well as grids
+        if (sec && sec.layers.some(ly => ly.flat.length || ly.arp)) {
           const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
+          /* One part's signal chain, built on first use and reused after:
+               gain (level · mute · solo) → gate (note gate) → duck (this part's sidechain) → bus
+             The echo send is taken after the gate, so a gated part throws gated repeats rather
+             than a smooth pad's worth of echo the dry signal never had. */
+          const chainOf = li => {
+            let dest = m.partGain[li];
+            if (!dest) {
+              dest = m.partGain[li] = m.ctx.createGain();
+              const gate = m.partGate[li] = m.ctx.createGain(); gate.gain.value = 1;
+              const pduck = m.partDuck[li] = m.ctx.createGain(); pduck.gain.value = 1;
+              dest.connect(gate); gate.connect(pduck); pduck.connect(m.music);
+              if (m.delay) {                       // a parallel send, so the dry part is untouched
+                const sd = m.partSend[li] = m.ctx.createGain();
+                sd.gain.value = 0; gate.connect(sd); sd.connect(m.delay.send);
+              }
+            }
+            return { gain: dest, gate: m.partGate[li], duck: m.partDuck[li] };
+          };
           // play one melody layer's column with its own voice (falling back to the global lead)
           const playLayer = (flat, voice, li, oct, gain, send) => {
             if (!flat || !flat.length || melStep == null || !gain) return;
             const N = flat.length, col = (mb * MB + melStep) % N;
-            // each part plays through its own gain into the music bus, so level, mute and solo
-            // apply to the part rather than to individual notes
-            let dest = m.partGain[li];
-            if (!dest) {
-              dest = m.partGain[li] = m.ctx.createGain();
-              dest.connect(m.music);
-              if (m.delay) {                       // a parallel send, so the dry part is untouched
-                const sd = m.partSend[li] = m.ctx.createGain();
-                sd.gain.value = 0; dest.connect(sd); sd.connect(m.delay.send);
-              }
-            }
-            dest.gain.setValueAtTime(gain * accent, t);
+            const dest = chainOf(li).gain;
+            dest.gain.setValueAtTime(gain * humVel(accent), t);
             if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, t);
             const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
             if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
@@ -1475,10 +1534,65 @@ export default function ProgressionWheel() {
               }
             });
           };
+          /* The arpeggiator. Rather than reading the grid, an arped part takes the chord under
+             this bar and walks its notes in the chosen order — so it re-follows the harmony the
+             moment you change a chord, which is the whole point of arping in a sketchpad.
+             The step index comes from the absolute tick, not a running counter, so the line is
+             identical whether it is played, rendered or bounced to a stem. */
+          const playArp = (fx, voice, li, oct, gain, send) => {
+            const mode = ARP_BY_ID[fx.arp];
+            if (!mode || !gain || !m.voicing || !m.voicing.length) return;
+            const stride = L / (fx.arpRate * barBeatsRef.current);
+            if (stride < 1 || i % Math.round(stride) !== 0) return;     // not an arp step
+            const one = m.voicing.length;                                // notes in one octave
+            const pool = [];
+            for (let o = 0; o < Math.max(1, fx.arpOct); o++)
+              for (const n of m.voicing) pool.push(n + 12 * o);
+            const stepIdx = Math.floor(m.step / Math.round(stride));
+            let midi = pool[Math.min(pool.length - 1, Math.max(0, mode.seq(stepIdx, pool.length, one)))] + 12 * (oct || 0);
+            // Four octaves of arp on a part already lifted two is a piercing 12 kHz whistle, and
+            // the same stack on a sub bass falls below hearing. Fold stray octaves back into the
+            // audible range rather than letting the two settings multiply into something unusable.
+            while (midi > 108) midi -= 12;
+            while (midi < 24) midi += 12;
+            const chain = chainOf(li);
+            chain.gain.gain.setValueAtTime(gain * humVel(accent), t);
+            if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, t);
+            const dur = (beat / fx.arpRate) * 0.92;
+            const leadKey = isGM(voice) ? voice : null;
+            if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
+            const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, chain.gain);
+            if (!sampled) leadNote(m.ctx, t, midi, dur, isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice, false, chain.gain);
+          };
           const anySolo = sec.layers.some(ly => ly.solo);
           sec.layers.forEach((ly, li) => {
             if (m.stem && !(m.stem.kind === "part" && m.stem.i === li)) return;
-            playLayer(ly.flat, ly.instr || mel.melInstr, li, ly.oct || 0, layerGain(ly, anySolo), ly.send || 0);
+            const fx = layerFx(ly);
+            const gain = layerGain(ly, anySolo), voice = ly.instr || mel.melInstr;
+            // The chain has to exist before the gate or the sidechain can be scheduled on it —
+            // both fire on ticks where the part may play no note at all.
+            if (fx.gate || fx.duck != null || pumpRef.current) chainOf(li);
+            // this part's own sidechain depth; null means "whatever the global Pump says"
+            if (kickNow) {
+              const amt = fx.duck == null ? pumpRef.current : fx.duck;
+              if (amt && m.partDuck[li]) duckAt(m.partDuck[li], t, amt, beat * 0.8);
+            }
+            // The note gate, on a four-per-beat grid so one pattern reads the same in 3/4 as in
+            // 4/4. setTargetAtTime rather than a step, or every edge clicks.
+            if (fx.gate && GATE_BY_ID[fx.gate]) {
+              const pat = GATE_BY_ID[fx.gate].pat;
+              const gsteps = barBeatsRef.current * 4;
+              const gstep = Math.floor(i * gsteps / L);
+              const open = pat[gstep % pat.length] === "x" ? 1 : 0;
+              m.partGate[li].gain.setTargetAtTime(open, t, 0.004);
+            } else if (m.partGate[li]) {
+              // Turning the gate off has to re-open it. Without this, switching the menu back to
+              // "off" while the gate happened to be shut would leave the node at zero and the part
+              // silent for the rest of the session.
+              m.partGate[li].gain.setTargetAtTime(1, t, 0.01);
+            }
+            if (fx.arp) playArp(fx, voice, li, ly.oct || 0, gain, ly.send || 0);
+            else playLayer(ly.flat, voice, li, ly.oct || 0, gain, ly.send || 0);
           });
           const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
           if (melStep != null) {
@@ -2205,6 +2319,8 @@ export default function ProgressionWheel() {
         .sgrphdr { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; }
         .sgrplbl { font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; }
         .secdrum { display:inline-flex; align-items:center; gap:4px; font-size:11px; }
+        .fxsel { font-size:11px; padding:3px 6px; border-radius:7px; background:#141C27; color:#C9D2DE;
+          border:1px solid #2A3442; max-width:150px; }
         .secdrum select { font-size:11px; padding:2px 5px; border-radius:7px; background:#141C27; color:#C9D2DE;
           border:1px solid #2A3442; max-width:130px; }
         .mbar { font-size:11px; font-weight:700; border-radius:6px; text-align:center; padding:2px 0; margin:0 1px 2px; white-space:nowrap; overflow:hidden; }
@@ -2435,6 +2551,20 @@ export default function ProgressionWheel() {
                 title="Sidechain ducking — the kick pulls the chords and melody down and lets them breathe back. Needs a drum pattern with a kick in it.">
                 {PUMPS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
+            </label>
+            {/* Swing and Feel: the two dials that decide whether a pattern sounds programmed or
+                played. Both are continuous, because the useful settings are the small ones. */}
+            <label className="selwrap" style={{ minWidth:118 }}>
+              <span className="lbl" style={{ margin:0 }}>Swing {Math.round(swingAmt * 100)}%</span>
+              <input className="lvl" type="range" min="0" max="60" value={Math.round(swingAmt * 100)}
+                onChange={e => setSwingSt({ key: progId, val: +e.target.value / 100 })}
+                title="Delay every offbeat — 0% is dead straight, ~33% is a triplet shuffle, and the small values in between are the garage and house feels" />
+            </label>
+            <label className="selwrap" style={{ minWidth:118 }}>
+              <span className="lbl" style={{ margin:0 }}>Feel {Math.round(humanise * 100)}%</span>
+              <input className="lvl" type="range" min="0" max="100" value={Math.round(humanise * 100)}
+                onChange={e => setHumanise(+e.target.value / 100)}
+                title="Humanise — nudges every hit a few milliseconds early or late and varies how hard it lands, so the grid stops sounding typed. The variation is fixed, not random, so a render sounds like what you heard." />
             </label>
             <div className={"tog" + (realSounds ? " on" : "")} onClick={() => setRealSounds(v => !v)} style={{ paddingBottom:6 }}
               title="Play real recorded instruments (loads samples when online; falls back to the built-in synth offline)">
@@ -3147,6 +3277,51 @@ export default function ProgressionWheel() {
                           {anySolo && !ly.solo && <span className="keytag" style={{ margin:0, opacity:.75 }}>another part is soloed</span>}
                         </div>
                       );
+                    })()}
+
+                    {/* The three production controls that make a part sound like dance music rather
+                        than a tune played on a synth: an arp that follows the chords, a gate that
+                        chops it into a pulse, and its own sidechain depth. */}
+                    {(() => {
+                      const ly = layerOf(sec, secL) || {};
+                      const fx = layerFx(ly);
+                      const set = patch => setLayerProp(d.key, secL, patch);
+                      return (<>
+                        <div className="row partmix" style={{ gap:10, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
+                          <span className="keytag" style={{ margin:0 }}>Arp</span>
+                          <select className="fxsel" value={fx.arp} onChange={e => set({ arp: e.target.value })}
+                            title="Ignore this part's written notes and walk the chord under each bar instead — it re-follows the harmony whenever you change a chord">
+                            <option value="">off — play the grid</option>
+                            {ARPS.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                          </select>
+                          {fx.arp && <>
+                            <select className="fxsel" value={fx.arpRate} onChange={e => set({ arpRate: +e.target.value })}
+                              title="How fast the arp runs">
+                              {ARP_RATES.map(([r, n]) => <option key={r} value={r}>{n}</option>)}
+                            </select>
+                            <select className="fxsel" value={fx.arpOct} onChange={e => set({ arpOct: +e.target.value })}
+                              title="How many octaves the arp climbs through">
+                              {[1, 2, 3, 4].map(o => <option key={o} value={o}>{o} oct</option>)}
+                            </select>
+                          </>}
+                          <span className="keytag" style={{ margin:0 }}>Gate</span>
+                          <select className="fxsel" value={fx.gate} onChange={e => set({ gate: e.target.value })}
+                            title="Chop this part into a rhythmic pulse — the trance gate. Works best on a held pad or a long arp.">
+                            <option value="">off</option>
+                            {GATES.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                          </select>
+                          <span className="keytag" style={{ margin:0 }}>Pump</span>
+                          <input className="lvl" type="range" min="-1" max="100"
+                            value={fx.duck == null ? -1 : Math.round(fx.duck * 100)}
+                            onChange={e => set({ duck: +e.target.value < 0 ? null : +e.target.value / 100 })}
+                            title="How hard the kick ducks this part. All the way left follows the global Pump; move it and this part gets its own depth — a bass that ducks hard under a pad that barely moves." />
+                          <span className="octval">{fx.duck == null ? "auto" : Math.round(fx.duck * 100)}</span>
+                        </div>
+                        {tips && fx.arp && <p className="arrnote" style={{ marginTop:-4, marginBottom:8 }}>
+                          Part {LAYER_NAMES[secL]} is arping the chords, so its grid below is not
+                          being played — clear the arp to go back to the written notes.
+                        </p>}
+                      </>);
                     })()}
 
                     <div className="seg" style={{ marginBottom:8 }}>

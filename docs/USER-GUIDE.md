@@ -128,6 +128,58 @@ part has its own **Echo** slider in its mixer row, so you can throw just the lea
 leave the bass dry. The delay returns through the section-move filter, so a build sweeps the repeats
 along with everything else.
 
+### Basslines
+
+The **Suggest** tab's pattern menu ends with seven basslines: *root on the one*, *offbeat (house)*,
+*driving eighths*, *rolling sixteenths*, *tresillo (3+3+2)*, *pumped (1 and the &-of-3)* and
+*walking the chord*. Unlike the melody patterns above them they bring their own rhythm rather than
+taking it from the **Rhythm** menu, because a bassline is defined by its rhythm far more than by its
+notes. They follow each bar's chord, so they re-voice themselves when the harmony changes.
+
+Put one on a part with a bass instrument and its octave dropped — parts C onward already default
+that way. *Driving eighths* and *rolling sixteenths* want a sixteenth **Pattern** to fit properly;
+on an eighth grid there is no room between the notes, so *driving eighths* writes quarters instead
+rather than pretending.
+
+### Arp, Gate and Pump — per part
+
+Under each part's Octave/Level/Echo row are the three controls that turn a tune played on a synth
+into something that sounds like dance music.
+
+**Arp** takes the chord under each bar and walks its notes instead of playing what's written on the
+part's grid — *Up*, *Down*, *Up & down*, *Converge*, *Thumb & top*, *Random*, *Octaves*. Set the
+rate (down to 1/32) and how many octaves it climbs. The point is that it follows the harmony: change
+a chord, reorder the loop, switch key, and the arp re-writes itself. Nothing to re-enter. While a
+part is arping its grid is ignored — clear the Arp menu to go back to the written notes.
+
+**Gate** chops the part into a rhythmic pulse — the trance gate. *Eighths*, *Sixteenth run*,
+*Offbeat eighths*, *Trance gate*, *Dotted*, *Stutter*, *Tresillo*, *Half-time*. It works best on
+something that would otherwise be held: a pad, a long chord, a slow arp. The echo send is taken
+after the gate, so a gated part throws gated repeats rather than smearing over its own gaps.
+
+**Pump** is that part's own sidechain depth. Left at *auto* it follows the global **Pump** menu;
+move it and the part gets its own. This is what separates a mix that pumps from one that ducks: the
+bass and the stabs move hard under the kick while the pad barely breathes.
+
+### Swing and Feel
+
+Two sliders in the top panel, next to Pump.
+
+**Swing** delays every offbeat. Dead straight at 0%, a triplet shuffle around 33% — but the useful
+settings are the small ones in between, which is where the house and UK garage feels live.
+
+**Feel** is humanise: it nudges each hit a few milliseconds early or late and varies how hard it
+lands, so a programmed pattern stops sounding typed. The variation is fixed rather than random, so
+what you render is exactly what you heard.
+
+### Dance instruments
+
+The **Lead** menu (and each part's own instrument menu) has six voices built for this, under
+*Synth (no download)*: **Supersaw** (the trance/EDM wall of detuned saws), **Hoover** (the rave
+stab that slides down into the note), **Acid 303** (resonant, squelchy — try it with an arp),
+**Reese bass** (the detuned drum-and-bass growl), **Sub bass**, and **House stab**. They need no
+download and work offline.
+
 ### The arrangement strip
 
 Above the section list, once a structure is chosen, is the whole song on one line: a block per
@@ -172,7 +224,8 @@ dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling
   *Hip-hop 16ths*, *Footwork*) can be used with any rhythm — an eighth-note strum with a sixteenth
   kit works fine, and so does the reverse.
 - **Swing** on a 16ths rhythm is a sixteenth shuffle rather than an eighth one — that's the UK
-  garage and 2-step feel. Try *Swung 16ths* with *UK garage 2-step*.
+  garage and 2-step feel. Try *Swung 16ths* with *UK garage 2-step*, then pull the **Swing** slider
+  back to somewhere in the teens, which is where that feel actually sits.
 
 ### Dance kits and the pump
 

@@ -267,7 +267,8 @@ const GM_NAMES = `
 const GM_PROGRAM = Object.fromEntries(GM_NAMES.map((n, i) => [n, i]));
 // the built-in synth voices aren't GM at all, so map each to its nearest General MIDI equivalent
 const SYNTH_PROGRAM = { synth:81, sine:80, triangle:80, square:80, saw:81, pluck:25, bell:11,
-  musicbox:10, ep:4, strings:48, brass:61, organ:16, voice:53, glass:88 };
+  musicbox:10, ep:4, strings:48, brass:61, organ:16, voice:53, glass:88,
+  supersaw:81, hoover:81, acid:87, reese:39, sub:38, stab:62 };
 // program number for anything the app can voice: a GM key, a synth id, or nothing recognisable
 const programOf = (key, fallback = 0) => {
   const k = gmKey(key);
@@ -562,7 +563,9 @@ function playLeadSampled(sampler, kind, t, midi, dur, dest) {
   return sampler.play(kind, t, midi, 0.55, dur, dest);   // false if no loaded anchor is close → synth covers this note
 }
 // a convolution reverb bus: input node feeding a dry path + a wet (reverb) path
-function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16) {
+/* `wetDest` lets the caller intercept the reverb return — the sidechain routes it through its own
+   duck node so the tail keeps pumping even though the dry signals now duck individually. */
+function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16, wetDest = null) {
   const rate = ctx.sampleRate, len = Math.max(1, Math.floor(rate * seconds));
   const ir = ctx.createBuffer(2, len, rate);
   for (let ch = 0; ch < 2; ch++) {
@@ -573,7 +576,7 @@ function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16) {
   const wet = ctx.createGain(); wet.gain.value = mix;
   const input = ctx.createGain(); input.gain.value = 1;
   input.connect(dest);                    // dry
-  input.connect(conv); conv.connect(wet); wet.connect(dest);   // wet
+  input.connect(conv); conv.connect(wet); wet.connect(wetDest || dest);   // wet
   return input;
 }
 
@@ -587,6 +590,10 @@ const LEAD_VOICES = [
   ["pluck","Pluck"], ["bell","Bell"], ["musicbox","Music box"],
   ["ep","Electric piano"], ["strings","Strings"], ["brass","Brass"],
   ["organ","Organ"], ["voice","Voice (ah)"], ["glass","Glass pad"], ["whistle","Whistle"],
+  // dance voices — the sounds the genre is actually made of, rather than approximations of
+  // orchestral instruments. Detune is expressed as a frequency multiple: 2^(cents/1200).
+  ["supersaw","Supersaw (trance/EDM)"], ["hoover","Hoover (rave)"], ["acid","Acid 303"],
+  ["reese","Reese bass (DnB)"], ["sub","Sub bass"], ["stab","House stab"],
 ];
 const LEAD_SPECS = {
   synth:    { parts:[["triangle",1,1],["sine",2,0.3]],                 atk:0.012, rel:0.13, vol:0.12, sus:0.6 },
@@ -605,6 +612,22 @@ const LEAD_SPECS = {
   voice:    { parts:[["sawtooth",1,0.4],["sine",1,0.45]],             atk:0.06,  rel:0.18, vol:0.1,  sus:0.8, lp:1500, vib:true },
   glass:    { parts:[["sine",1,1],["sine",3,0.2],["triangle",2,0.15]],atk:0.07,  rel:0.32, vol:0.1,  sus:0.75 },
   whistle:  { parts:[["sine",1,1],["sine",2,0.02]],                   atk:0.03,  rel:0.1,  vol:0.12, sus:0.85, vib:true },
+  /* Dance voices. `q` adds filter resonance, `fenv:[from,to]` sweeps the cutoff across the note
+     (as a multiple of `lp`), and `bend` drops the pitch in from that many semitones above. */
+  supersaw: { parts:[["sawtooth",0.97940,0.7],["sawtooth",0.98624,0.7],["sawtooth",0.99311,0.7],
+                     ["sawtooth",1,1],
+                     ["sawtooth",1.00694,0.7],["sawtooth",1.01394,0.7],["sawtooth",1.02098,0.7]],
+              atk:0.02, rel:0.35, vol:0.038, sus:0.8, lp:4200, q:0.9 },
+  hoover:   { parts:[["sawtooth",0.98624,0.8],["sawtooth",1,1],["sawtooth",1.01394,0.8],
+                     ["square",0.5,0.35]],
+              atk:0.015, rel:0.3, vol:0.05, sus:0.75, lp:3000, q:2.5, bend:7 },
+  acid:     { parts:[["sawtooth",1,1]],
+              atk:0.004, rel:0.12, vol:0.1, sus:0.25, lp:520, q:14, fenv:[5.5, 1] },
+  reese:    { parts:[["sawtooth",0.98624,1],["sawtooth",1.01394,1],["sine",0.5,0.5]],
+              atk:0.02, rel:0.18, vol:0.075, sus:0.85, lp:900, q:5 },
+  sub:      { parts:[["sine",1,1],["triangle",2,0.06]],               atk:0.012, rel:0.1, vol:0.2, sus:0.9 },
+  stab:     { parts:[["sawtooth",1,0.6],["square",2,0.2],["sawtooth",1.00694,0.5]],
+              atk:0.003, rel:0.18, vol:0.075, sus:0, lp:3400, q:1.4, fenv:[1.6, 0.7] },
 };
 // legato=true softens the attack and lets the note ring past its slot so a
 // moving line flows together instead of re-articulating on every eighth.
@@ -629,7 +652,16 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
   let out = g;
   if (V.lp) {
     const f = ctx.createBiquadFilter();
-    f.type = "lowpass"; f.frequency.value = V.lp; f.Q.value = 0.7;
+    f.type = "lowpass"; f.Q.value = V.q || 0.7;
+    if (V.fenv) {
+      // the filter sweep that makes an acid line squelch and a stab bark — cutoff starts at
+      // fenv[0] x lp and falls to fenv[1] x lp across the note. Clamped under Nyquist, because
+      // a cutoff above it throws in Web Audio rather than politely doing nothing.
+      const top = Math.min(V.lp * V.fenv[0], ctx.sampleRate / 2 - 100);
+      const end = Math.min(V.lp * V.fenv[1], ctx.sampleRate / 2 - 100);
+      f.frequency.setValueAtTime(Math.max(30, top), t);
+      f.frequency.exponentialRampToValueAtTime(Math.max(30, end), t2);
+    } else f.frequency.value = Math.min(V.lp, ctx.sampleRate / 2 - 100);
     f.connect(g); out = f;
   }
   let lfoG = null;
@@ -641,6 +673,11 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
   V.parts.forEach(([type, mult, amp]) => {
     const o = ctx.createOscillator();
     o.type = type; o.frequency.value = hz * mult;
+    // the hoover's falling whoop: start above the note and slide down onto it
+    if (V.bend) {
+      o.frequency.setValueAtTime(hz * mult * Math.pow(2, V.bend / 12), t);
+      o.frequency.exponentialRampToValueAtTime(hz * mult, t + Math.max(0.06, atk * 4));
+    }
     if (lfoG) lfoG.connect(o.frequency);
     const pg = ctx.createGain(); pg.gain.value = amp;
     o.connect(pg).connect(out);
