@@ -9,6 +9,7 @@ import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } fr
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
+import { planAdd, planDel, planDup, planMove, planReps, remapSecs } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -446,6 +447,9 @@ export default function ProgressionWheel() {
   // per-section-type chord mute, keyed by base letter. Dropping the chords for a breakdown while
   // the drums carry on is a basic arrangement move that had no way to be expressed before.
   const [secQuiet, setSecQuiet] = useState({});
+  const [custom, setCustom] = useState({ key:"", plan:null });   // edited copy of a structure's plan
+  const [editArr, setEditArr] = useState(false);                 // arrangement-editing mode on the strip
+  const [selRow, setSelRow] = useState(0);                       // plan row the editor is pointed at
   const [secMove, setSecMove] = useState({});
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
   const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
@@ -803,13 +807,21 @@ export default function ProgressionWheel() {
 
   // sections: the song in performance order, one INSTANCE per pass of each section
   // (Verse ×4 → V1 V2 V3 V4, each with its own melody), plus the flat bar list for playback
+  /* ---- custom arrangements ----
+     A picked structure is a starting point, not a cage: `custom.plan` is an edited copy of the
+     chosen structure's rows and takes over whenever it belongs to the structure on screen. Editing
+     is always non-destructive — the original plan is a constant in the table and is never touched,
+     so ↺ Reset is just dropping the copy. */
+  const planKey = progId + "|" + selStruct;
+  const customPlan = (custom.key === planKey && custom.plan && custom.plan.length) ? custom.plan : null;
+  const basePlan = structSel ? structSel.plan : null;
+  const effPlan = customPlan || basePlan;
   const sections = useMemo(() => {
-    const plan = structSel ? structSel.plan
-      : [{ sec: "Loop", nums: "LOOP", reps: 1, note: null }];
+    const plan = effPlan || [{ sec: "Loop", nums: "LOOP", reps: 1, note: null }];
     const insts = [], counts = {};
     let totalBars = 0;
     const bars = structSel ? [] : null;
-    plan.forEach(row => {
+    plan.forEach((row, rowIdx) => {
       const L = letterFor(row.sec);
       const usedC = structSel && chords2 && contrast.sec === L;
       const cs = padEven(resolveWith(row.nums, structSel ? poolFor(L) : chords));
@@ -820,15 +832,43 @@ export default function ProgressionWheel() {
         const key = L + counts[L];
         // `word` is the letter's generic name, used for display; `sec` keeps what the structure
         // actually called this section, which is what a DAW marker should say — "Breakdown", not "break"
+        // `row` is the plan row this instance came from — the arrangement editor works in rows,
+        // and a run of instances on the strip is exactly one row
         insts.push({ key, base: L, word, sec: row.sec, cs, str, usedC, note: r === 0 ? row.note : null,
-          nbars: cs.length, startBar: totalBars });
+          nbars: cs.length, startBar: totalBars, row: rowIdx });
         totalBars += cs.length;
         if (bars) cs.forEach((c, mb) => bars.push({ chord: c, inst: key, base: L, word, sec: row.sec, mb }));
       }
     });
     return { insts, totalBars, bars };
-  }, [structSel, chords, chords2, contrast.sec, tonic, progId, colour]);
+  }, [effPlan, structSel, chords, chords2, contrast.sec, tonic, progId, colour]);
   const structBars = sections.bars;
+
+  /* ---- editing the arrangement ----
+     Sections are numbered in playing order (C1, C2 …), and melodies are stored under that number.
+     So moving a chorus earlier, or inserting one, silently renumbers every later section and the
+     melodies would follow the *number* rather than the section they were written for. Every edit
+     therefore carries its melodies with it: `instKeysOf` recomputes the keys a plan produces, and
+     `editPlan` is told which new row came from which old one, so the entries can be moved across. */
+  const editPlan = res => {
+    if (!res) return;
+    const [next, origin, sel] = res;
+    const cur = effPlan || [];
+    const secs = melos.progId === progId ? melos.secs : {};
+    setCustom({ key: planKey, plan: next });
+    setMelos({ progId, secs: remapSecs(secs, cur, next, origin, letterFor, cloneLayer) });
+    if (sel != null) setSelRow(sel);
+  };
+  const rowsNow = () => (effPlan || []).map(r => ({ ...r }));
+  const moveRow = (i, dir) => editPlan(planMove(rowsNow(), i, dir));
+  const bumpReps = (i, d) => editPlan(planReps(rowsNow(), i, d));
+  const dupRow = i => editPlan(planDup(rowsNow(), i));
+  const delRow = i => editPlan(planDel(rowsNow(), i));
+  const addRow = sec => editPlan(planAdd(rowsNow(), selRow + 1, sec));
+  const resetPlan = () => { setCustom({ key:"", plan:null }); setSelRow(0); };
+  // the section types you can add — one per letter the app knows how to colour, name and letter
+  const ADDABLE = ["Intro", "Verse", "Pre-chorus", "Chorus", "Bridge", "Solo", "Groove",
+    "Build", "Drop", "Breakdown", "Refrain", "Outro"];
 
   /* ---- melody scale + targets ---- */
   const scaleSemis = MODES[effMode].semis;
@@ -2012,7 +2052,7 @@ export default function ProgressionWheel() {
   // one document for both a saved sketch and a shared link — so anything that survives a save
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
-    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, instr, melInstr,
+    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, instr, melInstr,
     kit, pump, secMove, delayId, bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
@@ -2025,7 +2065,7 @@ export default function ProgressionWheel() {
   const UNDO_DEPTH = 60;
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
-  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, instr, melInstr,
+  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, instr, melInstr,
       kit, pump, secMove, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
@@ -2117,7 +2157,7 @@ export default function ProgressionWheel() {
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
-    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {});
+    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null });
     setSecMove(s.secMove || {});
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
@@ -2323,6 +2363,7 @@ export default function ProgressionWheel() {
           display:flex; align-items:center; justify-content:flex-start; gap:2px; overflow:hidden; }
         .tlsec:hover { filter:brightness(1.35); }
         .tlsec.looped { outline:1.5px solid #6EA8FF; outline-offset:-1.5px; }
+        .tlsec.picked { outline:2px solid ${GOLD}; outline-offset:-2px; filter:brightness(1.3); }
         .tlsecl { font-size:10px; font-weight:700; letter-spacing:.02em; white-space:nowrap;
           text-transform:capitalize; overflow:hidden; }
         .tlmv { font-size:8px; opacity:.75; }
@@ -3062,10 +3103,18 @@ export default function ProgressionWheel() {
               return !!(dd && dd.pattern);
             };
             const nParts = Math.max(0, ...Object.values(secMelos).map(s => nLayers(s)));
+            /* `flat` is the part's columns, not its notes — an empty grid still has a column per
+               beat. Testing its length therefore reported any section with a grid as "playing",
+               which was invisible while every section had a narrative written into it and obvious
+               the moment an empty one was added. A part is in only if some column holds a note. */
+            const hasNotes = (d, i) => {
+              const ly = (secMelos[d.key] || {}).layers && secMelos[d.key].layers[i];
+              return !!(ly && ly.flat && ly.flat.some(c => c && c.length));
+            };
             const partIn = (d, i) => {
               const sec = secMelos[d.key];
               const ly = sec && sec.layers[i];
-              if (!ly || !ly.flat || !ly.flat.length) return false;
+              if (!ly || !hasNotes(d, i)) return false;
               return layerGain(ly, sec.layers.some(x => x.solo)) > 0;   // mute and solo both count
             };
             /* Each lane knows how to read its own state and how to flip it. `scope` is the honest
@@ -3085,20 +3134,20 @@ export default function ProgressionWheel() {
                 // a run can hold several instances; mute them together so the lane matches the click
                 toggle: r => setLayerPropMany(r.items.map(d => d.key), i, { mute: r.items.some(d => partIn(d, i)) }),
                 // a part with no notes here has nothing to mute — the lane is empty for a reason
-                dead: r => !r.items.some(d => { const sc = secMelos[d.key], ly = sc && sc.layers[i];
-                  return ly && ly.flat && ly.flat.length; }) })),
+                dead: r => !r.items.some(d => hasNotes(d, i)) })),
             ];
             // One block per *run* of consecutive same-section instances, not per instance. Eight
             // passes of a drop is one 32-bar drop to anybody reading the arrangement, and drawing
             // it as eight slivers turns a 200-bar structure into unreadable confetti.
-            // Runs are keyed on the structure's own name for the section, not its letter — a plan
-            // can call two adjacent letter-U sections "Layer up" and "Build", and they are not the
-            // same thing to read even though they colour alike.
+            // Runs are keyed on the plan row an instance came from, so a block on the strip is
+            // exactly one row of the arrangement — which is what makes it editable. (Keying on the
+            // section name instead would merge two adjacent rows that happen to share a name.)
             const runs = [];
             sections.insts.forEach(d => {
               const r = runs[runs.length - 1];
-              if (r && r.sec === d.sec) { r.items.push(d); r.bars += d.nbars; }
-              else runs.push({ base: d.base, sec: d.sec, word: d.word, items: [d], bars: d.nbars, startBar: d.startBar });
+              if (r && r.row === d.row) { r.items.push(d); r.bars += d.nbars; }
+              else runs.push({ base: d.base, sec: d.sec, word: d.word, row: d.row,
+                items: [d], bars: d.nbars, startBar: d.startBar });
             });
             // a lane is full, empty, or partly on across the run's instances
             const laneState = (l, r) => {
@@ -3110,6 +3159,7 @@ export default function ProgressionWheel() {
             const ticks = [];
             for (let bar = 0; bar < total; bar += step) ticks.push(bar);
             return (
+              <>
               <div className="tl">
                 <div className="tlgut">
                   <div className="tlglbl tlgruler" />
@@ -3128,11 +3178,13 @@ export default function ProgressionWheel() {
                       const mv = secMove[r.base] && MOVES[secMove[r.base]];
                       const n = r.items.length;
                       return (
-                        <button key={r.startBar} className={"tlsec" + (now ? " now" : "") + (looped ? " looped" : "")}
+                        <button key={r.startBar} className={"tlsec" + (now ? " now" : "") + (looped ? " looped" : "")
+                            + (editArr && selRow === r.row ? " picked" : "")}
                           style={{ flex: r.bars + " 0 0%", background: acc + (now ? "44" : "22"), borderColor: acc + (now ? "" : "77") }}
-                          onClick={() => startMetro(r.startBar)}
+                          onClick={() => editArr ? setSelRow(r.row) : startMetro(r.startBar)}
                           title={`${r.sec}${n > 1 ? ` ×${n}` : ""} · ${r.bars} bar${r.bars > 1 ? "s" : ""} from bar ${r.startBar + 1}`
-                            + (mv ? ` · ${mv.name}` : "") + (looped ? " · looping" : "") + " — tap to play from here"}>
+                            + (mv ? ` · ${mv.name}` : "") + (looped ? " · looping" : "")
+                            + (editArr ? " — tap to edit this section" : " — tap to play from here")}>
                           {/* the label is left-aligned and clipped rather than centred, so a narrow
                               block truncates to its first letters instead of showing a word's middle */}
                           <span className="tlsecl" style={{ color: acc }}>{r.sec}{n > 1 ? " ×" + n : ""}</span>
@@ -3162,6 +3214,46 @@ export default function ProgressionWheel() {
                     <div className="tlhead" style={{ left: (curSongBar / total * 100) + "%" }} />}
                 </div>
               </div>
+              {/* the arrangement editor: a picked structure is a starting point, not a cage */}
+              <div className="row" style={{ gap:"6px 8px", alignItems:"center", flexWrap:"wrap", marginTop:8 }}>
+                <button className={"mini" + (editArr ? " mixon" : "")} onClick={() => setEditArr(v => !v)}
+                  title="Reorder sections, change how many passes each gets, add and remove them">
+                  {editArr ? "✎ Editing" : "✎ Edit arrangement"}
+                </button>
+                {customPlan && <span className="keytag" style={{ margin:0, color:GOLD }}>edited</span>}
+                {customPlan && <button className="mini" onClick={resetPlan}
+                  title="Throw the edits away and go back to the structure as written">↺ Reset</button>}
+                {editArr && (() => {
+                  const rows = effPlan || [];
+                  const cur = rows[selRow] || rows[0] || {};
+                  const at = Math.min(selRow, rows.length - 1);
+                  return (<>
+                    <span className="keytag" style={{ margin:0 }}>
+                      <b style={{ color: SEC_COL[letterFor(cur.sec || "")] || "#EAE2CC" }}>{cur.sec}</b>
+                      {" "}· {cur.reps || 1} pass{(cur.reps || 1) > 1 ? "es" : ""}
+                    </span>
+                    <button className="mini" onClick={() => moveRow(at, -1)} disabled={at <= 0} title="Move this section earlier">◀</button>
+                    <button className="mini" onClick={() => moveRow(at, 1)} disabled={at >= rows.length - 1} title="Move this section later">▶</button>
+                    <button className="mini" onClick={() => bumpReps(at, -1)} disabled={(cur.reps || 1) <= 1}
+                      title="One pass fewer — a shorter section">− pass</button>
+                    <button className="mini" onClick={() => bumpReps(at, 1)} title="One pass more — a longer section">＋ pass</button>
+                    <button className="mini" onClick={() => dupRow(at)} title="Duplicate this section, with its melodies">⧉ Copy</button>
+                    <button className="mini" onClick={() => delRow(at)} disabled={rows.length <= 1}
+                      title="Remove this section from the song">🗑</button>
+                    <select className="fxsel" value="" onChange={e => { if (e.target.value) addRow(e.target.value); }}
+                      title="Add a new section after the selected one">
+                      <option value="">＋ add section…</option>
+                      {ADDABLE.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                    </select>
+                  </>);
+                })()}
+              </div>
+              {editArr && tips && <p className="arrnote" style={{ marginTop:6 }}>
+                Tap a block to pick it, then reorder it, give it more or fewer passes, copy it or
+                remove it. Melodies travel with their section — a copied section arrives with the
+                notes already in it, and moving one does not shuffle anyone else's.
+              </p>}
+            </>
             );
           })()}
           {tips && sections.insts.length > 1 && <p className="keytag" style={{ marginTop:6 }}>

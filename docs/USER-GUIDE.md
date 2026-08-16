@@ -203,6 +203,24 @@ One thing worth knowing, because the tooltip on each cell will tell you and it i
 drops them on every verse; muting part A on a *Chorus ×2* mutes it for both passes of that chorus
 but leaves the later choruses alone. Hover before you click and it says exactly what it will do.
 
+### Editing the arrangement
+
+Under the strip is **✎ Edit arrangement**. Turn it on and tapping a block picks it instead of
+playing from it; a toolbar appears with everything you can do to that section:
+
+- **◀ ▶** move it earlier or later in the song
+- **− pass / ＋ pass** make it shorter or longer — this is how you turn an 8-bar drop into a 16-bar one
+- **⧉ Copy** duplicate it, notes and all
+- **🗑** remove it
+- **＋ add section…** insert a new one after it
+
+**Your melodies travel with their sections.** Move a chorus and its notes go with it; copy one and
+the copy arrives already written; stretch a section and the new passes repeat what was there rather
+than coming back blank. Only a section you *add* starts empty, which is what you'd want.
+
+Nothing you do here touches the structure in the menu — it's a copy. **↺ Reset** throws your edits
+away and puts the original back, and an **edited** marker tells you when you're on a changed version.
+
 This is the quickest way to spot the thing that makes a sketch sound flat — every lane lit end to
 end, nothing entering, nothing dropping out — and now the quickest way to fix it too.
 

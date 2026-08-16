@@ -20,6 +20,7 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/song.js` | the serialisable song document, melody packing, link encoding | melody |
 | `src/wav.js` | 16-bit PCM wav writing | — |
 | `src/zip.js` | a store-only ZIP writer, for the stem archive | — |
+| `src/arrange.js` | editing a song's arrangement, and carrying melodies through it | — |
 | `src/progression-wheel.jsx` | the component, the fingering diagrams and the score | all of the above |
 
 Because the modules are plain ESM with no JSX, `npm test` imports them directly — no build step and
@@ -77,6 +78,27 @@ resolved against a chord pool. `resolveWith(nums, pool)` + `poolFor(sectionLette
 contrast loops (a second progression assigned to C/B/V sections). Sections are letter-coded via
 `letterFor()` for the shorthand write-out; odd-length phrases are padded even by holding the last
 chord a bar.
+
+### Editing the arrangement
+
+A catalogue structure is a starting point, not a cage. `custom.plan` is an edited copy of the chosen
+structure's rows and takes over whenever it belongs to the structure on screen; the catalogue's own
+plan is a shared constant and is never touched, so ↺ Reset is just dropping the copy (and `npm test`
+checks no operation mutates the plan it was handed).
+
+`src/arrange.js` holds the operations — move, reps, duplicate, delete, add — each a pure transform
+returning `[nextRows, origin, selectedRow]`. `origin[i]` is the index new row `i` held in the old
+plan, or `-1` for a brand-new section.
+
+That `origin` is the whole point. Sections are numbered in playing order (`C1`, `C2`, …) and
+melodies are stored under that number, so moving a chorus past another chorus swaps their numbers
+and a melody left at its old key would start playing under the wrong section. `remapSecs` recomputes
+the keys either plan produces (`instKeysOf`) and moves each section's entry to wherever its row
+ended up. Pass `j` of a row inherits pass `j` of its origin; extra passes repeat the last written
+one, so stretching a drop from four bars to eight fills rather than half-empties it.
+
+A block on the strip is exactly one plan row — runs key on `inst.row`, not the section name, which
+is what makes the strip editable at all.
 
 ### The arrangement strip
 
