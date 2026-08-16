@@ -128,6 +128,75 @@ part has its own **Echo** slider in its mixer row, so you can throw just the lea
 leave the bass dry. The delay returns through the section-move filter, so a build sweeps the repeats
 along with everything else.
 
+### Basslines
+
+The **Suggest** tab's pattern menu ends with seven basslines: *root on the one*, *offbeat (house)*,
+*driving eighths*, *rolling sixteenths*, *tresillo (3+3+2)*, *pumped (1 and the &-of-3)* and
+*walking the chord*. Unlike the melody patterns above them they bring their own rhythm rather than
+taking it from the **Rhythm** menu, because a bassline is defined by its rhythm far more than by its
+notes. They follow each bar's chord, so they re-voice themselves when the harmony changes.
+
+Put one on a part with a bass instrument and its octave dropped — parts C onward already default
+that way. *Driving eighths* and *rolling sixteenths* want a sixteenth **Pattern** to fit properly;
+on an eighth grid there is no room between the notes, so *driving eighths* writes quarters instead
+rather than pretending.
+
+### Arp, Gate and Pump — per part
+
+Under each part's Octave/Level/Echo row are the three controls that turn a tune played on a synth
+into something that sounds like dance music.
+
+**Arp** takes the chord under each bar and walks its notes instead of playing what's written on the
+part's grid — *Up*, *Down*, *Up & down*, *Converge*, *Thumb & top*, *Random*, *Octaves*. Set the
+rate (down to 1/32) and how many octaves it climbs. The point is that it follows the harmony: change
+a chord, reorder the loop, switch key, and the arp re-writes itself. Nothing to re-enter. While a
+part is arping its grid is ignored — clear the Arp menu to go back to the written notes.
+
+**Gate** chops the part into a rhythmic pulse — the trance gate. *Eighths*, *Sixteenth run*,
+*Offbeat eighths*, *Trance gate*, *Dotted*, *Stutter*, *Tresillo*, *Half-time*. It works best on
+something that would otherwise be held: a pad, a long chord, a slow arp. The echo send is taken
+after the gate, so a gated part throws gated repeats rather than smearing over its own gaps.
+
+**Pump** is that part's own sidechain depth. Left at *auto* it follows the global **Pump** menu;
+move it and the part gets its own. This is what separates a mix that pumps from one that ducks: the
+bass and the stabs move hard under the kick while the pad barely breathes.
+
+### Swing and Feel
+
+Two sliders in the top panel, next to Pump.
+
+**Swing** delays every offbeat. Dead straight at 0%, a triplet shuffle around 33% — but the useful
+settings are the small ones in between, which is where the house and UK garage feels live.
+
+**Feel** is humanise: it nudges each hit a few milliseconds early or late and varies how hard it
+lands, so a programmed pattern stops sounding typed. The variation is fixed rather than random, so
+what you render is exactly what you heard.
+
+### Dance instruments
+
+The **Lead** menu (and each part's own instrument menu) has six voices built for this, under
+*Synth (no download)*: **Supersaw** (the trance/EDM wall of detuned saws), **Hoover** (the rave
+stab that slides down into the note), **Acid 303** (resonant, squelchy — try it with an arp),
+**Reese bass** (the detuned drum-and-bass growl), **Sub bass**, and **House stab**. They need no
+download and work offline.
+
+### The arrangement strip
+
+Above the section list, once a structure is chosen, is the whole song on one line: a block per
+section, as wide as that section is long, with the bar numbers along the top. Repeats are one block
+— *Chorus ×2*, *Drop ×8* — because that is how you think about them.
+
+Under the blocks is a lane for each thing that can play: **Drums**, **Chords**, and one per melody
+part (**A**, **B**, …). A lane is lit where that element is playing and dark where it isn't, so the
+picture tells you what the song's dynamics actually are: drums dropping out for the verses, the pad
+only arriving at the chorus, the bassline sitting out the breakdown. A half-lit lane means the
+element is on for some passes of that section but not others. **Tap any block to play from there**,
+and a gold playhead runs across every lane as it goes.
+
+This is the quickest way to spot the thing that makes a sketch sound flat — every lane lit end to
+end, nothing entering, nothing dropping out. Mute a part on a verse, or give a section **no drums**
+from its **🥁** menu, and you can see the arrangement get some shape.
+
 ### Builds, drops and risers
 
 Every section group carries a **🎛** menu beside its **🥁** one. That's the arrangement move for
@@ -155,7 +224,8 @@ dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling
   *Hip-hop 16ths*, *Footwork*) can be used with any rhythm — an eighth-note strum with a sixteenth
   kit works fine, and so does the reverse.
 - **Swing** on a 16ths rhythm is a sixteenth shuffle rather than an eighth one — that's the UK
-  garage and 2-step feel. Try *Swung 16ths* with *UK garage 2-step*.
+  garage and 2-step feel. Try *Swung 16ths* with *UK garage 2-step*, then pull the **Swing** slider
+  back to somewhere in the teens, which is where that feel actually sits.
 
 ### Dance kits and the pump
 
@@ -184,9 +254,23 @@ dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling
   plucked-string guitar, a richer drum kit, and reverb on everything. Turn **Real** off to always use
   the synth voices — handy for a guaranteed-offline, zero-download session.
 
-Transport: a sticky **Play** at the very top (with tempo). **↓ Export MIDI** and **↓ Export audio**
-sit in **Song & melody** — MIDI for a DAW, a .wav for everywhere else. The audio render uses the
-same engine as playback, so it sounds like what you heard.
+Transport: a sticky **Play** at the very top (with tempo). **↓ Export MIDI**, **↓ Export audio** and
+**↓ Export stems** sit in **Song & melody** — MIDI for a DAW, a .wav for everywhere else, stems for
+when you want to keep working on it. The audio render uses the same engine as playback, so it sounds
+like what you heard.
+
+**↓ Export stems** bounces the drums, the chords and every melody part to its own .wav and hands you
+the lot as one .zip. Unzip it, drag the files onto a DAW timeline, and each source lands on its own
+track already lined up — so you can re-balance the mix, swap the drums for your own, or keep only
+the bassline. The files are numbered and named for what they are
+(`01-drums.wav`, `02-chords-acoustic_guitar_steel.wav`, `03-part-A-flute.wav`), and a part that is
+muted or empty is left out rather than shipped as a silent file.
+
+Two things worth knowing about the stems. They add back up to exactly the mix you hear, so nothing
+is lost by working from them instead of the .wav. And they're **pre-master** — the limiter that
+catches peaks on the single-file export is deliberately off, because your DAW's own master chain
+should be doing that job. Expect them to sound a touch quieter and more dynamic than the .wav until
+you put something across the master bus.
 
 The MIDI file carries the **arrangement**, not just the notes: a marker at every section boundary so
 *Intro / Build / Drop* land on your DAW's timeline, plus the time signature and key signature. Open

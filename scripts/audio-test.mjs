@@ -12,8 +12,9 @@ import * as melody from "../src/melody.js";
 import * as progs from "../src/progressions.js";
 import * as song from "../src/song.js";
 import * as wav from "../src/wav.js";
+import * as zip from "../src/zip.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -285,6 +286,45 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     }
   }
   console.log(`melody generators: ${gens} runs across ${M.RHYTHMS.length} rhythms × 3 grids`);
+
+  /* The basslines bring their own rhythm rather than taking it from the Rhythm menu, so they need
+     their own check: each one must actually articulate. Two of the same pitch on adjacent columns
+     is how the grid stores a *tie*, so a pattern that fills every column is one held note however
+     many "notes" it thinks it wrote — which is exactly how "driving eighths" first came out as a
+     whole note on an eighth grid. */
+  {
+    const noteCount = bar => {
+      let n = 0;
+      for (let i = 0; i < bar.length; i++) {
+        const d = bar[i][0];
+        if (d == null) continue;
+        const prev = bar[i - 1] && bar[i - 1][0];
+        if (i === 0 || prev !== d) n++;
+      }
+      return n;
+    };
+    const basses = M.MELODY_PATTERNS.filter(p => /^bass/.test(p.id));
+    if (basses.length < 5) problems.push(`only ${basses.length} bassline patterns`);
+    for (const p of basses) {
+      for (const [B, sub, meter] of [[8, 2, "4/4 eighths"], [16, 4, "4/4 sixteenths"], [6, 2, "3/4"]]) {
+        const bars = p.gen({ nBars: 2, B, sub, start: 0, cols: [0, 2, 4, 6], lens: [1, 1, 1, 1], chordDegs: [0, 3] });
+        if (bars.length !== 2 || bars.some(b => b.length !== B)) { problems.push(`${p.id} on ${meter}: wrong shape`); continue; }
+        for (const bar of bars) {
+          for (const c of bar) for (const d of c)
+            if (!Number.isInteger(d) || d < 0 || d > 6) problems.push(`${p.id} on ${meter}: degree ${d} out of range`);
+          // "root on the one" is meant to be one held note; everything else has to move
+          const n = noteCount(bar);
+          if (p.id !== "bassRoot" && n < 2) problems.push(`${p.id} on ${meter}: ${n} note per bar — it fills every column, so it reads as one tied note`);
+        }
+        // and it has to follow the harmony, not sit on one degree through a chord change
+        if (p.id !== "bassRoot" && bars[0].some(c => c.length) && bars[1].some(c => c.length)) {
+          const first = bars[0].find(c => c.length)[0], second = bars[1].find(c => c.length)[0];
+          if (first === second) problems.push(`${p.id} on ${meter}: does not follow the chord change`);
+        }
+      }
+    }
+    console.log(`basslines: ${basses.length} patterns × 3 meters, all articulating and following the chords`);
+  }
 
   // the point of the whole feature: a non-straight rhythm must not land everything on the beat
   const onBeatFraction = bars => {
@@ -728,12 +768,25 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (JSON.stringify(M.unpackBars(M.packBars(empty))) !== JSON.stringify(empty))
     problems.push("an empty melody does not round trip");
 
+  // key order is an implementation detail; compare on content so a reordered field is not a failure
+  const canon = v => Array.isArray(v) ? v.map(canon)
+    : (v && typeof v === "object") ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
+  const same = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+  // Effects are stored per part, so they have to survive a save and a link as surely as the notes
+  // do — a shared arp that comes back as a plain grid is the same class of bug as a lost melody.
+  const withFx = (ly, fx = {}) => ({ ...ly,
+    ...Object.fromEntries(M.LAYER_FX.map(([k, d]) => [k, fx[k] != null ? fx[k] : d])) });
   const melos = { progId: "edm", secs: { V1: { ids: ["b0", "b1"], layers: [
-    { bars, instr: "flute", oct: 0, vol: 1, mute: false, solo: false, send: 0.4 },
-    { bars, instr: "synth_bass_1", oct: -2, vol: 0.9, mute: true, solo: false, send: 0 },
+    withFx({ bars, instr: "flute", oct: 0, vol: 1, mute: false, solo: false, send: 0.4 },
+      { arp: "updown", arpRate: 6, arpOct: 3, gate: "tri", duck: 0.72 }),
+    withFx({ bars, instr: "synth_bass_1", oct: -2, vol: 0.9, mute: true, solo: false, send: 0 }),
   ] } } };
   const back = M.unpackMelos(M.packMelos(melos));
-  if (JSON.stringify(back) !== JSON.stringify(melos)) problems.push("melodies do not round trip through a sketch");
+  if (!same(back, melos)) problems.push("melodies do not round trip through a sketch");
+  // and every effect must come back with the value it went in with, not its default
+  for (const [k] of M.LAYER_FX)
+    if (JSON.stringify(back.secs.V1.layers[0][k]) !== JSON.stringify(melos.secs.V1.layers[0][k]))
+      problems.push(`part effect \`${k}\` does not survive a save (got ${JSON.stringify(back.secs.V1.layers[0][k])})`);
 
   const doc = M.makeSong({ name: "test", progId: "edm", tonic: 0, genre: "House", emotion: null,
     mode: null, colour: "triads", patId: "house16", drum: "house16d", secDrum: { V: "deep" },
@@ -748,7 +801,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (round.progId !== doc.progId || round.bpm !== doc.bpm || round.kit !== doc.kit || round.delayId !== doc.delayId)
       problems.push("the link lost part of the arrangement");
     const rm = M.songMelos(round);
-    if (JSON.stringify(rm) !== JSON.stringify(melos)) problems.push("the link lost the melodies");
+    if (!same(rm, melos)) problems.push("the link lost the melodies");
   }
   if (await M.decodeSong("dnot-valid-base64!!") !== null) problems.push("a corrupt link should decode to null, not throw");
   if (await M.decodeSong("") !== null) problems.push("an empty link should decode to null");
@@ -790,6 +843,27 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (noWord.length) problems.push(`section letters with no word: ${noWord.join(", ")}`);
   console.log(`section letters in use: ${[...letters].sort().join("")} — all named`);
 
+  /* Every letter also needs a colour. The arrangement strip draws the song as coloured blocks, so
+     a letter missing from SEC_COL falls through to grey — and a dance structure whose sections are
+     all uncoloured reads as one grey smear with no shape at all, which is how this was found. */
+  const colBlock = code.match(/const SEC_COL = \{([\s\S]*?)\n\};/);
+  if (!colBlock) problems.push("SEC_COL not found in the component");
+  else {
+    const coloured = new Set([...colBlock[1].matchAll(/(\w+)\s*:\s*"#[0-9A-Fa-f]{6}"/g)].map(m => m[1]));
+    const noCol = [...letters].filter(L => !coloured.has(L));
+    if (noCol.length) problems.push(`section letters with no colour in SEC_COL: ${noCol.join(", ")}`);
+    // and the colours must be distinguishable, or two different sections look like one block
+    const hexes = [...colBlock[1].matchAll(/(\w+)\s*:\s*"(#[0-9A-Fa-f]{6})"/g)];
+    const byHex = {};
+    for (const [, L, hex] of hexes) (byHex[hex] = byHex[hex] || []).push(L);
+    // intro/outro/loop deliberately share the same grey — they are all "not the song proper"
+    const NEUTRAL = "IOL";
+    for (const [hex, ls] of Object.entries(byHex))
+      if (ls.length > 1 && !ls.every(L => NEUTRAL.includes(L)))
+        problems.push(`SEC_COL: ${ls.join(" and ")} share ${hex}`);
+    console.log(`section colours: ${coloured.size} letters, ${Object.keys(byHex).length} distinct`);
+  }
+
   // the point of the dance structures: DJ-mixable ends and phrases in 8s
   const dance = M.UNIVERSAL.filter(u => u.family === "Dance & electronic" || u.family === "Club edits");
   if (dance.length < 15) problems.push(`only ${dance.length} dance structures`);
@@ -808,12 +882,200 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`longest structure: ${longest.n} at ${longest.b} bars on a four-chord loop`);
 }
 
+/* ---- the melody lead voices ----
+   Every voice in the Lead menu, played across the range it will actually be asked for. The dance
+   voices added filter envelopes and pitch bends, both of which are easy to get wrong in ways that
+   throw in real Web Audio and never in a stub — a cutoff above Nyquist and an exponential ramp
+   through zero are the two classics. */
+{
+  const NYQ = 44100 / 2;
+  let checked = 0;
+  for (const [id] of M.LEAD_VOICES) {
+    if (M.isGM(id)) continue;                       // sampled voices are not leadNote's business
+    for (const midi of [36, 48, 60, 72, 84]) {      // sub-bass up to a topline
+      nodes.length = 0;
+      const dest = baseNode("dest");
+      const before = problems.length;
+      try { M.leadNote(ctx, 1.5, midi, 0.4, id, false, dest); }
+      catch (e) { problems.push(`lead ${id}@${midi} threw: ${e.message}`); continue; }
+      const oscs = nodes.filter(n => n._kind === "osc");
+      if (!oscs.length) { problems.push(`lead ${id} produced no oscillators`); continue; }
+      for (const o of oscs) {
+        if (!o._started) problems.push(`lead ${id} has an unstarted oscillator`);
+        if (o._t1 == null) problems.push(`lead ${id} has an oscillator that never stops`);
+        const hz = o.frequency.value;
+        if (!(hz > 0) || !Number.isFinite(hz)) problems.push(`lead ${id}@${midi} oscillator at ${hz} Hz`);
+        if (hz > NYQ) problems.push(`lead ${id}@${midi} oscillator above Nyquist (${Math.round(hz)} Hz)`);
+      }
+      // a filter sweep that runs past Nyquist throws when the browser applies it
+      for (const f of nodes.filter(n => n._kind === "biquad"))
+        for (const ev of f.frequency._events.concat([{ v: f.frequency.value }]))
+          if (ev.v > NYQ) problems.push(`lead ${id}@${midi} filter cutoff ${Math.round(ev.v)} Hz is above Nyquist`);
+      if (problems.length === before) checked++;
+    }
+  }
+  console.log(`lead voices: ${checked} voice×register combinations clean`);
+  // the dance voices are the point of the new ones — check they are actually distinct in character
+  const S = M.LEAD_SPECS;
+  for (const id of ["supersaw", "hoover", "acid", "reese", "sub", "stab"])
+    if (!S[id]) problems.push(`dance voice ${id} is missing from LEAD_SPECS`);
+  if (S.supersaw && S.supersaw.parts.length < 5) problems.push("a supersaw needs a stack of detuned saws");
+  // detuning is the whole sound: the saws must not all sit on the same frequency
+  if (S.supersaw && new Set(S.supersaw.parts.map(p => p[1])).size !== S.supersaw.parts.length)
+    problems.push("supersaw has duplicate detune multiples");
+  if (S.acid && !(S.acid.q > 8)) problems.push("the acid voice needs a resonant filter");
+  if (S.acid && !S.acid.fenv) problems.push("the acid voice needs a filter envelope");
+}
+
+/* ---- arpeggiators and note gates ---- */
+{
+  // An arp index out of the pool is either a silent step or a crash, depending on the pool. Every
+  // mode is checked across every pool size it can meet — a triad through four octaves is 3..24.
+  let combos = 0;
+  for (const a of M.ARPS) {
+    for (let n = 1; n <= 24; n++) {
+      const base = Math.max(1, Math.min(n, 3));
+      const seen = new Set();
+      for (let i = 0; i < 64; i++) {
+        const k = a.seq(i, n, base);
+        if (!Number.isInteger(k) || k < 0 || k >= n) {
+          problems.push(`arp ${a.id}: step ${i} of a ${n}-note pool gave index ${k}`);
+          break;
+        }
+        seen.add(k);
+      }
+      // a mode that only ever lands on one note is not an arpeggio
+      if (n > 2 && seen.size < 2) problems.push(`arp ${a.id} never leaves note ${[...seen][0]} of ${n}`);
+      combos++;
+    }
+    // determinism is what lets a stem bounce match the mix it came from
+    const once = Array.from({ length: 32 }, (_, i) => a.seq(i, 7, 3));
+    const again = Array.from({ length: 32 }, (_, i) => a.seq(i, 7, 3));
+    if (once.join() !== again.join()) problems.push(`arp ${a.id} is not deterministic`);
+  }
+  console.log(`arpeggiators: ${M.ARPS.length} modes × ${combos / M.ARPS.length} pool sizes, all in range`);
+  // hash01 stands in for randomness everywhere that has to stay reproducible
+  if (M.hash01(12345) !== M.hash01(12345)) problems.push("hash01 is not deterministic");
+  const hs = Array.from({ length: 2000 }, (_, i) => M.hash01(i));
+  if (hs.some(h => !(h >= 0 && h < 1))) problems.push("hash01 escaped 0..1");
+  const buckets = new Array(10).fill(0);
+  hs.forEach(h => buckets[Math.floor(h * 10)]++);
+  if (buckets.some(b => b < 120)) problems.push(`hash01 is lumpy: ${buckets.join(",")}`);
+  console.log(`hash01: 2000 values, flattest bucket ${Math.min(...buckets)}, fullest ${Math.max(...buckets)}`);
+
+  const RATES = M.ARP_RATES.map(([r]) => r);
+  if (!RATES.includes(4)) problems.push("no 1/16 arp rate");
+  for (const [r] of M.ARP_RATES) if (!(r > 0) || !Number.isInteger(r)) problems.push(`arp rate ${r} is not a whole number of notes per beat`);
+
+  for (const g of M.GATES) {
+    if (!/^[x-]+$/.test(g.pat)) problems.push(`gate ${g.id} has characters other than x and -`);
+    if (g.pat.length !== 16) problems.push(`gate ${g.id} is ${g.pat.length} steps, expected 16`);
+    // an all-shut gate silences the part for good, which no menu entry should be able to do
+    if (!g.pat.includes("x")) problems.push(`gate ${g.id} never opens`);
+    if (!g.pat.includes("-")) problems.push(`gate ${g.id} never closes — it does nothing`);
+  }
+  console.log(`note gates: ${M.GATES.length} patterns, ${M.GATES.map(g => g.pat.split("x").length - 1).join("/")} open steps`);
+}
+
+/* ---- the zip writer, and the stem gating that fills it ----
+   A malformed archive is the worst failure mode here: the download succeeds, and the producer
+   only finds out when their unarchiver refuses it. So the bytes get parsed back structurally
+   rather than eyeballed. */
+{
+  // the ZIP CRC-32 is the standard one; "123456789" is its documented check value
+  const check = M.crc32(new TextEncoder().encode("123456789"));
+  if (check !== 0xcbf43926) problems.push(`crc32 check value is ${check.toString(16)}, expected cbf43926`);
+  if (M.crc32(new Uint8Array(0)) !== 0) problems.push("crc32 of empty input is not 0");
+
+  const enc = new TextEncoder();
+  const files = [
+    { name: "01-drums.wav", bytes: enc.encode("RIFF....drums") },
+    { name: "02-chords-piano.wav", bytes: Uint8Array.from({ length: 5000 }, (_, i) => i & 255) },
+    { name: "03-part-A-lead.wav", bytes: new Uint8Array(0) },   // a legal, if pointless, entry
+  ];
+  const buf = M.makeZip(files);
+  const rd16 = at => buf[at] | (buf[at + 1] << 8);
+  const rd32 = at => (buf[at] | (buf[at + 1] << 8) | (buf[at + 2] << 16) | (buf[at + 3] << 24)) >>> 0;
+
+  // walk in from the end-of-central-directory record, the way an unarchiver does
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0; i--) if (rd32(i) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) problems.push("zip: no end-of-central-directory record");
+  else {
+    if (rd16(eocd + 10) !== files.length) problems.push(`zip: EOCD claims ${rd16(eocd + 10)} entries, wrote ${files.length}`);
+    const dirSize = rd32(eocd + 12), dirAt = rd32(eocd + 16);
+    if (dirAt + dirSize !== eocd) problems.push("zip: central directory size/offset do not meet the EOCD");
+    let at = dirAt, n = 0;
+    while (at < dirAt + dirSize) {
+      if (rd32(at) !== 0x02014b50) { problems.push(`zip: bad central header at ${at}`); break; }
+      const method = rd16(at + 10), crc = rd32(at + 16), csize = rd32(at + 20), usize = rd32(at + 24);
+      const nameLen = rd16(at + 28), local = rd32(at + 42);
+      const name = new TextDecoder().decode(buf.subarray(at + 46, at + 46 + nameLen));
+      const want = files[n];
+      if (!want) { problems.push("zip: more central entries than files"); break; }
+      if (name !== want.name) problems.push(`zip: entry ${n} named "${name}", expected "${want.name}"`);
+      if (method !== 0) problems.push(`zip: entry ${n} uses method ${method}, expected 0 (stored)`);
+      if (crc !== M.crc32(want.bytes)) problems.push(`zip: entry ${n} CRC mismatch`);
+      if (csize !== want.bytes.length || usize !== want.bytes.length)
+        problems.push(`zip: entry ${n} sizes ${csize}/${usize}, expected ${want.bytes.length}`);
+      // the local header the directory points at must agree, and the payload must be byte-exact
+      if (rd32(local) !== 0x04034b50) problems.push(`zip: entry ${n} local offset ${local} is not a local header`);
+      else {
+        const dataAt = local + 30 + rd16(local + 26) + rd16(local + 28);
+        const got = buf.subarray(dataAt, dataAt + usize);
+        if (got.length !== want.bytes.length || got.some((b, i) => b !== want.bytes[i]))
+          problems.push(`zip: entry ${n} payload does not round-trip`);
+      }
+      at += 46 + nameLen + rd16(at + 30) + rd16(at + 32);
+      n++;
+    }
+    if (n !== files.length) problems.push(`zip: walked ${n} central entries, wrote ${files.length}`);
+    console.log(`zip writer: ${files.length} entries, ${buf.length} bytes, central directory walks clean`);
+  }
+  // filenames have to survive Windows and macOS alike, and never come out empty
+  for (const [raw, want] of [["chords-acoustic_guitar_steel", "chords-acoustic_guitar_steel"],
+                             ["part A / lead?", "part-A-lead"], ["  ", "stem"], ["***", "stem"],
+                             ["...", "stem"], [".hidden", "hidden"], ["a".repeat(90), "a".repeat(60)]]) {
+    const got = M.safeName(raw);
+    if (got !== want) problems.push(`safeName(${JSON.stringify(raw)}) = ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`);
+  }
+  if (/[\\/:*?"<>|]/.test(M.safeName('a:b*c?"d<e>f|g\\h/i'))) problems.push("safeName leaves a reserved filename character");
+
+  /* The stems only sum back to the mix if every source in emitTick is gated on `m.stem`.
+     A source that forgets the gate leaks into every stem; one that gates too hard goes missing
+     from all of them. Both are silent bugs, so the source shape is checked here. */
+  const tickBody = code.slice(code.indexOf("const emitTick ="), code.indexOf("const startMetro ="));
+  const GATES = [
+    [/if \(chord && \(!m\.stem \|\| m\.stem\.kind === "chords"\)\)/, "chords are not gated on m.stem"],
+    [/if \(!m\.stem \|\| m\.stem\.kind === "drums"\)\s*\n\s*for \(const ch of dstep\)/, "drum voices are not gated on m.stem"],
+    [/if \(m\.stem && !\(m\.stem\.kind === "part" && m\.stem\.i === li\)\) return;/, "melody parts are not gated on m.stem"],
+    [/if \(clickRef\.current && !m\.stem\)/, "the metronome click is not excluded from stems"],
+  ];
+  for (const [re, msg] of GATES) if (!re.test(tickBody)) problems.push(`stem gating: ${msg}`);
+  /* The chord voicing is shared state, not sound: an arpeggiated part reads it to know what the
+     chord is made of. If the update sat inside the chords-only branch, a part stem — which plays
+     no chords — would arpeggiate a stale voicing and follow different harmony from the mix. So the
+     update has to come *before* the `m.stem` gate, not inside it. */
+  const voiceAt = tickBody.indexOf("m.voicing = voiceChord");
+  const chordGateAt = tickBody.indexOf('m.stem.kind === "chords"');
+  if (voiceAt < 0) problems.push("stem gating: the voicing update has moved out of emitTick");
+  else if (chordGateAt >= 0 && voiceAt > chordGateAt)
+    problems.push("stem gating: the voicing is computed inside the chords-only branch — an arp in a part stem would follow the wrong chord");
+  // the pump is deliberately outside the drum gate — it shapes the pitched bus, so it belongs in
+  // every pitched stem even though the kick triggering it does not
+  const pumpLines = [...tickBody.matchAll(/^.*duckAt\(m\.(cduck|wetDuck|partDuck\[li\]).*$/gm)].map(x => x[0]);
+  if (pumpLines.length < 3) problems.push(`stem gating: expected the pump on the chord bus, the reverb return and each part; found ${pumpLines.length}`);
+  for (const ln of pumpLines)
+    if (/m\.stem/.test(ln)) problems.push("stem gating: a sidechain duck is gated on m.stem — that stem would lose its pumping");
+  console.log(`stem gating: ${GATES.length} sources gated, pump left on the pitched bus`);
+}
+
 /* ---- the module seams hold ----
    Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "progressions.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "progressions.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")

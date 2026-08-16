@@ -1,3 +1,4 @@
+import { LAYER_FX } from "./melody.js";
 /* song — one serialisable document for a whole song, used by both sketch save/load and the
    shareable link. Melodies used to be session-only, so a saved sketch came back with the chords
    and none of the tune; they live here now, in a form compact enough to sit in a URL.
@@ -23,17 +24,28 @@ const unpackBars = p => {
   }
   return out;
 };
-// one melody part: bars plus its instrument, register, level and mix flags
-const packLayer = ly => ({
-  b: packBars(ly.bars), i: ly.instr || null,
-  o: ly.oct || 0, v: ly.vol == null ? 1 : ly.vol,
-  m: ly.mute ? 1 : 0, s: ly.solo ? 1 : 0, e: ly.send || 0,
-});
-const unpackLayer = p => ({
-  bars: unpackBars(p.b), instr: p.i || null,
-  oct: p.o || 0, vol: p.v == null ? 1 : p.v,
-  mute: !!p.m, solo: !!p.s, send: p.e || 0,
-});
+/* One melody part: bars plus its instrument, register, level, mix flags and effects.
+   The effects come from melody.js's LAYER_FX list rather than being spelled out here, so a new
+   one is carried by saved sketches and shared links without a second edit — and only fields that
+   differ from their default are written, which keeps a shared link short. */
+const packLayer = ly => {
+  const out = {
+    b: packBars(ly.bars), i: ly.instr || null,
+    o: ly.oct || 0, v: ly.vol == null ? 1 : ly.vol,
+    m: ly.mute ? 1 : 0, s: ly.solo ? 1 : 0, e: ly.send || 0,
+  };
+  for (const [k, d] of LAYER_FX) if (ly[k] != null && ly[k] !== d) out["x_" + k] = ly[k];
+  return out;
+};
+const unpackLayer = p => {
+  const out = {
+    bars: unpackBars(p.b), instr: p.i || null,
+    oct: p.o || 0, vol: p.v == null ? 1 : p.v,
+    mute: !!p.m, solo: !!p.s, send: p.e || 0,
+  };
+  for (const [k, d] of LAYER_FX) out[k] = p["x_" + k] != null ? p["x_" + k] : d;
+  return out;
+};
 const packMelos = melos => {
   if (!melos || !melos.secs) return null;
   const secs = {};

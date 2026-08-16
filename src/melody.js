@@ -35,6 +35,68 @@ const LAYER_DEFAULT_VOL = [1, 0.8, 0.9, 0.6, 0.7, 0.7];
 // one part's gain, folding in mute and any soloing elsewhere in the section
 const layerGain = (ly, anySolo) =>
   (ly.mute || (anySolo && !ly.solo)) ? 0 : (ly.vol == null ? 1 : ly.vol);
+
+/* A deterministic 0..1 hash of an integer. Used wherever the app wants something that sounds
+   unpredictable — a random arp, humanised timing — but must come out identical on every play,
+   render and stem bounce. Math.random() would make a stem disagree with the mix it came from. */
+const hash01 = n => {
+  let h = (n | 0) ^ 0x9e3779b9;
+  h = Math.imul(h ^ (h >>> 16), 0x21f0aaad);
+  h = Math.imul(h ^ (h >>> 15), 0x735a2d97);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+};
+
+/* ---- per-part effects ----
+   Every field a part carries beyond its notes lives in this one list: its name and its default.
+   Normalising a saved section, cloning a part, packing a song and unpacking one all read it, so
+   adding an effect is one line rather than five edits — four of which are easy to forget, which is
+   how melodies once went missing from saved sketches entirely. */
+const LAYER_FX = [
+  ["arp", ""],       // arpeggiator mode id, "" = play the written grid
+  ["arpRate", 4],    // arp notes per beat
+  ["arpOct", 1],     // how many octaves the arp climbs through
+  ["gate", ""],      // note-gate pattern id, "" = no gating
+  ["duck", null],    // sidechain depth for this part; null = follow the global Pump
+];
+// read a part's effects, filling in defaults for anything a saved section predates
+const layerFx = ly => Object.fromEntries(LAYER_FX.map(([k, d]) => [k, ly && ly[k] != null ? ly[k] : d]));
+
+/* Arpeggiators. Each mode turns a chord's notes into an order to play them in — `seq(n)` returns
+   indices into the pooled notes (the chord's voicing, repeated up through `arpOct` octaves). The
+   step index is derived from the absolute tick rather than a running counter, so a render and a
+   stem bounce produce exactly the same line as playback did. */
+const ARPS = [
+  { id:"up",      name:"Up",            seq:(i, n) => i % n },
+  { id:"down",    name:"Down",          seq:(i, n) => n - 1 - (i % n) },
+  { id:"updown",  name:"Up & down",     seq:(i, n) => { const p = n > 1 ? 2 * n - 2 : 1, k = i % p; return k < n ? k : p - k; } },
+  { id:"downup",  name:"Down & up",     seq:(i, n) => { const p = n > 1 ? 2 * n - 2 : 1, k = i % p; return k < n ? n - 1 - k : k - n + 1; } },
+  { id:"conv",    name:"Converge",      seq:(i, n) => { const k = i % n; return k % 2 ? n - 1 - (k >> 1) : k >> 1; } },
+  { id:"pinky",   name:"Thumb & top",   seq:(i, n) => (i % 2 ? n - 1 : (i >> 1) % n) },
+  // deterministic "random": a hash of the step, so it is unpredictable to the ear but identical
+  // every time the song is played, rendered or bounced to stems
+  { id:"rand",    name:"Random",        seq:(i, n) => Math.min(n - 1, (hash01(i) * n) | 0) },
+  // root, then the same note an octave up. With only one octave in the pool there is no octave to
+  // jump to, so it takes the top of the chord instead of collapsing onto the root twice.
+  { id:"oct",     name:"Octaves",       seq:(i, n, base) => (i % 2 ? (base < n ? base : n - 1) : 0) },
+];
+const ARP_BY_ID = Object.fromEntries(ARPS.map(a => [a.id, a]));
+const ARP_RATES = [[1, "1/4"], [2, "1/8"], [3, "1/8 triplet"], [4, "1/16"], [6, "1/16 triplet"], [8, "1/32"]];
+
+/* Note gates — the trance gate. A pattern of sixteenths, chopping a held part into a pulse.
+   `x` is open, `-` is shut. Sixteen steps so a whole bar of 4/4 can have its own shape. */
+const GATES = [
+  { id:"8",     name:"Eighths",        pat:"x-x-x-x-x-x-x-x-" },
+  // Note: a gate is a sustained open/shut, so an all-open pattern would be a menu entry that does
+  // nothing at all. Every pattern here has to both open and close to be worth offering.
+  { id:"16",    name:"Sixteenth run",  pat:"xxx-xxx-xxx-xxx-" },
+  { id:"off8",  name:"Offbeat eighths",pat:"-x-x-x-x-x-x-x-x" },
+  { id:"tri",   name:"Trance gate",    pat:"x-xx-x-xx-xx-x-x" },
+  { id:"dot",   name:"Dotted",         pat:"x--x--x--x--x--x" },
+  { id:"stut",  name:"Stutter",        pat:"xx--xx--xx-xxx--" },
+  { id:"tres",  name:"Tresillo",       pat:"x--x--x---x--x--" },
+  { id:"half",  name:"Half-time",      pat:"x-------x-------" },
+];
+const GATE_BY_ID = Object.fromEntries(GATES.map(g => [g.id, g]));
 // Re-time one stored bar onto a grid of B columns. A bar remembers its own resolution in its
 // length, so switching between an eighth and a sixteenth rhythm keeps every note where it sounds
 // rather than sliding it into the wrong half of the bar. Going finer is lossless; going coarser
@@ -121,6 +183,25 @@ const layBar = (B, cols, degs, lens) => {
     for (let k = 0; k < len && c + k < B; k++) bar[c + k] = [d];   // a held note fills its columns
   });
   return bar;
+};
+/* Build a bassline generator. `spots(barBeats, sub)` returns `{at, len}` in beats; `degs(g, n)`
+   returns one scale degree per spot, given the bar's chord degree. Everything is snapped onto the
+   grid actually in use, and a note is held across the columns its length covers. */
+const bassGen = (spots, degs) => function (u) {
+  const sub = u.sub || 2, barBeats = u.B / sub;
+  return Array.from({ length: u.nBars }, (_, b) => {
+    const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
+    const at = spots(barBeats, sub).filter(s => s.at < barBeats);
+    const ds = degs(g, at.length);
+    const bar = Array.from({ length: u.B }, () => []);
+    at.forEach((s, i) => {
+      const c = Math.round(s.at * sub);
+      if (c >= u.B || ds[i] == null) return;
+      const len = Math.max(1, Math.round((s.len || 0.5) * sub));
+      for (let k = 0; k < len && c + k < u.B; k++) bar[c + k] = [wrap7(ds[i])];
+    });
+    return bar;
+  });
 };
 const MELODY_PATTERNS = [
   { id:"arpUp", name:"Arpeggio ↑ (chord tones)",
@@ -307,6 +388,52 @@ const MELODY_PATTERNS = [
       return Array.from({ length:u.nBars }, (_, b) => {
         const g = u.chordDegs[b] == null ? u.start : u.chordDegs[b];
         return layBar(u.B, Q, [g, g+2, g+4], u.lens); }); } },
+
+  /* ---- basslines ----
+     A bassline is defined by its rhythm far more than by its notes, so unlike every pattern above
+     these bring their own placement instead of taking it from the Rhythm menu. Positions are in
+     beats from the top of the bar, so one definition works on an eighth grid or a sixteenth one
+     and in 3/4 as well as 4/4. Put them on a part with a bass instrument and its octave down —
+     parts C onward already default that way. */
+  { id:"bassRoot", name:"Bass · root on the one",
+    desc:"One long root note per bar. The plainest thing that works, and the right choice under a busy topline.",
+    gen: bassGen(bb => [{ at:0, len:bb }], (g) => [g]) },
+  { id:"bassOff", name:"Bass · offbeat (house)",
+    desc:"A stab on the 'and' of every beat, leaving the downbeat to the kick — the sound of house and disco.",
+    gen: bassGen(bb => Array.from({ length:bb }, (_, i) => ({ at:i + 0.5, len:0.4 })),
+      (g, n) => Array.from({ length:n }, () => g)) },
+  { id:"bass8", name:"Bass · driving eighths",
+    desc:"Straight eighth notes on the root — the relentless techno and eurodance engine room. Needs a sixteenth Pattern to fit; on an eighth grid there is no room for the gaps, so it writes quarters instead.",
+    /* A note has to be shorter than the gap to the next one, or two of the same pitch on adjacent
+       columns are one held note — that is how the grid stores a tie, and it is what MIDI export and
+       the stave both read. An eighth grid has no column to spare between eighths, so rather than
+       write a whole note and call it eighths, this drops to quarters at that resolution. */
+    gen: bassGen((bb, sub) => { const st = sub >= 4 ? 0.5 : 1;
+        return Array.from({ length: Math.round(bb / st) }, (_, i) => ({ at:i * st, len: st / 2 })); },
+      (g, n) => Array.from({ length:n }, () => g)) },
+  { id:"bass16", name:"Bass · rolling sixteenths",
+    desc:"A broken sixteenth roll — three notes and a rest in every beat, dropping to the fifth once a bar. Psytrance and drum & bass.",
+    gen: bassGen((bb, sub) => { const out = [];
+        for (let b = 0; b < bb; b++) for (const o of (sub >= 4 ? [0, 0.25, 0.75] : [0, 0.5])) out.push({ at:b + o, len:0.25 });
+        return out; },
+      (g, n) => Array.from({ length:n }, (_, i) => (i % 6 === 4 ? g + 4 : g))) },
+  { id:"bassTres", name:"Bass · tresillo (3+3+2)",
+    desc:"The 3+3+2 pulse that carries reggaeton, trap and most of modern pop — twice a bar.",
+    gen: bassGen(bb => { const out = [];
+        for (let b = 0; b + 2 <= bb; b += 2) out.push({ at:b, len:0.5 }, { at:b + 0.75, len:0.5 }, { at:b + 1.5, len:0.5 });
+        return out; },
+      (g, n) => Array.from({ length:n }, () => g)) },
+  { id:"bassPump", name:"Bass · pumped (1 and the &-of-3)",
+    desc:"Root on the downbeat and a push before the third beat. Sparse, and it lets a sidechain breathe.",
+    // in 3/4 the push lands on the "and" of two instead; a single bar-long note would just be
+    // "root on the one" under a different name
+    gen: bassGen(bb => (bb >= 4 ? [{ at:0, len:1.4 }, { at:2.5, len:1.2 }]
+                                : [{ at:0, len:1.2 }, { at:1.5, len:1.2 }]),
+      (g, n) => Array.from({ length:n }, () => g)) },
+  { id:"bassWalk", name:"Bass · walking the chord",
+    desc:"Root, fifth, root, third — one a beat, walking through each bar's own chord. House, disco and soul.",
+    gen: bassGen(bb => Array.from({ length:bb }, (_, i) => ({ at:i, len:0.85 })),
+      (g, n) => Array.from({ length:n }, (_, i) => g + [0, 4, 0, 2][i % 4])) },
 ];
 
 /* ===== melodic narratives =====
@@ -544,4 +671,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };
+export { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };

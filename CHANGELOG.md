@@ -1,6 +1,74 @@
 # Changelog
 
 ## Unreleased
+- **Production controls — the sketch can sound like the genre now, not just be shaped like it.**
+  The structures and the arrangement view told you what a dance track *is*; this is the batch that
+  makes one sound like one.
+  - **Arpeggiator, per part.** An arped part ignores its written grid and walks the notes of the
+    chord under each bar — *Up*, *Down*, *Up & down*, *Converge*, *Thumb & top*, *Random*,
+    *Octaves* — at anything from 1/4 to 1/32, through up to four octaves. The point is that it
+    **follows the harmony**: change a chord, reorder the loop or switch key and the arp rewrites
+    itself, with nothing to re-enter.
+  - **Note gate, per part.** Eight patterns including a proper trance gate, chopping a held pad or a
+    long arp into a pulse. The echo send is taken after the gate, so a gated part throws gated
+    repeats instead of smearing over its own gaps.
+  - **Sidechain is per part now.** It used to be one gain node on the master, so every pitched
+    source pumped by exactly the same amount — fine for a demo, useless for writing dance music.
+    Each part has its own depth (*auto* follows the global Pump), so the bass can duck hard under a
+    pad that barely moves. The reverb return keeps its own duck, so the tail still breathes.
+  - **Six dance voices**, no download needed: **Supersaw**, **Hoover**, **Acid 303** (resonant, with
+    a filter envelope), **Reese bass**, **Sub bass** and **House stab**. Lead voices had no test
+    coverage at all before this; all of them are now played across five registers and checked for
+    the things that throw in real Web Audio rather than in a stub.
+  - **Swing is a dial, not a switch** — anywhere from dead straight to nearly a triplet shuffle, and
+    the useful settings are the small ones in between where house and garage live.
+  - **Feel** (humanise) nudges every hit a few milliseconds and varies how hard it lands. The
+    variation is derived from a hash of the beat rather than `Math.random`, so it is fixed: a render
+    and a stem bounce come out identical to what you heard, and the stems still sum to the mix.
+  - **Seven basslines** in the Suggest menu — *offbeat (house)*, *driving eighths*, *rolling
+    sixteenths*, *tresillo*, *pumped*, *walking the chord* and a plain held root. They bring their
+    own rhythm instead of taking it from the Rhythm menu, because that is what a bassline *is*, and
+    they follow each bar's chord.
+  - Three duds caught by the new tests and fixed before shipping: the *Octaves* arp collapsed onto one
+    repeated note whenever it had only a single octave to work with, and a "Sixteenths" gate that
+    was open on every step — a menu entry that did nothing at all. *Driving eighths* wrote a whole
+    note rather than eighths on an eighth grid, because two of the same pitch on adjacent columns is
+    how the grid stores a tie; it drops to quarters at that resolution now instead of lying.
+  - Every part effect is carried by saved sketches and shared links, and each one is checked
+    individually rather than trusting a whole-object comparison.
+  - Verified in a browser end to end: a supersaw arp, a trance-gated pad, a part pumping at 90%,
+    18% swing and 35% feel — and the four stems still sum to the mix to within 16-bit rounding,
+    which is only true if the arp, the gate and the humanising are all reproducible.
+  - Still to come from this group: extra section moves and automation lanes.
+  Version bumped to 4.50.0.
+- **The arrangement strip — see the whole song at once.** Above the section list, a horizontal view
+  of the song end to end: one block per section, as wide as that section is long, with bar numbers
+  across the top. Repeated sections are one block, so a dance structure reads as *Groove ×8 · Drop
+  ×8* rather than fifty-two identical slivers. Tap a block to play from there; a playhead runs
+  across it as it plays.
+  - **A lane per element** underneath — Drums, Chords and each melody part — lit where it plays and
+    dark where it doesn't. This is the bit that earns its place: an arrangement with every lane lit
+    end to end is exactly the one that sounds flat, and now you can see that without pressing Play.
+    A half-lit lane means the part is in for some passes of a section and out for others.
+  - **Every section type has its own colour now**, chosen by what it does — statements green, hooks
+    gold, lifts blue and pink, the drop hot, breakdowns cold. Nine of the sixteen section types had
+    no colour at all, which meant a dance structure drew as one grey smear; `npm test` now checks
+    every section letter has a colour and that no two of them collide.
+  Version bumped to 4.49.0.
+- **Stem export — the sketch arrives in your DAW as separate tracks.** A new **↓ Export stems**
+  button beside *Export audio* bounces the drums, the chords and each melody part to its own .wav
+  and hands you all of them as a single .zip. Drop the unzipped folder on a timeline and every
+  source is on its own track, already aligned: re-balance it, replace the drums, keep only the
+  bassline. Until now the only way out as audio was one flattened mix you couldn't unpick.
+  - Files are numbered and named for what they are — `01-drums.wav`,
+    `02-chords-acoustic_guitar_steel.wav`, `03-part-A-flute.wav`.
+  - A part that is muted or has no notes is skipped rather than shipped as a silent file.
+  - The stems **sum back to exactly the mix** — verified in a browser to within 16-bit rounding.
+  - They are **pre-master**: the peak limiter is off, because your DAW's master chain should be
+    doing that. The sidechain pump stays in the pitched stems even though the kick that triggers it
+    lives only in the drum stem, so an isolated pad still breathes the way it did on Play.
+  - Stems render one at a time, so a phone doesn't run out of memory halfway through.
+  Version bumped to 4.48.0.
 - **Fifty song structures, and sixteen of them are dance.** There were 24, of which exactly one was
   a dance form. The picker is now grouped — the ones written for your progression, then **Song
   forms**, **Dance & electronic** and **Club edits**.
