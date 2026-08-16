@@ -305,27 +305,93 @@ defStruct("pachelbel", [
   ["Verse|LOOP|2|","Chorus|LOOP|1|","Bridge|ii IV ii V|1|first chords outside the cycle — after all that sequence, ii sounds enormous","Final choruses|LOOP|2|"]],
 ]);
 
-const UNIVERSAL = [
- ["Storyteller (strophic)","Folk and country narrative form — no chorus at all. The loop never changes; the story does.",
-  ["Intro|LOOP|1|instrumental","Verse 1|LOOP|2|","Verse 2|LOOP|2|","Instrumental|LOOP|1|","Verse 3|LOOP|2|","Final verse|LOOP|2|return to the opening image","Outro|HOLD1|1|let the tonic ring out"]],
- ["Slow-burn ballad","Everything about restraint until the last chorus — dynamics do the storytelling.",
-  ["Intro|HOLD1|1|held — piano or pad only","Verse 1|LOOP|2|minimal","Chorus|LOOP|1|still restrained","Verse 2|LOOP|2|add one element","Chorus|LOOP|2|","Middle 8|HALF2|2|the back half of the loop, stripped bare","Final chorus|LOOP|2|full arrangement at last","Outro|HOLD1|1|back to where it started"]],
- ["Pop-punk sprint","Under three minutes. Verses on half the loop keep the chorus feeling like a payoff.",
-  ["Intro|LOOP|2|full speed, guitars only then drums in","Verse 1|HALF1|4|","Chorus|LOOP|2|","Verse 2|HALF1|4|","Chorus|LOOP|2|","Bridge|HALF2|2|half-time feel — same chords, half the speed","Double chorus|LOOP|4|gang vocals on the last pass"]],
- ["Dance build","Club architecture: tension on a fragment of the loop, release on the whole thing.",
-  ["Intro|HOLD1|2|groove on one chord, filtered","Build|HALF1|4|rising filter / snare roll","Drop|LOOP|4|full loop, full energy","Break|HOLD1|2|strip to almost silence","Build|HALF1|4|","Drop|LOOP|4|","Outro|HOLD1|2|filter back down"]],
- ["AABA classic","Two statements, a contrasting middle, and home again — the pre-rock standard form.",
-  ["A|LOOP|2|","A|LOOP|2|same music, second lyric","B — the middle|HALF2|2|contrast from the loop's back half; end poised to fall home","A|LOOP|2|home again — often the first lyric returns"]],
-].map(x => ({ name:x[0], tip:x[1], plan: mkPlan(x[2]) }));
+/* Structures that work on any progression. `family` groups them in the picker.
 
-const LETTER_WORD = { I:"intro", V:"verse", P:"pre-chorus", C:"chorus", B:"bridge", S:"solo",
+   Bar maths matters here: `reps` multiplies the chord pool, so on the usual four-chord loop
+   LOOP|2 is 8 bars, LOOP|4 is 16 and LOOP|8 is 32 — the 8/16/32-bar phrases dance music is
+   built from. LOOP|4 is sixteen bars of one chord, which is exactly a DJ-friendly intro. */
+const UNIVERSAL = [
+ /* ---- song forms ---- */
+ ["Storyteller (strophic)","Folk and country narrative form — no chorus at all. The loop never changes; the story does.",
+  ["Intro|LOOP|1|instrumental","Verse 1|LOOP|2|","Verse 2|LOOP|2|","Instrumental|LOOP|1|","Verse 3|LOOP|2|","Final verse|LOOP|2|return to the opening image","Outro|HOLD1|1|let the tonic ring out"],"Song forms"],
+ ["Slow-burn ballad","Everything about restraint until the last chorus — dynamics do the storytelling.",
+  ["Intro|HOLD1|1|held — piano or pad only","Verse 1|LOOP|2|minimal","Chorus|LOOP|1|still restrained","Verse 2|LOOP|2|add one element","Chorus|LOOP|2|","Middle 8|HALF2|2|the back half of the loop, stripped bare","Final chorus|LOOP|2|full arrangement at last","Outro|HOLD1|1|back to where it started"],"Song forms"],
+ ["Pop-punk sprint","Under three minutes. Verses on half the loop keep the chorus feeling like a payoff.",
+  ["Intro|LOOP|2|full speed, guitars only then drums in","Verse 1|HALF1|4|","Chorus|LOOP|2|","Verse 2|HALF1|4|","Chorus|LOOP|2|","Bridge|HALF2|2|half-time feel — same chords, half the speed","Double chorus|LOOP|4|gang vocals on the last pass"],"Song forms"],
+ ["AABA classic","Two statements, a contrasting middle, and home again — the pre-rock standard form.",
+  ["A|LOOP|2|","A|LOOP|2|same music, second lyric","B — the middle|HALF2|2|contrast from the loop's back half; end poised to fall home","A|LOOP|2|home again — often the first lyric returns"],"Song forms"],
+ ["Modern pop (post-chorus)","The shape of most current radio pop: the hook after the hook is the bit people actually remember.",
+  ["Intro|HALF1|1|","Verse 1|LOOP|2|","Pre-chorus|HALF2|1|lift","Chorus|LOOP|2|","Post-chorus|HALF1|2|instrumental hook — no lyric","Verse 2|LOOP|2|","Pre-chorus|HALF2|1|","Chorus|LOOP|2|","Post-chorus|HALF1|2|","Bridge|HALF2|2|","Chorus|LOOP|2|","Post-chorus|HALF1|4|ride it out"],"Song forms"],
+ ["Hook first","Open on the chorus. Gives you three seconds to win, which is what a playlist skip button is.",
+  ["Chorus|LOOP|1|cold open, no intro","Verse 1|LOOP|2|","Chorus|LOOP|2|","Verse 2|LOOP|2|","Chorus|LOOP|2|","Bridge|HALF2|2|","Double chorus|LOOP|4|"],"Song forms"],
+ ["Bridge-less pop","No middle eight at all — the contrast comes from the arrangement dropping out instead.",
+  ["Intro|HALF1|1|","Verse 1|LOOP|2|","Chorus|LOOP|2|","Verse 2|LOOP|2|","Chorus|LOOP|2|","Break|HOLD1|2|everything stops but the voice","Final chorus|LOOP|4|"],"Song forms"],
+ ["Verse & refrain","No separate chorus — the last line of every verse is the hook. Dylan, Springsteen, most folk.",
+  ["Intro|LOOP|1|","Verse 1|HALF1|2|","Refrain|HALF2|1|the line that repeats","Verse 2|HALF1|2|","Refrain|HALF2|1|","Verse 3|HALF1|2|","Refrain|HALF2|2|","Outro|HOLD1|1|"],"Song forms"],
+ ["Through-composed","Nothing repeats. Every section is new material — prog, art-pop, film cues.",
+  ["Part I|LOOP|2|","Part II|HALF2|2|","Part III|LOOP|2|","Part IV|HALF1|2|","Part V|LOOP|3|the arrival","Coda|HOLD1|2|"],"Song forms"],
+ ["Anthem build","Starts with one voice, ends with everyone. The structure is dynamics, not harmony.",
+  ["Intro|HOLD1|2|one instrument","Verse 1|LOOP|2|voice and one part","Verse 2|LOOP|2|add drums","Chorus|LOOP|2|full band","Verse 3|LOOP|2|","Chorus|LOOP|2|","Breakdown|HALF2|2|drop to almost nothing","Final chorus|LOOP|4|biggest arrangement; consider stepping the whole loop up a tone"],"Song forms"],
+ ["Soul / Motown","Short intro, tight verses, a tag that keeps repeating while the singer ad-libs over it.",
+  ["Intro|HALF1|1|","Verse 1|LOOP|2|","Chorus|LOOP|1|","Verse 2|LOOP|2|","Chorus|LOOP|2|","Bridge|HALF2|2|","Chorus|LOOP|2|","Tag|HALF2|4|vamp and ad-lib to the fade"],"Song forms"],
+ ["Call & response","Gospel and blues shape: a line, an answer, and a last section where both stack up.",
+  ["Intro|LOOP|1|","Call|HALF1|2|","Response|HALF2|2|","Call|HALF1|2|","Response|HALF2|2|","Bridge|LOOP|2|","Call|HALF1|2|","Response|HALF2|4|both at once"],"Song forms"],
+
+ /* ---- dance & electronic ---- */
+ ["Dance build","Club architecture: tension on a fragment of the loop, release on the whole thing.",
+  ["Intro|HOLD1|4|groove on one chord, filtered","Build|HALF1|4|rising filter / snare roll","Drop|LOOP|4|full loop, full energy","Break|HOLD1|4|strip to almost silence","Build|HALF1|4|","Drop|LOOP|4|","Outro|HOLD1|4|filter back down"],"Dance & electronic"],
+ ["Big room / festival","The main-stage shape. Sixteen-bar intro and outro so a DJ can mix in and out on a phrase.",
+  ["Intro|LOOP|4|beat only, filtered — DJ mixes in here","Build|HALF1|4|snare roll and riser","Drop|LOOP|4|the whole loop at full size","Breakdown|LOOP|4|melodic, no kick","Build|HALF1|4|second riser, higher","Drop|LOOP|4|","Outro|LOOP|4|beat only — DJ mixes out"],"Dance & electronic"],
+ ["Progressive house","Nothing arrives all at once. Layers enter one at a time and the drop is a groove, not an event.",
+  ["Intro|LOOP|4|one element, filtered","Groove|LOOP|4|add the bass","Layer up|LOOP|4|add the chords","Breakdown|HALF2|4|take the kick away","Build|HALF1|8|sixteen bars of rising tension","Main groove|LOOP|8|thirty-two bars — let it run","Outro|LOOP|4|strip back down"],"Dance & electronic"],
+ ["Trance","The breakdown is the song. Everything before it is setup and everything after is release.",
+  ["Intro|LOOP|4|","Groove|LOOP|4|","Breakdown|LOOP|4|the melodic centrepiece, no drums","Build|HALF1|8|long riser, sixteen bars","Drop|LOOP|8|thirty-two bars of the main theme","Break|HALF2|4|","Drop|LOOP|4|","Outro|LOOP|4|"],"Dance & electronic"],
+ ["Deep house","A tool more than a song: long mixable ends, a groove that barely changes, two small breaks.",
+  ["DJ intro|LOOP|4|drums and one hook","Groove|LOOP|4|","Break|HALF2|2|filter down, no kick","Groove|LOOP|4|","Vocal|LOOP|4|","Break|HALF2|2|","Groove|LOOP|4|","DJ outro|LOOP|4|"],"Dance & electronic"],
+ ["Tech house","Minimal and relentless. The interest is in what drops out, not what gets added.",
+  ["DJ intro|LOOP|4|","Groove|LOOP|8|thirty-two bars, almost no change","Break|HOLD1|4|drums only","Groove|LOOP|8|one new element","Break|HALF2|2|","Groove|LOOP|4|","DJ outro|LOOP|4|"],"Dance & electronic"],
+ ["Melodic techno","A long climb that never fully pays off — the tension is the point.",
+  ["Intro|LOOP|4|","Pulse|LOOP|4|","Layer up|LOOP|4|","Long build|HALF1|8|sixteen bars, filter opening the whole way","Release|LOOP|8|arrival rather than a drop","Fade|LOOP|4|"],"Dance & electronic"],
+ ["Future bass","The drop is the chords — which is what this app is best at. Short, bright, vocal-chopped.",
+  ["Intro|HALF1|2|","Verse|LOOP|2|","Build|HALF1|4|","Drop|LOOP|4|chords are the hook here","Verse|LOOP|2|","Build|HALF1|4|","Drop|LOOP|4|","Outro|HOLD1|4|"],"Dance & electronic"],
+ ["Dubstep","Half-time drops with a mid-section that changes the pattern rather than the chords.",
+  ["Intro|LOOP|2|","Build|HALF1|4|","Drop|LOOP|4|half-time — everything feels twice as heavy","Mid|HALF2|4|switch the rhythm, keep the key","Build|HALF1|4|","Drop|LOOP|4|second drop, new pattern","Outro|LOOP|2|"],"Dance & electronic"],
+ ["Drum & bass","Sixteen-bar intro, a breakdown that sets the mood, then two drops with a roll-out between.",
+  ["Intro|LOOP|4|","Breakdown|LOOP|4|atmosphere and pads","Drop|LOOP|8|","Roll-out|HALF2|4|strip to the break","Drop|LOOP|8|","Outro|LOOP|4|"],"Dance & electronic"],
+ ["Trap","Hook-led and repetitive by design. The bridge is the only place anything changes.",
+  ["Intro|HOLD1|4|","Verse 1|LOOP|4|","Hook|LOOP|2|","Verse 2|LOOP|4|","Hook|LOOP|2|","Bridge|HALF2|2|","Hook|LOOP|4|double hook to finish"],"Dance & electronic"],
+ ["UK garage","Two-step groove with a vocal on top and short breaks that keep it moving.",
+  ["Intro|LOOP|2|","Groove|LOOP|4|","Vocal|LOOP|4|","Break|HALF2|2|","Groove|LOOP|4|","Vocal|LOOP|4|","Outro|LOOP|2|"],"Dance & electronic"],
+ ["Hardstyle","Everything serves the kick. The breakdown is euphoric so the drop can be brutal.",
+  ["Intro|LOOP|2|","Build|HALF1|4|","Kick drop|LOOP|4|","Breakdown|LOOP|4|melodic and wide open","Build|HALF1|8|","Kick drop|LOOP|4|","Outro|LOOP|2|"],"Dance & electronic"],
+ ["Eurodance","Verse, chorus, and an eight-bar rap where the second verse would be. Unapologetic.",
+  ["Intro|LOOP|2|","Verse 1|LOOP|2|","Pre-chorus|HALF2|2|","Chorus|LOOP|2|","Rap|HALF1|2|","Chorus|LOOP|2|","Breakdown|HOLD1|4|","Chorus|LOOP|4|"],"Dance & electronic"],
+ ["Ambient / downtempo","No drops at all. Sections change by texture, and everything is long.",
+  ["Opening|LOOP|2|one held chord","Drift|LOOP|4|","Swell|LOOP|4|","Still|LOOP|2|almost nothing","Return|LOOP|4|","Close|LOOP|2|"],"Dance & electronic"],
+ ["Synthwave","Steady, cinematic, no big drop — the arpeggio runs the whole way through.",
+  ["Intro|HOLD1|4|arp alone","Verse|LOOP|4|","Chorus|LOOP|4|","Verse|LOOP|4|","Solo|HALF2|4|lead line over the loop","Chorus|LOOP|4|","Outro|LOOP|2|arp fades out"],"Dance & electronic"],
+
+ /* ---- the same song at three lengths ---- */
+ ["Radio edit","Short intro, straight to the hook, out by three minutes. Built for a playlist, not a floor.",
+  ["Intro|HALF1|2|eight seconds at most","Verse 1|LOOP|2|","Chorus|LOOP|2|","Verse 2|LOOP|2|","Chorus|LOOP|2|","Bridge|HALF2|2|","Chorus|LOOP|2|","Outro|HOLD1|4|"],"Club edits"],
+ ["Club mix","The same song with mixable ends — thirty-two bars of beat at each end for a DJ to work with.",
+  ["DJ intro|LOOP|4|","Groove|LOOP|4|","Build|HALF1|4|","Drop|LOOP|4|the chorus, arranged as a drop","Break|HALF2|4|","Build|HALF1|4|","Drop|LOOP|8|","DJ outro|LOOP|4|"],"Club edits"],
+ ["Extended mix","Seven minutes. Everything gets twice as long and the arrangement earns its arrival.",
+  ["DJ intro|LOOP|4|","Groove|LOOP|8|","Layer up|LOOP|4|","Breakdown|LOOP|4|","Build|HALF1|8|","Drop|LOOP|8|","Break|HALF2|4|","Build|HALF1|8|","Drop|LOOP|8|","DJ outro|LOOP|4|"],"Club edits"],
+].map(x => ({ name:x[0], tip:x[1], plan: mkPlan(x[2]), family: x[3] || "Song forms" }));
+// the families, in picker order
+const STRUCT_FAMILIES = ["Song forms", "Dance & electronic", "Club edits"];
+
+const LETTER_WORD = { I:"intro", V:"verse", P:"pre-chorus", C:"chorus", B:"bridge", S:"solo", G:"groove",
   R:"refrain", T:"tag", O:"outro", U:"build", D:"drop", K:"break", A:"A section", H:"head" };
 function letterFor(sec) {
   const s = sec.toLowerCase();
   for (const [k, L] of [["pre","P"],["chorus","C"],["intro","I"],["verse","V"],["bridge","B"],["middle","B"],
     ["solo","S"],["instrumental","S"],["refrain","R"],["tag","T"],["build","U"],["drop","D"],["break","K"],
+    ["hook","C"],["groove","G"],["pulse","G"],["layer","U"],["release","D"],["rap","V"],["vocal","V"],
+    ["call","V"],["response","R"],["mid","B"],["drift","G"],["swell","U"],["still","K"],["roll","K"],["fade","O"],
     ["outro","O"],["out","O"],["head","H"]]) if (s.includes(k)) return L;
   return sec[0].toUpperCase();
 }
 
-export { BLUES12, BLUES12Q, CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, UNIVERSAL, defStruct, letterFor, mkPlan };
+export { BLUES12, BLUES12Q, CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, defStruct, letterFor, mkPlan };

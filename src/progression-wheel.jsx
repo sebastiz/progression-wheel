@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
-import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, UNIVERSAL, letterFor } from "./progressions.js";
+import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
+import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
 import { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
@@ -798,10 +798,12 @@ export default function ProgressionWheel() {
       for (let r = 0; r < row.reps; r++) {
         counts[L] = (counts[L] || 0) + 1;
         const key = L + counts[L];
-        insts.push({ key, base: L, word, cs, str, usedC, note: r === 0 ? row.note : null,
+        // `word` is the letter's generic name, used for display; `sec` keeps what the structure
+        // actually called this section, which is what a DAW marker should say — "Breakdown", not "break"
+        insts.push({ key, base: L, word, sec: row.sec, cs, str, usedC, note: r === 0 ? row.note : null,
           nbars: cs.length, startBar: totalBars });
         totalBars += cs.length;
-        if (bars) cs.forEach((c, mb) => bars.push({ chord: c, inst: key, base: L, word, mb }));
+        if (bars) cs.forEach((c, mb) => bars.push({ chord: c, inst: key, base: L, word, sec: row.sec, mb }));
       }
     });
     return { insts, totalBars, bars };
@@ -1599,7 +1601,24 @@ export default function ProgressionWheel() {
         return { cols, program: programOf(ly.instr || melInstr),
           gain: ly.vol == null ? 1 : ly.vol };
       });
-      const bytes = midiBytes(effBpm, barBeats, bars, drumForBar, parts, kit, meloSub, programOf(instr));
+      // What a DAW needs to lay the file out: the meter, the key, and where each section starts.
+      // MAJOR_SIG is indexed by the *relative major* of the current mode, which is what a key
+      // signature actually spells — so a Dorian sketch gets the right accidentals, not the tonic's.
+      const rel = (tonic + MODES[effMode].rel) % 12;
+      const meta = {
+        beatUnit: 4,
+        sharps: MAJOR_SIG[((rel % 12) + 12) % 12],
+        minor: MODES[effMode].family === "minor",
+        // one marker per section instance, at the bar it begins
+        markers: bars.reduce((out, b, bi) => {
+          const name = b.sec || b.word;
+          if (b.inst == null || b.mb !== 0 || !name) return out;
+          if (out.length && out[out.length - 1].name === name) return out;    // same section, next pass
+          out.push({ bar: bi, name });
+          return out;
+        }, []),
+      };
+      const bytes = midiBytes(effBpm, barBeats, bars, drumForBar, parts, kit, meloSub, programOf(instr), meta);
       const url = URL.createObjectURL(new Blob([bytes], { type:"audio/midi" }));
       const a = document.createElement("a");
       a.href = url; a.download = "progression-wheel.mid";
@@ -2617,8 +2636,17 @@ export default function ProgressionWheel() {
             <div className="progtitle" style={{ fontSize:17 }}>Song & melody</div>
             <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => setSelStruct(e.target.value)}>
               <option value="">No structure — just the loop</option>
-              {(STRUCTURES[progId] || []).map((st, i) => <option key={"p"+i} value={progId + ":p:" + i}>{st.name}</option>)}
-              {UNIVERSAL.map((st, i) => <option key={"u"+i} value={progId + ":u:" + i}>{st.name}</option>)}
+              {(STRUCTURES[progId] || []).length > 0 && (
+                <optgroup label={"Written for " + prog.label}>
+                  {(STRUCTURES[progId] || []).map((st, i) => <option key={"p"+i} value={progId + ":p:" + i}>{st.name}</option>)}
+                </optgroup>
+              )}
+              {STRUCT_FAMILIES.map(fam => (
+                <optgroup key={fam} label={fam}>
+                  {UNIVERSAL.map((st, i) => st.family === fam
+                    ? <option key={"u"+i} value={progId + ":u:" + i}>{st.name}</option> : null)}
+                </optgroup>
+              ))}
             </select>
           </div>
 

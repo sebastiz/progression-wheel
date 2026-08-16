@@ -64,6 +64,12 @@ wheel geometry, the pill strip, and the melody landing notes.
 
 ## Structures
 
+`UNIVERSAL` entries carry a `family` (`STRUCT_FAMILIES`) that groups them in the picker. `reps`
+multiplies the chord pool, so on a four-chord loop `LOOP|4` is sixteen bars — which is how the dance
+structures get their 8/16/32-bar phrasing. Note that `reps` creates one section *instance* per pass:
+`HOLD1|16` would be sixteen one-bar sections, sixteen rows in the arrangement and sixteen markers, so
+long sections are written as `LOOP|4` rather than `HOLD1|16`.
+
 `STRUCTURES`/`PLANS` (per progression) and `UNIVERSAL` hold arrangement plans as compact rows:
 `"Section|nums|reps|note"`, where `nums` is numerals or a token (`LOOP`, `HALF1`, `HALF2`, `HOLD1`)
 resolved against a chord pool. `resolveWith(nums, pool)` + `poolFor(sectionLetter)` implement
@@ -243,6 +249,11 @@ comfortable fret (`tabFret`, distinct string per onset).
 GM names, so position in the standard 128 list is the program); `SYNTH_PROGRAM` gives the non-GM
 synth voices a nearest equivalent, and `programOf` resolves either. That is what lets an exported
 file name its instruments instead of opening on piano.
+
+`midiBytes()` takes a `meta` object — `{ beatUnit, sharps, minor, markers }` — and writes the time
+signature (`0xFF 0x58`), key signature (`0xFF 0x59`) and a marker (`0xFF 0x06`) at each section
+boundary onto the tempo track. Markers use the section's own name from the structure row (`sec`)
+rather than its letter-word, and consecutive passes of one section collapse to a single marker.
 
 `midiBytes()` writes a minimal SMF type-1 file by hand: tempo meta track, a chord track (bass +
 voicing held per bar), and a channel-10 drum track from the drum pattern (`DRUM_MIDI` maps each

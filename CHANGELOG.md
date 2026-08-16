@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+- **Fifty song structures, and sixteen of them are dance.** There were 24, of which exactly one was
+  a dance form. The picker is now grouped — the ones written for your progression, then **Song
+  forms**, **Dance & electronic** and **Club edits**.
+  - New dance shapes: *Big room / festival*, *Progressive house*, *Trance*, *Deep house*,
+    *Tech house*, *Melodic techno*, *Future bass*, *Dubstep*, *Drum & bass*, *Trap*, *UK garage*,
+    *Hardstyle*, *Eurodance*, *Ambient / downtempo* and *Synthwave* — each with its own real shape,
+    not a re-skin, and phrased in the 8- and 16-bar groups dance music is built from.
+  - **Club edits** are the same song at three lengths: *Radio edit* (short intro, out by three
+    minutes), *Club mix* (mixable ends a DJ can beatmatch over) and *Extended mix* (200 bars).
+  - New song forms too: *Modern pop (post-chorus)*, *Hook first*, *Bridge-less pop*,
+    *Verse & refrain*, *Through-composed*, *Anthem build*, *Soul / Motown* and *Call & response*.
+- **Exported MIDI now carries the arrangement.** Three additions that change the file from "the
+  right notes" to "the right session":
+  - **Section markers.** *Intro, Build, Drop, Breakdown…* appear on the DAW's timeline ruler at the
+    bar each section begins, using the name the structure gave it. Repeats of a section are one
+    marker, not one per pass.
+  - **Time signature.** A waltz or 6/8 sketch used to open as 4/4 with the barlines in the wrong
+    places. It doesn't now.
+  - **Key signature**, taken from the relative major of the current mode — so a Dorian sketch gets
+    the accidentals it actually reads in, and the DAW's scale and transposition tools start right.
+  Version bumped to 4.47.0.
 - **Melody rhythm — the generated lines aren't stiff any more.** Every suggested melody used to put
   one note on every beat, all the same length, so whichever shape you picked came out sounding the
   same underneath. Rhythm is now its own choice: a **Rhythm** menu sits beside the melody pattern in
