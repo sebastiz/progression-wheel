@@ -740,6 +740,31 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (dspread < 10) problems.push(`drum velocity barely varies (spread ${dspread})`);
   if ([...melA.vels, ...melB.vels, ...drums.vels].some(v => v < 1 || v > 127)) problems.push("a velocity fell outside 1..127");
   console.log(`midi voicing: chords=prog ${chords.progs[0].prog}, ${melA.name}=prog ${melA.progs[0].prog} ch${melA.progs[0].ch}, ${melB.name}=prog ${melB.progs[0].prog} ch${melB.progs[0].ch}`);
+
+  /* The per-track export writes one file per source, each holding the tempo map and exactly one
+     thing. `meta.skipChords` is what leaves the chord track out; the header's track count has to
+     agree with the chunks actually written, or a DAW reads past the end of the file. */
+  {
+    const countTrk = f => { let n = 0;
+      for (let i = 0; i + 3 < f.length; i++) if (f[i] === 0x4d && f[i + 1] === 0x54 && f[i + 2] === 0x72 && f[i + 3] === 0x6b) n++;
+      return n; };
+    const hdrTrk = f => (f[10] << 8) | f[11];
+    const bars4 = [0, 1, 2, 3].map(() => ({ chord: { root: 0, quality: "min", name: "Cm" } }));
+    const partCols = Array.from({ length: 8 }, (_, i) => (i % 2 ? [] : [60 + i]));
+    const full = M.midiBytes(120, 4, bars4, null, [{ cols: partCols, program: 73 }], "acoustic", 2, 0, {});
+    const noChords = M.midiBytes(120, 4, bars4, null, [{ cols: partCols, program: 73 }], "acoustic", 2, 0, { skipChords: true });
+    // tempo + chords + part  vs  tempo + part
+    if (countTrk(full) !== 3) problems.push(`a full MIDI export wrote ${countTrk(full)} tracks, expected 3`);
+    if (countTrk(noChords) !== 2) problems.push(`skipChords wrote ${countTrk(noChords)} tracks, expected 2`);
+    for (const [name, f] of [["full", full], ["skipChords", noChords]])
+      if (hdrTrk(f) !== countTrk(f))
+        problems.push(`${name}: the header claims ${hdrTrk(f)} tracks but ${countTrk(f)} were written — a reader would run off the end`);
+    if (noChords.length >= full.length) problems.push("skipChords did not actually make the file smaller");
+    // the tempo map has to survive into the per-track files, or they land at the wrong speed
+    const hasTempo = f => { for (let i = 0; i + 2 < f.length; i++) if (f[i] === 0xff && f[i + 1] === 0x51 && f[i + 2] === 3) return true; return false; };
+    if (!hasTempo(noChords)) problems.push("a per-track MIDI file lost its tempo map");
+    console.log(`per-track midi: ${countTrk(full)} tracks whole, ${countTrk(noChords)} with skipChords, headers agree, tempo kept`);
+  }
   console.log(`midi velocity: melody ${Math.min(...melA.vels)}–${Math.max(...melA.vels)}, half-level part ${Math.min(...melB.vels)}–${Math.max(...melB.vels)}, drums ${Math.min(...drums.vels)}–${Math.max(...drums.vels)}`);
   // every catalogue instrument must resolve to a real program
   const keys = M.GM_CATS.flatMap(([, l]) => l.map(([k]) => k));

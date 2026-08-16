@@ -113,9 +113,13 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
     if (part && part.program != null) head.push(...vlq(0), 0xc0 | ch, part.program & 0x7f);
     return { ...m, arr: [...head, ...m.arr] };
   }).filter(m => m.has);
-  const nTrk = 2 + (drumHas ? 1 : 0) + mels.length;
+  /* `meta.skipChords` leaves the chord track out. Used by the per-track export, where each file is
+     meant to hold exactly one thing — the tempo map and markers still go in, so dropping the file
+     on a timeline still lands it at the right speed and with the sections marked. */
+  const withChords = !meta.skipChords;
+  const nTrk = 1 + (withChords ? 1 : 0) + (drumHas ? 1 : 0) + mels.length;
   const head = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0, nTrk, (T>>8)&255, T&255];
-  return new Uint8Array([...head, ...trk(tempo), ...trk(chordsT),
+  return new Uint8Array([...head, ...trk(tempo), ...(withChords ? trk(chordsT) : []),
     ...(drumHas ? trk(drumsT) : []), ...mels.flatMap(m => trk(m.arr))]);
 }
 
