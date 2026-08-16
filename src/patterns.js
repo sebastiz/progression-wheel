@@ -44,8 +44,21 @@ const PATTERNS = {};
 ["disco16","Disco chug",">-U->-U->-U->-U-","clipped upstrokes pushing every offbeat — nu-disco guitar",0,4],
 ["shuffle16","Swung 16ths","D-UD-UD-D-UD-UD-","16ths with a shuffle — UK garage and 2-step swing",1,4],
 ["trap16","Trap sparse",">-------D-------","two chords a bar, everything else left to the drums",0,4],
-].forEach(([id, name, pat, desc, swing, sub]) =>
-  PATTERNS[id] = { name, pattern: pat.split(""), desc, swing: !!swing, sub: sub || 2 });
+// 6/8 — six eighth-note steps, felt in two dotted beats rather than three plain ones
+["ballad68","6/8 ballad",">-U-DU","the slow-dance lilt: one big beat, one answering",0,2,"6/8"],
+["rock68","6/8 rock",">DU>DU","two firm dotted beats — Irish rock and power ballads",0,2,"6/8"],
+["jig","6/8 jig",">UDDUD","the jig's tumble, all quavers, accent on each dotted beat",0,2,"6/8"],
+["blues68","6/8 blues",">-D>UD","slow blues in twelve-eight, felt in two",1,2,"6/8"],
+// 5/4 — ten eighth-note steps, grouped 3+2 unless the pattern says otherwise
+["five32","5/4 · 3+2",">-D-D>-DU-","the Take Five grouping: three then two, the limp that makes it swing"],
+["five23","5/4 · 2+3",">-D->-D-DU","two then three — settles differently, lands harder on the second group"],
+["fiveflow","5/4 flowing",">-DU-D-UDU","even quavers across the bar, no grouping insisted on"],
+["fivepick","5/4 fingerpick",">-U-DU-U-D","picked rather than strummed — prog and folk both live here"],
+].forEach(([id, name, pat, desc, swing, sub, meter]) =>
+  PATTERNS[id] = { name, pattern: pat.split(""), desc, swing: !!swing, sub: sub || 2,
+    // a pattern's meter is its bar length unless it says otherwise; 6/8 and 3/4 are the same
+    // number of quarter-note beats and only the counting differs, so that one has to be declared
+    meter: meter || null });
 
 // Columns per beat for a rhythm pattern: 2 = eighths, 4 = sixteenths. Everything downstream —
 // the scheduler tick, the melody grid, note values in the score, MIDI ticks — reads the meter
@@ -81,7 +94,27 @@ const accentAt = (i, ticksPerBeat) => {
 };
 // a drum pattern carries no `sub`, so read its meter from its length: 6 steps is three beats
 // (3/4 and 6/8), 8 and 16 are both four
-const drumBeatsOf = pat => (pat && pat.length === 6 ? 3 : 4);
+/* A drum pattern's meter, from its step count. Steps are eighths or sixteenths, so the length tells
+   you the bar: 6 or 12 is three beats, 10 or 20 is five, everything else is four. This used to be
+   `length === 6 ? 3 : 4`, which read a 5/4 pattern as 4/4 and dropped it from the menu. */
+const DRUM_BEATS = { 6: 3, 12: 3, 10: 5, 20: 5 };
+const drumBeatsOf = pat => (pat && DRUM_BEATS[pat.length]) || 4;
+
+/* The time signatures the app can actually play, in the order they belong in a menu. `beats` is
+   quarter-note beats per bar, which is what the scheduler and every pattern length are measured in;
+   `num`/`den` are what a DAW should be told, so 6/8 comes out as 6/8 rather than as 3/4 with the
+   accents in the wrong place. */
+const METERS = [
+  { id:"4/4", name:"4/4 · common time", beats:4, num:4, den:4 },
+  { id:"3/4", name:"3/4 · waltz",       beats:3, num:3, den:4 },
+  { id:"6/8", name:"6/8 · compound",    beats:3, num:6, den:8 },
+  { id:"5/4", name:"5/4 · odd",         beats:5, num:5, den:4 },
+];
+const METER_BY_ID = Object.fromEntries(METERS.map(m => [m.id, m]));
+// which meter a strum pattern belongs to: what it declares, else its bar length
+const meterOf = p => p.meter || (beatsOf(p) === 3 ? "3/4" : beatsOf(p) === 5 ? "5/4" : "4/4");
+// a drum pattern fits a meter if the bars are the same length — 3/4 and 6/8 share their kits
+const drumFitsMeter = (d, mid) => !!d && !!d.pattern && drumBeatsOf(d.pattern) === (METER_BY_ID[mid] || METERS[0]).beats;
 
 const PATTERN_DEFAULT = { axis:"pop", axisMinor:"drive", three:"rock8", blues:"shuffle",
   doowop:"sway12", jazz:"fourbar", mixo:"push", andalusian:"latin", pachelbel:"arp",
@@ -162,6 +195,11 @@ const DRUMS = {};
 ["dubstep16","Dubstep","KH H H H H H H H CH H H H H H KH H"],
 ["hiphop16","Hip-hop 16ths","KH H H H SH H KH H H KH H H SH H H H"],
 ["footwork","Footwork","K H K H CH H K H K H K H CH H K H"],
+// 5/4 — ten eighth-note steps
+["five54","5/4 straight","KH H SH H KH H H SH H H"],
+["fivejazz","5/4 jazz ride","KR R SR R KR R R SR R R"],
+["fiverock","5/4 rock","KH KH SH H KH H KH SH H H"],
+["fivefloor","5/4 four-plus","K H KS H K H K H KS H"],
 ].forEach(([id, name, pat]) =>
   DRUMS[id] = { name, pattern: pat ? pat.split(" ").map(s => s === "." ? "" : s) : null });
 
@@ -181,4 +219,4 @@ const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16"
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
+export { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };

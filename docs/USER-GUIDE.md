@@ -80,6 +80,17 @@ genre, and worth trying on a song you already like.
 
 ## Rhythm
 
+**Chords** sits next to Key: how many chords the loop has, from two to eight. Fewer takes the first
+few of the progression; more adds diatonic chords it hasn't used yet, so a four-chord axis grown to
+six gains a ii and a iii rather than just repeating itself. The dot marks the progression's own
+length. An odd number still plays as an even phrase — the last chord simply holds an extra bar.
+
+**Time** sits at the front of the rhythm row: **4/4**, **3/4**, **6/8** or **5/4**. Everything in
+that row is filtered to the meter you pick, and changing it moves you to a strum pattern and a kit
+that fit — a 4/4 kit left behind in a 5/4 bar would just fall silent. 3/4 and 6/8 are the same length
+of bar and share their kits; they differ in how you count them, and in what a DAW is told (6/8
+exports as 6/8, not as 3/4 with the accents in the wrong place).
+
 Pattern (≈37 strums including 3/4, 6/8, swung feels and sixteenths — ★ marks the progression's
 suggested one, **· 16ths** marks the finer grid),
 Sound (guitar / piano / organ / bass / double bass), Drums (≈53 patterns including 3/4, 6/8, dance and

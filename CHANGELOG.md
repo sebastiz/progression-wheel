@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+- **Choose how many chords the loop has.** A **Chords** menu next to **Key**, from two to eight.
+  Fewer takes the first few of the progression; more adds diatonic chords it hasn't used yet, so a
+  four-chord axis grown to six gains a ii and a iii rather than simply repeating. Per-chord edits,
+  inserts and removals still layer on top. The dot marks the progression's own length.
+- **Choose the time signature.** A **Time** menu at the front of the rhythm row: **4/4**, **3/4**,
+  **6/8** and **5/4**. The rest of the row filters to the meter you pick, and changing it moves you
+  to a strum pattern and a kit that fit.
+  - **5/4 is new content**, not just a menu entry: four strum patterns (3+2, 2+3, flowing,
+    fingerpicked) and four kits, because a time signature with nothing to play in it is a dead end.
+  - **6/8 is now distinct from 3/4.** They are the same length of bar and share their kits, but
+    differ in how you count them — and 6/8 now **exports as 6/8** rather than as 3/4 with every
+    accent in the wrong place. Four 6/8 strum patterns added.
+  - Fixed on the way: a drum pattern's meter was read as `length === 6 ? 3 : 4`, which took a
+    ten-step 5/4 kit for a 4/4 one. `npm test` now checks every offered meter has both patterns and
+    kits, and that its MIDI signature describes the same bar its beats do.
+  Version bumped to 4.57.0.
 - **Workflow — the last of the roadmap.** Four small things that change how the app feels to use for
   an hour rather than what it can make.
   - **Keyboard**: **space** to play and stop, **esc** to stop, **[** / **]** to nudge the tempo
