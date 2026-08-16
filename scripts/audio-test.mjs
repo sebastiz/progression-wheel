@@ -1206,7 +1206,10 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const show = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
   const onsets = bars => bars.flatMap((b, i) => M.barNotes(b).map(n => i + ":" + n.c));
   const ND = 7, ROLES = ["C", "V", "B", "I"];
-  let combos = 0, repeats = 0, worstKeep = 1;
+  const LEVELS = M.VARY_LEVELS.map(([n]) => n);      // every level the menu offers, not a fixed list
+  const noteCount = bars => bars.reduce((a, b) => a + M.barNotes(b).length, 0);
+  let combos = 0, repeats = 0, worstKeep = 1, steps = 0, flat = 0;
+  const spread = { more: 0, fewer: 0, same: 0 };
 
   // barNotes is the model everything else rests on: a run of one degree is one held note, not several
   {
@@ -1225,7 +1228,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
           chordDegs: [[0, 2, 4], [3, 5, 0], [4, 6, 1], [0, 2, 4]], role,
           pass: 0, passes: 4, idx: 0, total: 4, frac: 0 });
         const before = show(base);
-        for (const amount of [0, 1, 2]) {
+        for (const amount of LEVELS) {
           const outs = [0, 1, 2, 3].map(p => M.varyBars(base, { pass: p, role, nd: ND, amount }));
           // the generator's own output must never be edited in place — the caller reuses it
           if (show(base) !== before) problems.push(`varyBars mutated the bars it was given (${nar.id})`);
@@ -1252,15 +1255,17 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
             // same inputs, same output, every time — a shared song has to sound like the one that was shared
             if (show(M.varyBars(base, { pass: p, role, nd: ND, amount })) !== show(outs[p]))
               problems.push(`varyBars is not deterministic (${nar.id}/${role} pass ${p})`);
+            const d = noteCount(outs[p]) - noteCount(base);
+            spread[d > 0 ? "more" : d < 0 ? "fewer" : "same"]++;
           }
           combos++;
           if (new Set(outs.map(show)).size < 4) repeats++;
         }
-        // "vary more" has to mean more, or it is a menu entry that does nothing
-        for (let p = 1; p < 4; p++) {
-          const one = show(M.varyBars(base, { pass: p, role, nd: ND, amount: 1 }));
-          if (one === show(M.varyBars(base, { pass: p, role, nd: ND, amount: 2 })))
-            problems.push(`varyBars amount 2 matches amount 1 for ${nar.id}/${role} pass ${p}`);
+        // every step up the menu has to do more than the one below it, or it is an entry that does nothing
+        for (let L = 2; L < LEVELS.length; L++) for (let p = 1; p < 4; p++) {
+          steps++;
+          if (show(M.varyBars(base, { pass: p, role, nd: ND, amount: LEVELS[L - 1] }))
+            === show(M.varyBars(base, { pass: p, role, nd: ND, amount: LEVELS[L] }))) flat++;
         }
       }
     }
@@ -1269,7 +1274,65 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (repeats) problems.push(`${repeats}/${combos} narrative/role combos still repeat a pass`);
   if (M.VARY_LEVELS[0][0] !== 0) problems.push("the first variation level is not 'leave it alone'");
   if (M.VARY_LEVELS.length < 2) problems.push("there is nothing to choose between in VARY_LEVELS");
-  console.log(`repeat variation: ${combos} narrative×role×amount combos, ${combos - repeats} give four different passes, ${(worstKeep * 100) | 0}% of the phrase survives at worst`);
+  // note count is one of the axes a repeat can vary along, and it has to move both ways: only ever
+  // adding notes makes every later chorus busier than the last, only ever removing them wears it away
+  if (!(spread.more > combos / 4)) problems.push(`only ${spread.more} varied passes have more notes than the first`);
+  if (!(spread.fewer > combos / 4)) problems.push(`only ${spread.fewer} varied passes have fewer notes than the first`);
+  /* A phrase of two long notes per bar really can run out of edits, so a level matching the one
+     below it is not a bug on its own — a level that does so *often* is a menu entry pretending to
+     do something. Two per cent is the room a genuinely exhausted phrase needs. */
+  if (flat > steps * 0.02) problems.push(`${flat}/${steps} steps up the variation menu change nothing`);
+  for (const v of M.VARIATIONS) if (!v.id || typeof v.apply !== "function") problems.push("a VARIATION has no id or no apply");
+  /* Each kind of edit checked on its own. Two properties per variation: it fires somewhere in the
+     corpus at all (an edit whose preconditions are never met is dead code that reads as a feature),
+     and when more than one bar can take it, different passes land on different results — the reason
+     `overBars` picks from the bars that qualify rather than walking from a rotated start. */
+  {
+    // held notes, adjacent pairs, gaps and leaps — enough of each that every variation has at
+    // least two places it could go, so "same result every pass" means the code, not the phrase
+    const phrase = () => [[[2], [2], [2], [4], [6], [6], [], []], [[1], [1], [3], [3], [5], [5], [], []],
+                          [[4], [4], [], [2], [2], [2], [], [1]], [[6], [], [4], [4], [], [2], [2], []]];
+    const dead = [], stuck = [];
+    for (let vi = 0; vi < M.VARIATIONS.length; vi++) {
+      const v = M.VARIATIONS[vi], outs = [];
+      // r is fixed and the pass is the only thing moving, exactly as varyBars calls it
+      const r = M.hash01(vi * 977);
+      for (let pass = 1; pass <= 4; pass++) {
+        const bars = phrase();
+        outs.push(v.apply(bars, ND, r, pass) ? show(bars) : null);
+      }
+      if (outs.every(o => o === null)) dead.push(v.id);
+      else if (new Set(outs.filter(Boolean)).size < 2) stuck.push(v.id);
+      // every bar of this phrase has room for something, so a pass that comes back empty means the
+      // variation gave up on a bar instead of looking at the next one
+      else if (outs.some(o => o === null)) stuck.push(v.id + " (gives up on some passes)");
+    }
+    if (dead.length) problems.push(`variations that never fire: ${dead.join(", ")}`);
+    if (stuck.length) problems.push(`variations that give every pass the same edit: ${stuck.join(", ")}`);
+  }
+  /* Longer runs too. A dance structure can play a section six or eight times, and a guarantee that
+     only holds for four repeats is not much of one. A few phrases genuinely run out of distinct
+     edits by the sixth pass, so this is a proportion rather than an absolute. */
+  {
+    let long = 0, longTot = 0;
+    for (const [B, sub] of [[8, 2], [16, 4]]) for (const nar of M.NARRATIVES) for (const role of ROLES) {
+      const spots = M.rhythmSpots(M.ROLE_RHYTHM[role] || "straight", B, sub, 4);
+      for (const nBars of [2, 8]) {
+        const cd = Array.from({ length: nBars }, (_, i) => [[0, 2, 4], [3, 5, 0], [4, 6, 1]][i % 3]);
+        const base = nar.gen({ nBars, B, sub, nd: ND, spots, chordDegs: cd, role,
+          pass: 0, passes: 4, idx: 0, total: 4, frac: 0 });
+        for (const amount of LEVELS.filter(Boolean)) {
+          longTot++;
+          if (new Set([0, 1, 2, 3, 4, 5].map(p => show(M.varyBars(base, { pass: p, role, nd: ND, amount })))).size < 6) long++;
+        }
+      }
+    }
+    if (long > longTot * 0.05) problems.push(`${long}/${longTot} sections repeat a pass over six plays`);
+    console.log(`  over six plays of a section: ${longTot - long}/${longTot} still give six different melodies`);
+  }
+  console.log(`repeat variation: ${M.VARIATIONS.length} kinds of edit over ${combos} narrative×role×level combos, ${combos - repeats} give four different passes`);
+  console.log(`  note count vs the first pass: ${spread.more} more, ${spread.fewer} fewer, ${spread.same} unchanged; ${(worstKeep * 100) | 0}% of the phrase survives at worst`);
+  console.log(`  stepping up a level changes the result in ${steps - flat}/${steps} cases`);
 }
 
 /* ---- editing an arrangement without losing the melodies ----

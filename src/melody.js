@@ -666,13 +666,40 @@ const nearDegs = (d, nd) => {
   }
   return out;
 };
+// the two notes either side of `d` — for a note being added rather than moved, where a leap would
+// read as a wrong note rather than as a variation
+const stepDegs = (d, nd) => nearDegs(d, nd).slice(0, 2);
+// step along a list by pass — the one move that makes repeat N and repeat N+1 differ by construction
+const byPass = (list, r, pass) => list[(Math.floor(r * list.length) + pass) % list.length];
+/* Apply an edit to the first bar from a pass-dependent start that has room for it. Trying only the
+   one bar would mean a variation gives up on a phrase that had space two bars along.
+   (A version that dry-ran every bar first and then picked by pass from the ones that qualified —
+   avoiding the case where a pass whose start bar has no room falls through onto the next pass's bar
+   — measured identically over 3,402 phrases, so this cheaper one stays.) */
+const overBars = (bars, r, pass, fn) => {
+  for (let j = 0; j < bars.length; j++) {
+    const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length];
+    if (fn(bar, barNotes(bar))) return true;
+  }
+  return false;
+};
+/* The degrees note `i` must not be given: a note touching it that already holds that degree would
+   absorb it, so "move one note" would quietly become "lose one note". Only notes in the abutting
+   columns can merge — a note across a gap is free to be any pitch. */
+const wouldMerge = (ns, i) => {
+  const a = ns[i - 1], b = ns[i + 1], n = ns[i], out = [];
+  if (a && a.c + a.len === n.c) out.push(a.d);
+  if (b && n.c + n.len === b.c) out.push(b.d);
+  return out;
+};
 
 const VARIATIONS = [
   // the classic: same phrase, different landing note. Strongest single change for the least damage.
   { id:"ending", apply(bars, nd, r, pass) {
       const bar = bars[bars.length - 1], ns = barNotes(bar);
       if (!ns.length) return false;
-      const last = ns[ns.length - 1], near = nearDegs(last.d, nd);
+      const i = ns.length - 1, last = ns[i], merge = wouldMerge(ns, i);
+      const near = nearDegs(last.d, nd).filter(d => !merge.includes(d));
       if (!near.length) return false;
       // walked by pass, not drawn at random: four repeats of a chorus end on four different notes
       putNote(bar, last.c, last.len, near[(pass - 1) % near.length]);
@@ -682,7 +709,8 @@ const VARIATIONS = [
   { id:"opening", apply(bars, nd, r, pass) {
       const bar = bars[0], ns = barNotes(bar);
       if (ns.length < 2) return false;                       // leave a one-note bar its one note
-      const near = nearDegs(ns[0].d, nd);
+      const merge = wouldMerge(ns, 0);
+      const near = nearDegs(ns[0].d, nd).filter(d => !merge.includes(d));
       if (!near.length) return false;
       putNote(bar, ns[0].c, ns[0].len, near[(pass - 1) % near.length]);
       return true;
@@ -691,20 +719,27 @@ const VARIATIONS = [
      edit that still has somewhere to go in a bar of two long notes, where every variation that
      needs an interior note or a gap has already given up. */
   { id:"clip", apply(bars, nd, r, pass) {
-      for (let j = 0; j < bars.length; j++) {
-        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
+      return overBars(bars, r, pass, (bar, ns) => {
         const held = ns.filter(n => n.len > 1);
-        if (!held.length) continue;
-        const n = held[(Math.floor(r * held.length) + pass) % held.length];
+        if (!held.length) return false;
+        const n = byPass(held, r, pass);
         clearNote(bar, n.c + n.len - 1, 1);
         return true;
-      }
-      return false;
+      });
+    } },
+  // the mirror: let a note run on into the space after it. The phrase leans instead of stepping.
+  { id:"extend", apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        const can = ns.filter(n => n.c + n.len < bar.length && !(bar[n.c + n.len] || []).length);
+        if (!can.length) return false;
+        const n = byPass(can, r, pass);
+        putNote(bar, n.c + n.len, 1, n.d);
+        return true;
+      });
     } },
   // a passing note through a leap the phrase already makes
   { id:"passing", apply(bars, nd, r, pass) {
-      for (let j = 0; j < bars.length; j++) {
-        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
+      return overBars(bars, r, pass, (bar, ns) => {
         for (let i = 0; i + 1 < ns.length; i++) {
           const a = ns[i], c = ns[i + 1];
           const gap = c.c - (a.c + a.len);
@@ -715,53 +750,117 @@ const VARIATIONS = [
           putNote(bar, a.c + a.len + (pass - 1) % gap, 1, Math.round((a.d + c.d) / 2));
           return true;
         }
-      }
-      return false;
+        return false;
+      });
+    } },
+  /* One more note than last time. `passing` only fires through a leap; this fills any space the
+     phrase leaves, a step away from the note before it, so a repeat can simply be busier. */
+  { id:"add", apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        const spots = [];
+        for (let i = 0; i < ns.length; i++) {
+          const from = ns[i].c + ns[i].len, to = i + 1 < ns.length ? ns[i + 1].c : bar.length;
+          for (let c = from; c < to; c++) spots.push({ c, d: ns[i].d });
+        }
+        if (!spots.length) return false;
+        const s = byPass(spots, r, pass);
+        // a degree either neighbour already holds would merge into it and add nothing
+        const near = stepDegs(s.d, nd).filter(d => d !== (bar[s.c + 1] || [])[0]);
+        if (!near.length) return false;
+        putNote(bar, s.c, 1, near[(pass - 1) % near.length]);
+        return true;
+      });
+    } },
+  /* A long note breaks in two and the second half steps away — the same onset, one more note. The
+     way a held note turns into a phrase without the bar getting any busier at the start. */
+  { id:"split", apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        const held = ns.filter(n => n.len >= 2);
+        if (!held.length) return false;
+        const n = byPass(held, r, pass), half = n.len - Math.floor(n.len / 2);
+        const near = stepDegs(n.d, nd).filter(d => d !== (bar[n.c + n.len] || [])[0]);
+        if (!near.length) return false;
+        putNote(bar, n.c + half, n.len - half, near[(pass - 1) % near.length]);
+        return true;
+      });
+    } },
+  /* The ornament: a held note dips to its neighbour and comes back, so one note becomes three.
+     Needs room on both sides of the middle, which is why it wants a note three columns long. */
+  { id:"turn", apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        const long = ns.filter(n => n.len >= 3);
+        if (!long.length) return false;
+        const n = byPass(long, r, pass), near = stepDegs(n.d, nd);
+        if (!near.length) return false;
+        putNote(bar, n.c + Math.floor(n.len / 2), 1, near[(pass - 1) % near.length]);
+        return true;
+      });
     } },
   // push a phrase early — the anticipation that makes a repeat feel restless
   { id:"push", apply(bars, nd, r, pass) {
-      for (let j = 0; j < bars.length; j++) {
-        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
+      return overBars(bars, r, pass, (bar, ns) => {
         // every note with a free column in front of it, then step along them by pass — always
         // pushing the same note would give two repeats the same edit whenever they pick the same bar
         const can = ns.filter((n, i) => i > 0 && n.c >= 1 && !(bar[n.c - 1] || []).length);
-        if (!can.length) continue;
-        {
-          const n = can[(Math.floor(r * can.length) + pass) % can.length];
-          clearNote(bar, n.c, n.len);
-          putNote(bar, n.c - 1, n.len, n.d);
-          return true;
-        }
-      }
-      return false;
+        if (!can.length) return false;
+        const n = byPass(can, r, pass);
+        clearNote(bar, n.c, n.len);
+        putNote(bar, n.c - 1, n.len, n.d);
+        return true;
+      });
+    } },
+  // and the other way: a note arrives late, off the beat it was written on
+  { id:"delay", apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        const can = ns.filter((n, i) => i > 0 && n.c + n.len < bar.length && !(bar[n.c + n.len] || []).length);
+        if (!can.length) return false;
+        const n = byPass(can, r, pass);
+        clearNote(bar, n.c, n.len);
+        putNote(bar, n.c + 1, n.len, n.d);
+        return true;
+      });
     } },
   // lift one interior note to its neighbour — the smallest change that is still audible
   { id:"neighbour", apply(bars, nd, r, pass) {
-      for (let j = 0; j < bars.length; j++) {
-        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
-        if (ns.length < 3) continue;
-        const n = ns[1 + (Math.floor(r * (ns.length - 2)) + pass) % (ns.length - 2)];
-        const d = clampDeg(n.d + (pass % 2 ? 1 : -1), nd);
-        if (d === n.d) continue;
-        putNote(bar, n.c, n.len, d);
+      return overBars(bars, r, pass, (bar, ns) => {
+        if (ns.length < 3) return false;
+        // any note, not only the interior ones: a three-note bar has one interior note, so
+        // restricting it there would give every pass the same edit
+        const i = (Math.floor(r * ns.length) + pass) % ns.length, n = ns[i];
+        const merge = wouldMerge(ns, i);
+        const near = stepDegs(n.d, nd).filter(d => !merge.includes(d));
+        if (!near.length) return false;
+        putNote(bar, n.c, n.len, near[(pass - 1) % near.length]);
         return true;
-      }
-      return false;
+      });
     } },
   // take a note away: space is a variation too, and it stops later passes getting busier and busier
   { id:"thin", apply(bars, nd, r, pass) {
-      for (let j = 0; j < bars.length; j++) {
-        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
-        if (ns.length < 3) continue;
-        const n = ns[1 + (Math.floor(r * (ns.length - 2)) + pass) % (ns.length - 2)];
+      return overBars(bars, r, pass, (bar, ns) => {
+        if (ns.length < 3) return false;                     // never empty a bar out entirely
+        const n = ns[(Math.floor(r * ns.length) + pass) % ns.length];
         clearNote(bar, n.c, n.len);
         return true;
-      }
-      return false;
+      });
+    } },
+  /* Two notes become one. The mirror of `split`, and the edit that gives a fourth chorus somewhere
+     to go once the earlier passes have all got busier. */
+  { id:"merge", apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        // adjacent pairs with no gap between them: the second is absorbed into the first
+        const pairs = ns.filter((n, i) => i > 0 && n.c === ns[i - 1].c + ns[i - 1].len);
+        if (pairs.length < 1 || ns.length < 3) return false;
+        const n = byPass(pairs, r, pass), prev = ns[ns.indexOf(n) - 1];
+        putNote(bar, n.c, n.len, prev.d);
+        return true;
+      });
     } },
 ];
 
-/* Vary a later pass of a section. `amount` is 0 (leave it alone), 1 (one edit) or 2 (two edits).
+// a bar list as one comparable string — enough to tell whether an edit actually landed
+const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
+
+/* Vary a later pass of a section. `amount` is how many edits to make: 0 leaves it alone.
    Pass 0 is never varied — it is the thing the others are variations of. */
 const varyBars = (bars, { pass = 0, role = "V", nd = 7, amount = 1 } = {}) => {
   const out = bars.map(bar => bar.map(col => [...(col || [])]));
@@ -775,14 +874,22 @@ const varyBars = (bars, { pass = 0, role = "V", nd = 7, amount = 1 } = {}) => {
      over its tries, and in a sparse bar most variations have nowhere to go — no interior note to
      lift, no gap to fill — so the one that *can* act has to be reached, not hoped for. */
   const start = Math.floor(hash01(seed) * VARIATIONS.length) + pass;
+  const before = barsKey(out);
   let applied = 0;
-  for (let k = 0; k < VARIATIONS.length && applied < amount; k++) {
-    const i = (start + k) % VARIATIONS.length;    // each variation tried once: two edits, two kinds
-    if (VARIATIONS[i].apply(out, nd, hash01(seed + i * 977), pass)) applied++;
+  /* Several variations are each other's mirror — clip and extend, push and delay, split and merge —
+     so a second edit can undo the first and hand back a repeat identical to the one it was meant to
+     vary. Each edit therefore counts only if it changed something, and the walk carries on past
+     `amount` while the bars still match where they started.
+     One trip round the list, so two edits are always two different kinds of edit. */
+  for (let k = 0; k < VARIATIONS.length; k++) {
+    if (applied >= amount && barsKey(out) !== before) break;
+    const i = (start + k) % VARIATIONS.length;
+    const snap = barsKey(out);
+    if (VARIATIONS[i].apply(out, nd, hash01(seed + i * 977), pass) && barsKey(out) !== snap) applied++;
   }
   return out;
 };
-const VARY_LEVELS = [[0, "Identical repeats"], [1, "Vary a little"], [2, "Vary more"]];
+const VARY_LEVELS = [[0, "Identical repeats"], [1, "Vary a little"], [2, "Vary more"], [3, "Vary a lot"]];
 
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
 

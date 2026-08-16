@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+- **Repeats can now gain and lose notes, not just move them.** The variations were all the same
+  size as each other — a note moved, a note repitched. Six new kinds of edit, and note count is a
+  real axis: a repeat can be busier than the first time round, or barer.
+
+  | Axis | What changes |
+  | --- | --- |
+  | Note count | a note dropped into a gap, a held note broken in two, a long note turned into a three-note ornament; or notes taken away and neighbouring notes run together |
+  | Rhythm | a held note released early **or run on into the space after it**; a phrase pushed early **or arriving late** |
+  | Pitch | a different landing note, a different opening note, a note lifted a step |
+
+  Thirteen edits in all, up from seven. A fourth level, **Vary a lot**, makes three edits.
+
+  - Over eight plays of a verse: note count ranged 6–6 before, and ranges 5–10 at *Vary a lot*.
+    Across the test corpus 651 varied passes have more notes than the first pass and 390 fewer.
+  - Still four different melodies from four passes, every time (504/504 narrative × role × level
+    combinations), and 988/1008 give six different melodies over six plays.
+  - **Three of the new edits are mirrors of existing ones** — release early / run on, early / late,
+    split / merge — so two edits could cancel and hand back a repeat identical to the one they were
+    meant to vary. An edit now counts only if it changed something, and the walk carries on while
+    the result still matches where it started.
+  - Two real bugs found by widening the set: lifting a note to its neighbour could give it the same
+    pitch as the note beside it, which merges the two — "move one note" silently became "lose one
+    note". And thinning only ever touched *interior* notes, so a three-note bar has one candidate
+    and every repeat made the identical edit. Both fixed.
+
+  Version bumped to 4.62.0.
 - **Every repeat of a section is a variation now, not a copy.** A melodic narrative wrote the same
   tune into every pass of a section, so a song with four choruses played the same eight bars four
   times, note for note. The later passes are now varied — the first time round is left alone, since
