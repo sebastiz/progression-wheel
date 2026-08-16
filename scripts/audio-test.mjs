@@ -506,7 +506,23 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   // and every section-shaped read in the render path should go through the helpers
   const strayFlat = lines.filter(ln => /\bsec\.flat\b|\bsec\.bars\b|\bsecm\.bars\b/.test(ln));
   strayFlat.forEach(ln => problems.push(`src: section read bypasses layers — ${ln.trim().slice(0, 80)}`));
-  console.log(`source shape guard: ${bad.length + 1} patterns checked`);
+  /* Writing several sections in one handler has to go through `setLayerPropMany`. `putSec` (and so
+     `setLayerProp`) spreads the `melos` value from the current render, so calling it in a loop makes
+     each write clobber the last and only the final section actually changes — a bug that shows up
+     as "I muted a ×4 run and only one pass went quiet". */
+  // look back from each call site rather than trying to parse the loop — a nested `setLayerProp(`
+  // inside the loop head defeats any regex that tries to match the parentheses
+  {
+    const src = code.replace(/setLayerPropMany\(/g, "setLayerPropBULK(");
+    for (const mm of src.matchAll(/setLayerProp\(/g)) {
+      const before = src.slice(Math.max(0, mm.index - 160), mm.index);
+      if (/\.forEach\s*\(|\.map\s*\(|\bfor\s*\(/.test(before) && !/const setLayerProp/.test(before))
+        problems.push("src: setLayerProp is called inside a loop — use setLayerPropMany, or every write but the last is dropped");
+    }
+  }
+  if (!/const setLayerPropMany = /.test(code))
+    problems.push("src: setLayerPropMany has gone — multi-section writes need a single state update");
+  console.log(`source shape guard: ${bad.length + 2} patterns checked`);
 }
 
 /* ---- per-part register and level ---- */
@@ -1046,7 +1062,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
      from all of them. Both are silent bugs, so the source shape is checked here. */
   const tickBody = code.slice(code.indexOf("const emitTick ="), code.indexOf("const startMetro ="));
   const GATES = [
-    [/if \(chord && \(!m\.stem \|\| m\.stem\.kind === "chords"\)\)/, "chords are not gated on m.stem"],
+    [/if \(chord && [^)]*\(!m\.stem \|\| m\.stem\.kind === "chords"\)\)/, "chords are not gated on m.stem"],
     [/if \(!m\.stem \|\| m\.stem\.kind === "drums"\)\s*\n\s*for \(const ch of dstep\)/, "drum voices are not gated on m.stem"],
     [/if \(m\.stem && !\(m\.stem\.kind === "part" && m\.stem\.i === li\)\) return;/, "melody parts are not gated on m.stem"],
     [/if \(clickRef\.current && !m\.stem\)/, "the metronome click is not excluded from stems"],

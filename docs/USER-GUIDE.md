@@ -193,9 +193,18 @@ only arriving at the chorus, the bassline sitting out the breakdown. A half-lit 
 element is on for some passes of that section but not others. **Tap any block to play from there**,
 and a gold playhead runs across every lane as it goes.
 
+**The lanes are clickable.** Tap a cell to drop that element for that section, tap again to bring it
+back — so the strip is where you *build* the arrangement, not just where you look at it. Drop the
+drums for the verses, take the chords out of a breakdown, keep a pad off the intro, all without
+leaving the strip.
+
+One thing worth knowing, because the tooltip on each cell will tell you and it is easy to miss:
+**drums and chords are set per section type, parts per section.** Dropping the drums on *Verse 1*
+drops them on every verse; muting part A on a *Chorus ×2* mutes it for both passes of that chorus
+but leaves the later choruses alone. Hover before you click and it says exactly what it will do.
+
 This is the quickest way to spot the thing that makes a sketch sound flat — every lane lit end to
-end, nothing entering, nothing dropping out. Mute a part on a verse, or give a section **no drums**
-from its **🥁** menu, and you can see the arrangement get some shape.
+end, nothing entering, nothing dropping out — and now the quickest way to fix it too.
 
 ### Builds, drops and risers
 

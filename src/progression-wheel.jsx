@@ -443,6 +443,9 @@ export default function ProgressionWheel() {
   const [kitSt, setKitSt] = useState({ key:"", val:"" });
   const [pumpSt, setPumpSt] = useState({ key:"", val:"" });
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
+  // per-section-type chord mute, keyed by base letter. Dropping the chords for a breakdown while
+  // the drums carry on is a basic arrangement move that had no way to be expressed before.
+  const [secQuiet, setSecQuiet] = useState({});
   const [secMove, setSecMove] = useState({});
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
   const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
@@ -496,7 +499,7 @@ export default function ProgressionWheel() {
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(0);
   const humRef = useRef(0), barBeatsRef = useRef(4);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
-  const secDrumRef = useRef({});
+  const secDrumRef = useRef({}), secQuietRef = useRef({});
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
   const subRef = useRef(2), melRef = useRef(8);
   const moveRef = useRef({ moves:{}, instBars:{} });
@@ -874,7 +877,7 @@ export default function ProgressionWheel() {
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = swingAmt;
   humRef.current = humanise;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
-  secDrumRef.current = secDrum;
+  secDrumRef.current = secDrum; secQuietRef.current = secQuiet;
   kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0; delayRef.current = delayId;
   clickRef.current = clickOn;
   const meloBeats = rhythm.pattern.length;                  // grid columns per bar (6 in waltz time, 16 on a sixteenth rhythm)
@@ -1029,6 +1032,19 @@ export default function ProgressionWheel() {
   const setLayerProp = (key, L, patch) => {
     const sec = secMelos[key]; if (!sec) return;
     putSec(key, { layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), ...patch } : cloneLayer(ly)) });
+  };
+  /* Set one part's property across several sections at once. Calling setLayerProp in a loop would
+     not work: each call spreads the same render's `melos`, so only the last write survives and the
+     rest are silently dropped. One state update, every section in it. */
+  const setLayerPropMany = (keys, L, patch) => {
+    const secs = melos.progId === progId ? melos.secs : {};
+    const next = { ...secs };
+    for (const key of keys) {
+      const sec = secMelos[key]; if (!sec || !sec.layers[L]) continue;
+      next[key] = { ids: sec.ids,
+        layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), ...patch } : cloneLayer(ly)) };
+    }
+    setMelos({ progId, secs: next });
   };
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
@@ -1430,9 +1446,12 @@ export default function ProgressionWheel() {
         m.voicing = voiceChord(chord, m.voicing);
         m.lastChordName = chord.name;
       }
+      // a section can drop its chords entirely — the breakdown where only the drums carry on
+      const quiet = struct && struct.length && structBar >= 0 && struct[structBar]
+        && struct[structBar].base != null && !!secQuietRef.current[struct[structBar].base];
       if (sym !== "-") {
         if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
-        if (chord && (!m.stem || m.stem.kind === "chords")) {
+        if (chord && !quiet && (!m.stem || m.stem.kind === "chords")) {
           const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.cduck, m.voicing);
           if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.cduck, m.voicing);
         }
@@ -1993,7 +2012,7 @@ export default function ProgressionWheel() {
   // one document for both a saved sketch and a shared link — so anything that survives a save
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
-    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr, melInstr,
+    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, instr, melInstr,
     kit, pump, secMove, delayId, bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
@@ -2006,7 +2025,7 @@ export default function ProgressionWheel() {
   const UNDO_DEPTH = 60;
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
-  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, instr, melInstr,
+  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, instr, melInstr,
       kit, pump, secMove, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
@@ -2098,7 +2117,7 @@ export default function ProgressionWheel() {
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
-    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {});
+    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {});
     setSecMove(s.secMove || {});
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
@@ -2307,7 +2326,11 @@ export default function ProgressionWheel() {
         .tlsecl { font-size:10px; font-weight:700; letter-spacing:.02em; white-space:nowrap;
           text-transform:capitalize; overflow:hidden; }
         .tlmv { font-size:8px; opacity:.75; }
-        .tlcell { min-width:0; border-radius:3px; background:#1A222E; }
+        .tlcell { min-width:0; border-radius:3px; background:#1A222E; border:none; padding:0; cursor:pointer;
+          transition:filter .1s; }
+        .tlcell:hover:not(:disabled) { filter:brightness(1.5); outline:1px solid #56637A; }
+        .tlcell:disabled { cursor:default; opacity:.45; }
+        .tlcell.off { box-shadow:inset 0 0 0 1px #232C3A; }
         /* the playhead sits above every lane so you can read the whole column at once */
         .tlhead { position:absolute; top:14px; bottom:0; width:2px; background:${GOLD}; border-radius:2px;
           pointer-events:none; box-shadow:0 0 6px ${GOLD}AA; }
@@ -3045,10 +3068,25 @@ export default function ProgressionWheel() {
               if (!ly || !ly.flat || !ly.flat.length) return false;
               return layerGain(ly, sec.layers.some(x => x.solo)) > 0;   // mute and solo both count
             };
+            /* Each lane knows how to read its own state and how to flip it. `scope` is the honest
+               part: drums and chords are stored per section *letter*, so flipping one moves every
+               section that letters the same way, while a part's mute is per instance and a click
+               on a "×4" run sets all four. The tooltip says which, rather than surprising you. */
             const lanes = [
-              { name: "Drums", on: d => drumsIn(d.base) },
-              { name: "Chords", on: () => true },
-              ...Array.from({ length: nParts }, (_, i) => ({ name: LAYER_NAMES[i], on: d => partIn(d, i) })),
+              { name: "Drums", on: d => drumsIn(d.base),
+                scope: r => `every ${r.word} section`,
+                toggle: r => setSecDrum({ ...secDrum, [r.base]: drumsIn(r.base) ? "off" : "" }) },
+              { name: "Chords", on: d => !secQuiet[d.base],
+                scope: r => `every ${r.word} section`,
+                toggle: r => setSecQuiet({ ...secQuiet, [r.base]: !secQuiet[r.base] }) },
+              ...Array.from({ length: nParts }, (_, i) => ({
+                name: LAYER_NAMES[i], on: d => partIn(d, i),
+                scope: r => (r.items.length > 1 ? `all ${r.items.length} passes` : "this section"),
+                // a run can hold several instances; mute them together so the lane matches the click
+                toggle: r => setLayerPropMany(r.items.map(d => d.key), i, { mute: r.items.some(d => partIn(d, i)) }),
+                // a part with no notes here has nothing to mute — the lane is empty for a reason
+                dead: r => !r.items.some(d => { const sc = secMelos[d.key], ly = sc && sc.layers[i];
+                  return ly && ly.flat && ly.flat.length; }) })),
             ];
             // One block per *run* of consecutive same-section instances, not per instance. Eight
             // passes of a drop is one 32-bar drop to anybody reading the arrangement, and drawing
@@ -3107,9 +3145,16 @@ export default function ProgressionWheel() {
                     <div key={l.name} className="tlrow">
                       {runs.map(r => {
                         const st = laneState(l, r);
-                        return <div key={r.startBar} className={"tlcell " + st} style={{ flex: r.bars + " 0 0%",
-                          background: st === "off" ? undefined
-                            : (SEC_COL[r.base] || "#8B94A3") + (st === "on" ? "AA" : "55") }} />;
+                        const dead = l.dead ? l.dead(r) : false;
+                        return <button key={r.startBar} className={"tlcell " + st + (dead ? " dead" : "")}
+                          style={{ flex: r.bars + " 0 0%",
+                            background: st === "off" ? undefined
+                              : (SEC_COL[r.base] || "#8B94A3") + (st === "on" ? "AA" : "55") }}
+                          disabled={dead}
+                          onClick={() => l.toggle(r)}
+                          title={dead ? `${l.name} has nothing written in ${r.sec} — write something there first`
+                            : `${st === "off" ? "Bring in" : "Drop"} ${l.name} for ${l.scope(r)}`
+                              + (st === "part" ? " (currently in for some passes and out for others)" : "")} />;
                       })}
                     </div>
                   ))}
