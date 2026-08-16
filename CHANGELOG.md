@@ -1,6 +1,31 @@
 # Changelog
 
 ## Unreleased
+- **Every repeat of a section is a variation now, not a copy.** A melodic narrative wrote the same
+  tune into every pass of a section, so a song with four choruses played the same eight bars four
+  times, note for note. The later passes are now varied — the first time round is left alone, since
+  it is the thing the others are variations of.
+
+  Seven small edits, covering pitch and rhythm both: a different landing note, a different opening
+  note, a passing note through a leap the phrase already makes, a phrase pushed a column early, an
+  interior note lifted to its neighbour, a note taken away, and a held note released early. Two
+  edits are always two *different* kinds of edit.
+
+  - A **Variation** menu next to the narrative: *Identical repeats* / *Vary a little* / *Vary more*.
+    Changing it rewrites straight away. It defaults to varying a little.
+  - Across all 32 narratives × 4 section roles × 2 grid widths, four passes of a section now give
+    four different melodies **every time** — where before they gave one. It stays recognisably the
+    same tune: 96% of the note placements survive on average, 75% in the worst case, and most of
+    the edits move a pitch rather than the rhythm.
+  - The trick is that every hash is seeded from the section's role alone and the pass is added
+    afterwards, so consecutive repeats step one place along rather than drawing at random. Seeding
+    from the pass as well left 9% of combinations with two repeats identical to each other.
+  - Still fully deterministic: the same song reopens, renders and shares as the same music.
+
+  **Fixed along the way:** applying a narrative reset every part's register, level, mute, solo, send
+  and effects back to their defaults. It rebuilt each part from its notes and instrument alone
+  instead of going through `cloneLayer`. Now only part **A**'s notes change, which is all it ever
+  claimed to do. Version bumped to 4.61.0.
 - **The wheel is a diagram, not a canvas.** It rendered 708px tall at a desktop width — most of that
   the empty middle of a circle — and pushed everything else on **Write** below the fold. It is now
   capped at 500px and centred, with the text inside it sized up to compensate so nothing reads
