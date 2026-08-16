@@ -1,9 +1,26 @@
 # User Guide
 
-The app is a single page of panels, top to bottom. Everything downstream updates live when anything
-upstream changes.
+The app is four tabs of panels. Everything downstream updates live when anything upstream changes.
 
-## Controls (top panel)
+## Finding things
+
+The app is in four tabs, under the transport bar:
+
+- **Write** — key, how many chords, mode, genre, feeling, the wheel, the chord strip, the stave and
+  the songs that use this progression.
+- **Sound** — the instruments, the time signature, the strum pattern, the drums and kit, and the
+  feel controls (delay, pump, swing, humanise).
+- **Arrange** — the song structure, the melodic narrative, the arrangement strip with its automation
+  lanes, every section's melodies, and the exports.
+- **Save** — naming a sketch, saving it, sharing a link, and loading one back.
+
+**Play, the tempo, tap tempo, A/B, undo and redo stay visible on every tab** — they act on the whole
+song, not on whichever page you happen to be looking at. So do the keyboard shortcuts.
+
+On **Write**, **◑ Hide wheel** folds the circle away once you have chosen a progression. The chord
+strip stays either way, since that is the part you actually edit.
+
+## Controls (Write and Sound tabs)
 
 - **Key / Genre / Emotion** — the three dropdowns choose the progression. Emotion leads the ranking:
   progressions matching *both* selections come first, then the emotion's picks, then the genre's, so

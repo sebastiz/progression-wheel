@@ -105,10 +105,10 @@ const drumBeatsOf = pat => (pat && DRUM_BEATS[pat.length]) || 4;
    `num`/`den` are what a DAW should be told, so 6/8 comes out as 6/8 rather than as 3/4 with the
    accents in the wrong place. */
 const METERS = [
-  { id:"4/4", name:"4/4 · common time", beats:4, num:4, den:4 },
-  { id:"3/4", name:"3/4 · waltz",       beats:3, num:3, den:4 },
-  { id:"6/8", name:"6/8 · compound",    beats:3, num:6, den:8 },
-  { id:"5/4", name:"5/4 · odd",         beats:5, num:5, den:4 },
+  { id:"4/4", name:"4/4", beats:4, num:4, den:4 },
+  { id:"3/4", name:"3/4 waltz",  beats:3, num:3, den:4 },
+  { id:"6/8", name:"6/8",        beats:3, num:6, den:8 },
+  { id:"5/4", name:"5/4",        beats:5, num:5, den:4 },
 ];
 const METER_BY_ID = Object.fromEntries(METERS.map(m => [m.id, m]));
 // which meter a strum pattern belongs to: what it declares, else its bar length

@@ -416,6 +416,12 @@ export default function ProgressionWheel() {
   const [genre, setGenre] = useState("Pop");
   const [emotion, setEmotion] = useState(null);
   const [mode, setMode] = useState(null);   // null = follow the loaded progression's own mode; else an override
+  /* The page used to be one five-screen scroll that mixed choosing a key with drawing automation.
+     Four modes instead, each about a screen: what the song is, what it sounds like, how it is laid
+     out, and keeping it. The transport and the global actions stay outside them. */
+  const TABS = [["write", "Write"], ["sound", "Sound"], ["arrange", "Arrange"], ["save", "Save"]];
+  const [tab, setTab] = useState("write");
+  const [wheelOpen, setWheelOpen] = useState(true);
   const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
   const [adv, setAdv] = useState(false);    // reveal the advanced harmony controls (secondary doms, etc.)
   const [showPar, setShowPar] = useState(false);
@@ -2549,6 +2555,16 @@ export default function ProgressionWheel() {
         .legend span { display:flex; align-items:center; gap:5px; }
         .dot { width:10px; height:10px; border-radius:50%; flex:none; }
         .dash { width:16px; height:0; border-top:2px dashed currentColor; flex:none; }
+        .tabs { display:flex; gap:4px; align-items:center; margin:10px 0 0; flex-wrap:wrap; }
+        .tabs button { flex:0 0 auto; padding:7px 16px; font-size:13px; font-weight:600; letter-spacing:.02em;
+          border-radius:9px; border:1px solid transparent; background:transparent; color:#8B94A3; cursor:pointer; }
+        .tabs button:hover { color:#C9D2DE; background:#161F2C; }
+        .tabs button.on { background:#1B2431; border-color:#33455C; color:${GOLD}; }
+        .tabs .tabaux { margin-left:auto; font-size:11.5px; font-weight:500; padding:6px 10px; color:#6B7688; }
+        .tabs .tabaux:hover { color:#C9D2DE; }
+        .grouphdr { font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+          color:#5C6675; margin:14px 0 6px; padding-bottom:5px; border-bottom:1px solid #1E2733; }
+        .grouphdr:first-child { margin-top:2px; }
         .progtitle { font-family:'Fraunces',serif; font-size:19px; font-weight:650; }
         .keytag { font-size:12px; color:#8B94A3; }
         .struct { border-top:1px solid #232C3A; padding:11px 0 2px; margin-top:11px; }
@@ -2718,6 +2734,26 @@ export default function ProgressionWheel() {
           {playing && curLabel
             ? <span className="tplabel">{curLabel}</span>
             : <span className="tplabel dim">{keyLabel} · {prog.label}</span>}
+          {/* undo, redo and A/B act on the whole song, so they belong beside the transport rather
+              than inside whichever tab happens to be open */}
+          <div className="row" style={{ gap:6, marginLeft:"auto" }}>
+            <button className={"mini" + (abStash ? " mixon" : "")} onClick={swapAB}
+              title={abStash
+                ? `You are on ${abSlot} — tap to hear the other one. Nothing is lost either way.`
+                : "Take this sketch in two directions: B starts as a copy, and this swaps between them"}>
+              ⇄ {abStash ? abSlot : "A/B"}</button>
+            <button className="mini" onClick={undo} disabled={!past.length} title="Undo (⌘Z)">↶</button>
+            <button className="mini" onClick={redo} disabled={!future.length} title="Redo (⇧⌘Z)">↷</button>
+          </div>
+        </div>
+        <div className="tabs">
+          {TABS.map(([id, label]) => (
+            <button key={id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>{label}</button>
+          ))}
+          {tab === "write" && <button className="tabaux" onClick={() => setWheelOpen(v => !v)}
+            title={wheelOpen ? "Hide the wheel — the chord pills below carry the same information"
+                             : "Show the circle-of-fifths wheel"}>
+            {wheelOpen ? "◑ Hide wheel" : "◐ Show wheel"}</button>}
         </div>
         {tips && <p className="keytag" style={{ margin:"6px 0 0", textAlign:"center", opacity:.8 }}>
           {SHORTCUTS.map(([k, what], i) => (
@@ -2726,7 +2762,8 @@ export default function ProgressionWheel() {
         </p>}
 
         {/* controls */}
-        <div className="panel">
+        {/* ---- Write: the key, the mode and the chords themselves ---- */}
+        {tab === "write" && <div className="panel">
           <div className="row" style={{ gap:"8px 12px", alignItems:"flex-end" }}>
             <label className="selwrap" style={{ flex:"0 0 62px" }}>
               <span className="lbl" style={{ margin:0 }}>Key</span>
@@ -2853,9 +2890,14 @@ export default function ProgressionWheel() {
           </div>
           </>)}
 
-          <div className="selrow" style={{ marginTop:10 }}>
+        </div>}
+
+        {/* ---- Sound: instruments, groove and feel ---- */}
+        {tab === "sound" && <div className="panel">
+          <div className="grouphdr">Instruments</div>
+          <div className="selrow">
             <label className="selwrap">
-              <span className="lbl" style={{ margin:0 }}>Sound (chords)</span>
+              <span className="lbl" style={{ margin:0 }}>Chords</span>
               <select value={gmKey(instr)} onChange={e => setInstr(e.target.value)}>
                 {GM_CATS.map(([cat, list]) => (
                   <optgroup key={cat} label={cat}>
@@ -2865,7 +2907,7 @@ export default function ProgressionWheel() {
               </select>
             </label>
             <label className="selwrap">
-              <span className="lbl" style={{ margin:0 }}>Lead (melody)</span>
+              <span className="lbl" style={{ margin:0 }}>Lead</span>
               <select value={melInstr} onChange={e => setMelInstr(e.target.value)}>
                 <optgroup label="Synth (no download)">
                   {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
@@ -2879,8 +2921,9 @@ export default function ProgressionWheel() {
             </label>
           </div>
 
-          <div className="selrow" style={{ marginTop:10, alignItems:"flex-end", flexWrap:"wrap" }}>
-            <label className="selwrap" style={{ flex:"0 0 118px" }}>
+          <div className="grouphdr">Groove</div>
+          <div className="selrow" style={{ alignItems:"flex-end", flexWrap:"wrap" }}>
+            <label className="selwrap" style={{ flex:"0 0 86px" }}>
               <span className="lbl" style={{ margin:0 }}>Time</span>
               <select value={curMeter} onChange={e => setMeter(e.target.value)}
                 title="The bar length. Changing it switches to a strum pattern and a kit that fit — everything in this row is filtered to the meter you pick.">
@@ -2912,6 +2955,10 @@ export default function ProgressionWheel() {
                 {DRUM_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
             </label>
+          </div>
+
+          <div className="grouphdr">Feel &amp; space</div>
+          <div className="selrow" style={{ alignItems:"flex-end", flexWrap:"wrap" }}>
             <label className="selwrap" style={{ minWidth:130 }}>
               <span className="lbl" style={{ margin:0 }}>Delay</span>
               <select value={delayId} onChange={e => setDelaySt({ key: progId, val: e.target.value })}
@@ -2950,18 +2997,13 @@ export default function ProgressionWheel() {
             </div>
           </div>
 
+        </div>}
+
+        {/* ---- Save: naming, keeping and sharing ---- */}
+        {tab === "save" && <div className="panel">
           <div className="row" style={{ marginTop:12, gap:8 }}>
             <input className="txt" placeholder="Sketch name…" value={sketchName}
               onChange={e => setSketchName(e.target.value)} />
-            <button className={"btn" + (abStash ? " on" : "")} style={{ padding:"6px 12px" }} onClick={swapAB}
-              title={abStash
-                ? `You are on ${abSlot} — tap to hear the other one. Nothing is lost either way.`
-                : "Take this sketch in two directions: B starts as a copy, and this swaps between them"}>
-              ⇄ {abStash ? abSlot : "A/B"}</button>
-            <button className="btn" style={{ padding:"6px 12px" }} onClick={undo} disabled={!past.length}
-              title="Undo the last change (⌘Z)">↶ Undo</button>
-            <button className="btn" style={{ padding:"6px 12px" }} onClick={redo} disabled={!future.length}
-              title="Redo (⇧⌘Z)">↷ Redo</button>
             <button className="btn" style={{ padding:"6px 12px" }} onClick={saveSketch}>Save</button>
             <button className="btn" style={{ padding:"6px 12px" }} onClick={shareSong}
               title="Copy a link that rebuilds this whole song — chords, arrangement and every melody part">🔗 Share</button>
@@ -2973,10 +3015,11 @@ export default function ProgressionWheel() {
             )}
             {ioNote && <span className="keytag">{ioNote}</span>}
           </div>
-        </div>
+        </div>}
+
 
         {/* suggested chord progressions for the chosen genre / feeling */}
-        <div className="panel">
+        {tab === "write" && <div className="panel">
           <div className="progtitle" style={{ fontSize:17 }}>
             Suggested progressions{genre ? ` · ${genre}` : ""}{emotion ? ` · ${emotion}` : ""}
           </div>
@@ -3001,7 +3044,7 @@ export default function ProgressionWheel() {
               );
             })}
           </div>
-        </div>
+        </div>}
 
         {/* when a Mode override doesn't match the loop on the wheel, offer a progression for that mode */}
         {mode && !loadedMatchesMode && (
@@ -3030,7 +3073,7 @@ export default function ProgressionWheel() {
         )}
 
         {/* the wheel */}
-        <div className="panel" style={{ padding:6 }}>
+        {tab === "write" && wheelOpen && <div className="panel" style={{ padding:6 }}>
           <svg className="wheelsvg" viewBox="0 0 640 640" key={svgKey}>
             <defs>
               <marker id="arrCream" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto">
@@ -3127,6 +3170,11 @@ export default function ProgressionWheel() {
               );
             })}
           </svg>
+        </div>}
+
+        {/* The chord strip is the wheel's conclusion, not its decoration — it stays whether or not
+            the wheel itself is on screen, since it is what you actually edit. */}
+        {tab === "write" && <div className="panel">
 
           <div className="hint">
             {adding
@@ -3240,10 +3288,10 @@ export default function ProgressionWheel() {
             {showSec && <span style={{ color:GOLD }}><i className="dash" /> secondary dominant</span>}
             <span>numbers = order in the loop</span>
           </div>}
-        </div>
+        </div>}
 
         {/* notation — the song on a stave */}
-        <div className="panel">
+        {tab === "write" && <div className="panel">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
             <div className="progtitle" style={{ fontSize:17 }}>On the stave</div>
             <div className="row" style={{ gap:7, alignItems:"center" }}>
@@ -3270,10 +3318,10 @@ export default function ProgressionWheel() {
               {scoreHasB && <> Melody parts beyond <b>A</b> are inked in their own colours.</>}
             </div>}
           </>)}
-        </div>
+        </div>}
 
         {/* song & melody */}
-        <div className="panel accent">
+        {tab === "arrange" && <div className="panel accent">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
             <div className="progtitle" style={{ fontSize:17 }}>Song & melody</div>
             <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => setSelStruct(e.target.value)}>
@@ -3992,11 +4040,11 @@ export default function ProgressionWheel() {
                   or sketch over the loop here.</>}
             </p>}
           </div>
-        </div>
+        </div>}
 
 
         {/* songs */}
-        <div className="panel">
+        {tab === "write" && <div className="panel">
           <div className="progtitle" style={{ fontSize:17 }}>Songs on this progression</div>
 
           {appliedMoves.length > 0 && (
@@ -4041,7 +4089,7 @@ export default function ProgressionWheel() {
               </div>
             );
           })()}
-        </div>
+        </div>}
       </div>
     </div>
   );

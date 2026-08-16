@@ -160,6 +160,18 @@ song fit in a URL. `encodeSong` runs JSON through the native `CompressionStream`
 Undo/redo snapshots this same document from a debounced effect rather than at each call site, so no
 edit path can forget to record itself; a `restoringRef` flag stops a replay becoming history.
 
+## Layout and navigation
+
+The page is four tabs — `write`, `sound`, `arrange`, `save` — each top-level panel gated on `tab`.
+It was one column of six panels, 4,613px and 190 controls deep once a structure was loaded, which
+put choosing a key and drawing automation in the same scroll.
+
+The transport is deliberately outside the tabs and holds everything that acts on the whole song:
+play, tempo, tap tempo, A/B, undo and redo. Keyboard shortcuts are global for the same reason.
+
+The wheel is separately collapsible within Write, and the chord strip was split out of the wheel's
+panel so it survives that collapse — the strip is what you edit; the circle is how you read it.
+
 ## Audio
 
 Web Audio API throughout, no samples:
