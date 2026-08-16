@@ -619,6 +619,171 @@ const leadGaps = (u, b, minLen = 1) => {
   return out;
 };
 
+/* ---- variation between repeats ----
+   A narrative gives every section of a role the same contour, so Verse 2 came out byte-identical to
+   Verse 1 and a chorus repeated four times repeated exactly. That is not how anybody writes: the
+   second time round you change the landing note, push a phrase early, add a passing note. These are
+   those edits, applied to later passes only — the first statement stays the reference so the
+   variations are heard *as* variations rather than as a different tune.
+
+   Everything is seeded from the role and the pass, never from Math.random, so a song sounds the same
+   every time it is opened, rendered or shared. */
+
+// the notes in a bar: a run of the same degree across columns is one held note, not several
+const barNotes = bar => {
+  const out = [];
+  for (let c = 0; c < bar.length; c++) {
+    const d = (bar[c] || [])[0];
+    if (d == null) continue;
+    if (c > 0 && (bar[c - 1] || [])[0] === d) continue;
+    let len = 1;
+    while (c + len < bar.length && (bar[c + len] || [])[0] === d) len++;
+    out.push({ c, len, d });
+  }
+  return out;
+};
+const putNote = (bar, c, len, d) => { for (let k = 0; k < len && c + k < bar.length; k++) bar[c + k] = [d]; };
+const clearNote = (bar, c, len) => { for (let k = 0; k < len && c + k < bar.length; k++) bar[c + k] = []; };
+
+/* Each variation returns true if it found somewhere to apply itself, so the caller can try the next
+   one rather than silently doing nothing on a bar that had no room.
+
+   Every choice inside a variation is driven by `pass` rather than by the hash alone. Seeding
+   purely from the hash lets two passes draw the same edit by coincidence, and a third and fourth
+   chorus come back identical to each other — the thing this whole file is here to avoid. Stepping
+   through the choices by pass makes consecutive repeats differ by construction. */
+/* Four notes near `d` that are actually in the scale, nearest first — the alternative landings a
+   repeat can take. Reaching outwards rather than clamping at the edges is the point: a phrase ending
+   on the tonic at the bottom of the scale has nothing below it, and clamping would give every pass
+   the same note. Widening the search there costs a slightly bigger leap and buys four repeats that
+   land somewhere different each time. */
+const nearDegs = (d, nd) => {
+  const out = [];
+  for (const s of [-1, 1, -2, 2, -3, 3, -4, 4]) {
+    if (out.length >= 4) break;
+    const c = d + s;
+    if (c >= 0 && c <= nd - 1 && c !== d && !out.includes(c)) out.push(c);
+  }
+  return out;
+};
+
+const VARIATIONS = [
+  // the classic: same phrase, different landing note. Strongest single change for the least damage.
+  { id:"ending", apply(bars, nd, r, pass) {
+      const bar = bars[bars.length - 1], ns = barNotes(bar);
+      if (!ns.length) return false;
+      const last = ns[ns.length - 1], near = nearDegs(last.d, nd);
+      if (!near.length) return false;
+      // walked by pass, not drawn at random: four repeats of a chorus end on four different notes
+      putNote(bar, last.c, last.len, near[(pass - 1) % near.length]);
+      return true;
+    } },
+  // the same idea at the other end: start the repeat from somewhere else and walk back into the tune
+  { id:"opening", apply(bars, nd, r, pass) {
+      const bar = bars[0], ns = barNotes(bar);
+      if (ns.length < 2) return false;                       // leave a one-note bar its one note
+      const near = nearDegs(ns[0].d, nd);
+      if (!near.length) return false;
+      putNote(bar, ns[0].c, ns[0].len, near[(pass - 1) % near.length]);
+      return true;
+    } },
+  /* Release a held note early. Pure rhythm — the pitches are untouched — which makes it the one
+     edit that still has somewhere to go in a bar of two long notes, where every variation that
+     needs an interior note or a gap has already given up. */
+  { id:"clip", apply(bars, nd, r, pass) {
+      for (let j = 0; j < bars.length; j++) {
+        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
+        const held = ns.filter(n => n.len > 1);
+        if (!held.length) continue;
+        const n = held[(Math.floor(r * held.length) + pass) % held.length];
+        clearNote(bar, n.c + n.len - 1, 1);
+        return true;
+      }
+      return false;
+    } },
+  // a passing note through a leap the phrase already makes
+  { id:"passing", apply(bars, nd, r, pass) {
+      for (let j = 0; j < bars.length; j++) {
+        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
+        for (let i = 0; i + 1 < ns.length; i++) {
+          const a = ns[i], c = ns[i + 1];
+          const gap = c.c - (a.c + a.len);
+          if (gap < 1) continue;                             // no empty column between them
+          if (Math.abs(c.d - a.d) < 2) continue;             // no leap worth filling
+          // where in the gap it lands steps along with the pass: early is a pickup into the next
+          // note, late is a lean off the one before, and two repeats get two different feels
+          putNote(bar, a.c + a.len + (pass - 1) % gap, 1, Math.round((a.d + c.d) / 2));
+          return true;
+        }
+      }
+      return false;
+    } },
+  // push a phrase early — the anticipation that makes a repeat feel restless
+  { id:"push", apply(bars, nd, r, pass) {
+      for (let j = 0; j < bars.length; j++) {
+        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
+        // every note with a free column in front of it, then step along them by pass — always
+        // pushing the same note would give two repeats the same edit whenever they pick the same bar
+        const can = ns.filter((n, i) => i > 0 && n.c >= 1 && !(bar[n.c - 1] || []).length);
+        if (!can.length) continue;
+        {
+          const n = can[(Math.floor(r * can.length) + pass) % can.length];
+          clearNote(bar, n.c, n.len);
+          putNote(bar, n.c - 1, n.len, n.d);
+          return true;
+        }
+      }
+      return false;
+    } },
+  // lift one interior note to its neighbour — the smallest change that is still audible
+  { id:"neighbour", apply(bars, nd, r, pass) {
+      for (let j = 0; j < bars.length; j++) {
+        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
+        if (ns.length < 3) continue;
+        const n = ns[1 + (Math.floor(r * (ns.length - 2)) + pass) % (ns.length - 2)];
+        const d = clampDeg(n.d + (pass % 2 ? 1 : -1), nd);
+        if (d === n.d) continue;
+        putNote(bar, n.c, n.len, d);
+        return true;
+      }
+      return false;
+    } },
+  // take a note away: space is a variation too, and it stops later passes getting busier and busier
+  { id:"thin", apply(bars, nd, r, pass) {
+      for (let j = 0; j < bars.length; j++) {
+        const bar = bars[(Math.floor(r * bars.length) + pass + j) % bars.length], ns = barNotes(bar);
+        if (ns.length < 3) continue;
+        const n = ns[1 + (Math.floor(r * (ns.length - 2)) + pass) % (ns.length - 2)];
+        clearNote(bar, n.c, n.len);
+        return true;
+      }
+      return false;
+    } },
+];
+
+/* Vary a later pass of a section. `amount` is 0 (leave it alone), 1 (one edit) or 2 (two edits).
+   Pass 0 is never varied — it is the thing the others are variations of. */
+const varyBars = (bars, { pass = 0, role = "V", nd = 7, amount = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  if (!amount || !pass || !out.length) return out;
+  /* Every hash here is seeded from the role only, never from the pass. The pass is added afterwards,
+     as a plain `+ pass` on each choice, so consecutive repeats step one place along — a different
+     variation, a different bar, a different note. Folding the pass into the hash instead scrambles
+     the choices, and two repeats then land on the same edit by coincidence often enough to hear. */
+  const seed = role.charCodeAt(0) * 131;
+  /* Walk a rotation of the list rather than drawing from it: a draw can miss a variation entirely
+     over its tries, and in a sparse bar most variations have nowhere to go — no interior note to
+     lift, no gap to fill — so the one that *can* act has to be reached, not hoped for. */
+  const start = Math.floor(hash01(seed) * VARIATIONS.length) + pass;
+  let applied = 0;
+  for (let k = 0; k < VARIATIONS.length && applied < amount; k++) {
+    const i = (start + k) % VARIATIONS.length;    // each variation tried once: two edits, two kinds
+    if (VARIATIONS[i].apply(out, nd, hash01(seed + i * 977), pass)) applied++;
+  }
+  return out;
+};
+const VARY_LEVELS = [[0, "Identical repeats"], [1, "Vary a little"], [2, "Vary more"]];
+
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
 
 const NARRATIVES = [
@@ -787,4 +952,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };
+export { VARIATIONS, VARY_LEVELS, barNotes, varyBars, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };

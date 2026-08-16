@@ -633,6 +633,20 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   }
   if (!/const setLayerPropMany = /.test(code))
     problems.push("src: setLayerPropMany has gone — multi-section writes need a single state update");
+  /* A narrative rewrites part A's notes and nothing else. Rebuilding the other parts from their bars
+     and instrument alone silently drops every field cloneLayer carries — register, level, mute, solo,
+     send, effects — so choosing a narrative wiped the mix. Rebuilds go through cloneLayer. */
+  {
+    const fn = code.slice(code.indexOf("const applyNarrative ="), code.indexOf("const undoNarrative ="));
+    if (!fn) problems.push("src: applyNarrative has moved — this guard no longer reads it");
+    if (!/cloneLayer/.test(fn))
+      problems.push("src: applyNarrative rebuilds parts without cloneLayer — it will reset registers, levels and mutes");
+    // cloneLayer copies the bars itself, so a dupBars call here means a hand-rolled partial copy
+    if (/dupBars\(/.test(fn))
+      problems.push("src: applyNarrative copies a part's bars by hand — go through cloneLayer, or the other fields are dropped");
+    if (!/varyBars\(/.test(fn))
+      problems.push("src: applyNarrative no longer varies repeats — every pass of a section will be identical");
+  }
   /* Autosave must not restore over a shared link: arriving at somebody else's song and being handed
      your own instead is the worst thing it could do. The check has to happen before the first
      `await`, or the address bar may have been read after another effect has moved on. */
@@ -1181,6 +1195,81 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!g.pat.includes("-")) problems.push(`gate ${g.id} never closes — it does nothing`);
   }
   console.log(`note gates: ${M.GATES.length} patterns, ${M.GATES.map(g => g.pat.split("x").length - 1).join("/")} open steps`);
+}
+
+/* ---- varying the repeats of a narrative ----
+   A narrative writes the same tune into every pass of a section, and four identical choruses is the
+   fastest way to sound like a demo. varyBars edits the later passes. The properties that matter are
+   in tension: each repeat has to be *different* from the others, and it still has to be *the same
+   tune*. So this checks both ends — that passes diverge, and that most of the phrase survives. */
+{
+  const show = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
+  const onsets = bars => bars.flatMap((b, i) => M.barNotes(b).map(n => i + ":" + n.c));
+  const ND = 7, ROLES = ["C", "V", "B", "I"];
+  let combos = 0, repeats = 0, worstKeep = 1;
+
+  // barNotes is the model everything else rests on: a run of one degree is one held note, not several
+  {
+    const bar = [[2], [2], [2], [], [5], [], [5], [5]];
+    const ns = M.barNotes(bar);
+    if (ns.length !== 3) problems.push(`barNotes read ${ns.length} notes in a 3-note bar`);
+    if (ns[0].len !== 3 || ns[0].c !== 0 || ns[0].d !== 2) problems.push("barNotes lost a held note's length");
+    if (ns[2].c !== 6 || ns[2].len !== 2) problems.push("barNotes mis-placed the last note");
+  }
+
+  for (const [B, sub] of [[8, 2], [16, 4]]) {
+    for (const nar of M.NARRATIVES) {
+      for (const role of ROLES) {
+        const spots = M.rhythmSpots(M.ROLE_RHYTHM[role] || "straight", B, sub, 4);
+        const base = nar.gen({ nBars: 4, B, sub, nd: ND, spots,
+          chordDegs: [[0, 2, 4], [3, 5, 0], [4, 6, 1], [0, 2, 4]], role,
+          pass: 0, passes: 4, idx: 0, total: 4, frac: 0 });
+        const before = show(base);
+        for (const amount of [0, 1, 2]) {
+          const outs = [0, 1, 2, 3].map(p => M.varyBars(base, { pass: p, role, nd: ND, amount }));
+          // the generator's own output must never be edited in place — the caller reuses it
+          if (show(base) !== before) problems.push(`varyBars mutated the bars it was given (${nar.id})`);
+          // pass 0 is the reference the others vary from, and "identical repeats" means identical
+          if (show(outs[0]) !== before) problems.push(`varyBars changed pass 0 of ${nar.id}/${role}`);
+          if (amount === 0 && outs.some(o => show(o) !== before))
+            problems.push(`varyBars edited ${nar.id}/${role} at amount 0`);
+          if (amount === 0) continue;
+
+          for (let p = 1; p < outs.length; p++) {
+            if (show(outs[p]) === before) problems.push(`varyBars left pass ${p} of ${nar.id}/${role} untouched`);
+            // the bars are still a melody: right shape, degrees inside the scale
+            if (outs[p].length !== base.length) problems.push(`varyBars changed the bar count of ${nar.id}`);
+            for (const bar of outs[p]) {
+              if (bar.length !== B) problems.push(`varyBars changed the bar width of ${nar.id}`);
+              for (const col of bar) for (const d of col)
+                if (!(Number.isInteger(d) && d >= 0 && d < ND)) problems.push(`varyBars wrote degree ${d} in ${nar.id}`);
+            }
+            // still the same tune: most of where the notes fall is untouched
+            const keep = new Set(onsets(base));
+            const same = onsets(outs[p]).filter(o => keep.has(o)).length / Math.max(1, keep.size);
+            worstKeep = Math.min(worstKeep, same);
+            if (same < 0.6) problems.push(`varyBars rewrote ${nar.id}/${role} pass ${p} — only ${(same * 100) | 0}% of the phrase left`);
+            // same inputs, same output, every time — a shared song has to sound like the one that was shared
+            if (show(M.varyBars(base, { pass: p, role, nd: ND, amount })) !== show(outs[p]))
+              problems.push(`varyBars is not deterministic (${nar.id}/${role} pass ${p})`);
+          }
+          combos++;
+          if (new Set(outs.map(show)).size < 4) repeats++;
+        }
+        // "vary more" has to mean more, or it is a menu entry that does nothing
+        for (let p = 1; p < 4; p++) {
+          const one = show(M.varyBars(base, { pass: p, role, nd: ND, amount: 1 }));
+          if (one === show(M.varyBars(base, { pass: p, role, nd: ND, amount: 2 })))
+            problems.push(`varyBars amount 2 matches amount 1 for ${nar.id}/${role} pass ${p}`);
+        }
+      }
+    }
+  }
+  // the whole point of the feature: four passes of a section, four different melodies, every time
+  if (repeats) problems.push(`${repeats}/${combos} narrative/role combos still repeat a pass`);
+  if (M.VARY_LEVELS[0][0] !== 0) problems.push("the first variation level is not 'leave it alone'");
+  if (M.VARY_LEVELS.length < 2) problems.push("there is nothing to choose between in VARY_LEVELS");
+  console.log(`repeat variation: ${combos} narrative×role×amount combos, ${combos - repeats} give four different passes, ${(worstKeep * 100) | 0}% of the phrase survives at worst`);
 }
 
 /* ---- editing an arrangement without losing the melodies ----

@@ -434,6 +434,28 @@ Two data tables, both producing the same thing — bars of scale-degree columns:
   octave the grid displays. Every section is written in one `setMelos` (per-section `putSec` calls
   would read stale state), with the previous store kept for one-step Undo.
 
+### Varying the repeats
+
+A narrative writes the same tune into every pass of a section, so four choruses came back note for
+note the same. `varyBars` edits the later passes — pass 0 is left alone, because it is the thing the
+others are variations of. Seven small edits (`VARIATIONS`) cover both pitch and rhythm: a different
+landing note (`ending`) or opening note, a passing note through a leap the phrase already makes, a
+phrase pushed a column early, an interior note lifted to its neighbour, a note taken away, and a held
+note released early (`clip` — the only one with anywhere to go in a bar of two long notes). Each
+returns whether it found somewhere to act, and `varyBars` walks a rotation of the list until it has
+made `amount` edits, so two edits are always two *different* kinds of edit.
+
+The one subtlety worth keeping: **every hash is seeded from the role alone, never from the pass.**
+The pass is then added as a plain `+ pass` to each choice — which variation, which bar, which note,
+which landing. That makes consecutive repeats step one place along by construction. Folding the pass
+into the hash instead scrambles the choices, and two repeats then coincide often enough to hear it
+(9% of narrative × role combinations in the test, against 0% now). `nearDegs` reaches outwards rather
+than clamping at the edges of the scale for the same reason: a phrase ending on the tonic at the
+bottom of the octave has nothing below it, and clamping would give every pass the same note.
+
+The amount is a UI-level choice (`varySt`, like `narSel`) rather than part of the song document —
+what gets saved is the melodies it produced.
+
 ## Notation
 
 `NotationScore` draws the song on a staff in hand-built SVG (no engraving library), matching the

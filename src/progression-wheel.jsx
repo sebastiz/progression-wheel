@@ -7,7 +7,7 @@ import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyM
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapSecs } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
@@ -481,6 +481,7 @@ export default function ProgressionWheel() {
   const [rhySel, setRhySel] = useState({});                 // per-section melody rhythm cell                 // per-section: { pat, start } suggested-melody picks
   const [narSel, setNarSel] = useState({ key:"", id:"" });  // melodic narrative written across the whole song
   const [narUndo, setNarUndo] = useState(null);             // melody snapshot from before the last narrative write
+  const [varySt, setVarySt] = useState({ key:"", val:1 });  // how much a narrative varies each repeat of a section
   const [showLand, setShowLand] = useState(false);          // landing-notes collapse
   const [curQ, setCurQ] = useState(null);                   // {sym, col} playhead in melody grids
   const [curInst, setCurInst] = useState(null);             // instance key currently playing
@@ -1385,13 +1386,14 @@ export default function ProgressionWheel() {
   /* ---- melodic narrative: one shape written across every section at once ---- */
   const narId = narSel.key === progId ? narSel.id : "";
   const curNar = NARRATIVES.find(n => n.id === narId) || null;
+  const varyAmt = varySt.key === progId ? varySt.val : 1;
   // the bar's chord as a scale degree — the hook narratives use to follow the harmony
   const chordDegsOf = cs => cs.map(c => {
     const i = scaleNotes.indexOf(((c.root % 12) + 12) % 12);
     return i >= 0 ? i : null;
   });
   // write every section's melody A in one state update (a putSec per section would read stale state)
-  const applyNarrative = id => {
+  const applyNarrative = (id, amt = varyAmt) => {
     const nar = NARRATIVES.find(n => n.id === id);
     setNarSel({ key: progId, id: nar ? id : "" });
     if (!nar || !sections.insts.length) return;
@@ -1404,15 +1406,19 @@ export default function ProgressionWheel() {
       const pass = seen[d.base] = (seen[d.base] || 0);
       seen[d.base] = pass + 1;
       const spots = rhythmSpots(ROLE_RHYTHM[d.base] || "straight", meloBeats, meloSub, barBeats);
-      const bars = nar.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, nd: scaleSemis.length, spots,
+      const gen = nar.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, nd: scaleSemis.length, spots,
         chordDegs: chordDegsOf(d.cs), role: d.base, pass, passes: passes[d.base],
         idx, total, frac: total > 1 ? idx / (total - 1) : 0 });
+      // second chorus, third verse: same tune, small edits. Pass 0 is left alone — it is the thing
+      // the later ones are variations of.
+      const bars = varyBars(gen, { pass, role: d.base, nd: scaleSemis.length, amount: amt });
       const sec = secMelos[d.key], prev = secs[d.key] || {};
-      // a narrative writes part A of every section; the other parts are left exactly as they are
-      const keep = sec ? sec.layers.map(ly => ({ bars: dupBars(ly.bars), instr: ly.instr }))
-                       : (prev.layers || [{ bars: [], instr: null }]);
+      // a narrative writes part A of every section; the other parts are left exactly as they are —
+      // cloneLayer rather than a bars/instr pair, so registers, levels, mutes and sends survive
+      const keep = sec ? sec.layers.map(cloneLayer)
+                       : (prev.layers || [{ bars: [], instr: null }]).map(cloneLayer);
       secs[d.key] = { ids: sec ? sec.ids : prev.ids,
-        layers: keep.map((ly, i) => i === 0 ? { bars, instr: ly.instr } : ly) };
+        layers: keep.map((ly, i) => i === 0 ? { ...ly, bars } : ly) };
     });
     setNarUndo(melos);                       // one step back, in case it wrote over something good
     setMelos({ progId, secs });
@@ -3377,6 +3383,13 @@ export default function ProgressionWheel() {
             </select>
             {curNar && <button className="mini" onClick={() => applyNarrative(narId)}
               title="Rewrite it — after a key change, a new structure, or edits you want to throw away">↻ Rewrite</button>}
+            {/* a second chorus that is note-for-note the first one is the fastest way to sound like a demo */}
+            <select value={varyAmt} onChange={e => { const v = +e.target.value;
+                setVarySt({ key: progId, val: v }); if (narId) applyNarrative(narId, v); }}
+              style={{ flex:"0 1 150px" }}
+              title="How much each repeat of a section differs from its first time round — a new landing note, a pushed phrase, a note taken away. The first time is always left alone.">
+              {VARY_LEVELS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
             {narUndo && narSel.key === progId && <button className="mini" onClick={undoNarrative}
               title="Put the melodies back as they were before the narrative was written">↶ Undo</button>}
           </div>
