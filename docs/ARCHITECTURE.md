@@ -160,6 +160,21 @@ song fit in a URL. `encodeSong` runs JSON through the native `CompressionStream`
 Undo/redo snapshots this same document from a debounced effect rather than at each call site, so no
 edit path can forget to record itself; a `restoringRef` flag stops a replay becoming history.
 
+## Design tokens
+
+The stylesheet had 17 font sizes, 15 corner radii and 45 near-identical greys — which is what "not
+quite designed" looks like at close range. A `:root` block now holds the whole palette: an 8-step
+type scale, 6 radii, and named surfaces, lines and text colours. Everything else refers to them, so
+a change happens once rather than in thirty places.
+
+Nine hues stay literal on purpose because they *mean* something rather than being chrome — the warm
+error text, the blue highlight, the gold and red tints behind an active state. They are held out by
+name in the test, so adding a tenth is a deliberate act rather than a drift.
+
+`npm test` rejects any hard-coded font size, radius or non-accent colour in the stylesheet, and
+requires a `:focus-visible` rule to exist: keyboard focus was invisible everywhere before, which is
+both an accessibility failure and the single thing that most made the interface read as unfinished.
+
 ## Layout and navigation
 
 The page is four tabs — `write`, `sound`, `arrange`, `save` — each top-level panel gated on `tab`.

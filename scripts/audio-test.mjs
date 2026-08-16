@@ -648,6 +648,31 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (!/if \(!linked\)/.test(auto)) problems.push("src: the autosave restore is not gated on the link check");
     }
   }
+  /* ---- the design tokens hold ----
+     The stylesheet had seventeen font sizes, fifteen corner radii and forty-five near-identical
+     greys before they were collapsed into tokens. Nothing stops that growing back one convenient
+     hard-coded value at a time, so the tokens are the rule and this is what enforces it. */
+  {
+    const styleAt = code.indexOf("<style>{`");
+    const css = code.slice(styleAt, code.indexOf("`}</style>"));
+    const root = css.slice(css.indexOf(":root"), css.indexOf("}", css.indexOf(":root")));
+    const body = css.slice(css.indexOf("}", css.indexOf(":root")) + 1);
+    if (!/--fs-md/.test(root) || !/--r-md/.test(root) || !/--surface/.test(root))
+      problems.push("src: the :root token block has gone or lost its type / radius / surface scales");
+    const rawFs = [...new Set([...body.matchAll(/font-size:\s*([\d.]+)px/g)].map(m => m[1]))];
+    const rawR  = [...new Set([...body.matchAll(/border-radius:\s*([\d.]+)px/g)].map(m => m[1]))];
+    if (rawFs.length) problems.push(`src: ${rawFs.length} hard-coded font size(s) outside the scale: ${rawFs.join(", ")}px`);
+    if (rawR.length) problems.push(`src: ${rawR.length} hard-coded corner radius/radii outside the scale: ${rawR.join(", ")}px`);
+    /* A handful of accent hues stay literal on purpose — they mean something rather than being
+       chrome — but the greys are all tokens now, and a new one is how the palette drifts back. */
+    const ACCENTS = ["F2B8AC", "BCD6FF", "7A4A44", "E9B3AB", "1A130A", "2A0F0B", "4A3F8A", "6B5320", "FFFFFF"];
+    const raw = [...new Set([...body.matchAll(/#([0-9A-Fa-f]{6})(?![0-9A-Fa-f])/g)].map(m => m[1].toUpperCase()))]
+      .filter(h => !ACCENTS.includes(h));
+    if (raw.length) problems.push(`src: ${raw.length} hard-coded colour(s) that should be tokens: ${raw.map(h => "#" + h).join(", ")}`);
+    // and keyboard focus has to stay visible — it was invisible everywhere before
+    if (!/:focus-visible/.test(css)) problems.push("src: no :focus-visible rule — keyboard focus would be invisible again");
+    console.log(`design tokens: type, radius and colour scales in use; ${ACCENTS.length} accents held out by name`);
+  }
   console.log(`source shape guard: ${bad.length + 3} patterns checked`);
 }
 
