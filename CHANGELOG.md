@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+- **Automation lanes — draw the build.** Two new lanes under the arrangement strip, **Filter** and
+  **Level**. Drag across one and you draw a curve: left to right is the song, height is the value.
+  A section's **🎛** move is a preset applied to one section; this is yours, and it can run across
+  as many bars as you like. They stack.
+  - **Filter** sweeps the whole mix's brightness, drums included — the DJ filter, not a pitched-bus
+    one. Low through the breakdown, climbing through the build, and the drop opens up by itself.
+  - **Level** rides the overall volume: fades, and the hole of near-silence before a drop.
+  - Cutoff maps exponentially, because brightness is heard logarithmically — a linear lane would
+    waste its top half doing almost nothing.
+  - Curves are stored in song bars, so they stay where you drew them when you move sections around,
+    and they ride along in saved sketches and shared links.
+  - Both lanes sit on the master path and are scheduled identically in a stem bounce, so the stems
+    still sum to the mix.
+  - **The strip now shows for a plain loop too**, not just a multi-section structure — it had to,
+    since the automation lanes live there and "a four-bar loop with a filter sweep on it" is a
+    perfectly good sketch. The playhead follows the loop as well now.
+  - Verified by rendering the same song twice, once with a drawn fade: the four quarters came out
+    4.5, 10.1, 19.5 and 25.5 dB down. A curve you can draw but cannot hear is not a feature.
+  Version bumped to 4.53.0.
 - **Edit the arrangement.** A structure from the menu used to be take-it-or-leave-it: you picked a
   shape and lived with it. **✎ Edit arrangement** under the strip turns the blocks into something
   you can move, lengthen, copy, delete and add to — so "I like this form but I want the drop twice

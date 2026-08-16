@@ -88,3 +88,61 @@ const remapSecs = (secs, oldPlan, newPlan, origin, letterOf, clone) => {
 };
 
 export { MAX_ROWS, idAll, instKeysOf, planAdd, planDel, planDup, planMove, planReps, remapSecs };
+
+/* ---- automation lanes ----
+   A section move is a preset applied to a whole section. Automation is the other half: a curve you
+   draw across the song, so a build can open over sixteen bars rather than jumping at a boundary.
+
+   A lane is a sparse, sorted list of `{bar, v}` with `v` in 0..1 — one point per bar at most, since
+   the scheduler ramps between bars anyway and finer resolution would be stored but never heard.
+   Between points the value is linear; outside them it holds flat, so drawing two points at the ends
+   of a build gives exactly the ramp you drew and nothing surprising before or after. */
+
+// set (or replace) the point at a bar, keeping the lane sorted
+const autoSet = (pts, bar, v) => {
+  const b = Math.max(0, Math.round(bar));
+  const val = Math.max(0, Math.min(1, v));
+  const out = (pts || []).filter(p => p.bar !== b);
+  out.push({ bar: b, v: val });
+  out.sort((x, y) => x.bar - y.bar);
+  return out;
+};
+const autoDel = (pts, bar) => (pts || []).filter(p => p.bar !== Math.round(bar));
+
+// the lane's value at a bar, or null when the lane is empty and the parameter should be left alone
+const autoAt = (pts, bar) => {
+  if (!pts || !pts.length) return null;
+  if (bar <= pts[0].bar) return pts[0].v;
+  const last = pts[pts.length - 1];
+  if (bar >= last.bar) return last.v;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    if (bar <= b.bar) {
+      const span = b.bar - a.bar;
+      return span <= 0 ? b.v : a.v + (b.v - a.v) * ((bar - a.bar) / span);
+    }
+  }
+  return last.v;
+};
+
+/* Drawing sweeps the pointer across bars, and at speed that skips some. Filling the gap keeps the
+   drawn line continuous instead of leaving holes wherever the pointer moved faster than the frame
+   rate. `from` is the last bar written, so a first touch writes a single point. */
+const autoDraw = (pts, from, to, vFrom, vTo) => {
+  let out = pts || [];
+  const a = Math.round(from), b = Math.round(to);
+  if (a === b) return autoSet(out, b, vTo);
+  const step = b > a ? 1 : -1, n = Math.abs(b - a);
+  for (let k = 1; k <= n; k++) {
+    const bar = a + step * k;
+    out = autoSet(out, bar, vFrom + (vTo - vFrom) * (k / n));
+  }
+  return out;
+};
+
+const AUTO_LANES = [
+  { id:"filter", name:"Filter", tip:"Sweep the whole mix's brightness — the DJ filter. Top is fully open." },
+  { id:"level",  name:"Level",  tip:"Ride the whole mix's level — fades, and the hole before a drop." },
+];
+
+export { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet };

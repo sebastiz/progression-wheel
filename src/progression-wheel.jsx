@@ -9,7 +9,7 @@ import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } fr
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
-import { planAdd, planDel, planDup, planMove, planReps, remapSecs } from "./arrange.js";
+import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapSecs } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -448,8 +448,10 @@ export default function ProgressionWheel() {
   // the drums carry on is a basic arrangement move that had no way to be expressed before.
   const [secQuiet, setSecQuiet] = useState({});
   const [custom, setCustom] = useState({ key:"", plan:null });   // edited copy of a structure's plan
+  const [auto, setAuto] = useState({ key:"", filter:null, level:null });  // drawn automation lanes
   const [editArr, setEditArr] = useState(false);                 // arrangement-editing mode on the strip
   const [selRow, setSelRow] = useState(0);                       // plan row the editor is pointed at
+  const drawRef = useRef(null);                                  // in-progress automation drag
   const [secMove, setSecMove] = useState({});
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
   const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
@@ -503,7 +505,7 @@ export default function ProgressionWheel() {
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(0);
   const humRef = useRef(0), barBeatsRef = useRef(4);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
-  const secDrumRef = useRef({}), secQuietRef = useRef({});
+  const secDrumRef = useRef({}), secQuietRef = useRef({}), autoRef = useRef({});
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
   const subRef = useRef(2), melRef = useRef(8);
   const moveRef = useRef({ moves:{}, instBars:{} });
@@ -918,6 +920,8 @@ export default function ProgressionWheel() {
   humRef.current = humanise;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
   secDrumRef.current = secDrum; secQuietRef.current = secQuiet;
+  // automation belongs to the song it was drawn on, so it stops applying when you switch away
+  autoRef.current = auto.key === planKey ? auto : {};
   kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0; delayRef.current = delayId;
   clickRef.current = clickOn;
   const meloBeats = rhythm.pattern.length;                  // grid columns per bar (6 in waltz time, 16 on a sixteenth rhythm)
@@ -1381,9 +1385,18 @@ export default function ProgressionWheel() {
   // limiting each stem on its own could never add back up to a limited mix. Bypassing it means
   // the stems sum to the raw mix sample for sample, and the DAW's own master chain does the
   // limiting — which is what a producer wants from stems anyway.
+  /* Automation sits on the master path, after everything and before the limiter, so a drawn
+     filter sweep or level ride covers the drums as well as the pitched sources — a DJ filter, not
+     a pitched-bus filter. Both are linear, and both are scheduled identically in a stem render, so
+     the stems still sum to the mix. */
+  const autoFilt = ctx.createBiquadFilter();
+  autoFilt.type = "lowpass"; autoFilt.frequency.value = FILTER_OPEN; autoFilt.Q.value = 0.6;
+  const autoGain = ctx.createGain(); autoGain.gain.value = 1;
+  autoFilt.connect(autoGain);
   let master;
   if (stem) {
-    master = ctx.createGain(); master.gain.value = 0.65; master.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = 0.65; master.connect(autoFilt);
+    autoGain.connect(ctx.destination);
   } else {
     const limiter = ctx.createDynamicsCompressor();  // tame peaks so stacked samples don't clip
   // firm brick-wall limiting: a high ratio + short attack so stacked/ringing voices can't sum
@@ -1391,7 +1404,8 @@ export default function ProgressionWheel() {
   limiter.threshold.value = -5; limiter.knee.value = 3; limiter.ratio.value = 12;
   limiter.attack.value = 0.002; limiter.release.value = 0.14;
   limiter.connect(ctx.destination);
-  master = ctx.createGain(); master.gain.value = 0.65; master.connect(limiter);
+  master = ctx.createGain(); master.gain.value = 0.65; master.connect(autoFilt);
+  autoGain.connect(limiter);
   }
   // section-move filter: a build sweeps the whole pitched mix including its reverb tail, which is
   // what makes it sound like the room opening up
@@ -1414,7 +1428,7 @@ export default function ProgressionWheel() {
   const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
   const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
   if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-  const m = { ctx, master, music, cduck, wetDuck, filt, stem: stem || null, lastMoveBar: -1,
+  const m = { ctx, master, music, cduck, wetDuck, filt, autoFilt, autoGain, stem: stem || null, lastAutoBar: -1, lastMoveBar: -1,
     partGain: [], partGate: [], partDuck: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
     leadLoaded: new Set(leadKey ? [leadKey] : []),
     step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
@@ -1501,6 +1515,31 @@ export default function ProgressionWheel() {
         const b = struct[structBar];
         const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
         if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
+      }
+      /* Automation lanes: on each bar's downbeat, ramp to the value the curve holds a bar later.
+         Per bar rather than per tick because that is already smooth to the ear and keeps the event
+         count down; guarded by the bar index so the lookahead cannot schedule one bar twice. */
+      // With no structure there is no structBar — it stays -1 for every bar, so guarding on it
+      // would let automation fire once and never again on a plain loop. Count bars instead.
+      const autoBar = structBar >= 0 ? structBar : Math.floor(m.step / L);
+      if (i === 0 && autoBar !== m.lastAutoBar) {
+        m.lastAutoBar = autoBar;
+        const A = autoRef.current || {};
+        const barDur = barBeatsRef.current * beat;
+        const bar = autoBar;
+        const fNow = autoAt(A.filter, bar), fNext = autoAt(A.filter, bar + 1);
+        if (fNow != null) {
+          // cutoff is heard logarithmically, so a linear lane has to map exponentially or the top
+          // half of the sweep does almost nothing
+          const hz = v => Math.max(60, 120 * Math.pow(FILTER_OPEN / 120, v));
+          m.autoFilt.frequency.setValueAtTime(hz(fNow), t);
+          m.autoFilt.frequency.exponentialRampToValueAtTime(hz(fNext == null ? fNow : fNext), t + barDur);
+        }
+        const gNow = autoAt(A.level, bar), gNext = autoAt(A.level, bar + 1);
+        if (gNow != null) {
+          m.autoGain.gain.setValueAtTime(gNow, t);
+          m.autoGain.gain.linearRampToValueAtTime(gNext == null ? gNow : gNext, t + barDur);
+        }
       }
       // section moves: fire once, on the downbeat of each section instance, scheduling the whole
       // sweep across that instance's length. Guarded by the bar index so a re-entered bar (or the
@@ -1662,7 +1701,8 @@ export default function ProgressionWheel() {
       }
       const delay = Math.max(0, (t - m.ctx.currentTime) * 1000);
       if (live && patStep != null) setTimeout(() => setCurStep(patStep), delay);   // playhead walks the strum pattern, not the ticks
-      if (live && i === 0) setTimeout(() => { setCurBar(pillIdx); setCurLabel(label); setCurInst(instNow); setCurSongBar(structBar); }, delay);
+      if (live && i === 0) setTimeout(() => { setCurBar(pillIdx); setCurLabel(label); setCurInst(instNow);
+        setCurSongBar(structBar >= 0 ? structBar : (seq.length ? Math.floor(m.step / L) % seq.length : 0)); }, delay);
       m.step++; m.nextTime += tick;
   };
   const startMetro = fromBar => {
@@ -2052,7 +2092,7 @@ export default function ProgressionWheel() {
   // one document for both a saved sketch and a shared link — so anything that survives a save
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
-    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, instr, melInstr,
+    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, instr, melInstr,
     kit, pump, secMove, delayId, bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
@@ -2065,7 +2105,7 @@ export default function ProgressionWheel() {
   const UNDO_DEPTH = 60;
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
-  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, instr, melInstr,
+  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, instr, melInstr,
       kit, pump, secMove, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
@@ -2157,7 +2197,7 @@ export default function ProgressionWheel() {
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
-    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null });
+    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
     setSecMove(s.secMove || {});
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
@@ -2373,6 +2413,20 @@ export default function ProgressionWheel() {
         .tlcell:disabled { cursor:default; opacity:.45; }
         .tlcell.off { box-shadow:inset 0 0 0 1px #232C3A; }
         /* the playhead sits above every lane so you can read the whole column at once */
+        .tlauto { position:relative; height:30px; margin-bottom:3px; border-radius:5px; cursor:crosshair;
+          background:#141C27; border:1px solid #232C3A; touch-action:none; overflow:hidden; }
+        .tlauto.has { border-color:#3A4658; }
+        .tlauto:hover { border-color:#4A5872; }
+        .tlcurve { position:absolute; inset:0; width:100%; height:100%; }
+        .tlcurve polyline { fill:none; stroke:${GOLD}; stroke-width:2.5; vector-effect:non-scaling-stroke;
+          stroke-linejoin:round; }
+        .tlautol { position:absolute; left:5px; top:1px; font-size:9px; color:#5C6675; pointer-events:none;
+          letter-spacing:.08em; text-transform:uppercase; }
+        .tlautox { position:absolute; right:2px; top:2px; width:16px; height:16px; padding:0; line-height:1;
+          font-size:10px; border-radius:4px; background:#1B2431; color:#8B94A3; border:1px solid #2A3442;
+          cursor:pointer; }
+        .tlautox:hover { color:#E9B3AB; border-color:#7A4A44; }
+        .tlgauto { height:30px; line-height:30px; }
         .tlhead { position:absolute; top:14px; bottom:0; width:2px; background:${GOLD}; border-radius:2px;
           pointer-events:none; box-shadow:0 0 6px ${GOLD}AA; }
         @media (max-width:560px) { .tlgut { flex-basis:44px; } .tlglbl { font-size:8.5px; } }
@@ -3095,7 +3149,9 @@ export default function ProgressionWheel() {
               to see whether the song has a shape. This is the whole thing on one line: blocks
               sized by how long each section actually is, and a lane per element underneath, so
               the drops, the drum drop-outs and the parts coming in are visible as a picture. */}
-          {sections.insts.length > 1 && (() => {
+          {/* Shown for a plain loop too, not just a multi-section structure: the automation lanes
+              live here, and "a four-bar loop with a filter sweep on it" is a perfectly good sketch. */}
+          {sections.insts.length > 0 && (() => {
             const total = sections.totalBars || 1;
             // what each section actually plays, resolved the same way the scheduler resolves it
             const drumsIn = base => {
@@ -3165,6 +3221,7 @@ export default function ProgressionWheel() {
                   <div className="tlglbl tlgruler" />
                   <div className="tlglbl tlgsec">{total} bars</div>
                   {lanes.map(l => <div key={l.name} className="tlglbl">{l.name}</div>)}
+                  {AUTO_LANES.map(L => <div key={L.id} className="tlglbl tlgauto">{L.name}</div>)}
                 </div>
                 <div className="tltrk">
                   <div className="tlruler">
@@ -3210,6 +3267,50 @@ export default function ProgressionWheel() {
                       })}
                     </div>
                   ))}
+                  {/* Automation lanes. Drag across one to draw a curve; the value is the height
+                      you drag at. Drawn in song-bar coordinates so a curve keeps its shape when
+                      sections around it move. */}
+                  {AUTO_LANES.map(L => {
+                    const pts = (auto.key === planKey && auto[L.id]) || null;
+                    const barAt = (e, el) => {
+                      const r = el.getBoundingClientRect();
+                      return { bar: Math.max(0, Math.min(total - 1, Math.floor((e.clientX - r.left) / r.width * total))),
+                        v: Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height)) };
+                    };
+                    const write = next => setAuto(a => ({ ...(a.key === planKey ? a : { key: planKey }), key: planKey, [L.id]: next }));
+                    return (
+                      <div key={L.id} className={"tlauto" + (pts && pts.length ? " has" : "")}
+                        title={L.tip + " Drag to draw; the ✕ clears it."}
+                        onPointerDown={e => {
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          const p = barAt(e, e.currentTarget);
+                          drawRef.current = { lane: L.id, bar: p.bar, v: p.v };
+                          write(autoSet(pts, p.bar, p.v));
+                        }}
+                        onPointerMove={e => {
+                          const d = drawRef.current;
+                          if (!d || d.lane !== L.id) return;
+                          const p = barAt(e, e.currentTarget);
+                          // fill the bars the pointer skipped, or a fast drag leaves holes in the line
+                          write(autoDraw(pts, d.bar, p.bar, d.v, p.v));
+                          drawRef.current = { lane: L.id, bar: p.bar, v: p.v };
+                        }}
+                        onPointerUp={() => { drawRef.current = null; }}
+                        onPointerCancel={() => { drawRef.current = null; }}>
+                        {pts && pts.length > 0 && (
+                          <svg viewBox={`0 0 ${total} 100`} preserveAspectRatio="none" className="tlcurve">
+                            <polyline points={Array.from({ length: total + 1 }, (_, b) =>
+                              `${b},${100 - (autoAt(pts, b) || 0) * 100}`).join(" ")} />
+                          </svg>
+                        )}
+                        <span className="tlautol">{L.name}</span>
+                        {pts && pts.length > 0 &&
+                          <button className="tlautox" title={"Clear the " + L.name + " automation"}
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); write(null); }}>✕</button>}
+                      </div>
+                    );
+                  })}
                   {curSongBar >= 0 &&
                     <div className="tlhead" style={{ left: (curSongBar / total * 100) + "%" }} />}
                 </div>
@@ -3256,7 +3357,7 @@ export default function ProgressionWheel() {
             </>
             );
           })()}
-          {tips && sections.insts.length > 1 && <p className="keytag" style={{ marginTop:6 }}>
+          {tips && sections.insts.length > 0 && <p className="keytag" style={{ marginTop:6 }}>
             The strip above is the whole song end to end — each block is a section, as wide as it is
             long, and the lanes under it show what is playing where. Gaps in a lane are a part
             sitting out. Tap a block to play from there.

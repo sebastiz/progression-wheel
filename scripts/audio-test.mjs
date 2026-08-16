@@ -1105,6 +1105,41 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (JSON.stringify(plan) !== before) problems.push("an arrangement edit mutated the plan it was given");
   }
   console.log(`arrangement edits: 5 operations, melodies traced through every one`);
+
+  /* ---- automation lanes ---- */
+  {
+    if (M.autoAt(null, 4) !== null || M.autoAt([], 4) !== null)
+      problems.push("an empty automation lane should read null, so the parameter is left alone");
+    let pts = M.autoSet(M.autoSet([], 0, 0), 8, 1);
+    const at = b => M.autoAt(pts, b);
+    if (at(0) !== 0 || at(8) !== 1) problems.push("autoAt does not return the drawn end points");
+    if (Math.abs(at(4) - 0.5) > 1e-9) problems.push(`autoAt interpolated bar 4 as ${at(4)}, expected 0.5`);
+    // outside the drawn range it holds flat rather than running off
+    if (at(-3) !== 0 || at(99) !== 1) problems.push("autoAt does not hold flat outside the drawn points");
+    // one point per bar: drawing over a bar replaces it rather than stacking
+    pts = M.autoSet(pts, 8, 0.25);
+    if (pts.filter(p => p.bar === 8).length !== 1) problems.push("autoSet stacked two points on one bar");
+    if (at(8) !== 0.25) problems.push("autoSet did not replace the point at a bar");
+    if (pts.some((p, i) => i && p.bar < pts[i - 1].bar)) problems.push("autoSet left the lane unsorted");
+    // values are clamped: a drag past the edge of the lane must not write 1.4 or -0.2
+    const wild = M.autoSet(M.autoSet([], 1, 5), 2, -5);
+    if (wild.some(p => p.v < 0 || p.v > 1)) problems.push(`autoSet let a value escape 0..1: ${JSON.stringify(wild)}`);
+    if (M.autoSet([], -4, 0.5)[0].bar !== 0) problems.push("autoSet allowed a negative bar");
+
+    // a fast drag skips bars; the fill has to leave a continuous line, not holes
+    const drawn = M.autoDraw([], 0, 6, 0, 1);
+    for (let b = 1; b <= 6; b++)
+      if (!drawn.some(p => p.bar === b)) problems.push(`autoDraw left a hole at bar ${b}`);
+    if (Math.abs(M.autoAt(drawn, 3) - 0.5) > 1e-9) problems.push("autoDraw did not interpolate across the skipped bars");
+    // and dragging backwards works the same way
+    const back = M.autoDraw([], 6, 2, 1, 0);
+    for (let b = 2; b <= 5; b++)
+      if (!back.some(p => p.bar === b)) problems.push(`autoDraw backwards left a hole at bar ${b}`);
+    if (M.autoDel(drawn, 3).some(p => p.bar === 3)) problems.push("autoDel did not remove the point");
+    if (M.AUTO_LANES.length < 2) problems.push("expected at least a filter and a level lane");
+    for (const L of M.AUTO_LANES) if (!L.id || !L.name || !L.tip) problems.push(`automation lane ${L.id} is missing a name or tip`);
+    console.log(`automation: ${M.AUTO_LANES.length} lanes, interpolation and drag-fill checked`);
+  }
 }
 
 /* ---- the zip writer, and the stem gating that fills it ----

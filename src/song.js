@@ -69,7 +69,7 @@ function makeSong(s) {
   return {
     v: 1,
     name: s.name, progId: s.progId, tonic: s.tonic, genre: s.genre, emotion: s.emotion,
-    mode: s.mode, colour: s.colour, patId: s.patId, drum: s.drum, secDrum: s.secDrum, secQuiet: s.secQuiet, custom: s.custom,
+    mode: s.mode, colour: s.colour, patId: s.patId, drum: s.drum, secDrum: s.secDrum, secQuiet: s.secQuiet, custom: s.custom, auto: s.auto,
     instr: s.instr, melInstr: s.melInstr, kit: s.kit, pump: s.pump, secMove: s.secMove, delayId: s.delayId,
     bpm: s.bpm, selStruct: s.selStruct, contrast: s.contrast,
     edits: s.edits, inserts: s.inserts, quals: s.quals, removed: s.removed, order: s.order,
