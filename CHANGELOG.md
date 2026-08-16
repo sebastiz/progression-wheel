@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+- **A real design system, and visible keyboard focus.** The second half of the interface work.
+
+  | | Before | After |
+  | --- | --- | --- |
+  | Font sizes | 17 | **8** |
+  | Corner radii | 15 | **6** |
+  | Colours in the stylesheet | 45 | **26 tokens + 9 named accents** |
+
+  - Everything refers to tokens now, so a change happens once instead of in thirty places. The nine
+    hues that stay literal do so because they mean something — the warning text, the active-state
+    tints — and they are held out by name rather than by accident.
+  - **Keyboard focus is visible.** There was no focus style anywhere, which is an accessibility
+    failure as well as the thing that most made the app read as unfinished. `:focus-visible` only,
+    so clicking a button does not leave a ring behind it.
+  - `npm test` now rejects a hard-coded size, radius or non-accent colour in the stylesheet, and
+    fails if the focus rule disappears — the scales cannot quietly grow back one convenient value
+    at a time.
+  Version bumped to 4.59.0.
 - **The app is in four tabs now, instead of one very long page.** **Write**, **Sound**, **Arrange**
   and **Save**. Choosing a key, drawing automation and exporting stems used to share one column, so
   you scrolled past the wheel — a whole screen you stop needing after the first minute — to reach
