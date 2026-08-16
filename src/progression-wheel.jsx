@@ -2540,9 +2540,12 @@ export default function ProgressionWheel() {
         .tog.lav.on .sw { background:#4A3F8A; } .tog.lav.on .sw::after { background:${LAV}; }
         .tog.gold.on .sw { background:#6B5320; } .tog.gold.on .sw::after { background:${GOLD}; }
         svg { max-width:100%; height:auto; display:block; }
-        .wheelsvg { width:100%; }
+        /* The wheel is a diagram, not a canvas: at full column width it rendered 708px tall, most
+           of it the empty middle of a circle. Capped and centred instead, with the in-diagram text
+           sized up to compensate so nothing is harder to read at the smaller size. */
+        .wheelsvg { width:100%; max-width:500px; display:block; margin:0 auto; }
         .dimlbl { fill:var(--muted-2); font-size:var(--fs-xxl); font-family:'Archivo'; font-weight:500; }
-        .dimlbl.sm { font-size:var(--fs-lg); }
+        .dimlbl.sm { font-size:var(--fs-xl); }
         .progpath { fill:none; stroke:${PATH}; stroke-width:2.6; opacity:.92; stroke-dasharray:600; stroke-dashoffset:600; animation:draw .7s ease forwards; }
         @keyframes draw { to { stroke-dashoffset:0; } }
         .parline { fill:none; stroke:${LAV}; stroke-width:1.8; stroke-dasharray:5 5; opacity:.85; }
@@ -3149,7 +3152,7 @@ export default function ProgressionWheel() {
               return (
                 <g key={"pn"+i} style={{ cursor:"pointer" }} onClick={() => applyParallel(p)}>
                   <circle cx={n.x} cy={n.y} r={famMin(p.quality) ? 19 : 23} fill="#171E28" stroke={LAV} strokeWidth="1.8" strokeDasharray="4 3" />
-                  <text x={n.x} y={n.y+5} textAnchor="middle" fill={LAV} fontSize="14" fontWeight="600" fontFamily="Archivo"
+                  <text x={n.x} y={n.y+5} textAnchor="middle" fill={LAV} fontSize="15" fontWeight="600" fontFamily="Archivo"
                     style={{ pointerEvents:"none" }}>{p.name}</text>
                 </g>
               );
@@ -3160,9 +3163,9 @@ export default function ProgressionWheel() {
                 <g key={"sn"+i} style={{ cursor:"pointer" }} onClick={() => applySecondary(s)}>
                   <circle cx={n.x} cy={n.y} r={s.onExisting ? 30 : 23} fill={s.onExisting ? "none" : "#171E28"}
                     stroke={GOLD} strokeWidth="2" strokeDasharray={s.onExisting ? "3 3" : "0"} />
-                  {!s.onExisting && <text x={n.x} y={n.y+5} textAnchor="middle" fill={GOLD} fontSize="14" fontWeight="600"
+                  {!s.onExisting && <text x={n.x} y={n.y+5} textAnchor="middle" fill={GOLD} fontSize="15" fontWeight="600"
                     fontFamily="Archivo" style={{ pointerEvents:"none" }}>{s.name}</text>}
-                  <text x={n.x} y={n.y + (s.onExisting ? 46 : 38)} textAnchor="middle" fill={GOLD} fontSize="11" fontFamily="Archivo">
+                  <text x={n.x} y={n.y + (s.onExisting ? 46 : 38)} textAnchor="middle" fill={GOLD} fontSize="13" fontFamily="Archivo">
                     V/{s.target.numeral}</text>
                 </g>
               );
@@ -3183,9 +3186,9 @@ export default function ProgressionWheel() {
                   }}>
                   {isSel && <circle cx={n.x} cy={n.y} r={r + 6} fill="none" stroke="#FFFFFF" strokeWidth="1.6" strokeDasharray="4 4" opacity="0.9" />}
                   <circle cx={n.x} cy={n.y} r={r} fill={FN_COLOR[c.func]} stroke={c.inserted ? GOLD : "#10151D"} strokeWidth="2.5" />
-                  <text x={n.x} y={n.y+5} textAnchor="middle" fill={FN_TEXT[c.func]} fontSize={c.name.length > 3 ? 11 : famMin(c.quality) ? 14 : 16}
+                  <text x={n.x} y={n.y+5} textAnchor="middle" fill={FN_TEXT[c.func]} fontSize={c.name.length > 3 ? 13 : famMin(c.quality) ? 15 : 17}
                     fontWeight="700" fontFamily="Archivo" style={{ pointerEvents:"none" }}>{c.name}</text>
-                  <text x={n.x} y={n.y - r - 7} textAnchor="middle" fill="#8B94A3" fontSize="11" fontFamily="Archivo">{c.steps.join("·")}</text>
+                  <text x={n.x} y={n.y - r - 8} textAnchor="middle" fill="#8B94A3" fontSize="13" fontFamily="Archivo">{c.steps.join("·")}</text>
                   {!chordInMode(c) && <>
                     <circle cx={n.x + r * 0.72} cy={n.y - r * 0.72} r={6} fill={GOLD} stroke="#10151D" strokeWidth="1.6" />
                     <title>{c.name} sits outside {keyLabel} — borrowed / chromatic colour</title>
