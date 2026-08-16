@@ -1,6 +1,26 @@
 # Changelog
 
 ## Unreleased
+- **Edit the arrangement.** A structure from the menu used to be take-it-or-leave-it: you picked a
+  shape and lived with it. **✎ Edit arrangement** under the strip turns the blocks into something
+  you can move, lengthen, copy, delete and add to — so "I like this form but I want the drop twice
+  as long and the bridge earlier" is now two taps instead of a wish.
+  - **Melodies travel with their sections.** This is the part that took the work: sections are
+    numbered in playing order and melodies are stored under that number, so moving a chorus past
+    another chorus swaps their numbers and would have left both melodies playing under the wrong
+    section. Every edit carries its notes across. A copied section arrives already written; a
+    stretched one repeats its last pass rather than coming back half-empty; only a section you
+    *add* starts blank.
+  - Nothing touches the structure in the menu — it is a copy, marked **edited**, with **↺ Reset**
+    to put the original back.
+  - The operations live in a new `src/arrange.js` and are covered properly: every edit is traced to
+    confirm each section's melody ends up where the section did, and none of them may modify the
+    catalogue plan they were handed.
+  - **Fixed a bug the editor exposed**, present since the strip shipped: a lane showed a part as
+    playing whenever the section had a *grid*, not whenever it had *notes*. Every section had
+    something written into it, so it looked right — until you added an empty section and it claimed
+    to be playing. Empty sections now read as empty, and their lane cells are properly disabled.
+  Version bumped to 4.52.0.
 - **The arrangement strip is where you arrange now.** Its lanes were a readout: they showed you that
   the drums never drop out and that the pad is in from bar one to the end, and then you had to go
   find the section below to change either. **Tap a lane cell to drop that element for that section,

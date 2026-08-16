@@ -13,8 +13,9 @@ import * as progs from "../src/progressions.js";
 import * as song from "../src/song.js";
 import * as wav from "../src/wav.js";
 import * as zip from "../src/zip.js";
+import * as arrange from "../src/arrange.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -993,6 +994,119 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`note gates: ${M.GATES.length} patterns, ${M.GATES.map(g => g.pat.split("x").length - 1).join("/")} open steps`);
 }
 
+/* ---- editing an arrangement without losing the melodies ----
+   Moving a chorus earlier renumbers every section after it, and melodies are stored under that
+   number. So the interesting property is not "did the rows move" — it is "did each section's notes
+   go with it". Every operation is checked for both. */
+{
+  const L = M.letterFor;
+  const plan = [
+    { sec:"Intro", nums:"LOOP", reps:1 }, { sec:"Verse", nums:"LOOP", reps:2 },
+    { sec:"Chorus", nums:"LOOP", reps:2 }, { sec:"Bridge", nums:"LOOP", reps:1 },
+    { sec:"Chorus", nums:"LOOP", reps:2 },
+  ];
+  const keys = M.instKeysOf(plan, L);
+  if (keys.flat().join() !== "I1,V1,V2,C1,C2,B1,C3,C4")
+    problems.push(`instKeysOf numbered sections as ${keys.flat().join()}`);
+
+  // give every section a recognisable "melody" so it can be traced through an edit
+  const clone = x => ({ ...x });
+  const secsOf = ks => Object.fromEntries(ks.flat().map(k => [k, { ids: [k], layers: [{ tag: k }] }]));
+  const secs = secsOf(keys);
+  // what a section key held before the edit, so a moved section can be recognised after it
+  const tagOf = (out, k) => (out[k] && out[k].layers[0] || {}).tag;
+
+  // move the bridge one place earlier
+  {
+    const r = M.planMove(plan, 3, -1);
+    if (!r) problems.push("planMove refused a legal move");
+    else {
+      const [next, origin, sel] = r;
+      if (next.map(x => x.sec).join() !== "Intro,Verse,Bridge,Chorus,Chorus")
+        problems.push(`planMove gave ${next.map(x => x.sec).join()}`);
+      if (sel !== 2) problems.push(`planMove selected row ${sel}, expected the moved one at 2`);
+      const out = M.remapSecs(secs, plan, next, origin, L, clone);
+      // the choruses keep their order here, so nothing renumbers and every section keeps its own
+      for (const k of ["I1", "V1", "V2", "C1", "C2", "B1", "C3", "C4"])
+        if (tagOf(out, k) !== k) problems.push(`planMove: ${k} came back holding ${tagOf(out, k)}`);
+    }
+    if (M.planMove(plan, 0, -1)) problems.push("planMove ran off the front of the plan");
+    if (M.planMove(plan, plan.length - 1, 1)) problems.push("planMove ran off the end of the plan");
+  }
+
+  /* And the case the whole remap exists for: moving a chorus past another chorus. The two rows
+     swap numbers, so a melody that stayed at its old key would now be playing under the wrong
+     section — the failure this is here to catch. */
+  {
+    const two = [{ sec:"Verse", nums:"LOOP", reps:1 },
+                 { sec:"Chorus", nums:"LOOP", reps:1 }, { sec:"Chorus", nums:"LOOP", reps:1 }];
+    const twoKeys = M.instKeysOf(two, L);
+    if (twoKeys.flat().join() !== "V1,C1,C2") problems.push(`two-chorus keys: ${twoKeys.flat().join()}`);
+    const twoSecs = secsOf(twoKeys);
+    const [next, origin] = M.planMove(two, 2, -1);
+    const out = M.remapSecs(twoSecs, two, next, origin, L, clone);
+    if (tagOf(out, "C1") !== "C2" || tagOf(out, "C2") !== "C1")
+      problems.push(`planMove: swapping two choruses did not carry their melodies (C1=${tagOf(out, "C1")}, C2=${tagOf(out, "C2")})`);
+    if (tagOf(out, "V1") !== "V1") problems.push("planMove: the verse was disturbed by a chorus swap");
+  }
+
+  // stretch the first chorus from two passes to four
+  {
+    const [next, origin] = M.planReps(plan, 2, 2);
+    if (next[2].reps !== 4) problems.push(`planReps gave ${next[2].reps} passes`);
+    const out = M.remapSecs(secs, plan, next, origin, L, clone);
+    if (tagOf(out, "C1") !== "C1" || tagOf(out, "C2") !== "C2")
+      problems.push("planReps: the existing passes lost their melodies");
+    // the two new passes repeat the last written one rather than arriving empty
+    if (tagOf(out, "C3") !== "C2" || tagOf(out, "C4") !== "C2")
+      problems.push(`planReps: added passes came back empty (C3=${tagOf(out, "C3")})`);
+    if (M.planReps(plan, 2, -99)[0][2].reps !== 1) problems.push("planReps went below one pass");
+    if (M.planReps(plan, 0, -1)) problems.push("planReps took a one-pass section below one");
+  }
+
+  // duplicate the bridge — the copy must arrive with the notes already in it
+  {
+    const [next, origin, sel] = M.planDup(plan, 3);
+    if (next.length !== 6 || next[4].sec !== "Bridge") problems.push("planDup did not insert a copy in place");
+    if (sel !== 4) problems.push(`planDup selected ${sel}, expected the copy at 4`);
+    const out = M.remapSecs(secs, plan, next, origin, L, clone);
+    if (tagOf(out, "B1") !== "B1" || tagOf(out, "B2") !== "B1")
+      problems.push(`planDup: the copy did not inherit the melody (B2=${tagOf(out, "B2")})`);
+  }
+
+  // remove the bridge
+  {
+    const [next, origin] = M.planDel(plan, 3);
+    if (next.map(x => x.sec).join() !== "Intro,Verse,Chorus,Chorus") problems.push("planDel removed the wrong row");
+    const out = M.remapSecs(secs, plan, next, origin, L, clone);
+    if (out.B1) problems.push("planDel: the removed section's melody is still there");
+    if (tagOf(out, "C3") !== "C3") problems.push("planDel: a later section's melody shifted");
+    if (M.planDel([plan[0]], 0)) problems.push("planDel emptied the song — a plan needs one section");
+  }
+
+  // add a drop after the first chorus: brand new, so it must start empty and disturb nobody
+  {
+    const [next, origin, sel] = M.planAdd(plan, 3, "Drop");
+    if (next[3].sec !== "Drop" || next[3].reps !== 1) problems.push("planAdd inserted the wrong row");
+    if (sel !== 3) problems.push(`planAdd selected ${sel}`);
+    const out = M.remapSecs(secs, plan, next, origin, L, clone);
+    if (out.D1) problems.push("planAdd: a brand-new section arrived with someone else's melody");
+    if (tagOf(out, "C1") !== "C1" || tagOf(out, "B1") !== "B1")
+      problems.push("planAdd: an existing section lost its melody");
+    if (M.planAdd(Array.from({ length: M.MAX_ROWS }, () => plan[0]), 0, "Drop"))
+      problems.push("planAdd went past MAX_ROWS");
+  }
+
+  // nothing may mutate the plan it was handed — the catalogue's plans are shared constants, and an
+  // in-place edit would rewrite the structure for every song that ever picks it
+  {
+    const before = JSON.stringify(plan);
+    M.planMove(plan, 1, 1); M.planReps(plan, 1, 3); M.planDup(plan, 1); M.planDel(plan, 1); M.planAdd(plan, 1, "Drop");
+    if (JSON.stringify(plan) !== before) problems.push("an arrangement edit mutated the plan it was given");
+  }
+  console.log(`arrangement edits: 5 operations, melodies traced through every one`);
+}
+
 /* ---- the zip writer, and the stem gating that fills it ----
    A malformed archive is the worst failure mode here: the download succeeds, and the producer
    only finds out when their unarchiver refuses it. So the bytes get parsed back structurally
@@ -1091,7 +1205,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "progressions.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "progressions.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
