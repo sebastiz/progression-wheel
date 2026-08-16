@@ -311,6 +311,33 @@ dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling
   plucked-string guitar, a richer drum kit, and reverb on everything. Turn **Real** off to always use
   the synth voices — handy for a guaranteed-offline, zero-download session.
 
+Every file the app writes is named for the sketch, its key and its tempo — *Night Drive Cm 128bpm.mid*
+— because it is going to land in a folder next to a dozen others and "progression-wheel.mid" tells
+you nothing an hour later.
+
+**↓ MIDI ×tracks** gives you one MIDI file per source — chords, drums and each melody part — zipped.
+The single **↓ Export MIDI** file is the right thing for a DAW that imports multi-track files
+properly; plenty don't, and plenty of people would rather drag one part onto one track than untangle
+a merged import. Each file keeps the tempo map and the section markers, so it lands at the right
+speed with the arrangement marked however you bring it in.
+
+**↓ Chart** writes a plain-text chord chart — the form, the chords bar by bar and the running time —
+for handing to somebody who plays an instrument rather than to a DAW. **⧉ Copy chart** puts the same
+thing on the clipboard for pasting into a message. It reads like this:
+
+```
+Night Drive
+C minor · 96 bpm · 4/4
+Form: Radio pop
+
+INTRO  (4 bars, from bar 1)
+| C | G | Am | F |
+  — instrumental
+
+VERSE 1 ×2  (8 bars, from bar 5)
+| Am | F | C | G |
+```
+
 Transport: a sticky **Play** at the very top (with tempo). **↓ Export MIDI**, **↓ Export audio** and
 **↓ Export stems** sit in **Song & melody** — MIDI for a DAW, a .wav for everywhere else, stems for
 when you want to keep working on it. The audio render uses the same engine as playback, so it sounds

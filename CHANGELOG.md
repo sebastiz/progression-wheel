@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- **Files that say what they are.** Every download is now named for the sketch, its key and its
+  tempo — *Night Drive Cm 128bpm.mid* rather than *progression-wheel.mid*. Applies to MIDI, audio,
+  stems and the new chart.
+- **↓ MIDI ×tracks — one MIDI file per source**, zipped: chords, drums and each melody part. The
+  single multi-track file is right for a DAW that imports them properly; plenty don't, and plenty of
+  people would rather drag one part onto one track than untangle a merged import. Each file keeps
+  the tempo map and the section markers, so it lands at the right speed with the arrangement marked
+  however you bring it in.
+- **↓ Chart — a plain-text chord chart**, for handing to somebody who plays an instrument rather
+  than to a DAW: the form, the chords bar by bar, the section notes and the running time. **⧉ Copy
+  chart** puts the same thing on the clipboard.
+  Version bumped to 4.55.0.
 - **Counter-melodies — a second part that belongs with the first.** Every generator until now wrote
   a part in isolation, which is why adding a second one so often sounded like two tunes playing at
   once. Five new patterns read the lead you already wrote and place their notes against it: **a

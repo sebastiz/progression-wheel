@@ -1810,7 +1810,7 @@ export default function ProgressionWheel() {
       const bytes = audioBufferToWav(buf);
       const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
       const a = document.createElement("a");
-      a.href = url; a.download = (sketchName.trim() || "progression-wheel") + ".wav";
+      a.href = url; a.download = songFile("wav");
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       setIoNote(`Rendered ${buf.duration.toFixed(1)}s · ${(bytes.length / 1048576).toFixed(1)} MB · peak ${(20 * Math.log10(peak)).toFixed(1)} dB.`);
@@ -1872,7 +1872,7 @@ export default function ProgressionWheel() {
       const zip = makeZip(files);
       const url = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
       const a = document.createElement("a");
-      a.href = url; a.download = safeName(sketchName.trim() || "progression-wheel") + "-stems.zip";
+      a.href = url; a.download = songFile("stems.zip");
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       setIoNote(`${files.length} stem${files.length === 1 ? "" : "s"} · ${(zip.length / 1048576).toFixed(1)} MB`
@@ -1882,9 +1882,27 @@ export default function ProgressionWheel() {
     } finally { setStemming(false); }
   };
 
-  /* ---- midi export ---- */
-  const exportMidi = () => {
-    try {
+  /* ---- exports ----
+     Every file this app produces is going to land in a folder next to a dozen others, so its name
+     has to say what it is: the sketch's name, its key and its tempo. "progression-wheel.mid" told
+     you nothing an hour later. */
+  const KEY_TAG = () => {
+    const name = SEMI_NAME[((tonic % 12) + 12) % 12];
+    return `${name}${MODES[effMode].family === "minor" ? "m" : ""} ${Math.round(effBpm)}bpm`;
+  };
+  const songFile = ext => `${safeName(sketchName.trim() || "progression-wheel")} ${KEY_TAG()}.${ext}`;
+  const download = (bytes, type, ext) => {
+    const url = URL.createObjectURL(new Blob([bytes], { type }));
+    const a = document.createElement("a");
+    a.href = url; a.download = songFile(ext);
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+
+  /* Everything both MIDI exports need: the bars, one column list per part, the per-bar drum
+     pattern and the arrangement metadata. Pulled out of exportMidi so the per-part files are the
+     same notes as the single file rather than a second implementation of them. */
+  const midiParts = () => {
       const bars = (structBars && structBars.length) ? structBars : chords.map(c => ({ chord:c }));
       // flatten the per-section melody grids into eighth-columns aligned to `bars`
       const melBase = (tonic > 6 ? 60 : 72) + tonic;
@@ -1942,15 +1960,82 @@ export default function ProgressionWheel() {
           return out;
         }, []),
       };
-      const bytes = midiBytes(effBpm, barBeats, bars, drumForBar, parts, kit, meloSub, programOf(instr), meta);
-      const url = URL.createObjectURL(new Blob([bytes], { type:"audio/midi" }));
-      const a = document.createElement("a");
-      a.href = url; a.download = "progression-wheel.mid";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      return { bars, parts, drumForBar, meta, anyDrum, nUsed, partOf };
+  };
+  const exportMidi = () => {
+    try {
+      const { bars, parts, drumForBar, meta, anyDrum, nUsed } = midiParts();
+      download(midiBytes(effBpm, barBeats, bars, drumForBar, parts, kit, meloSub, programOf(instr), meta),
+        "audio/midi", "mid");
       setIoNote("MIDI exported — chords" + (anyDrum ? " + drums" : "")
         + (nUsed ? ` + ${nUsed} melody part${nUsed === 1 ? "" : "s"}` : "") + " at " + effBpm + " bpm.");
     } catch (e) { setIoNote("Export failed in this viewer — try on desktop."); }
+  };
+
+  /* A chord chart, as plain text. MIDI is for a DAW and a wav is for listening; this is for handing
+     to somebody who plays an instrument, or pasting into a message. Sections are grouped the way the
+     arrangement strip groups them, because "Chorus x2" is how you would say it out loud. */
+  const chartText = () => {
+    const out = [];
+    out.push(sketchName.trim() || "Untitled sketch");
+    out.push(`${SEMI_NAME[((tonic % 12) + 12) % 12]} ${MODES[effMode].short} · ${Math.round(effBpm)} bpm · ${barBeats}/4`);
+    if (structSel) out.push(`Form: ${structSel.st.name}${customPlan ? " (edited)" : ""}`);
+    out.push("");
+    const runs = [];
+    sections.insts.forEach(d => {
+      const r = runs[runs.length - 1];
+      if (r && r.row === d.row) { r.n++; }
+      else runs.push({ row: d.row, sec: d.sec, n: 1, cs: d.cs, nbars: d.nbars, note: d.note });
+    });
+    let bar = 1;
+    for (const r of runs) {
+      const total = r.nbars * r.n;
+      out.push(`${r.sec.toUpperCase()}${r.n > 1 ? ` ×${r.n}` : ""}  (${total} bar${total === 1 ? "" : "s"}, from bar ${bar})`);
+      out.push("| " + r.cs.map(c => c.name).join(" | ") + " |");
+      if (r.note) out.push(`  — ${r.note}`);
+      out.push("");
+      bar += total;
+    }
+    out.push(`${bar - 1} bars · about ${Math.round((bar - 1) * barBeats * 60 / effBpm)} seconds`);
+    return out.join("\n");
+  };
+  const exportChart = () => {
+    try {
+      download(new TextEncoder().encode(chartText()), "text/plain", "txt");
+      setIoNote("Chord chart saved — plain text, ready to print or paste.");
+    } catch (e) { setIoNote("Could not write the chord chart in this viewer."); }
+  };
+  const copyChart = async () => {
+    try { await navigator.clipboard.writeText(chartText()); setIoNote("Chord chart copied to the clipboard."); }
+    catch (e) { setIoNote("Clipboard blocked here — use ↓ Chart to save it as a file instead."); }
+  };
+
+  /* One MIDI file per source, zipped. A single multi-track file is the right thing for a DAW that
+     imports them properly; plenty do not, and plenty of people would rather drag one part onto one
+     track than untangle a merged import. Each file keeps the tempo map and the section markers, so
+     it lands at the right speed with the arrangement marked however it is brought in. */
+  const exportMidiSplit = () => {
+    try {
+      const { bars, parts, drumForBar, meta, anyDrum, partOf } = midiParts();
+      const files = [];
+      const add = (label, bytes) => files.push({ name: `${String(files.length + 1).padStart(2, "0")}-${safeName(label)}.mid`, bytes });
+      add("chords-" + gmKey(instr),
+        midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, programOf(instr), meta));
+      if (anyDrum)
+        add("drums-" + kit,
+          midiBytes(effBpm, barBeats, bars, drumForBar, [], kit, meloSub, null, { ...meta, skipChords: true }));
+      parts.forEach((part, p) => {
+        if (!part) return;
+        // one part per file, but kept on its own channel so several files opened together do not
+        // all pile onto channel 1
+        const only = parts.map((x, i) => (i === p ? x : null));
+        add(`part-${LAYER_NAMES[p]}-${gmKey((partOf(p) || {}).instr || melInstr)}`,
+          midiBytes(effBpm, barBeats, bars, () => null, only, kit, meloSub, null, { ...meta, skipChords: true }));
+      });
+      const zip = makeZip(files);
+      download(zip, "application/zip", "midi.zip");
+      setIoNote(`${files.length} MIDI file${files.length === 1 ? "" : "s"} · ${(zip.length / 1024).toFixed(0)} kB — one per track, each with the tempo and section markers.`);
+    } catch (e) { setIoNote("Split MIDI export failed in this viewer — the single file still works."); }
   };
 
   /* ---- melody import (a hummed/played line from the Tune Transcriber, a MIDI file, or the
@@ -3078,7 +3163,12 @@ export default function ProgressionWheel() {
               title="Merge the melody notes into one flowing line — smoother, less stodgy">
               <div className="sw" /> Legato
             </div>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as a MIDI file">↓ Export MIDI</button>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as one multi-track MIDI file">↓ Export MIDI</button>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidiSplit}
+              title="One MIDI file per track, zipped — for a DAW that imports multi-track files badly, or when you want to drag one part onto one track">↓ MIDI ×tracks</button>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportChart}
+              title="A plain-text chord chart — the form, the chords and the bar counts, for a player rather than a DAW">↓ Chart</button>
+            <button className="mini" onClick={copyChart} title="Copy the chord chart to the clipboard">⧉ Copy chart</button>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming}
               title="Render the whole song to a .wav you can send or post — the same sound you hear on Play">
               {rendering ? "Rendering…" : "↓ Export audio"}</button>

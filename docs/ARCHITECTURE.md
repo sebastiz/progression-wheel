@@ -410,6 +410,21 @@ voicing held per bar), and a channel-10 drum track from the drum pattern (`DRUM_
 channel letter to its GM percussion note; a machine kit also emits a `KIT_PROGRAM` program change so
 the file opens with a matching kit). Exported via Blob + anchor download.
 
+### Exports
+
+`songFile(ext)` names every download `<sketch> <Key> <bpm>bpm.<ext>`, and `download()` is the one
+place a Blob and an anchor get made. `midiParts()` builds the bars, the per-part column lists, the
+per-bar drum pattern and the arrangement metadata once, so the single file and the per-track files
+are the same notes rather than two implementations of them.
+
+The per-track export writes one file per source through `midiBytes` with `meta.skipChords`, which
+drops the chord track while keeping the tempo map and markers — each file lands at the right speed
+with the arrangement marked. `npm test` checks the header's track count matches the chunks actually
+written, since a header that over-counts makes a reader run off the end of the file.
+
+`chartText()` renders a plain-text chord chart, grouping sections into runs the way the arrangement
+strip does.
+
 ## Persistence
 
 Sketches serialize the full state to `window.storage` (the Claude-artifact key-value API) under
