@@ -160,6 +160,13 @@ song fit in a URL. `encodeSong` runs JSON through the native `CompressionStream`
 Undo/redo snapshots this same document from a debounced effect rather than at each call site, so no
 edit path can forget to record itself; a `restoringRef` flag stops a replay becoming history.
 
+### The wheel's size
+
+`.wheelsvg` is capped at 500px and centred rather than filling the column. The viewBox stays 640
+units, so capping the rendered width scales the text down with it — the in-diagram font sizes were
+raised to compensate (ring labels, chord names, loop numbers), which is why the smaller wheel is no
+harder to read than the large one was. Shrinking it without that step is what would make it worse.
+
 ## Design tokens
 
 The stylesheet had 17 font sizes, 15 corner radii and 45 near-identical greys — which is what "not

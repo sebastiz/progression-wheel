@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **The wheel is a diagram, not a canvas.** It rendered 708px tall at a desktop width — most of that
+  the empty middle of a circle — and pushed everything else on **Write** below the fold. It is now
+  capped at 500px and centred, with the text inside it sized up to compensate so nothing reads
+  smaller than before: the chord names, the ring labels and the loop numbers are all as legible at
+  500px as they were at 708px.
+  - The wheel panel drops from 708px to 514px, and the Write tab from 1,576px to 1,365px.
+  Version bumped to 4.60.0.
 - **A real design system, and visible keyboard focus.** The second half of the interface work.
 
   | | Before | After |
