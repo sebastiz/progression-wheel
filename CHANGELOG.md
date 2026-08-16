@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- **The arrangement strip is where you arrange now.** Its lanes were a readout: they showed you that
+  the drums never drop out and that the pad is in from bar one to the end, and then you had to go
+  find the section below to change either. **Tap a lane cell to drop that element for that section,
+  tap again to bring it back.**
+  - Each cell says what it will do before you click, because the scopes honestly differ: drums and
+    chords are stored per section *type*, so dropping the drums on *Verse 1* drops them on every
+    verse, while a part's mute is per section and a click on a *Chorus ×2* covers both passes.
+  - A part with nothing written in a section shows a dimmed, unclickable cell rather than a toggle
+    that would do nothing.
+  - **Chords can now drop out of a section at all** — there was no way to express "breakdown: drums
+    only" before, so the Chords lane would have been the one dead cell among live ones.
+  - Fixed on the way: muting a multi-pass run only muted the last pass. Writing several sections in
+    one handler needs a single state update, because each write was spreading the same stale value
+    and clobbering the one before it. `npm test` now rejects the pattern that caused it.
+  Version bumped to 4.51.0.
 - **Production controls — the sketch can sound like the genre now, not just be shaped like it.**
   The structures and the arrangement view told you what a dance track *is*; this is the batch that
   makes one sound like one.

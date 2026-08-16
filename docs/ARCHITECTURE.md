@@ -91,6 +91,16 @@ own `sec` name rather than its letter, because a plan can call two adjacent lett
 "Layer up" and "Build". A lane cell over a multi-instance run is `on`, `off`, or `part` when the
 instances disagree.
 
+The lanes are **toggles**, not just a readout: a cell drops or brings back that element for that
+run. Their scopes genuinely differ and the tooltip says which — drums (`secDrum`) and chords
+(`secQuiet`) are stored per section *letter*, so flipping one moves every section that letters the
+same way, while a part's `mute` is per instance and a click on a `×4` run sets all four.
+
+That last case needs `setLayerPropMany`. `putSec` spreads the `melos` value from the current render,
+so calling `setLayerProp` in a loop makes each write clobber the last and only the final section
+changes — "I muted a ×4 run and one pass stayed loud". One state update covers every section, and
+`npm test` rejects a `setLayerProp` call that appears inside a loop.
+
 Widths are `flex-grow: <bars>` against `flex-basis: 0`, so the strip always fits its container and
 never scrolls sideways; labels are left-aligned and clipped, which truncates to a word's first
 letters instead of showing its middle. `SEC_COL` needs an entry for every letter `letterFor()` can
