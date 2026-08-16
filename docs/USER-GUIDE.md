@@ -128,6 +128,20 @@ part has its own **Echo** slider in its mixer row, so you can throw just the lea
 leave the bass dry. The delay returns through the section-move filter, so a build sweeps the repeats
 along with everything else.
 
+### Counter-melodies
+
+The pattern menu has five entries that write a second line *against* one you already have, rather
+than another tune on its own: **a third below the lead**, **a sixth below**, **answer in the gaps**,
+**contrary motion** and **held pedal**.
+
+Write your lead on part A, add a part B, pick one of these and it tells you which part it is writing
+against before you commit. If nothing else in the section has notes yet it says so and won't write —
+there'd be nothing to answer.
+
+*A third below* is the instant-arrangement one. *Answer in the gaps* plays only where the lead rests,
+so the two parts trade rather than crowd. *Contrary motion* moves the opposite way to the lead, which
+is the strongest way to make two lines sound independent rather than doubled.
+
 ### Basslines
 
 The **Suggest** tab's pattern menu ends with seven basslines: *root on the one*, *offbeat (house)*,

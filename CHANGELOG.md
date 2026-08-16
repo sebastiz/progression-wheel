@@ -1,6 +1,23 @@
 # Changelog
 
 ## Unreleased
+- **Counter-melodies — a second part that belongs with the first.** Every generator until now wrote
+  a part in isolation, which is why adding a second one so often sounded like two tunes playing at
+  once. Five new patterns read the lead you already wrote and place their notes against it: **a
+  third below**, **a sixth below**, **answer in the gaps**, **contrary motion** and **held pedal**.
+  - They tell you which part they are writing against before you commit, and if nothing else in the
+    section has notes yet they say so and refuse — rather than quietly writing an empty grid.
+  - Each one is checked for the relationship it claims: a third below really is a third below, and
+    contrary motion really does move the other way.
+- **Motif narratives — one idea that comes back.** Two new whole-song narratives built on a single
+  four-note cell rather than a contour. **Motif — one idea, transformed** states it and brings it
+  back in every section, changed by what that section is: plain in verses, upside down in a bridge
+  or solo, backwards in a build, flattened out for an intro. **Motif — call and answer** puts the
+  same cell into two-bar sentences that ask and reply.
+  - The register still moves with the section's role, so a chorus is the same idea sung higher —
+    which is the thing that makes a song sound like one song. `npm test` checks the shape survives
+    the lift into a chorus and is mirrored in a bridge.
+  Version bumped to 4.54.0.
 - **Automation lanes — draw the build.** Two new lanes under the arrangement strip, **Filter** and
   **Level**. Drag across one and you draw a curve: left to right is the song, height is the value.
   A section's **🎛** move is a preset applied to one section; this is yours, and it can run across

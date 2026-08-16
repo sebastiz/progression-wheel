@@ -266,12 +266,23 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (spots.some((x, i) => x.c + x.len > (i + 1 < spots.length ? spots[i + 1].c : B)))
         problems.push(`rhythm ${r.id} @${B}: a held note runs into the next onset`);
       const cols = spots.map(x => x.c), lens = spots.map(x => x.len);
+      // a counter-melody needs a lead to write against, so give it one shaped like a real part
+      const lead = Array.from({ length: 4 }, (_, b) =>
+        Array.from({ length: B }, (_, c) => (c % Math.max(2, Math.floor(sub)) === 0 ? [(b + c) % 7] : [])));
       for (const p of M.MELODY_PATTERNS) {
         gens++;
-        let bars; try { bars = p.gen({ nBars: 4, B, sub, cols, lens, start: 2, chordDegs }); }
+        const ctx = { nBars: 4, B, sub, cols, lens, start: 2, chordDegs, against: p.needs === "lead" ? lead : null };
+        let bars; try { bars = p.gen(ctx); }
         catch (e) { problems.push(`melody ${p.id} on ${r.id} @${B} threw: ${e.message}`); continue; }
         checkBars(`melody ${p.id}/${r.id} @${B}`, bars, B, 4);
         if (!bars.some(bar => bar.some(c => c.length))) problems.push(`melody ${p.id} on ${r.id} @${B}: wrote nothing`);
+        /* With no lead a counter-melody must write nothing at all rather than inventing a line —
+           silence is the honest answer, and the Suggest tab refuses to write one in that state. */
+        if (p.needs === "lead") {
+          const empty = p.gen({ ...ctx, against: null });
+          if (empty.some(bar => bar.some(c => c.length)))
+            problems.push(`melody ${p.id}: wrote notes with no lead to write against`);
+        }
       }
     }
     for (const nar of M.NARRATIVES) {
@@ -325,6 +336,72 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       }
     }
     console.log(`basslines: ${basses.length} patterns × 3 meters, all articulating and following the chords`);
+  }
+
+  /* Counter-melodies claim a musical relationship to the lead, not just "some notes". A third below
+     has to actually be a third below, contrary motion has to actually move the other way, and the
+     answering line has to stay out of the lead's way. */
+  {
+    const B = 8;
+    // a lead that rises, so contrary motion has something to contradict
+    const lead = [[[0], [], [2], [], [4], [], [], []]];
+    const u = { nBars: 1, B, sub: 2, start: 0, cols: [0, 2, 4, 6], lens: [1, 1, 1, 1], chordDegs: [0], against: lead };
+    const at = (bars, c) => (bars[0][c] || [])[0];
+    const wrap = d => ((d % 7) + 7) % 7;
+    const byId = id => M.MELODY_PATTERNS.find(p => p.id === id);
+
+    const third = byId("ctrThird").gen(u);
+    for (const c of [0, 2, 4])
+      if (at(third, c) !== wrap(at(lead, c) - 2))
+        problems.push(`ctrThird at column ${c} wrote ${at(third, c)}, expected a third under ${at(lead, c)}`);
+    const sixth = byId("ctrSixth").gen(u);
+    for (const c of [0, 2, 4])
+      if (at(sixth, c) !== wrap(at(lead, c) - 5))
+        problems.push(`ctrSixth at column ${c} is not a sixth under the lead`);
+
+    /* Contrary motion: the lead climbs, so the counter must descend. Tested on a lead high in the
+       octave on purpose — every degree is wrapped back into the grid's single octave, so a lead
+       starting at 0 sends its mirror below zero and round to the top, and the direction of the
+       wrapped numbers then says nothing. A lead of 4,5,6 mirrors to 2,1,0 without wrapping. */
+    const hiLead = [[[], [], [], [], [4], [], [5], [6]]];
+    const contra = byId("ctrContrary").gen({ ...u, against: hiLead });
+    const line = [4, 6, 7].map(c => at(contra, c));
+    const leadLine = [4, 6, 7].map(c => at(hiLead, c));
+    if (line.some(d => d == null)) problems.push(`ctrContrary missed the lead's onsets: ${line.join(",")}`);
+    else {
+      const dir = a => Math.sign(a[a.length - 1] - a[0]);
+      if (dir(line) === dir(leadLine) || dir(line) === 0)
+        problems.push(`ctrContrary moved ${line.join(">")} against a lead of ${leadLine.join(">")} — not contrary`);
+    }
+
+    // the answering line must not sound where the lead already is
+    const fill = byId("ctrFill").gen(u);
+    for (let c = 0; c < B; c++)
+      if ((fill[0][c] || []).length && (lead[0][c] || []).length)
+        problems.push(`ctrFill put a note at column ${c}, where the lead is already playing`);
+    if (!fill[0].some(c => c.length)) problems.push("ctrFill wrote nothing into the lead's gaps");
+    console.log(`counter-melodies: ${M.MELODY_PATTERNS.filter(p => p.needs === "lead").length} patterns, each checked against the lead it answers`);
+  }
+
+  // the motif narratives have to actually restate one idea, not just share a name
+  {
+    const shape = role => {
+      const nar = M.NARRATIVES.find(n => n.id === "motif");
+      const bars = nar.gen({ nBars: 2, B: 8, sub: 2, nd: 7, chordDegs: [0, 0], role,
+        pass: 0, passes: 1, idx: 0, total: 4, frac: 0.2, spots: null, start: 0 });
+      const notes = [];
+      bars.forEach(bar => bar.forEach((c, i) => { if (c.length && (!bar[i - 1] || bar[i - 1][0] !== c[0])) notes.push(c[0]); }));
+      return notes.slice(0, 4).map((d, i, a) => d - a[0]);      // the shape, not the pitch
+    };
+    const verse = shape("V"), chorus = shape("C"), bridge = shape("B");
+    if (!verse.length) problems.push("the motif narrative wrote nothing");
+    // a chorus is the same idea sung higher, so the interval shape has to survive the lift
+    if (verse.join() !== chorus.join())
+      problems.push(`the motif changed shape between verse (${verse.join()}) and chorus (${chorus.join()}) — it is meant to be the same idea`);
+    // and a bridge inverts it, so the shape must be the mirror rather than the same
+    if (bridge.join() === verse.join())
+      problems.push("the motif is not transformed in a bridge — it should be inverted");
+    console.log(`motif: shape ${verse.join(",")} held from verse to chorus, mirrored to ${bridge.join(",")} in a bridge`);
   }
 
   // the point of the whole feature: a non-straight rhythm must not land everything on the beat

@@ -1314,9 +1314,13 @@ export default function ProgressionWheel() {
   const applyPattern = (d, sec, patId, start, L, rhythmId = "straight") => {
     const pat = MELODY_PATTERNS.find(p => p.id === patId) || MELODY_PATTERNS[0];
     const spots = rhythmSpots(rhythmId, meloBeats, meloSub, barBeats);
+    // A counter-melody is written against whatever else is already on this section — the lowest
+    // numbered part that has notes and is not the one being written. Everything else ignores it.
+    const againstL = sec.layers.findIndex((ly, i) => i !== L && ly.flat.some(c => c.length));
     const bars = pat.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, start: start % scaleSemis.length,
       cols: spots.map(x => x.c), lens: spots.map(x => x.len),
-      chordDegs: chordDegsOf(d.cs) });
+      chordDegs: chordDegsOf(d.cs),
+      against: againstL >= 0 ? barsOf(sec, againstL) : null });
     putLayer(d.key, L, bars);
     setMelTab({ ...melTab, [d.key]: "write" });   // reveal the result on the grid
   };
@@ -3599,11 +3603,29 @@ export default function ProgressionWheel() {
                         </div>
                         <p className="arrnote" style={{ marginTop:7 }}>Writing to melody <b>{LAYER_NAMES[secL]}</b>. {curPat.desc}</p>
                         <p className="arrnote" style={{ marginTop:3 }}><b>{curRhy.name}</b> — {curRhy.desc}</p>
-                        <div className="row" style={{ gap:6, marginTop:8 }}>
-                          <button className="btn" onClick={() => applyPattern(d, sec, pick.pat, pick.start, secL, rhy)}>
-                            Write to grid</button>
-                          <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {LAYER_NAMES[secL]}</button>
-                        </div>
+                        {(() => {
+                          // a counter-melody is written against another part; with nothing to
+                          // answer it would write an empty grid, so say so rather than doing that
+                          const leadL = sec.layers.findIndex((ly, i) => i !== secL && ly.flat.some(c => c.length));
+                          const stuck = curPat.needs === "lead" && leadL < 0;
+                          return (<>
+                            {curPat.needs === "lead" && !stuck &&
+                              <p className="arrnote" style={{ marginTop:3, color:GOLD }}>
+                                Writing against part <b>{LAYER_NAMES[leadL]}</b>.
+                              </p>}
+                            {stuck &&
+                              <p className="arrnote" style={{ marginTop:3, color:"#E9B3AB" }}>
+                                This one is written against another part, and nothing else in this
+                                section has any notes yet. Write a lead first.
+                              </p>}
+                            <div className="row" style={{ gap:6, marginTop:8 }}>
+                              <button className="btn" disabled={stuck}
+                                onClick={() => applyPattern(d, sec, pick.pat, pick.start, secL, rhy)}>
+                                Write to grid</button>
+                              <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {LAYER_NAMES[secL]}</button>
+                            </div>
+                          </>);
+                        })()}
                       </div>
                     )}
 

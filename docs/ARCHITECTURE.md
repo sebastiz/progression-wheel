@@ -345,6 +345,27 @@ Generators take `u.cols` / `u.lens` instead of computing beat positions themselv
 rhythm are independent. Narratives keep their role-based *density* (`roleN`) but take *placement*
 from `ROLE_RHYTHM[role]` via `pickSpread`, so a whole-song write varies section to section.
 
+## Counter-melodies and motifs
+
+Every generator above writes a part in isolation, which is why a second part so often sounds like
+two tunes played at once. A **counter-melody** is written *against* the lead: the pattern context
+carries `against` — the bars of the lowest-numbered other part that has notes — and `leadOnsets` /
+`leadGaps` read where that line starts notes and where it rests. `counterGen` wraps the result into
+the grid's octave and, crucially, **returns an empty bar when there is no lead**: silence is the
+honest answer, and the Suggest tab disables *Write to grid* and says why rather than writing nothing
+and looking broken. Patterns that need one carry `needs: "lead"`.
+
+A **motif** is the stronger idea a narrative can carry: one four-note cell (`MOTIF`) restated in
+every section and transformed by what that section is (`motifMoveFor`) — plain in verses, inverted
+in a bridge or solo, retrograde in a build, flattened for an intro or outro. The offsets are in
+scale steps from the section's register, so the shape survives while `roleLift` moves the line up
+for a chorus. `npm test` checks the shape is *identical* from verse to chorus (the same idea sung
+higher) and *mirrored* in a bridge.
+
+Note on testing these: degrees are wrapped into the grid's single octave, so a mirror around a low
+pivot lands below zero and comes back round at the top. A direction test on wrapped numbers proves
+nothing — the contrary-motion check uses a lead high in the octave so its mirror never wraps.
+
 ## Melody generation
 
 Two data tables, both producing the same thing — bars of scale-degree columns:
