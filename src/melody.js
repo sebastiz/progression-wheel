@@ -203,6 +203,21 @@ const bassGen = (spots, degs) => function (u) {
     return bar;
   });
 };
+/* Build a counter-melody generator. `place(u, b)` returns `{c, len, d}` per note for one bar, in
+   absolute columns and raw scale degrees; the wrapper wraps degrees into the grid's octave and
+   returns an empty bar when there is no lead to write against. */
+const counterGen = place => function (u) {
+  return Array.from({ length: u.nBars }, (_, b) => {
+    const bar = Array.from({ length: u.B }, () => []);
+    if (!u.against || !u.against.length) return bar;      // nothing to answer — write nothing
+    for (const n of place(u, b)) {
+      if (n.d == null || n.c == null || n.c >= u.B) continue;
+      const v = [wrap7(n.d)];
+      for (let k = 0; k < Math.max(1, n.len) && n.c + k < u.B; k++) bar[n.c + k] = v;
+    }
+    return bar;
+  });
+};
 const MELODY_PATTERNS = [
   { id:"arpUp", name:"Arpeggio ↑ (chord tones)",
     desc:"Climbs each bar's chord — root, 3rd, 5th, 7th — one note per beat. Follows the chords; the start note fills in over any out-of-key chord.",
@@ -430,6 +445,31 @@ const MELODY_PATTERNS = [
     gen: bassGen(bb => (bb >= 4 ? [{ at:0, len:1.4 }, { at:2.5, len:1.2 }]
                                 : [{ at:0, len:1.2 }, { at:1.5, len:1.2 }]),
       (g, n) => Array.from({ length:n }, () => g)) },
+  /* ---- counter-melodies ----
+     These read the lead already written on another part and place their notes against it, so the
+     two lines belong together instead of being two tunes played at once. They need a lead: with
+     nothing to write against they return an empty bar rather than guessing, and the Suggest tab
+     will not let you write one until another part has notes. */
+  { id:"ctrThird", name:"Counter · a third below the lead", needs:"lead",
+    desc:"Shadows the lead a third below, note for note. The oldest harmony there is — instantly sounds arranged rather than doubled.",
+    gen: counterGen((u, b) => leadOnsets(u, b).map(o => ({ c:o.c, len:1, d:o.d - 2 }))) },
+  { id:"ctrSixth", name:"Counter · a sixth below the lead", needs:"lead",
+    desc:"The same idea a sixth below instead of a third — wider, warmer, and it leaves room for the lead to sit on top.",
+    gen: counterGen((u, b) => leadOnsets(u, b).map(o => ({ c:o.c, len:1, d:o.d - 5 }))) },
+  { id:"ctrFill", name:"Counter · answer in the gaps", needs:"lead",
+    desc:"Plays only where the lead rests — call and response between two parts. The way to add a second line without crowding the first.",
+    gen: counterGen((u, b) => leadGaps(u, b, 1).map((g, i) => ({ c:g.c, len:Math.min(g.len, 2),
+      d:(u.chordDegs[b] == null ? u.start : u.chordDegs[b]) + [0, 4, 2, 4][i % 4] }))) },
+  { id:"ctrContrary", name:"Counter · contrary motion", needs:"lead",
+    desc:"Mirrors the lead: where it rises this falls, and the other way about. Two lines moving apart is the strongest way to make them sound independent.",
+    gen: counterGen((u, b) => { const on = leadOnsets(u, b); if (!on.length) return [];
+      const pivot = on[0].d;
+      return on.map(o => ({ c:o.c, len:1, d:2 * pivot - o.d - 2 })); }) },
+  { id:"ctrPedal", name:"Counter · held pedal", needs:"lead",
+    desc:"One long note a bar, under everything — the chord's root or fifth. Does nothing clever and holds the whole thing together.",
+    gen: counterGen((u, b) => [{ c:0, len:u.B,
+      d:(u.chordDegs[b] == null ? u.start : u.chordDegs[b]) + (b % 2 ? 4 : 0) }]) },
+
   { id:"bassWalk", name:"Bass · walking the chord",
     desc:"Root, fifth, root, third — one a beat, walking through each bar's own chord. House, disco and soul.",
     gen: bassGen(bb => Array.from({ length:bb }, (_, i) => ({ at:i, len:0.85 })),
@@ -524,6 +564,61 @@ const narBars = (u, colsOf, degAt) => {
     return bar;
   });
 };
+/* ---- motifs ----
+   A narrative shapes a section's contour; a *motif* is the stronger idea — one short cell of notes
+   that the ear recognises when it comes back. Four notes is the classic length: long enough to be
+   remembered, short enough to survive being turned upside down or backwards and still be the same
+   tune. Offsets are in scale steps from wherever the section's register sits, so the cell keeps its
+   shape while the line moves up for a chorus and down for an outro. */
+const MOTIF = [0, 2, 1, -1];
+const MOTIF_MOVES = {
+  same:  m => m,                                  // stated plainly
+  inv:   m => m.map(x => -x),                     // upside down — the same idea, unsettled
+  retro: m => [...m].reverse(),                   // backwards — heard as related, not repeated
+  aug:   m => m.map(x => Math.round(x / 2)),      // flattened out, for something that has to breathe
+};
+// which transformation a section gets, from what the section is
+const motifMoveFor = role => "BS".includes(role) ? "inv"
+  : "IOK".includes(role) ? "aug"
+  : "TU".includes(role) ? "retro" : "same";
+
+/* ---- writing against an existing line ----
+   Everything above writes a part in isolation, which is why a second part so often sounds like two
+   tunes played at once. A counter-melody is written *against* the lead: it reads the lead's notes
+   and places its own to fit — under it in thirds, in the gaps it leaves, or moving the opposite way. */
+const leadBarOf = (u, b) => (u.against && u.against.length) ? u.against[b % u.against.length] : null;
+// the lead's degree sounding at a column, or null
+const leadAt = (u, b, c) => {
+  const bar = leadBarOf(u, b), col = bar && bar[c];
+  return (col && col.length) ? col[0] : null;
+};
+// the columns where the lead starts a new note (not where it is merely still ringing)
+const leadOnsets = (u, b) => {
+  const bar = leadBarOf(u, b);
+  if (!bar) return [];
+  const out = [];
+  for (let c = 0; c < bar.length; c++) {
+    const d = (bar[c] || [])[0];
+    if (d == null) continue;
+    const prev = (bar[c - 1] || [])[0];
+    if (c === 0 || prev !== d) out.push({ c, d });
+  }
+  return out;
+};
+// the runs of columns the lead leaves silent — where an answering phrase can go
+const leadGaps = (u, b, minLen = 1) => {
+  const bar = leadBarOf(u, b);
+  if (!bar) return [];
+  const out = [];
+  let start = -1;
+  for (let c = 0; c <= bar.length; c++) {
+    const empty = c < bar.length && !((bar[c] || []).length);
+    if (empty && start < 0) start = c;
+    else if (!empty && start >= 0) { if (c - start >= minLen) out.push({ c: start, len: c - start }); start = -1; }
+  }
+  return out;
+};
+
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
 
 const NARRATIVES = [
@@ -540,6 +635,27 @@ const NARRATIVES = [
    gen(u){ const lo = Math.round(Math.sin(Math.PI * u.frac) * (u.nd - 3)), hi = lo + 2;
      return narBars(u, () => nCols(u.B, roleN(u.role), u.sub),
        s => lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * s.t))); } },
+
+ { id:"motif", name:"Motif — one idea, transformed",
+   tip:"States one four-note cell and brings it back in every section, transformed by what that section is: plain in the verses, upside down in a bridge or solo, backwards in a build, flattened out for an intro or an outro. The register still moves with the role, so a chorus is the same idea sung higher — which is what makes a song sound like one song rather than a set of unrelated tunes.",
+   refs:"Beethoven's Fifth · Seven Nation Army · Shape of You",
+   gen(u){ const cell = MOTIF_MOVES[motifMoveFor(u.role)](MOTIF);
+     const [lo, hi] = winFor(u, 0.5);
+     const base = lo + (hi - lo) * 0.35;
+     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub),
+       s => base + cell[s.g % cell.length]); } },
+
+ { id:"qanda", name:"Motif — call and answer",
+   tip:"The same four-note cell as the motif narrative, but put into two-bar sentences: odd bars state it and hang unresolved, even bars answer with it inverted and land home. Where \u201cQuestion & answer phrases\u201d shapes any line that way, this one keeps returning to the same recognisable idea.",
+   refs:"Oh When the Saints · most 12-bar blues · Twinkle Twinkle",
+   gen(u){ const [lo, hi] = winFor(u, 0.55);
+     const base = lo + (hi - lo) * 0.3;
+     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub),
+       s => { const asking = s.b % 2 === 0;
+              const cell = asking ? MOTIF : MOTIF.map(x => -x);
+              // the answer's last note comes home; the question is left hanging a step above
+              if (s.i === s.n - 1) return asking ? base + 1 : lo;
+              return base + cell[s.i % cell.length]; }); } },
 
  { id:"terraced", name:"Terraced — a step higher each time",
    tip:"States a short motif, then repeats it a step higher, bar after bar. The most reliable way to build a bridge or a final chorus: nothing changes except the height, so the lift is felt rather than noticed.",
