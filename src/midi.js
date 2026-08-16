@@ -11,14 +11,33 @@ const vlq = n => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) 
 // flows the way it plays.
 // `melParts` is a list of { cols, program, gain } — one per melody part, each getting its own MIDI
 // channel, General MIDI program and velocity scale. `chordProgram` voices the chord track.
-function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chordProgram = null) {
+// `meta` carries what a DAW needs to lay the file out: { beatUnit, sharps, minor, markers } — the
+// time signature, the key signature, and a marker at each section boundary. Without these a
+// waltz opens as 4/4 with the barlines wrong, and the arrangement arrives as an undifferentiated
+// run of bars with no Intro/Verse/Drop anywhere on the timeline.
+function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chordProgram = null, meta = {}) {
   const T = 480, ev = (arr, dt, ...bytes) => arr.push(...vlq(dt), ...bytes);
   const trk = arr => {
     const body = [...arr, 0, 0xff, 0x2f, 0];
     return [0x4d,0x54,0x72,0x6b, (body.length>>>24)&255,(body.length>>>16)&255,(body.length>>>8)&255,body.length&255, ...body];
   };
   const uspq = Math.round(60000000 / bpm);
-  const tempo = []; ev(tempo, 0, 0xff, 0x51, 3, (uspq>>16)&255, (uspq>>8)&255, uspq&255);
+  const tempo = [];
+  ev(tempo, 0, 0xff, 0x51, 3, (uspq>>16)&255, (uspq>>8)&255, uspq&255);
+  // time signature: numerator = beats per bar, denominator as a power of two (4 = quarter note).
+  // 24 MIDI clocks per metronome click, 8 32nds per quarter — the conventional values.
+  const den = Math.log2(meta.beatUnit || 4);
+  ev(tempo, 0, 0xff, 0x58, 4, beatsPerBar, den, 24, 8);
+  // key signature: sharps as a signed byte (-7..7), then 0 major / 1 minor
+  if (meta.sharps != null)
+    ev(tempo, 0, 0xff, 0x59, 2, meta.sharps < 0 ? 256 + meta.sharps : meta.sharps, meta.minor ? 1 : 0);
+  // section markers, so the arrangement shows up on the DAW's timeline ruler
+  let markAt = 0;
+  for (const mk of (meta.markers || [])) {
+    const txt = [...String(mk.name).slice(0, 60)].map(c => c.charCodeAt(0) & 0x7f);
+    ev(tempo, Math.max(0, mk.bar * beatsPerBar * T - markAt), 0xff, 0x06, txt.length, ...txt);
+    markAt = mk.bar * beatsPerBar * T;
+  }
   const chordsT = [];
   ev(chordsT, 0, 0xff, 0x03, 6, 0x43, 0x68, 0x6f, 0x72, 0x64, 0x73);          // track name "Chords"
   if (chordProgram != null) ev(chordsT, 0, 0xc0, chordProgram & 0x7f);        // voice the chord track

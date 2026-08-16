@@ -68,6 +68,16 @@ Turns the song into readable music. **Show score**, then choose **Piano** or **G
 - The score follows the selected **song structure** if one is chosen, otherwise the loop, and it
   redraws live as you edit chords, reorder them, change key or sketch a melody.
 
+## Song structures
+
+The structure menu at the top of **Song & melody** is grouped: structures written for the current
+progression, then **Song forms**, **Dance & electronic** and **Club edits** — fifty in all.
+
+The dance ones are phrased the way dance music actually is, in 8- and 16-bar groups, and most open
+and close on a sixteen-bar section a DJ can mix over. **Club edits** are the same song at three
+lengths — *Radio edit*, *Club mix*, *Extended mix* — which is a different decision from picking a
+genre, and worth trying on a song you already like.
+
 ## Rhythm
 
 Pattern (≈37 strums including 3/4, 6/8, swung feels and sixteenths — ★ marks the progression's
@@ -177,6 +187,10 @@ dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling
 Transport: a sticky **Play** at the very top (with tempo). **↓ Export MIDI** and **↓ Export audio**
 sit in **Song & melody** — MIDI for a DAW, a .wav for everywhere else. The audio render uses the
 same engine as playback, so it sounds like what you heard.
+
+The MIDI file carries the **arrangement**, not just the notes: a marker at every section boundary so
+*Intro / Build / Drop* land on your DAW's timeline, plus the time signature and key signature. Open
+it and the session is already laid out.
 **Sound** (the chord instrument) and **Lead** (the melody voice) are chosen above the wheel, next to
 the chord-colour menus. Both offer the full **General MIDI palette — about 90 instruments grouped by
 category** (pianos, mallets, organs, guitars, basses, strings, ensemble & choir, brass, reeds, pipes,

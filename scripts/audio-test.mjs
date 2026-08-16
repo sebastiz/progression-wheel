@@ -9,10 +9,11 @@ import * as patterns from "../src/patterns.js";
 import * as audio from "../src/audio.js";
 import * as midiMod from "../src/midi.js";
 import * as melody from "../src/melody.js";
+import * as progs from "../src/progressions.js";
 import * as song from "../src/song.js";
 import * as wav from "../src/wav.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -496,6 +497,51 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`part mix: octaves ${LAYER_DEFAULT_OCT.join(",")} · levels ${LAYER_DEFAULT_VOL.join(",")} · lowest MIDI ${lowest}`);
 }
 
+/* ---- the file tells a DAW how to lay itself out ---- */
+{
+  const bars4 = Array.from({ length: 8 }, (_, i) => ({ chord: { root: i % 2 ? 5 : 0, quality: "min" } }));
+  const meta = { beatUnit: 4, sharps: -3, minor: true,
+    markers: [{ bar: 0, name: "Intro" }, { bar: 2, name: "Build" }, { bar: 4, name: "Drop" }, { bar: 6, name: "Outro" }] };
+  for (const [label, beats, sub] of [["4/4", 4, 2], ["3/4", 3, 2], ["4/4 @16ths", 4, 4]]) {
+    const bytes = M.midiBytes(128, beats, bars4, M.DRUMS.house909.pattern, null, "909", sub, 4, meta);
+    // walk the tempo track properly — delta, running status, meta
+    const len = (bytes[18]<<24)|(bytes[19]<<16)|(bytes[20]<<8)|bytes[21];
+    const body = bytes.slice(22, 22 + len);
+    let q = 0, running = 0;
+    const found = { tempo: 0, timesig: null, keysig: null, markers: [] };
+    const vlq = () => { let v = 0; while (body[q] & 0x80) { v = (v << 7) | (body[q] & 0x7f); q++; } return (v << 7) | body[q++]; };
+    let at = 0;
+    while (q < body.length) {
+      at += vlq();
+      let st = body[q];
+      if (st & 0x80) { q++; running = st; } else st = running;
+      if (st !== 0xff) { q += (st & 0xf0) === 0xc0 || (st & 0xf0) === 0xd0 ? 1 : 2; continue; }
+      const kind = body[q++], n = vlq();
+      if (kind === 0x51) found.tempo++;
+      if (kind === 0x58) found.timesig = [body[q], body[q + 1]];
+      if (kind === 0x59) found.keysig = [body[q] > 127 ? body[q] - 256 : body[q], body[q + 1]];
+      if (kind === 0x06) found.markers.push({ at, name: String.fromCharCode(...body.slice(q, q + n)) });
+      q += n;
+      if (kind === 0x2f) break;
+    }
+    if (!found.tempo) problems.push(`${label}: no tempo event`);
+    if (!found.timesig) problems.push(`${label}: NO TIME SIGNATURE — the DAW will assume 4/4`);
+    else if (found.timesig[0] !== beats) problems.push(`${label}: time signature says ${found.timesig[0]}/${2 ** found.timesig[1]}`);
+    if (!found.keysig) problems.push(`${label}: no key signature`);
+    else if (found.keysig[0] !== -3 || found.keysig[1] !== 1) problems.push(`${label}: key signature ${found.keysig} — want [-3, 1] for C minor`);
+    if (found.markers.length !== 4) problems.push(`${label}: ${found.markers.length} markers, want 4`);
+    else {
+      const want = [0, 2, 4, 6].map(b => b * beats * 480);
+      found.markers.forEach((mk, i) => {
+        if (mk.at !== want[i]) problems.push(`${label}: marker "${mk.name}" at tick ${mk.at}, want ${want[i]}`);
+      });
+      if (found.markers.map(m => m.name).join(",") !== "Intro,Build,Drop,Outro")
+        problems.push(`${label}: marker names came out as ${found.markers.map(m => m.name).join(",")}`);
+    }
+    console.log(`midi meta ${label.padEnd(11)} → ${found.timesig[0]}/${2 ** found.timesig[1]}, key ${found.keysig[0]} ${found.keysig[1] ? "minor" : "major"}, markers at bars ${found.markers.map(m => m.at / (beats * 480)).join(",")}`);
+  }
+}
+
 /* ---- the exported file names, voices and accents its parts ---- */
 {
   const bars2 = [{ chord: { root: 0, quality: "min" } }, { chord: { root: 5, quality: "maj" } }];
@@ -709,12 +755,65 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`song document: ${code.length} chars encoded (${code[0] === "d" ? "deflated" : "plain"}), melodies intact`);
 }
 
+/* ---- song structures are well-formed, and the dance ones phrase properly ---- */
+{
+  const TOKENS = ["LOOP", "HALF1", "HALF2", "HOLD1"];
+  // bars a section occupies on the usual four-chord loop, which is what `reps` multiplies
+  const barsOf = (row, pool = 4) => {
+    const n = Array.isArray(row.nums) ? row.nums.length
+            : row.nums === "LOOP" ? pool : row.nums === "HOLD1" ? 1 : Math.ceil(pool / 2);
+    return n * row.reps;
+  };
+  let checked = 0;
+  const all = [
+    ...M.UNIVERSAL.map(u => ({ name: u.name, family: u.family, plan: u.plan })),
+    ...Object.entries(M.PLANS).flatMap(([pid, plans]) =>
+      plans.map((plan, i) => ({ name: `${pid}#${i}`, family: "per-progression", plan }))),
+  ];
+  for (const st of all) {
+    checked++;
+    if (!st.plan || !st.plan.length) { problems.push(`structure ${st.name}: empty plan`); continue; }
+    for (const row of st.plan) {
+      if (!row.sec) problems.push(`structure ${st.name}: a section has no name`);
+      if (!(row.reps >= 1)) problems.push(`structure ${st.name}: "${row.sec}" has reps ${row.reps}`);
+      if (!Array.isArray(row.nums) && !TOKENS.includes(row.nums))
+        problems.push(`structure ${st.name}: "${row.sec}" uses unknown token ${row.nums}`);
+      // every section must letter-code to something, or its 🥁/🎛 menus cannot group it
+      const L = M.letterFor(row.sec);
+      if (!L || !/^[A-Z]$/.test(L)) problems.push(`structure ${st.name}: "${row.sec}" letters as "${L}"`);
+    }
+  }
+  console.log(`song structures: ${checked} checked (${M.UNIVERSAL.length} universal, ${all.length - M.UNIVERSAL.length} per-progression)`);
+  // every letter a structure can produce needs a word, or the write-out reads as a bare letter
+  const letters = new Set(all.flatMap(st => st.plan.map(r => M.letterFor(r.sec))));
+  const noWord = [...letters].filter(L => !M.LETTER_WORD[L]);
+  if (noWord.length) problems.push(`section letters with no word: ${noWord.join(", ")}`);
+  console.log(`section letters in use: ${[...letters].sort().join("")} — all named`);
+
+  // the point of the dance structures: DJ-mixable ends and phrases in 8s
+  const dance = M.UNIVERSAL.filter(u => u.family === "Dance & electronic" || u.family === "Club edits");
+  if (dance.length < 15) problems.push(`only ${dance.length} dance structures`);
+  let mixable = 0;
+  for (const st of dance) {
+    const bars = st.plan.map(r => barsOf(r));
+    const total = bars.reduce((a, b) => a + b, 0);
+    if (total % 4) problems.push(`${st.name}: ${total} bars total — not a whole number of 4-bar phrases`);
+    // a club-ready structure opens and closes on a 16-bar phrase a DJ can beatmatch over
+    if (bars[0] >= 16 && bars[bars.length - 1] >= 16) mixable++;
+  }
+  if (mixable < 8) problems.push(`only ${mixable} dance structures have 16-bar mixable ends`);
+  console.log(`dance structures: ${dance.length}, ${mixable} with DJ-mixable 16-bar ends`);
+  const longest = M.UNIVERSAL.map(u => ({ n: u.name, b: u.plan.reduce((a, r) => a + barsOf(r), 0) }))
+    .sort((a, b) => b.b - a.b)[0];
+  console.log(`longest structure: ${longest.n} at ${longest.b} bars on a four-chord loop`);
+}
+
 /* ---- the module seams hold ----
    Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "progressions.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")

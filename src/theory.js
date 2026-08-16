@@ -52,4 +52,4 @@ const chordIvs = q => ({ dom:[0,4,7,10], maj7:[0,4,7,11], m7:[0,3,7,10],
   add9:[0,4,7,14], madd9:[0,3,7,14], six:[0,4,7,9], m6:[0,3,7,9],
   sus2:[0,2,7], sus4:[0,5,7], dom7sus4:[0,5,7,10] }[q] || [0, q === "min" ? 3 : 4, 7]);
 
-export { SEMI_NAME, posOf, MAJOR_NUM, MINOR_NUM, FUNC_MAJOR, FUNC_MINOR, QSUF, chordName, famMin, MODES, MODE_IDS, modeId, modeFamily, MAJOR_SIG, SHARP_NAMES, FLAT_NAMES, keyIsSharp, spell, chordIvs };
+export { FLAT_NAMES, FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, SHARP_NAMES, chordIvs, chordName, famMin, keyIsSharp, modeFamily, modeId, posOf, spell };
