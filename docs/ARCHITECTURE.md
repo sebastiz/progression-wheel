@@ -20,7 +20,7 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/song.js` | the serialisable song document, melody packing, link encoding | melody |
 | `src/wav.js` | 16-bit PCM wav writing | — |
 | `src/zip.js` | a store-only ZIP writer, for the stem archive | — |
-| `src/arrange.js` | editing a song's arrangement, and carrying melodies through it | — |
+| `src/arrange.js` | editing a song's arrangement, carrying melodies through it, automation lanes | — |
 | `src/progression-wheel.jsx` | the component, the fingering diagrams and the score | all of the above |
 
 Because the modules are plain ESM with no JSX, `npm test` imports them directly — no build step and
@@ -99,6 +99,26 @@ one, so stretching a drop from four bars to eight fills rather than half-empties
 
 A block on the strip is exactly one plan row — runs key on `inst.row`, not the section name, which
 is what makes the strip editable at all.
+
+### Automation lanes
+
+A section move is a preset applied to a whole section; automation is the other half — a curve drawn
+across the song, so a build can open over sixteen bars instead of jumping at a boundary.
+
+A lane is a sparse, sorted `[{bar, v}]` with `v` in 0..1, at most one point per bar (the scheduler
+ramps between bars, so finer resolution would be stored and never heard). `autoAt` interpolates
+linearly between points and **holds flat outside them**, so drawing the two ends of a build gives
+exactly that ramp and nothing surprising before or after. An empty lane returns `null` rather than a
+value, which is how the scheduler knows to leave the parameter alone entirely. `autoDraw` fills the
+bars a fast pointer skipped, or a quick drag leaves holes in the line.
+
+`autoFilt` (lowpass) and `autoGain` sit on the **master** path, between `master` and the limiter, so
+a drawn sweep covers the drums as well as the pitched sources — a DJ filter rather than a
+pitched-bus one. Both are linear and both are scheduled identically in a stem render, so the stems
+still sum. The scheduler writes one ramp per bar on the downbeat, guarded by the bar index against
+the lookahead scheduling a bar twice. Cutoff maps **exponentially** (`120 · (FILTER_OPEN/120)^v`)
+because pitch and brightness are heard logarithmically; a linear map would waste the top half of
+the lane.
 
 ### The arrangement strip
 

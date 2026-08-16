@@ -203,6 +203,22 @@ One thing worth knowing, because the tooltip on each cell will tell you and it i
 drops them on every verse; muting part A on a *Chorus ×2* mutes it for both passes of that chorus
 but leaves the later choruses alone. Hover before you click and it says exactly what it will do.
 
+### Automation — Filter and Level
+
+Under the element lanes are two taller lanes: **Filter** and **Level**. Drag across one to draw a
+curve — left to right is the song, and how high you drag is the value. The **✕** in the corner
+clears it.
+
+**Filter** sweeps the brightness of the whole mix, drums included. It's the DJ filter: draw it low
+through a breakdown and climbing through the build, and the drop opens up on its own. **Level**
+rides the overall volume — fades, and the moment of near-silence right before a drop.
+
+The difference between this and a section's **🎛** move is that a move is a preset applied to one
+section, while a curve is yours and can run across as many bars as you like. They stack, so you can
+use both.
+
+Curves are drawn in song bars, so they stay where you put them when you move sections around.
+
 ### Editing the arrangement
 
 Under the strip is **✎ Edit arrangement**. Turn it on and tapping a block picks it instead of
