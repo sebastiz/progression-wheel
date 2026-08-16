@@ -338,6 +338,22 @@ VERSE 1 ×2  (8 bars, from bar 5)
 | Am | F | C | G |
 ```
 
+### Keyboard, tap tempo, A/B and autosave
+
+**Space** starts and stops. **Esc** stops. **[** and **]** nudge the tempo by one, with **shift** for
+five. **⌘Z** / **⌘⇧Z** undo and redo. None of them fire while you're typing in a text box.
+
+**👆 Tap** next to the tempo: tap it in time with what's in your head and it takes the tempo from
+you. It averages the gaps rather than using the last one, so a shaky tap doesn't throw it, and a
+pause of more than a couple of seconds starts a fresh count.
+
+**⇄ A/B** takes a sketch in two directions. The first press starts B as a copy of A; change it, then
+press again to flip between the two. Neither is saved anywhere — it's for deciding, not for keeping,
+so save the one you want. (B is lost if you close the tab; A is not, see below.)
+
+**Autosave.** Your working sketch is written back automatically and restored next time you open the
+app. Opening somebody's **shared link** always wins over it — you get their song, not yours.
+
 Transport: a sticky **Play** at the very top (with tempo). **↓ Export MIDI**, **↓ Export audio** and
 **↓ Export stems** sit in **Song & melody** — MIDI for a DAW, a .wav for everywhere else, stems for
 when you want to keep working on it. The audio render uses the same engine as playback, so it sounds

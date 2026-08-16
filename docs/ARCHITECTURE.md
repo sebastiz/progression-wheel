@@ -425,6 +425,23 @@ written, since a header that over-counts makes a reader run off the end of the f
 `chartText()` renders a plain-text chord chart, grouping sections into runs the way the arrangement
 strip does.
 
+## Workflow
+
+Keyboard handling is one `keydown` listener that returns early for `INPUT`/`TEXTAREA`/`SELECT` and
+contenteditable, so typing a sketch name cannot toggle playback. Tap tempo averages the gaps between
+the last few taps rather than the most recent one, and resets after 2.5 s.
+
+**Autosave** writes `docJson` (the same document as a save or a link) to its own key on a 1.2 s
+debounce, and restores it on load — but only when the address bar has no shared link, checked
+*before* the first `await` so another effect cannot have moved on in between. `npm test` guards that
+ordering: arriving at somebody else's song and being handed your own is the worst thing this could
+do. `autoReadyRef` stops the writer running before the restore has happened, which would otherwise
+save the blank document over the real one.
+
+**A/B** stashes the inactive version as a document string and swaps it with the current one. It is
+deliberately not persisted — it is for deciding between two ideas in the moment, not for keeping
+them.
+
 ## Persistence
 
 Sketches serialize the full state to `window.storage` (the Claude-artifact key-value API) under

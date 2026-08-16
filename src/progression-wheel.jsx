@@ -2231,18 +2231,111 @@ export default function ProgressionWheel() {
       return f.slice(1);
     });
   };
-  // Cmd/Ctrl-Z and Cmd/Ctrl-Shift-Z, unless the user is typing in the sketch-name box
+  /* Keyboard. Undo/redo on Cmd/Ctrl-Z, and the handful of transport keys you reach for without
+     looking: space to start and stop, escape to stop, brackets to nudge the tempo. Every one is
+     skipped while the caret is in a text box, or typing a sketch name would toggle playback. */
+  const SHORTCUTS = [
+    ["Space", "play / stop"], ["Esc", "stop"], ["[  ]", "tempo −/+ 1"],
+    ["⇧[  ⇧]", "tempo −/+ 5"], ["⌘Z / ⌘⇧Z", "undo / redo"],
+  ];
   useEffect(() => {
     const onKey = e => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
       const el = e.target;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
-      e.preventDefault();
-      if (e.shiftKey) redo(); else undo();
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code === "Space" || e.key === " ") { e.preventDefault(); playing ? stopMetro() : startMetro(0); return; }
+      if (e.key === "Escape") { if (playing) { e.preventDefault(); stopMetro(); } return; }
+      if (e.key === "[" || e.key === "{") { e.preventDefault(); nudgeBpm(e.shiftKey ? -5 : -1); return; }
+      if (e.key === "]" || e.key === "}") { e.preventDefault(); nudgeBpm(e.shiftKey ? 5 : 1); return; }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  /* Tap tempo. Averages the gaps between taps rather than using the last one, so a single shaky tap
+     does not throw the answer; a pause longer than a slow bar starts a fresh count. */
+  const tapRef = useRef([]);
+  const [tapN, setTapN] = useState(0);
+  const tapTempo = () => {
+    const now = (typeof performance !== "undefined" ? performance.now() : 0);
+    const t = tapRef.current;
+    if (t.length && now - t[t.length - 1] > 2500) t.length = 0;   // too long a gap — a new count
+    t.push(now);
+    if (t.length > 8) t.shift();
+    setTapN(t.length);
+    if (t.length < 2) { setIoNote("Keep tapping — two more and it will have the tempo."); return; }
+    const gaps = t.slice(1).map((x, i) => x - t[i]);
+    const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    if (!(avg > 0)) return;
+    const bpm = Math.max(40, Math.min(220, Math.round(60000 / avg)));
+    setBpmSt({ key: progId, val: bpm });
+    setIoNote(`Tapped ${bpm} bpm${t.length < 4 ? " — keep going for a steadier reading" : ""}.`);
+  };
+  /* ---- autosave ----
+     A sketchpad that loses your work when the tab closes is not a sketchpad. The working document
+     is written to its own key, separately from the named sketch list, and restored on the next
+     visit. A shared link always wins — arriving at somebody else's song and being handed your own
+     instead would be the worst possible behaviour. */
+  const AUTOKEY = "pw-autosave";
+  const putStore = async (k, v) => {
+    try {
+      if (hasStore) await window.storage.set(k, v);
+      else if (hasLocal) window.localStorage.setItem(k, v);
+    } catch (e) {}
+  };
+  const getStore = async k => {
+    try {
+      if (hasStore) { const r = await window.storage.get(k); return r ? r.value : null; }
+      if (hasLocal) return window.localStorage.getItem(k);
+    } catch (e) {}
+    return null;
+  };
+  const autoReadyRef = useRef(false);
+  useEffect(() => {
+    (async () => {
+      // a link in the address bar is somebody else's song and takes precedence over the restore
+      const linked = typeof location !== "undefined" && (location.hash || "").length > 2;
+      if (!linked) {
+        const saved = await getStore(AUTOKEY);
+        if (saved) {
+          try { restoreDoc(saved); setIoNote("Picked up where you left off."); }
+          catch (e) {}
+        }
+      }
+      autoReadyRef.current = true;      // only start writing after any restore, or we save the blank
+    })();
+  }, []);   // eslint-disable-line
+  useEffect(() => {
+    if (!autoReadyRef.current || !docJson) return;
+    const id = setTimeout(() => putStore(AUTOKEY, docJson), 1200);
+    return () => clearTimeout(id);
+  }, [docJson]);   // eslint-disable-line
+
+  /* ---- A / B ----
+     Two versions of the same idea, one keystroke apart. The inactive one is stashed as a document;
+     swapping writes the current state into the stash and restores what was there, so you can take
+     a sketch in two directions and flip between them without saving either. */
+  const [abSlot, setAbSlot] = useState("A");
+  const [abStash, setAbStash] = useState(null);
+  const swapAB = () => {
+    if (!docJson) return;
+    if (!abStash) {
+      // B starts as a copy of A — you diverge from here, rather than from nothing
+      setAbStash(docJson); setAbSlot("B");
+      setIoNote("B started as a copy of A. Change it, then ⇄ to compare the two.");
+      return;
+    }
+    const here = docJson;
+    restoreDoc(abStash);
+    setAbStash(here);
+    setAbSlot(x => (x === "A" ? "B" : "A"));
+  };
+
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
     const s = songDoc(name);
@@ -2560,18 +2653,27 @@ export default function ProgressionWheel() {
 
         {/* top transport — always-reachable Play */}
         <div className="toptransport">
-          <button className={"playbtn" + (playing ? " on" : "")} onClick={() => (playing ? stopMetro() : startMetro(0))}>
+          <button className={"playbtn" + (playing ? " on" : "")} title="Play or stop (space bar)"
+            onClick={() => (playing ? stopMetro() : startMetro(0))}>
             {playing ? "■ Stop" : "▶ Play"}
           </button>
           <div className="row" style={{ gap:7, alignItems:"center" }}>
-            <button className="mini" onClick={() => nudgeBpm(-5)}>−5</button>
+            <button className="mini" onClick={() => nudgeBpm(-5)} title="Slower (⇧[)">−5</button>
             <span className="bpmval">{effBpm} bpm</span>
-            <button className="mini" onClick={() => nudgeBpm(5)}>+5</button>
+            <button className="mini" onClick={() => nudgeBpm(5)} title="Faster (⇧])">+5</button>
+            <button className="mini" onClick={tapTempo}
+              title="Tap this in time with the music you have in your head and it will take the tempo from you">
+              👆 Tap{tapN > 1 ? ` ${tapN}` : ""}</button>
           </div>
           {playing && curLabel
             ? <span className="tplabel">{curLabel}</span>
             : <span className="tplabel dim">{keyLabel} · {prog.label}</span>}
         </div>
+        {tips && <p className="keytag" style={{ margin:"6px 0 0", textAlign:"center", opacity:.8 }}>
+          {SHORTCUTS.map(([k, what], i) => (
+            <span key={k}>{i ? " · " : ""}<b style={{ color:"#C9D2DE" }}>{k}</b> {what}</span>
+          ))}
+        </p>}
 
         {/* controls */}
         <div className="panel">
@@ -2786,6 +2888,11 @@ export default function ProgressionWheel() {
           <div className="row" style={{ marginTop:12, gap:8 }}>
             <input className="txt" placeholder="Sketch name…" value={sketchName}
               onChange={e => setSketchName(e.target.value)} />
+            <button className={"btn" + (abStash ? " on" : "")} style={{ padding:"6px 12px" }} onClick={swapAB}
+              title={abStash
+                ? `You are on ${abSlot} — tap to hear the other one. Nothing is lost either way.`
+                : "Take this sketch in two directions: B starts as a copy, and this swaps between them"}>
+              ⇄ {abStash ? abSlot : "A/B"}</button>
             <button className="btn" style={{ padding:"6px 12px" }} onClick={undo} disabled={!past.length}
               title="Undo the last change (⌘Z)">↶ Undo</button>
             <button className="btn" style={{ padding:"6px 12px" }} onClick={redo} disabled={!future.length}

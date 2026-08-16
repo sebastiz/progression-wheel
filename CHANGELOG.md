@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+- **Workflow — the last of the roadmap.** Four small things that change how the app feels to use for
+  an hour rather than what it can make.
+  - **Keyboard**: **space** to play and stop, **esc** to stop, **[** / **]** to nudge the tempo
+    (**shift** for five), alongside the existing **⌘Z** / **⌘⇧Z**. None of them fire while you are
+    typing in a text box. Turn tips on to see the list under the transport.
+  - **👆 Tap tempo** beside the BPM. It averages the gaps between taps rather than using the last
+    one, so a shaky tap does not throw the answer, and a pause starts a fresh count.
+  - **⇄ A/B** takes a sketch in two directions: the first press starts B as a copy, and pressing
+    again flips between them. Neither is saved — it is for deciding, not for keeping.
+  - **Autosave.** Your working sketch is written back automatically and restored next time. A
+    **shared link always wins** over the restore — arriving at somebody else's song and being handed
+    your own instead would be the worst thing this could do, so `npm test` checks the ordering that
+    guarantees it.
+  Version bumped to 4.56.0.
 - **Fixed: pressing ✎ Edit arrangement on a plain loop blanked the screen.** `letterFor` ended in
   `sec[0].toUpperCase()`, which throws on an empty string — and an empty section name is exactly
   what the editor holds when no structure is picked. Introduced in 4.53.0, when the arrangement

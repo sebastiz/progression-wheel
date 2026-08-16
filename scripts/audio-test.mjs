@@ -600,7 +600,22 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   }
   if (!/const setLayerPropMany = /.test(code))
     problems.push("src: setLayerPropMany has gone — multi-section writes need a single state update");
-  console.log(`source shape guard: ${bad.length + 2} patterns checked`);
+  /* Autosave must not restore over a shared link: arriving at somebody else's song and being handed
+     your own instead is the worst thing it could do. The check has to happen before the first
+     `await`, or the address bar may have been read after another effect has moved on. */
+  {
+    const auto = code.slice(code.indexOf("const AUTOKEY"), code.indexOf("autoReadyRef.current = true"));
+    if (!auto) problems.push("src: the autosave block has moved — the shared-link guard is unchecked");
+    else {
+      const linkAt = auto.indexOf("location.hash");
+      const restoreAt = auto.indexOf("restoreDoc(saved)");
+      if (linkAt < 0) problems.push("src: autosave no longer checks the address bar for a shared link");
+      else if (restoreAt >= 0 && linkAt > restoreAt)
+        problems.push("src: autosave restores before checking for a shared link — a link would be overwritten");
+      if (!/if \(!linked\)/.test(auto)) problems.push("src: the autosave restore is not gated on the link check");
+    }
+  }
+  console.log(`source shape guard: ${bad.length + 3} patterns checked`);
 }
 
 /* ---- per-part register and level ---- */
