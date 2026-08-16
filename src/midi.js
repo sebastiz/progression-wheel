@@ -26,8 +26,11 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
   ev(tempo, 0, 0xff, 0x51, 3, (uspq>>16)&255, (uspq>>8)&255, uspq&255);
   // time signature: numerator = beats per bar, denominator as a power of two (4 = quarter note).
   // 24 MIDI clocks per metronome click, 8 32nds per quarter — the conventional values.
+  /* `meta.tsNum` is the numerator to write when it differs from the engine's beats-per-bar: 6/8 is
+     three quarter-note beats to the scheduler but has to reach a DAW as 6/8, or the barlines are
+     right and every accent is in the wrong place. */
   const den = Math.log2(meta.beatUnit || 4);
-  ev(tempo, 0, 0xff, 0x58, 4, beatsPerBar, den, 24, 8);
+  ev(tempo, 0, 0xff, 0x58, 4, meta.tsNum || beatsPerBar, den, 24, 8);
   // key signature: sharps as a signed byte (-7..7), then 0 major / 1 minor
   if (meta.sharps != null)
     ev(tempo, 0, 0xff, 0x59, 2, meta.sharps < 0 ? 256 + meta.sharps : meta.sharps, meta.minor ? 1 : 0);

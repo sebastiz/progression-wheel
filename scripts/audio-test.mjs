@@ -79,6 +79,9 @@ const ctx = {
   },
 };
 
+// the bar lengths the time-signature menu offers; anything outside them is unreachable content
+const METER_BEATS = [...new Set(M.METERS.map(m => m.beats))];
+
 const noise = M.makeNoise(ctx);
 const noiseDur = noise.duration;
 console.log(`noise buffer: ${noiseDur.toFixed(3)}s`);
@@ -128,8 +131,14 @@ let pats = 0;
 for (const [id, d] of Object.entries(M.DRUMS)) {
   if (!d.pattern) continue;
   pats++;
-  if (![6, 8, 16].includes(d.pattern.length)) problems.push(`pattern ${id}: ${d.pattern.length} steps (want 6, 8 or 16)`);
-  if (![3, 4].includes(M.drumBeatsOf(d.pattern))) problems.push(`pattern ${id}: reads as ${M.drumBeatsOf(d.pattern)} beats`);
+  /* A drum pattern's length has to be a whole number of eighths or sixteenths in a meter the app
+     offers, since the length is the only thing that says which bar it belongs to. */
+  const okLens = METER_BEATS.flatMap(b => [b * 2, b * 4]);
+  if (!okLens.includes(d.pattern.length))
+    problems.push(`pattern ${id}: ${d.pattern.length} steps — not a whole bar in any offered meter (${okLens.join(", ")})`);
+  // every drum pattern has to land on a meter the app offers, or it is unreachable from the menus
+  if (!METER_BEATS.includes(M.drumBeatsOf(d.pattern)))
+    problems.push(`pattern ${id}: reads as ${M.drumBeatsOf(d.pattern)} beats, which no time signature uses`);
   for (const step of d.pattern) for (const c of step) {
     if (!CHANNELS.includes(c)) problems.push(`pattern ${id}: unknown channel "${c}"`);
     if (M.DRUM_MIDI[c] == null) problems.push(`pattern ${id}: channel "${c}" has no GM note`);
@@ -176,11 +185,35 @@ for (const [id, p] of Object.entries(M.PATTERNS)) {
   const sub = M.subOf(p), beats = M.beatsOf(p);
   if (![2, 4].includes(sub)) problems.push(`pattern ${id}: sub ${sub} (want 2 or 4)`);
   if (!Number.isInteger(beats)) problems.push(`pattern ${id}: ${p.pattern.length} steps / sub ${sub} = ${beats} beats`);
-  if (![3, 4].includes(beats)) problems.push(`pattern ${id}: ${beats} beats per bar (want 3 or 4)`);
+  if (!METER_BEATS.includes(beats)) problems.push(`pattern ${id}: ${beats} beats per bar, which no time signature uses`);
+  // and it must declare a meter the menu knows, or it cannot be filtered into any of them
+  if (!M.METER_BY_ID[M.meterOf(p)]) problems.push(`pattern ${id}: unknown meter ${M.meterOf(p)}`);
   if (sub === 4) sixteenth++;
 }
 for (const [prog, id] of Object.entries(M.PATTERN_DEFAULT))
   if (!M.PATTERNS[id]) problems.push(`PATTERN_DEFAULT[${prog}] → unknown pattern "${id}"`);
+/* ---- time signatures ----
+   A meter in the menu with no strum pattern or no kit is a dead end: picking it would leave the
+   song silent or unplayable, which is worse than not offering it. */
+{
+  for (const m of M.METERS) {
+    const pats = Object.values(M.PATTERNS).filter(p => M.meterOf(p) === m.id);
+    const kits = Object.entries(M.DRUMS).filter(([id, d]) => id !== "off" && M.drumFitsMeter(d, m.id));
+    if (!pats.length) problems.push(`meter ${m.id} has no strum pattern — the menu would offer a dead end`);
+    if (!kits.length) problems.push(`meter ${m.id} has no drum kit that fits its bar`);
+    // every pattern claiming this meter must really be that many beats long
+    for (const p of pats) if (M.beatsOf(p) !== m.beats)
+      problems.push(`a pattern claims meter ${m.id} but is ${M.beatsOf(p)} beats, not ${m.beats}`);
+    // what a DAW is told has to describe the same bar: num/den quarter-notes == beats
+    if (m.num * (4 / m.den) !== m.beats)
+      problems.push(`meter ${m.id} writes ${m.num}/${m.den} to MIDI, which is ${m.num * (4 / m.den)} beats, not ${m.beats}`);
+    if (!Number.isInteger(Math.log2(m.den))) problems.push(`meter ${m.id}: denominator ${m.den} is not a power of two`);
+  }
+  // 3/4 and 6/8 are the same bar length and deliberately share kits, but must not share a name
+  if (new Set(M.METERS.map(m => m.id)).size !== M.METERS.length) problems.push("two meters share an id");
+  console.log(`time signatures: ${M.METERS.map(m => m.id).join(", ")} — each with patterns, kits and a matching MIDI signature`);
+}
+
 console.log(`strum patterns: ${Object.keys(M.PATTERNS).length} (${sixteenth} at sixteenths)`);
 const drum16 = Object.values(M.DRUMS).filter(d => d.pattern && d.pattern.length === 16).length;
 console.log(`drum patterns: ${drum16} at sixteenths`);

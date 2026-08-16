@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BPM_DEFAULT, DRUMS, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
@@ -433,6 +433,7 @@ export default function ProgressionWheel() {
   const [curBar, setCurBar] = useState(-1);
   const [curLabel, setCurLabel] = useState(null);
   const [bpmSt, setBpmSt] = useState({ key:"", val:0 });
+  const [nChordsSt, setNChordsSt] = useState({ key:"", val:0 });   // chords in the loop (0 = the progression's own length)
   const [instr, setInstr] = useState("acoustic_guitar_steel");   // chord instrument (GM key)
   const [melInstr, setMelInstr] = useState("flute");        // melody lead voice — a real sampled instrument by default (synth id or GM key)
   const [legato, setLegato] = useState(true);               // merge/flow melody notes
@@ -551,8 +552,30 @@ export default function ProgressionWheel() {
     return q;
   };
 
+  /* How many chords the loop has. A progression arrives with its own natural length; this shortens
+     it by taking the first N, or lengthens it with diatonic degrees the progression has not used
+     yet — so a four-chord axis grown to six gains a ii and a iii rather than just repeating. It
+     sits in front of the whole pipeline, so per-chord edits, inserts and removals still layer on
+     top of the result. */
+  const CHORD_POOL_MAJOR = ["I", "IV", "V", "vi", "ii", "iii", "bVII"];
+  const CHORD_POOL_MINOR = ["i", "iv", "v", "VI", "bVII", "bIII", "ii"];
+  const CHORDS_MIN = 2, CHORDS_MAX = 8;
+  const natLen = prog.numerals.length;
+  const nChords = (nChordsSt.key === progId && nChordsSt.val) ? nChordsSt.val : natLen;
+  const numeralsNow = useMemo(() => {
+    const base = prog.numerals;
+    if (nChords === base.length) return base;
+    if (nChords < base.length) return base.slice(0, Math.max(1, nChords));
+    const pool = (modeFamily(prog.mode) === "minor" ? CHORD_POOL_MINOR : CHORD_POOL_MAJOR)
+      .filter(n => !base.includes(n) && numDefs[n]);
+    const out = [...base];
+    while (out.length < nChords)
+      out.push(pool.length ? pool[(out.length - base.length) % pool.length] : base[out.length % base.length]);
+    return out;
+  }, [prog, nChords, numDefs]);
+
   const chords = useMemo(() => {
-    const base = prog.numerals.map((n, bi) => {
+    const base = numeralsNow.map((n, bi) => {
       const [off, q0] = numDefs[n];
       const root = (tonic + off) % 12, baseName = chordName(root, q0);
       const ov = ovMap[baseName], qov = qmap[baseName];   // per-chord version override beats the colour rule
@@ -599,7 +622,7 @@ export default function ProgressionWheel() {
         return ord.map(k => byKey.get(k));
     }
     return kept;
-  }, [progId, tonic, edits, inserts, quals, removed, colour, order]);
+  }, [progId, tonic, edits, inserts, quals, removed, colour, order, numeralsNow]);
 
   const baseNames = useMemo(() => prog.numerals.map(n => {
     const [off, q] = numDefs[n];
@@ -924,6 +947,31 @@ export default function ProgressionWheel() {
   autoRef.current = auto.key === planKey ? auto : {};
   kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0; delayRef.current = delayId;
   clickRef.current = clickOn;
+  /* Time signature. The chosen strum pattern is the single source of truth for the bar — the meter
+     is read off it rather than stored separately, so the two can never disagree. Picking a meter
+     therefore means picking a pattern that has it, plus a kit whose bars are the same length; a
+     4/4 kit left behind in a 5/4 song would be dropped from the tick grid and fall silent. */
+  const curMeter = meterOf(rhythm);
+  const metricPats = useMemo(() => Object.entries(PATTERNS).filter(([, p]) => meterOf(p) === curMeter), [curMeter]);
+  const metricDrums = useMemo(() =>
+    Object.entries(DRUMS).filter(([id, d]) => id === "off" || drumFitsMeter(d, curMeter)), [curMeter]);
+  const setMeter = mid => {
+    if (mid === curMeter) return;
+    const pats = Object.entries(PATTERNS).filter(([, p]) => meterOf(p) === mid);
+    if (!pats.length) return;
+    const def = PATTERN_DEFAULT[progId];
+    const pick = pats.find(([id]) => id === def) || pats[0];
+    setPatSel({ key: progId, id: pick[0] });
+    // carry the drums across only if they still fit; otherwise take the first kit that does
+    if (!drumFitsMeter(DRUMS[drum], mid)) {
+      const kits = Object.entries(DRUMS).filter(([id, d]) => id !== "off" && drumFitsMeter(d, mid));
+      setDrumSt({ key: progId, val: kits.length ? kits[0][0] : "off" });
+    }
+    // and any per-section override that no longer fits goes back to following the global choice
+    const keep = {};
+    for (const [k, v] of Object.entries(secDrum)) if (!v || drumFitsMeter(DRUMS[v], mid)) keep[k] = v;
+    if (Object.keys(keep).length !== Object.keys(secDrum).length) setSecDrum(keep);
+  };
   const meloBeats = rhythm.pattern.length;                  // grid columns per bar (6 in waltz time, 16 on a sixteenth rhythm)
   const meloSub = subOf(rhythm);                            // columns per beat: 2 = eighths, 4 = sixteenths
   const barBeats = beatsOf(rhythm);                         // 4 in common time, 3 in waltz time
@@ -1947,8 +1995,9 @@ export default function ProgressionWheel() {
       // MAJOR_SIG is indexed by the *relative major* of the current mode, which is what a key
       // signature actually spells — so a Dorian sketch gets the right accidentals, not the tonic's.
       const rel = (tonic + MODES[effMode].rel) % 12;
+      const mtr = METER_BY_ID[curMeter] || METERS[0];
       const meta = {
-        beatUnit: 4,
+        beatUnit: mtr.den, tsNum: mtr.num,
         sharps: MAJOR_SIG[((rel % 12) + 12) % 12],
         minor: MODES[effMode].family === "minor",
         // one marker per section instance, at the bar it begins
@@ -1978,7 +2027,7 @@ export default function ProgressionWheel() {
   const chartText = () => {
     const out = [];
     out.push(sketchName.trim() || "Untitled sketch");
-    out.push(`${SEMI_NAME[((tonic % 12) + 12) % 12]} ${MODES[effMode].short} · ${Math.round(effBpm)} bpm · ${barBeats}/4`);
+    out.push(`${SEMI_NAME[((tonic % 12) + 12) % 12]} ${MODES[effMode].short} · ${Math.round(effBpm)} bpm · ${curMeter}`);
     if (structSel) out.push(`Form: ${structSel.st.name}${customPlan ? " (edited)" : ""}`);
     out.push("");
     const runs = [];
@@ -2181,7 +2230,7 @@ export default function ProgressionWheel() {
   // one document for both a saved sketch and a shared link — so anything that survives a save
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
-    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, instr, melInstr,
+    name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
     kit, pump, secMove, delayId, bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
@@ -2194,7 +2243,7 @@ export default function ProgressionWheel() {
   const UNDO_DEPTH = 60;
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
-  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, instr, melInstr,
+  }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
       kit, pump, secMove, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
@@ -2383,6 +2432,7 @@ export default function ProgressionWheel() {
     setSecMove(s.secMove || {});
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
+    setNChordsSt({ key:s.progId, val:s.nChords || 0 });
     // older sketches predate the kit/pump fields — fall back to the pre-dance defaults so they
     // reload sounding exactly as they were saved
     setDrumSt({ key:s.progId, val:s.drum || "off" });
@@ -2684,6 +2734,14 @@ export default function ProgressionWheel() {
                 {Array.from({ length: 12 }, (_, s) => <option key={s} value={s}>{spell(s, s, effMode)}</option>)}
               </select>
             </label>
+            <label className="selwrap" style={{ flex:"0 0 74px" }}>
+              <span className="lbl" style={{ margin:0 }}>Chords</span>
+              <select value={nChords} onChange={e => setNChordsSt({ key: progId, val: +e.target.value })}
+                title="How many chords the loop has. Fewer takes the first few; more adds diatonic chords the progression hasn't used yet. An odd number still plays as an even phrase — the last chord holds an extra bar.">
+                {Array.from({ length: CHORDS_MAX - CHORDS_MIN + 1 }, (_, i) => CHORDS_MIN + i).map(n =>
+                  <option key={n} value={n}>{n}{n === natLen ? " ·" : ""}</option>)}
+              </select>
+            </label>
             <label className="selwrap" style={{ flex:"1 1 108px" }}>
               <span className="lbl" style={{ margin:0 }}>Mode</span>
               <select value={mode || ""} onChange={e => setMode(e.target.value || null)}
@@ -2822,10 +2880,17 @@ export default function ProgressionWheel() {
           </div>
 
           <div className="selrow" style={{ marginTop:10, alignItems:"flex-end", flexWrap:"wrap" }}>
+            <label className="selwrap" style={{ flex:"0 0 118px" }}>
+              <span className="lbl" style={{ margin:0 }}>Time</span>
+              <select value={curMeter} onChange={e => setMeter(e.target.value)}
+                title="The bar length. Changing it switches to a strum pattern and a kit that fit — everything in this row is filtered to the meter you pick.">
+                {METERS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </label>
             <label className="selwrap" style={{ minWidth:150 }}>
               <span className="lbl" style={{ margin:0 }}>Pattern</span>
               <select value={patId} onChange={e => setPatSel({ key: progId, id: e.target.value })}>
-                {Object.entries(PATTERNS).map(([id, p]) => (
+                {metricPats.map(([id, p]) => (
                   <option key={id} value={id}>
                     {p.name}{id === (PATTERN_DEFAULT[progId] || "pop") ? " ★" : ""}{p.swing ? " (swung)" : ""}{subOf(p) === 4 ? " · 16ths" : ""}
                   </option>
@@ -2835,7 +2900,7 @@ export default function ProgressionWheel() {
             <label className="selwrap" style={{ minWidth:130 }}>
               <span className="lbl" style={{ margin:0 }}>Drums</span>
               <select value={drum} onChange={e => setDrumSt({ key: progId, val: e.target.value })}>
-                {Object.entries(DRUMS).map(([id, d]) => (
+                {metricDrums.map(([id, d]) => (
                   <option key={id} value={id}>{d.name}{id === DRUM_DEFAULT[progId] ? " ★" : ""}</option>
                 ))}
               </select>
@@ -3587,7 +3652,7 @@ export default function ProgressionWheel() {
                     <select value={secDrum[g.base] || ""}
                       onChange={e => setSecDrum({ ...secDrum, [g.base]: e.target.value })}>
                       <option value="">global drums</option>
-                      {Object.entries(DRUMS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
                     </select>
                   </label>
                   <label className="secdrum" title="Arrangement move for this section — a filter sweep, riser or drop, run across the section's whole length">

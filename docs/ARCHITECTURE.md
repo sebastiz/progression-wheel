@@ -191,6 +191,25 @@ Web Audio API throughout, no samples:
   low-pass; piano is fundamental + decaying partials; organ sustains sine drawbars; basses play
   roots), drum hits (`drumSound`), and melody lead notes.
 
+### Time signatures
+
+`METERS` lists the bar lengths the app can actually play: `beats` is quarter-note beats per bar,
+which is what the scheduler and every pattern length are measured in, while `num`/`den` are what a
+DAW is told. Those differ for 6/8 — three quarter-note beats to the engine, but it has to reach a
+DAW as 6/8 or the barlines land right and every accent is wrong. `midiBytes` takes `meta.tsNum` for
+that.
+
+The chosen strum pattern is the **single source of truth** for the meter: `meterOf(p)` reads it off
+the pattern rather than storing it separately, so the two cannot disagree and nothing new needs
+serialising. The Time menu is a way of jumping between meters — it picks a pattern that has the one
+you chose, and moves the kit too if the old one no longer fits, since a mismatched kit is dropped
+from the tick grid and falls silent rather than complaining.
+
+`drumBeatsOf` reads a kit's meter from its step count (`DRUM_BEATS`). It used to be
+`length === 6 ? 3 : 4`, which read a ten-step 5/4 pattern as 4/4. `npm test` checks every meter has
+both a strum pattern and a kit — a menu entry with neither is a dead end — and that each meter's
+MIDI signature describes the same bar its beats do.
+
 ### Grid resolution
 
 A rhythm pattern carries `sub` — columns per beat, 2 for eighths and 4 for sixteenths — so
