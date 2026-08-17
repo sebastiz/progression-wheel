@@ -350,6 +350,26 @@ The grid follows your time signature — 16 steps in 4/4, 12 in 3/4 and 6/8, 20 
 write goes into the exported MIDI, the Live Set and the drum stem, because an edited bar is a drum
 pattern like any other.
 
+### Opening the song in Ableton
+
+**↓ Live Set** on the Arrange tab writes a `.als`. Where a MIDI file gives Live bare clips, this
+arrives as the arrangement: named and coloured tracks (Chords, Drums, Part A…), the right tempo, and
+**every section as a locator** on the ruler.
+
+**The tracks arrive without instruments.** Every sound in this app is built in the browser's audio
+engine, and there is no way to hand Live one — so each track waits for you to drop your own
+instrument on it. That is true of the MIDI export too; it is not a limitation of the file. The drum
+track's notes sit at the General MIDI numbers, which line up with a Drum Rack's default layout, so
+dropping one on gives you a sensible kit straight away.
+
+**Use ↓ Export stems alongside it.** Those wavs are what the song actually sounds like, and they
+line up bar for bar with the Live Set — so you can hear what you are aiming at while you choose
+instruments.
+
+Two things that live only in the audio and cannot travel as notes: **swing and humanise** (both are
+timing applied at playback, while the exported notes sit on the grid), and everything in the Sound
+tab — the part effects, the pump, section moves, transitions and the automation lanes.
+
 ### Sixteenths
 
 Most rhythms divide each beat in two. The ones marked **· 16ths** divide it in four, which is where

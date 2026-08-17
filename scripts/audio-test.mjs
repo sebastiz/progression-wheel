@@ -14,8 +14,9 @@ import * as song from "../src/song.js";
 import * as wav from "../src/wav.js";
 import * as zip from "../src/zip.js";
 import * as arrange from "../src/arrange.js";
+import * as als from "../src/als.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...als };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -235,6 +236,67 @@ for (const kit of ["acoustic", "909", "808"]) {
     if (packed.length >= JSON.stringify(beats.C1[0]).length) problems.push("packing a drum bar made it bigger");
   }
   console.log(`drum grid: ${M.DRUM_VOICES.length} voices, ${M.beatSteps(4)}/${M.beatSteps(3)}/${M.beatSteps(5)} steps a bar, seeded from the catalogue and exported to MIDI`);
+}
+
+/* ---- the Ableton Live Set ----
+   A .als is gzipped XML, so both halves can be checked here: that the document is well-formed and
+   says what it should, and that the bytes are really gzip. What cannot be checked here is whether
+   Live accepts it — that needs Live. Everything below is the part that is knowable. */
+{
+  const spec = {
+    bpm: 128, tsNum: 4, tsDen: 4,
+    tracks: [
+      { name: "Chords", color: M.ALS_COLORS.chords, vol: 0.85, end: 8,
+        notes: [{ t: 0, dur: 4, note: 60, vel: 78 }, { t: 4, dur: 4, note: 64, vel: 78 }] },
+      { name: "Drums & <bells>", color: M.ALS_COLORS.drums, vol: 0.85, end: 8,
+        notes: [{ t: 0, dur: 0.25, note: 36, vel: 92 }, { t: 1, dur: 0.25, note: 38, vel: 92 }] },
+    ],
+    locators: [{ beat: 0, name: "Intro" }, { beat: 4, name: "Chorus & drop" }],
+    name: "test song",
+  };
+  const xml = M.alsXml(spec);
+  // well-formed: every tag that opens closes, in order. A malformed set is a file Live refuses.
+  {
+    const stack = [];
+    let ok = true;
+    for (const m of xml.matchAll(/<(\/?)([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?)(\/?)>/g)) {
+      const [, close, tag, , self] = m;
+      if (close) { if (stack.pop() !== tag) { problems.push(`als: </${tag}> closes the wrong element`); ok = false; break; } }
+      else if (!self) stack.push(tag);
+    }
+    if (ok && stack.length) problems.push(`als: ${stack.length} element(s) left open (${stack.slice(-3).join(" > ")})`);
+  }
+  if (!/^<\?xml version="1\.0" encoding="UTF-8"\?>/.test(xml)) problems.push("als: no XML declaration");
+  if (!/<Ableton MajorVersion="5"[^>]*MinorVersion="[^"]+"/.test(xml)) problems.push("als: no Ableton root with a schema version");
+  // the things that make it an arrangement rather than a bag of notes
+  if ((xml.match(/<MidiTrack Id=/g) || []).length !== 2) problems.push("als: wrong number of MIDI tracks");
+  if (!/<Manual Value="128" \/>/.test(xml)) problems.push("als: the tempo did not reach the master track");
+  if ((xml.match(/<Locator Id=/g) || []).length !== 2) problems.push("als: the section locators are missing");
+  if ((xml.match(/<MidiNoteEvent /g) || []).length !== 4) problems.push("als: wrong number of notes");
+  if (!/<MidiKey Value="60" \/>/.test(xml) || !/<MidiKey Value="36" \/>/.test(xml))
+    problems.push("als: notes are not grouped into a KeyTrack per pitch, which is how Live stores them");
+  if (!/Duration="4"/.test(xml)) problems.push("als: note durations are not in beats");
+  // names arrive from the user, and one ampersand in a section name is a file Live cannot parse
+  // every & in the document has to be part of an entity: one bare ampersand from a section name is
+  // a file Live refuses to parse at all
+  if (/&(?!(amp|lt|gt|quot|apos);)/.test(xml)) problems.push("als: a bare & reached the document");
+  if (!xml.includes("Drums &amp; &lt;bells&gt;")) problems.push("als: a track name with markup in it was not escaped");
+  if (!/EffectiveName Value="Chords"/.test(xml)) problems.push("als: track names are missing");
+  // and the file itself is gzip, which is the one thing that makes it a .als rather than XML
+  if (typeof CompressionStream === "function") {
+    const bytes = await M.alsBytes(spec);
+    if (!(bytes instanceof Uint8Array)) problems.push("als: did not produce bytes");
+    else {
+      if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) problems.push(`als: not gzip (magic ${bytes[0]},${bytes[1]})`);
+      if (bytes.length >= xml.length) problems.push("als: gzip made the file bigger");
+      // …and it unzips back to exactly the document we wrote
+      const back = new Uint8Array(await new Response(new Blob([bytes]).stream()
+        .pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+      if (new TextDecoder().decode(back) !== xml) problems.push("als: the gzipped bytes do not decompress to the document");
+      console.log(`live set: ${(xml.match(/<MidiTrack Id=/g) || []).length} tracks, ${(xml.match(/<MidiNoteEvent /g) || []).length} notes, `
+        + `${(xml.match(/<Locator Id=/g) || []).length} locators, ${xml.length} chars → ${bytes.length} gzipped bytes`);
+    }
+  }
 }
 
 /* ---- the dance defaults all point at things that exist ---- */
@@ -2197,7 +2259,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "progressions.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "als.js", "progressions.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
