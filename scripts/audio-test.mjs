@@ -1474,9 +1474,10 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
      until the change is made here too, which is the point — a default that is not a no-op means a
      part sounds different the moment it is saved and reopened. */
   const NEUTRAL = {
-    arp:"", arpRate:4, arpOct:1, gate:"",
+    arp:"", arpRate:4, arpOct:1, chord:"", strum:0, ratchet:1, octJump:0, gate:"", gateLen:16,
     semis:0, oct2:0, detune:0,
     cut:100, res:0, hp:0, fenv:0, fdec:30, drive:0,
+    atk:0, dec:0, sus:0, rel:0, vfilt:0,
     wob:0, wobRate:2, trem:0, tremRate:4, pan:0, apan:0, apanRate:1,
     len:100, nudge:0, swing:0, prob:100, accent:0,
     send:0, verb:0, duck:null,
@@ -1856,6 +1857,46 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       problems.push(`progression-wheel.jsx uses \`${n}\` from ${exported.get(n)} without importing it`);
     else if (!exported.has(n) && declaredIn.has(n))
       problems.push(`progression-wheel.jsx uses \`${n}\`, which ${declaredIn.get(n)} declares but does not export`);
+  }
+  /* The scheduler's helpers all sit side by side inside `emitTick` — `fireNote`, `playLayer`,
+     `applyMods` and the rest — and several of them want the same few pieces of per-note state.
+     They are siblings, not nested, so one reaching for another's parameter is not a scope error the
+     bundler will tell you about: esbuild assumes it is a global and emits it untouched. The result
+     is a ReferenceError at the moment a control is first turned up, which is the worst possible
+     time to find out. This caught exactly that in `fireNote` reaching for `li`. */
+  {
+    const body = code.slice(code.indexOf("const chainOf = li =>"), code.indexOf("const anySolo ="));
+    // each `const name = (args) => {` … its own parameters plus anything declared inside it
+    for (const fn of body.matchAll(/const (\w+) = \(([^)]*)\) => \{/g)) {
+      const start = fn.index + fn[0].length;
+      // walk to the matching brace so nested helpers do not bleed into each other
+      let depth = 1, end = start;
+      while (end < body.length && depth > 0) {
+        const c = body[end++];
+        if (c === "{") depth++; else if (c === "}") depth--;
+      }
+      const inner = body.slice(start, end);
+      /* Every name the function binds for itself: its own parameters, anything it declares at any
+         depth, and the parameters of the callbacks inside it. `declared` is not enough here — it
+         only reads declarations at the start of a line and knows nothing about arrow parameters,
+         and a false positive on a variable the function does own would make this guard noise. */
+      const params = new Set(fn[2].split(",").map(s => s.trim().split(/[=:\s]/)[0]).filter(Boolean));
+      // `const a = 1, b = 2` binds both — matching only the first name is how `col` read as free
+      for (const d of inner.matchAll(/\b(?:const|let|var)\s+([^;\n]*)/g))
+        for (const n of d[1].split(",")) { const k = n.trim().match(/^([\w$]+)/); if (k) params.add(k[1]); }
+      for (const d of inner.matchAll(/\b(?:const|let|var)\s*[[{]([^\]}]*)[\]}]/g))
+        for (const n of d[1].split(",")) { const k = n.trim().split(/[:=\s]/)[0]; if (k) params.add(k); }
+      for (const d of inner.matchAll(/\(([^()]*)\)\s*=>/g))
+        for (const n of d[1].split(",")) { const k = n.trim().split(/[=:\s]/)[0]; if (k) params.add(k); }
+      for (const d of inner.matchAll(/([\w$]+)\s*=>/g)) params.add(d[1]);
+      for (const d of inner.matchAll(/\bfor\s*\(\s*(?:const|let|var)\s+([\w$]+)/g)) params.add(d[1]);
+      // the loop variables the scheduler passes around by hand — the ones easy to reach for
+      for (const shared of ["li", "deg", "col", "slot", "vel", "flat"]) {
+        if (params.has(shared)) continue;
+        if (new RegExp("[^.\\w]" + shared + "\\s*[*+\\-,)\\].]").test(inner))
+          problems.push(`src: ${fn[1]} uses \`${shared}\` without taking it — it is a sibling's variable, and the bundler will emit it as a global`);
+      }
+    }
   }
   console.log(`module seams: ${MODS.length} modules, ${exported.size} exports, ${imported.size} imported by the component`);
 }
