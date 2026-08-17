@@ -331,11 +331,47 @@ since the grid itself only ever shows one octave of scale degrees; it is applied
 into one number, and each part plays through its own gain node into the music bus. Every rebuild of
 the list goes through `cloneLayer`, so an edit meant for a part's notes cannot drop its mix settings.
 
-Everything a part carries beyond its notes lives in `LAYER_FX` (melody.js) — one list of
-`[field, default]` pairs, read by the normaliser, `cloneLayer`, `putSec` and song.js's
-`packLayer`/`unpackLayer`. Adding an effect is one line rather than five edits, four of which are
-easy to forget; melodies once vanished from saved sketches for exactly that reason. Only fields that
-differ from their default are written, so a shared link stays short.
+### Part modulation
+
+Everything a part carries beyond its notes is one entry in **`MOD_GROUPS`** (melody.js) — 28 of them
+across six groups — and that one entry is read by five different things: `ModCtl`, which draws the
+control; the scheduler, which applies it; `cloneLayer` and `putSec`, which carry it; song.js's
+`packLayer`/`unpackLayer`, which save it; and `copyPartSettings`, which moves it between sections.
+`LAYER_FX` is derived from the table rather than written by hand. Adding a modulation is one line
+rather than six edits, five of which are easy to forget; melodies once vanished from saved sketches
+for exactly that reason. Only fields that differ from their default are written, so a shared link
+stays short.
+
+| Group | Modulations |
+| --- | --- |
+| Pattern | arp (+rate, +range), gate |
+| Pitch | transpose, octave double, detune |
+| Tone | low-pass, resonance, high-pass, filter envelope (+decay), drive |
+| Movement | wobble, tremolo, pan, auto-pan (each LFO with its own tempo-synced rate) |
+| Feel | note length, nudge, swing, play chance, accent |
+| Space | echo send, reverb send, pump |
+
+Three properties hold the table together, and `npm test` checks each:
+
+- **Every default is a no-op.** A part with no settings must sound exactly as it did before any of
+  this existed, or opening an old sketch changes it. The test states the "off" value for all 28 a
+  second time and independently, so a changed default fails until both are changed.
+- **Every non-`own` modulation is in `LAYER_FX`.** A key that is not gets silently dropped from
+  saved sketches and shared links. (`own` marks the handful — `send` — that song.js already packed
+  under its own key before the table existed, so old sketches keep loading.)
+- **Menu values keep their type.** A `<select>` hands back a string; the scheduler compares with
+  `===`, so a rate of `"4"` would fail every check against `4`. `castLike` casts on the way in.
+
+`needs` hides a rate until the thing it paces is turned up — four of the 28 are dependent controls,
+which is why a group shows fewer sliders than it has entries until you start turning things on.
+
+**Where a part's settings live.** They belong to one *section instance*, not to the song: the same
+pad is a clean sustained one in the verse and a gated, driven, sidechained one in the chorus. That
+is what the tinted panel in the Arrange view is saying — its background is the part's own
+`LAYER_INK` over the surface, and nothing else on the page is section-scoped that way. The selected
+part is also per section (`secPart`), because opening the bass in the chorus should not switch the
+verse to its bass. `copyPartSettings` moves a whole settings set onto the same part index of other
+sections in one state update, growing a section that has fewer parts, and never touching notes.
 
 **Arpeggiator** (`ARPS`): an arped part ignores its grid and walks the notes of the chord under the
 current bar, in the chosen order, through `arpOct` octaves at `arpRate` notes per beat. It reads
@@ -344,10 +380,41 @@ inside the chord-playing branch — a part stem plays no chords, and an arp that
 there would follow a different harmony from the one it followed in the mix. Step indices come from
 the absolute tick, so the line is reproducible.
 
+**The chain.** Each part runs through its own:
+
+```
+gain ─ drive ─ high-pass ─ low-pass ─ tremolo ─ pan ─ gate ─┬─ duck ─→ pitched bus
+(level·mute·solo)          ▲            ▲        ▲          ├─ echo send  → delay
+                           │            │        │          └─ reverb send → room
+                         wobble      tremolo   auto-pan
+```
+
+The order is a hardware synth's and it matters: drive before the filter, so the filter tames the
+harmonics the drive just made rather than the drive re-brightening a filtered signal; the gate last
+of the level stages so it chops everything above it at once; both sends after the gate so a gated
+part throws gated repeats.
+
+Two things about the LFOs are load-bearing. They are **built for every part on every tick**, whether
+or not anything is turned up, and they **start from `m.t0`** rather than from whenever a control was
+first moved — otherwise an LFO's phase would depend on which bar you happened to turn it up in, and
+a stem bounce would no longer line up with the mix. Rates are in beats per cycle, not Hz, so the
+movement stays in time when the tempo changes. Filter frequencies go through `nyq`, because Web
+Audio *throws* on a cutoff above Nyquist rather than clamping, and an offline render at another
+sample rate is exactly where that bites.
+
+Note-level modulations (transpose, detune, double, length, nudge, swing, play chance, accent) are
+applied in `fireNote`/`timeFor`/`playChance`, shared by the grid and the arp so a control means the
+same thing whichever is playing. Timing offsets clamp forward: an offline render starts at time zero
+and scheduling before it throws. Play chance is hashed from position in the song, never drawn at
+random, so a part that plays 7 notes in 10 plays the *same* 7 every time.
+
+**Reproducible noise.** `hashNoise` replaced `Math.random` in the drum noise buffer, the reverb
+impulses and the Karplus–Strong pluck excitation. Two exports of one song used to be audibly
+different files, and a stem carried a different noise burst from the mix it came from.
+
 **Note gate** (`GATES`): a 16-step open/shut pattern on the part's own gate node, read four steps
 per beat so one pattern means the same thing in 3/4 as in 4/4, and applied with `setTargetAtTime`
-because a hard step clicks. A part's chain is `gain (level·mute·solo) → gate → duck → bus`, with the
-echo send taken after the gate so a gated part throws gated repeats. Since a gate is a *sustained*
+because a hard step clicks. Since a gate is a *sustained*
 open/shut, an all-open pattern would be a menu entry that does nothing — `npm test` rejects one. Every melody edit goes through `barsOf`/`flatOf`/`putLayer`, so the
 edit operations are resolution- and part-agnostic. MIDI export gives each part its own track and
 channel, skipping channel 9 (percussion) so a part is never voiced as a drum kit.

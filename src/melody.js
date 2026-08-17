@@ -46,20 +46,120 @@ const hash01 = n => {
   return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
 };
 
-/* ---- per-part effects ----
-   Every field a part carries beyond its notes lives in this one list: its name and its default.
-   Normalising a saved section, cloning a part, packing a song and unpacking one all read it, so
-   adding an effect is one line rather than five edits — four of which are easy to forget, which is
-   how melodies once went missing from saved sketches entirely. */
-const LAYER_FX = [
-  ["arp", ""],       // arpeggiator mode id, "" = play the written grid
-  ["arpRate", 4],    // arp notes per beat
-  ["arpOct", 1],     // how many octaves the arp climbs through
-  ["gate", ""],      // note-gate pattern id, "" = no gating
-  ["duck", null],    // sidechain depth for this part; null = follow the global Pump
+/* ---- per-part modulation ----
+   Everything a part carries beyond its notes is described here once: its key, its default, what
+   kind of control it wants and what it does. Normalising a saved section, cloning a part, packing
+   a song, unpacking one, drawing the controls and testing them all read this table, so adding a
+   modulation is one entry rather than six edits — five of which are easy to forget, which is how
+   melodies once went missing from saved sketches entirely.
+
+   A part's settings belong to one section instance, not to the song: the same instrument can be a
+   clean pad in the verse and a gated, driven, sidechained one in the chorus. That is the whole
+   point of putting them here rather than next to the global Sound controls.
+
+   `own: true` marks the handful of fields that were already stored directly on the layer before
+   this table existed (`send`). They are drawn from the same table but packed by their own key, so
+   old sketches keep loading.
+   `kind` is how it is drawn: "sel" a menu, "amt" a 0..max slider, "bi" a slider centred on zero.
+   `dflt` is what "no modulation" looks like — every one of these must be audibly nothing, so a
+   part with default settings sounds exactly as it did before any of this existed. */
+const MOD_GROUPS = [
+  { id:"pattern", name:"Pattern", tip:"What the part plays, before anything is done to the sound",
+    mods:[
+      { k:"arp", name:"Arp", kind:"sel", dflt:"", opts:"ARPS", off:"off — play the grid",
+        tip:"Ignore this part's written notes and walk the chord under each bar instead — it re-follows the harmony whenever you change a chord" },
+      { k:"arpRate", name:"Arp rate", kind:"sel", dflt:4, opts:"ARP_RATES", needs:"arp",
+        tip:"How fast the arp runs" },
+      { k:"arpOct", name:"Arp range", kind:"sel", dflt:1, needs:"arp",
+        opts:[[1, "1 oct"], [2, "2 oct"], [3, "3 oct"], [4, "4 oct"]],
+        tip:"How many octaves the arp climbs through" },
+      { k:"gate", name:"Gate", kind:"sel", dflt:"", opts:"GATES", off:"off",
+        tip:"Chop this part into a rhythmic pulse — the trance gate. Works best on a held pad or a long arp." },
+    ] },
+  { id:"pitch", name:"Pitch", tip:"Where the part sits and how wide it spreads",
+    mods:[
+      { k:"semis", name:"Transpose", kind:"bi", dflt:0, min:-12, max:12, unit:"st",
+        tip:"Move this part by semitones. Unlike Octave this can leave the key — a −3 pad under a major tune is the oldest trick there is." },
+      { k:"oct2", name:"Double", kind:"sel", dflt:0,
+        opts:[[0, "off"], [1, "+1 oct"], [-1, "−1 oct"], [2, "+2 oct"], [-2, "−2 oct"]],
+        tip:"Play every note twice, the second one an octave away. The cheapest way to make a thin lead sound expensive." },
+      { k:"detune", name:"Detune", kind:"bi", dflt:0, min:-50, max:50, unit:"¢",
+        tip:"Pull the part slightly off pitch. A few cents against a doubled part is what makes a supersaw wide; a lot of it is deliberately sour." },
+    ] },
+  { id:"tone", name:"Tone", tip:"The filter and the dirt — what turns a note into a sound",
+    mods:[
+      { k:"cut", name:"Low-pass", kind:"amt", dflt:100, max:100, unit:"%",
+        tip:"Take the top off this part. Fully right is open; roll it back and the part sinks behind the ones that are still bright." },
+      { k:"res", name:"Resonance", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Ring the low-pass at its cutoff. A little gives the filter a voice; a lot is the acid whistle." },
+      { k:"hp", name:"High-pass", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Take the bottom off. The single most useful control for stopping a pad and a bass fighting over the same low end." },
+      { k:"fenv", name:"Filter env", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Open the low-pass at the start of every note and let it fall — the squelch under an acid line and the bark of a house stab." },
+      { k:"fdec", name:"Env decay", kind:"amt", dflt:30, max:100, unit:"%", needs:"fenv",
+        tip:"How long the filter takes to fall back. Short is a click of brightness, long is a sweep on every note." },
+      { k:"drive", name:"Drive", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Overdrive this part. Gentle amounts thicken it; hard amounts are the point of a reese bass." },
+    ] },
+  { id:"movement", name:"Movement", tip:"Things that move on their own, in time with the tempo",
+    mods:[
+      { k:"wob", name:"Wobble", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Sweep the low-pass up and down in time. Dubstep's wobble, trance's breathing pad — the same control at two speeds." },
+      { k:"wobRate", name:"Wobble rate", kind:"sel", dflt:2, opts:"LFO_RATES", needs:"wob",
+        tip:"How fast the filter sweep cycles, in beats" },
+      { k:"trem", name:"Tremolo", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Pulse the level in time. Softer than a gate, because it fades rather than switching." },
+      { k:"tremRate", name:"Tremolo rate", kind:"sel", dflt:4, opts:"LFO_RATES", needs:"trem",
+        tip:"How fast the level pulses, in beats" },
+      { k:"pan", name:"Pan", kind:"bi", dflt:0, min:-100, max:100, unit:"",
+        tip:"Where this part sits across the stereo picture. Two parts panned apart stop sounding like one." },
+      { k:"apan", name:"Auto-pan", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Sweep the part across the stereo picture in time, from wherever Pan has put it." },
+      { k:"apanRate", name:"Auto-pan rate", kind:"sel", dflt:1, opts:"LFO_RATES", needs:"apan",
+        tip:"How fast the part travels across the stereo picture, in beats" },
+    ] },
+  { id:"feel", name:"Feel", tip:"How the notes sit against the beat, and how alike they are",
+    mods:[
+      { k:"len", name:"Note length", kind:"amt", dflt:100, max:200, unit:"%",
+        tip:"Stretch or shorten every note without moving where it starts. Short is staccato, long runs the notes into each other." },
+      { k:"nudge", name:"Nudge", kind:"bi", dflt:0, min:-50, max:50, unit:"ms",
+        tip:"Push the whole part early or late by a few milliseconds. Late is a lazy, behind-the-beat feel; early leans forward." },
+      { k:"swing", name:"Swing", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Delay this part's off-beats. Swing on one part against a straight one is most of what makes a groove." },
+      { k:"prob", name:"Play chance", kind:"amt", dflt:100, max:100, unit:"%",
+        tip:"Skip some notes. Below 100% the part thins out differently in each bar — the same every time the song is played, so it stays yours." },
+      { k:"accent", name:"Accent", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Play the downbeats harder than the rest. Nothing sounds more like a machine than every note at the same level." },
+    ] },
+  { id:"space", name:"Space", tip:"How far away the part is, and how it answers the kick",
+    mods:[
+      { k:"send", name:"Echo", kind:"amt", dflt:0, max:100, unit:"%", own:true, needsDelay:true, scale:100,
+        tip:"How much of this part is echoed by the tempo-synced delay" },
+      { k:"verb", name:"Reverb", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Push this part back into the room. A little on one part and none on another is depth; a lot on everything is fog." },
+      { k:"duck", name:"Pump", kind:"amt", dflt:null, max:100, unit:"%", auto:true, scale:100,
+        tip:"How hard the kick ducks this part. All the way left follows the global Pump; move it and this part gets its own depth — a bass that ducks hard under a pad that barely moves." },
+    ] },
 ];
+// LFO speeds, in beats per cycle. Named in beats rather than Hz so they stay in time at any tempo.
+const LFO_RATES = [[8, "8 bars"], [4, "4 bars"], [2, "2 bars"], [1, "1 bar"], [0.5, "1/2"],
+  [0.25, "1/4"], [0.125, "1/8"], [0.0625, "1/16"]];
+const MODS = MOD_GROUPS.flatMap(g => g.mods);
+const MOD_BY_KEY = Object.fromEntries(MODS.map(m => [m.k, m]));
+/* The persistence list. `own` mods are packed under their own key by song.js and so are left out,
+   or they would be written twice and read back inconsistently. */
+const LAYER_FX = MODS.filter(m => !m.own).map(m => [m.k, m.dflt]);
 // read a part's effects, filling in defaults for anything a saved section predates
 const layerFx = ly => Object.fromEntries(LAYER_FX.map(([k, d]) => [k, ly && ly[k] != null ? ly[k] : d]));
+// one modulation's value on a part, default included — the reader every control and the scheduler use
+const modOf = (ly, k) => {
+  const m = MOD_BY_KEY[k];
+  const v = ly ? ly[k] : undefined;
+  return v == null ? (m ? m.dflt : null) : v;
+};
+// how many of a part's modulations are doing something — the badge on its tab, so a part carrying
+// settings is visible without opening it
+const modCount = ly => MODS.reduce((n, m) => n + (modOf(ly, m.k) !== m.dflt ? 1 : 0), 0);
 
 /* Arpeggiators. Each mode turns a chord's notes into an order to play them in — `seq(n)` returns
    indices into the pooled notes (the chord's voicing, repeated up through `arpOct` octaves). The
@@ -1059,4 +1159,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { VARIATIONS, VARY_LEVELS, barNotes, varyBars, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };
+export { MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, modOf, modCount, VARIATIONS, VARY_LEVELS, barNotes, varyBars, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };
