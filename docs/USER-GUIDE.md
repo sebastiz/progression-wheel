@@ -296,6 +296,40 @@ The sweep runs across the section's **whole length**, so it lands exactly on the
 that section is four bars or sixteen — change the structure and the move re-times itself. Put
 *Build + riser* on a pre-chorus and *Drop* on the chorus to hear the point of it.
 
+### Transitions — the seam between two sections
+
+A move shapes a section. The **⇥** menu beside it shapes the *join into* one: the bar the section
+arrives on. It is the half of arranging that usually gets left out, and it is most of what makes a
+finished track sound finished rather than like four loops in a row.
+
+Transitions are grouped by what they do to the seam:
+
+| Family | What it does | Try |
+| --- | --- | --- |
+| **Lifts** | rise into it | *Riser · 2 bars*, *Reverse cymbal*, *Snare roll + riser*, *Bass falls away* |
+| **Impacts** | land on the downbeat | *Crash + sub · the drop*, *Silence, then the drop*, *The full drop* |
+| **Cuts** | take something away | *A beat of silence*, *A bar of silence*, *Stutter into silence* |
+| **Colour** | bend the seam | *Filter dip*, *Echo throw*, *Reverb wash*, *Duck through the seam* |
+| **Falls** | let it down | *Downlifter*, *Tape stop*, *Fade into it*, *Spin down* |
+| **Entries** | shape the first bars | *Fade in · 2 bars*, *Opens up · 4 bars*, *Bass arrives late* |
+
+Three things worth knowing:
+
+- **It belongs to the section it leads into.** Set *The full drop* on your chorus and the riser plays
+  through the end of whatever comes before it, wherever you move the chorus to.
+- **A lead-in can't be longer than the section before it.** A four-bar riser into a chorus that
+  follows a two-bar pre-chorus shortens to two bars rather than starting inside the verse. On the
+  very first section of a song there is no room at all, so a riser is simply skipped — but a crash,
+  which happens *on* the downbeat, still lands.
+- **Every pass can differ**, exactly like a move: the section group's **⇥** is the default for every
+  chorus, and each chorus's own card can override it. The first option in a pass's menu tells you
+  what it would inherit, so you can see it without pressing play.
+
+The arrangement strip marks a section that has one with its family's glyph — ↗ ◆ ▮ ≈ ↘ → — at the
+edge of the block, which is where the transition actually happens.
+
+Risers, rolls and crashes bounce as their own **fx** stem, so you can ride them by hand in a DAW.
+
 ### Sixteenths
 
 Most rhythms divide each beat in two. The ones marked **· 16ths** divide it in four, which is where

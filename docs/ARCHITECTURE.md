@@ -336,6 +336,49 @@ always lands on the boundary and re-times itself when the structure changes. The
 once per instance, guarded by the bar index so the lookahead can't restack the automation. Cutoffs
 never reach zero because the ramps are exponential.
 
+The riser and the impact are *added sources*, not processing, so they go to the transition stage's
+`fx` bus rather than the master. On the master they landed in every stem, and four stems summed to
+four risers — the one place the "stems add back up to the mix" invariant was quietly broken.
+
+### Transitions
+
+A move shapes a section; a **transition** shapes the boundary *into* one, which is a different job
+in every way that matters. It is anchored to a downbeat rather than spread across a section, most of
+it sounds in the section *before* the one it belongs to, and some of it — a crash, an echo throw, a
+fade-in — rings on after the boundary has passed. None of that fits `applyMove`, whose whole shape
+is "one envelope, from the section's start to its end".
+
+`TRANS` is therefore a table of presets, each a list of **primitives** (`TFX`) with windows measured
+in beats either side of the boundary. Beats, not seconds and not bars: seconds make a riser
+tempo-dependent (`applyMove`'s 4-second cap is a bar and a half at 170bpm and nearly two at 90), and
+bars would need a second table in 3/4. Forty-nine presets are affordable because each is one row —
+"reverse cymbal into a drop" is a row, not another branch inside one function.
+
+| | |
+| --- | --- |
+| **Keyed** | to the section it leads into: `secTrans.C2`, falling back to `secTrans.C`, exactly as a move does. A boundary has no stable name — insert a verse and every later boundary is a different boundary — while C2 is still C2. |
+| **Armed** | from `transCues` (arrange.js), which turns the arrangement into `bar → [{at, maxPre, maxPost}]`. The scheduler fires by bar index like the automation lanes; the boundary's time is one multiplication away because every bar is the same length. |
+| **Clamped** | a lead-in never reaches back past the section before it, and the first section of a song has no room at all. Every primitive checks for a zero-length window and schedules nothing — a quarter-beat riser is a squeak, and the crash it was setting up still lands. |
+| **Families** | six, because the six things a seam can do are different jobs: lifts, impacts, cuts, colour, falls, entries. The picker groups by them and the strip marks each with the family's glyph. |
+
+Two rules keep the table honest, and `npm test` enforces both. A primitive declares every shared
+parameter it writes (`owns`), and no preset may claim one twice — two envelopes on one AudioParam is
+exactly the collision that makes moves impossible to overlap, since the second
+`cancelScheduledValues` silently eats the first. And every preset must hand its parameters back:
+a filter left shut or a gain left at zero doesn't spoil a transition, it silences the rest of the
+song, so each one is run and then checked for what it *left behind*.
+
+The transition stage (`makeTrans`) is its own filters and gain on the **master** path, between the
+master and the drawn automation lanes. Its own nodes because an envelope that stops on a boundary
+and one that runs across it cannot share a parameter; the master path because drums bypass the
+pitched bus entirely, and a stutter that leaves the drums running is not a stutter. It also carries a
+wash (a big reverb) and a throw (a delay with more feedback than the mix delay), both tapped
+post-gain so an echo throw into a hole rings over the silence that follows it.
+
+Anything keyed to an instance moves when the arrangement does: `remapKeyed` carries `secMove` and
+`secTrans` through a plan edit the way `remapSecs` carries melodies, so a build set on the second
+chorus doesn't end up on the first the moment a section is moved.
+
 ### Melody parts
 
 A section holds `layers: [{bars, flat, instr, oct, vol, mute, solo, send, ...LAYER_FX}]` — up to

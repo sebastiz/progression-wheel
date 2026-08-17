@@ -208,6 +208,400 @@ function applyMove(ctx, filt, spec, t, dur, noise, dest) {
     n.start(t0); n.stop(t0 + rise + 0.05);
   }
 }
+
+/* ===== transitions (the seam between two sections) =====
+   A move shapes a section; a transition shapes the *boundary into* one, which is a different job
+   in every way that matters. It is anchored to a downbeat rather than spread across a section,
+   most of it happens in the section *before* the one it belongs to, and some of it — a crash, an
+   echo throw, a fade-in — rings on after the boundary has passed. None of that fits `applyMove`,
+   whose whole shape is "one envelope, from the section's start to its end".
+
+   So a transition is a list of primitives, each a small scheduler with its own window measured in
+   beats either side of the boundary, and a preset is one row in a table. "Reverse cymbal into a
+   drop" is a row rather than another branch inside one function, which is what makes forty-odd
+   options affordable instead of forty-odd `if`s.
+
+   Two rules keep the table honest, and `npm test` enforces both:
+   - a primitive declares every shared parameter it writes (`owns`), and no preset may claim one
+     twice. Two envelopes on one AudioParam is exactly the bug that makes section moves impossible
+     to overlap — the second `cancelScheduledValues` silently eats the first.
+   - one-shot sources (risers, crashes, rolls) go to the `fx` bus, never the master, so a crash
+     survives the beat of silence that sets it up and the stems still add back up to the mix.
+
+   Windows are in *beats*, not seconds and not bars: seconds make a riser tempo-dependent (the
+   4-second cap in `applyMove` is a bar and a half at 170bpm and nearly two at 90), and bars would
+   need a different table in 3/4. The caller converts to bars once, when it places the cue. */
+
+/* The transition stage: its own filters and gain on the master path, downstream of the section
+   move's filter and upstream of the drawn automation lanes. Its own nodes rather than the move's,
+   because an envelope that crosses a boundary and one that stops on it cannot share a parameter.
+   It sits on the *master* path deliberately: drums bypass the pitched bus entirely, and a stutter
+   or a bar of silence that leaves the drums running is not a cut, it is a bug. */
+function makeTrans(ctx, dest, beatSec, silentFx) {
+  const open = Math.min(FILTER_OPEN, ctx.sampleRate / 2 - 100);
+  const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 20; hp.Q.value = 0.7;
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = open; lp.Q.value = 0.9;
+  const gain = ctx.createGain(); gain.gain.value = 1;
+  hp.connect(lp); lp.connect(gain); gain.connect(dest);
+  /* One-shots hang off their own bus, past the transition's gain and filters: a crash has to ring
+     through the silence that sets it up, and a riser has to stay bright while the mix behind it is
+     being filtered into the ground. Muting this one node is also the whole of the stem fix —
+     risers and crashes are added sources, so a copy in every stem means the stems sum to several
+     copies of each one. */
+  const fx = ctx.createGain(); fx.gain.value = silentFx ? 0 : 1;
+  fx.connect(dest);
+  /* A wash and a throw, both tapped off the transition's output rather than the pitched bus, so
+     they carry the drums too — half a mix in the reverb is not a wash. Both are linear, and both
+     are scheduled identically in a stem render, so the stems still sum. */
+  const wash = ctx.createGain(); wash.gain.value = 0;
+  const conv = ctx.createConvolver(); conv.buffer = reverbIR(ctx, 2.8, 5);
+  gain.connect(wash); wash.connect(conv); conv.connect(dest);
+  const echo = ctx.createGain(); echo.gain.value = 0;
+  const dl = ctx.createDelay(2.0); dl.delayTime.value = Math.min(1.8, Math.max(0.02, beatSec * 0.75));
+  const efb = ctx.createGain(); efb.gain.value = 0.58;   // more feedback than the mix delay: a throw should ring
+  const etone = ctx.createBiquadFilter(); etone.type = "lowpass"; etone.frequency.value = 2400;
+  gain.connect(echo); echo.connect(dl); dl.connect(etone); etone.connect(efb); efb.connect(dl);
+  dl.connect(dest);
+  return { in: hp, hp, lp, gain, fx, wash, echo, open };
+}
+
+/* The primitives. `owns` is the shared parameters this one writes; `pre`/`post` are how many beats
+   of room it needs either side of the boundary, which is what the caller uses to place the cue. */
+const TFX = {};
+const tfx = (id, owns, pre, post, run) => { TFX[id] = { id, owns, pre, post, run }; };
+/* A window never runs past the section it would have to borrow from: a two-bar verse cannot host a
+   four-bar riser, so the riser shortens rather than starting inside a section that already played.
+   With no room at all — the first section of a song has nothing before it — the answer is zero, and
+   every primitive checks for that and schedules nothing. A quarter-beat riser is not a short riser,
+   it is a squeak, and the crash it was setting up still lands either way. */
+const winPre = (N, want) => Math.max(0, Math.min(want, N.maxPre));
+const winPost = (N, want) => Math.max(0, Math.min(want, N.maxPost));
+
+/* noise sweeping up into the boundary and cut on it — the tension that makes a drop land */
+tfx("rise", [], o => o.beats || 8, () => 0, (N, tB, o) => {
+  const len = winPre(N, o.beats || 8) * N.beat, t0 = tB - len;
+  if (len <= 0) return;                                // no room before this section: nothing to rise through
+  const n = N.ctx.createBufferSource(); n.buffer = N.noise; n.loop = true;
+  const bp = N.ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = o.q || 1.4;
+  bp.frequency.setValueAtTime(N.hz(o.f0 || 380), t0);
+  bp.frequency.exponentialRampToValueAtTime(N.hz(o.f1 || 9000), tB);
+  const g = N.ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(o.vol || 0.16, tB - len * 0.06);
+  g.gain.linearRampToValueAtTime(0.0001, tB);          // cut right on the boundary
+  n.connect(bp); bp.connect(g); g.connect(N.fx);
+  n.start(t0); n.stop(tB + 0.05);
+});
+/* the reverse cymbal: a bright wash swelling exponentially into the downbeat. It is the same
+   ingredients as a riser and a completely different sound — the pitch stays put and the *level*
+   is what rises, which is why it sits behind a vocal where a riser fights it. */
+tfx("revcym", [], o => o.beats || 8, () => 0, (N, tB, o) => {
+  const len = winPre(N, o.beats || 8) * N.beat, t0 = tB - len;
+  if (len <= 0) return;
+  const n = N.ctx.createBufferSource(); n.buffer = N.noise; n.loop = true;
+  const f = N.ctx.createBiquadFilter(); f.type = "highpass";
+  f.frequency.setValueAtTime(N.hz(1800), t0);
+  f.frequency.exponentialRampToValueAtTime(N.hz(5200), tB);
+  const g = N.ctx.createGain();
+  g.gain.setValueAtTime(0.0006, t0);
+  g.gain.exponentialRampToValueAtTime(o.vol || 0.2, tB - 0.01);
+  g.gain.linearRampToValueAtTime(0.0001, tB);
+  n.connect(f); f.connect(g); g.connect(N.fx);
+  n.start(t0); n.stop(tB + 0.05);
+});
+/* the downlifter: the same idea falling, and by default it lands *after* the boundary — the sound
+   of the floor dropping out of a track rather than the sound of it being lifted */
+tfx("fall", [], o => o.at === "pre" ? (o.beats || 4) : 0, o => o.at === "pre" ? 0 : (o.beats || 4),
+  (N, tB, o) => {
+    const pre = o.at === "pre";
+    const len = (pre ? winPre(N, o.beats || 4) : winPost(N, o.beats || 4)) * N.beat;
+    if (len <= 0) return;
+    const t0 = pre ? tB - len : tB;
+    const n = N.ctx.createBufferSource(); n.buffer = N.noise; n.loop = true;
+    const bp = N.ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(N.hz(o.f0 || 8000), t0);
+    bp.frequency.exponentialRampToValueAtTime(N.hz(o.f1 || 260), t0 + len);
+    const g = N.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(o.vol || 0.15, t0 + len * 0.12);
+    g.gain.linearRampToValueAtTime(0.0001, t0 + len);
+    n.connect(bp); bp.connect(g); g.connect(N.fx);
+    n.start(t0); n.stop(t0 + len + 0.05);
+  });
+/* a pitched sweep — the uplifter, and the same primitive falling is the pitch-drop out of a chorus.
+   Sawtooth through a tracking lowpass so it reads as a synth rather than a siren. */
+tfx("tone", [], o => o.at === "post" ? 0 : (o.beats || 8), o => o.at === "post" ? (o.beats || 8) : 0,
+  (N, tB, o) => {
+    const post = o.at === "post";
+    const len = (post ? winPost(N, o.beats || 8) : winPre(N, o.beats || 8)) * N.beat;
+    if (len <= 0) return;
+    const t0 = post ? tB : tB - len;
+    const f0 = midiHz(o.m0 == null ? 45 : o.m0), f1 = midiHz(o.m1 == null ? 88 : o.m1);
+    const osc = N.ctx.createOscillator(); osc.type = o.wave || "sawtooth";
+    osc.frequency.setValueAtTime(N.hz(f0), t0);
+    osc.frequency.exponentialRampToValueAtTime(N.hz(f1), t0 + len);
+    const lp = N.ctx.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 4;
+    lp.frequency.setValueAtTime(N.hz(f0 * 4), t0);
+    lp.frequency.exponentialRampToValueAtTime(N.hz(f1 * 4), t0 + len);
+    const g = N.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(o.vol || 0.1, t0 + len * (post ? 0.08 : 0.9));
+    g.gain.linearRampToValueAtTime(0.0001, t0 + len);
+    osc.connect(lp); lp.connect(g); g.connect(N.fx);
+    osc.start(t0); osc.stop(t0 + len + 0.05);
+  });
+/* the drum roll: hits accelerating from `from` to `to` per beat, landing on the boundary. It goes
+   through the kit, so a 909 song rolls on a 909 snare without the table knowing kits exist. */
+tfx("roll", [], o => o.beats || 4, () => 0, (N, tB, o) => {
+  const beats = winPre(N, o.beats || 4), t0 = tB - beats * N.beat;
+  if (beats <= 0) return;
+  const from = o.from || 2, to = o.to || 8;
+  let t = t0;
+  for (let k = 0; k < 256 && t < tB - 1e-4; k++) {
+    const p = (t - t0) / (beats * N.beat);                    // 0..1 through the roll
+    drumSound(N.ctx, t, o.ch || "S", N.noise, N.fx, N.kit, (o.vel || 0.95) * (0.35 + 0.65 * p));
+    t += N.beat / (from + (to - from) * p);                   // hits per beat, right now
+  }
+});
+/* the two halves of an impact, separate because a crash without the sub is a section change and
+   the sub without the crash is a drop you feel rather than hear */
+tfx("crash", [], () => 0, () => 0, (N, tB, o) => {
+  const cr = N.ctx.createBufferSource(); cr.buffer = N.noise; cr.loop = true;
+  const hp = N.ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = N.hz(3200);
+  cr.connect(hp); hp.connect(env(N.ctx, tB, o.vol || 0.2, 0.005, 1.3, true, N.fx));
+  cr.start(tB); cr.stop(tB + 1.35);
+});
+tfx("boom", [], () => 0, () => 0, (N, tB, o) => {
+  const b = N.ctx.createOscillator(); b.type = "sine";
+  b.frequency.setValueAtTime(N.hz(o.f0 || 90), tB);
+  b.frequency.exponentialRampToValueAtTime(N.hz(o.f1 || 34), tB + 0.5);
+  b.connect(env(N.ctx, tB, o.vol || 0.5, 0.004, 0.75, true, N.fx));
+  b.start(tB); b.stop(tB + 0.8);
+});
+
+/* The parameter-owning primitives. Each one leaves its parameter back where it found it, because
+   the next transition is scheduled from a clean slate and a filter left shut is a silent song. */
+
+/* the lowpass across the seam: `from` at the start of the lead-in, `to` on the downbeat, open
+   again `post` beats later. One primitive rather than an open-into-it and a close-into-it, because
+   two of those on one parameter is precisely the collision the `owns` rule exists to catch. */
+tfx("lp", ["lp"], o => o.pre || 0, o => o.post || 0, (N, tB, o) => {
+  const f = N.lp.frequency;
+  const a = N.hz(o.from == null ? N.open : o.from), b = N.hz(o.to == null ? N.open : o.to);
+  const pre = winPre(N, o.pre || 0), post = winPost(N, o.post || 0);
+  if (pre > 0) {
+    const t0 = tB - pre * N.beat;
+    f.cancelScheduledValues(t0); f.setValueAtTime(a, t0); f.exponentialRampToValueAtTime(b, tB);
+  } else { f.cancelScheduledValues(tB); f.setValueAtTime(b, tB); }
+  if (post > 0) f.exponentialRampToValueAtTime(N.hz(N.open), tB + post * N.beat);
+  else f.setValueAtTime(N.hz(N.open), tB + 0.002);
+});
+/* the highpass — the bass falling away into a drop, or arriving a bar late after one */
+tfx("hpf", ["hp"], o => o.pre || 0, o => o.post || 0, (N, tB, o) => {
+  const f = N.hp.frequency, b = N.hz(o.to == null ? 700 : o.to);
+  const pre = winPre(N, o.pre || 0), post = winPost(N, o.post || 0);
+  if (pre > 0) {
+    const t0 = tB - pre * N.beat;
+    f.cancelScheduledValues(t0); f.setValueAtTime(20, t0); f.exponentialRampToValueAtTime(b, tB);
+  } else { f.cancelScheduledValues(tB); f.setValueAtTime(b, tB); }
+  if (post > 0) f.exponentialRampToValueAtTime(20, tB + post * N.beat);
+  else f.setValueAtTime(20, tB + 0.002);
+});
+/* a smooth level move: a fade into a quiet section, a fade-in out of one, or a dip either side of
+   the boundary that lets the seam breathe without silencing it */
+tfx("lvl", ["gain"], o => o.pre || 0, o => o.post || 0, (N, tB, o) => {
+  const g = N.gain.gain, to = Math.max(0.001, o.to == null ? 0.02 : o.to);
+  const pre = winPre(N, o.pre || 0), post = winPost(N, o.post || 0);
+  if (pre <= 0 && post <= 0) return;                   // a fade with nowhere to fade is a jump
+  if (pre > 0) {
+    const t0 = tB - pre * N.beat;
+    g.cancelScheduledValues(t0); g.setValueAtTime(1, t0); g.linearRampToValueAtTime(to, tB);
+  } else { g.cancelScheduledValues(tB); g.setValueAtTime(to, tB); }
+  if (post > 0) g.linearRampToValueAtTime(1, tB + post * N.beat);
+  else g.setValueAtTime(1, tB + 0.002);
+});
+/* a hole: silence for the last beats before the downbeat. The edges are 8 ms ramps rather than
+   steps, because a gain that jumps is a click, and a click is the one sound nobody asked for. */
+tfx("gap", ["gain"], o => o.pre || 1, () => 0, (N, tB, o) => {
+  const pre = winPre(N, o.pre || 1);
+  if (pre <= 0) return;
+  const g = N.gain.gain, t0 = tB - pre * N.beat;
+  g.cancelScheduledValues(t0);
+  g.setValueAtTime(1, t0);
+  g.linearRampToValueAtTime(0.0001, t0 + 0.008);
+  g.setValueAtTime(0.0001, tB - 0.008);
+  g.linearRampToValueAtTime(1, tB);
+});
+/* the stutter: a gate opening and shutting `rate` times a beat, optionally holding silent for the
+   last `hold` beats so the chop resolves into a hole rather than straight into the downbeat */
+tfx("chop", ["gain"], o => o.pre || 0, o => o.post || 0, (N, tB, o) => {
+  const pre = !o.post;
+  const beats = pre ? winPre(N, o.pre || 4) : winPost(N, o.post);
+  if (beats <= 0) return;
+  const rate = o.rate || 4, hold = pre ? (o.hold || 0) : 0;
+  const t0 = pre ? tB - beats * N.beat : tB;
+  const n = Math.max(1, Math.round((beats - hold) * rate)), step = N.beat / rate;
+  const g = N.gain.gain;
+  g.cancelScheduledValues(t0);
+  for (let k = 0; k < n; k++) {
+    const t = t0 + k * step;
+    g.setValueAtTime(1, t);
+    g.linearRampToValueAtTime(0.0001, t + step * 0.45);
+    g.setValueAtTime(0.0001, t + step * 0.98);
+  }
+  g.setValueAtTime(pre && hold ? 0.0001 : 1, t0 + n * step);
+  if (pre) g.setValueAtTime(1, tB);
+});
+/* tape stop. A real one repitches the material, which a bus cannot do — `playbackRate` lives on
+   the sources, and by the time the mix reaches here it is one signal. So this is the other two
+   thirds of the effect, the level and the tone falling away together, plus a sine sliding down
+   underneath to sell the pitch that isn't there. It reads as a tape stop; it isn't one. */
+tfx("stop", ["gain", "lp"], o => o.pre || 2, () => 0, (N, tB, o) => {
+  const beats = winPre(N, o.pre || 2), t0 = tB - beats * N.beat, len = beats * N.beat;
+  if (beats <= 0) return;
+  const g = N.gain.gain, f = N.lp.frequency;
+  g.cancelScheduledValues(t0); g.setValueAtTime(1, t0);
+  g.linearRampToValueAtTime(0.0001, tB - 0.02);
+  g.setValueAtTime(1, tB);
+  f.cancelScheduledValues(t0); f.setValueAtTime(N.hz(N.open), t0);
+  f.exponentialRampToValueAtTime(N.hz(180), tB - 0.02);
+  f.setValueAtTime(N.hz(N.open), tB);
+  const osc = N.ctx.createOscillator(); osc.type = "triangle";
+  osc.frequency.setValueAtTime(N.hz(220), t0);
+  osc.frequency.exponentialRampToValueAtTime(N.hz(38), tB - 0.02);
+  const og = N.ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t0);
+  og.gain.linearRampToValueAtTime(0.07, t0 + len * 0.15);
+  og.gain.linearRampToValueAtTime(0.0001, tB);
+  osc.connect(og); og.connect(N.fx);
+  osc.start(t0); osc.stop(tB + 0.02);
+});
+/* the send swells: a room opening up under the last bars, and a throw that turns whatever is
+   playing when it opens into three repeats ringing over the downbeat */
+tfx("wash", ["wash"], o => o.pre || 4, o => o.post || 1, (N, tB, o) => {
+  const pre = winPre(N, o.pre || 4), post = winPost(N, o.post || 1);
+  if (pre <= 0 || post <= 0) return;                   // a swell needs somewhere to swell and somewhere to clear
+  const g = N.wash.gain, t0 = tB - pre * N.beat;
+  g.cancelScheduledValues(t0); g.setValueAtTime(0, t0);
+  g.linearRampToValueAtTime(o.amt || 0.5, tB);
+  g.linearRampToValueAtTime(0, tB + post * N.beat);
+});
+tfx("echo", ["echo"], o => o.pre || 1, () => 0, (N, tB, o) => {
+  const pre = winPre(N, o.pre || 1);
+  if (pre <= 0) return;
+  const g = N.echo.gain, t0 = tB - pre * N.beat, amt = o.amt || 0.7;
+  g.cancelScheduledValues(t0); g.setValueAtTime(0, t0);
+  g.linearRampToValueAtTime(amt, t0 + 0.01);
+  g.setValueAtTime(amt, tB - 0.01);
+  g.linearRampToValueAtTime(0, tB);       // shut on the downbeat: the repeats ring, the source stops feeding
+});
+
+/* ===== the presets =====
+   Six families, because the six things a seam can do are genuinely different jobs — and because a
+   list of forty-seven flat options is a list nobody reads to the end of. Every row is
+   [id, family, name, primitives]; the windows are derived from the primitives below. */
+// [id, name, what the family does, the glyph the arrangement strip marks it with]
+const TRANS_CATS = [
+  ["lift",  "Lifts", "Rise into it", "↗"],
+  ["hit",   "Impacts", "Land on the downbeat", "◆"],
+  ["cut",   "Cuts", "Take something away", "▮"],
+  ["turn",  "Colour", "Bend the seam", "≈"],
+  ["fall",  "Falls", "Let it down", "↘"],
+  ["entry", "Entries", "Shape the first bars", "→"],
+];
+const TRANS = {};
+[
+["", "", "— no transition —", []],
+
+/* Lifts — all of it before the downbeat, all of it stopping on it. */
+["rise1",    "lift", "Riser · 1 bar",             [["rise", { beats: 4 }]]],
+["rise2",    "lift", "Riser · 2 bars",            [["rise", { beats: 8 }]]],
+["rise4",    "lift", "Riser · 4 bars",            [["rise", { beats: 16, vol: 0.18 }]]],
+["revcym",   "lift", "Reverse cymbal",            [["revcym", { beats: 8 }]]],
+["revcym2",  "lift", "Reverse cymbal · long",     [["revcym", { beats: 16, vol: 0.22 }]]],
+["uplift",   "lift", "Uplifter · pitched sweep",  [["tone", { beats: 8, m0: 45, m1: 88 }]]],
+["roll1",    "lift", "Snare roll · 1 bar",        [["roll", { beats: 4 }]]],
+["roll2",    "lift", "Snare roll · 2 bars",       [["roll", { beats: 8, from: 1, to: 8 }]]],
+["hatroll",  "lift", "Hat roll",                  [["roll", { beats: 4, ch: "O", from: 2, to: 12, vel: 0.7 }]]],
+["rollrise", "lift", "Snare roll + riser",        [["roll", { beats: 8, from: 1, to: 8 }], ["rise", { beats: 8 }]]],
+["opento",   "lift", "Filter opens into it",      [["lp", { pre: 16, from: 300 }]]],
+["hplift",   "lift", "Bass falls away",           [["hpf", { pre: 8, to: 900 }]]],
+["washup",   "lift", "Reverb swells into it",     [["wash", { pre: 8, amt: 0.55 }]]],
+
+/* Impacts — the downbeat itself, and whatever it takes to make it land. */
+["crash",    "hit", "Crash",                      [["crash", {}]]],
+["boom",     "hit", "Sub boom",                   [["boom", {}]]],
+["slam",     "hit", "Crash + sub · the drop",     [["crash", {}], ["boom", {}]]],
+["gapslam",  "hit", "Silence, then the drop",     [["gap", { pre: 1 }], ["crash", {}], ["boom", {}]]],
+["risedrop", "hit", "Riser → drop",               [["rise", { beats: 8 }], ["crash", {}], ["boom", {}]]],
+["rolldrop", "hit", "Roll → drop",                [["roll", { beats: 4, from: 2, to: 10 }], ["crash", {}], ["boom", {}]]],
+["revdrop",  "hit", "Reverse cymbal → drop",      [["revcym", { beats: 8 }], ["crash", {}], ["boom", {}]]],
+["fulldrop", "hit", "The full drop",              [["rise", { beats: 16, vol: 0.18 }], ["hpf", { pre: 8, to: 700 }],
+                                                   ["gap", { pre: 1 }], ["crash", {}], ["boom", {}]]],
+
+/* Cuts — nothing added, something taken away. The oldest trick in dance music and still the one
+   that makes the most difference for the least. */
+["gaphalf",  "cut", "Half a beat of silence",     [["gap", { pre: 0.5 }]]],
+["gap1",     "cut", "A beat of silence",          [["gap", { pre: 1 }]]],
+["gap2",     "cut", "Two beats of silence",       [["gap", { pre: 2 }]]],
+["gapbar",   "cut", "A bar of silence",           [["gap", { pre: 4 }]]],
+["chop",     "cut", "Stutter · 1 bar",            [["chop", { pre: 4, rate: 4 }]]],
+["chopfast", "cut", "Stutter · fast",             [["chop", { pre: 2, rate: 8 }]]],
+["chopgap",  "cut", "Stutter into silence",       [["chop", { pre: 4, rate: 4, hold: 1 }]]],
+
+/* Colour — the seam still plays, but it bends on the way through. */
+["dip",      "turn", "Filter dip",                [["lp", { pre: 4, to: 420 }]]],
+["under",    "turn", "Underwater",                [["lp", { pre: 8, to: 320, post: 4 }]]],
+["echo",     "turn", "Echo throw",                [["echo", { pre: 1 }]]],
+["echogap",  "turn", "Echo throw into silence",   [["echo", { pre: 1.5 }], ["gap", { pre: 1 }]]],
+["wash",     "turn", "Reverb wash",               [["wash", { pre: 4, post: 4, amt: 0.5 }]]],
+["hpseam",   "turn", "Highpass pinch",            [["hpf", { pre: 4, to: 1200, post: 4 }]]],
+["duck",     "turn", "Duck through the seam",     [["lvl", { pre: 2, post: 2, to: 0.18 }]]],
+
+/* Falls — the other half of the vocabulary, and the half most tools forget. Getting *out* of a
+   chorus is as much a decision as getting into one. */
+["down",     "fall", "Downlifter",                [["fall", { beats: 4 }]]],
+["downtone", "fall", "Pitch fall",                [["tone", { beats: 4, m0: 76, m1: 33, at: "post" }]]],
+["fadeto",   "fall", "Fade into it",              [["lvl", { pre: 8, to: 0.06 }]]],
+["stop",     "fall", "Tape stop",                 [["stop", { pre: 2 }]]],
+["closeto",  "fall", "Filter closes into it",     [["lp", { pre: 8, to: 500, post: 4 }]]],
+["spin",     "fall", "Spin down",                 [["stop", { pre: 2 }], ["fall", { beats: 4, at: "post" }]]],
+
+/* Entries — everything after the downbeat. The section arrives already shaped, which is how a
+   breakdown starts small and grows without anyone drawing an automation curve. */
+["fadein",   "entry", "Fade in · 2 bars",         [["lvl", { post: 8 }]]],
+["fadein4",  "entry", "Fade in · 4 bars",         [["lvl", { post: 16 }]]],
+["openfrom", "entry", "Opens up · 2 bars",        [["lp", { post: 8, to: 380 }]]],
+["openfrom4","entry", "Opens up · 4 bars",        [["lp", { post: 16, to: 300 }]]],
+["hpin",     "entry", "Bass arrives late",        [["hpf", { post: 8, to: 800 }]]],
+["bloom",    "entry", "Reverb blooms open",       [["wash", { pre: 0.25, post: 8, amt: 0.5 }]]],
+["stutin",   "entry", "Stutter in",               [["chop", { post: 2, rate: 6 }]]],
+["crashin",  "entry", "Crash, then open up",      [["crash", {}], ["lp", { post: 8, to: 380 }]]],
+].forEach(([id, cat, name, fx]) => {
+  // the windows a preset needs are the widest its primitives ask for — this is what the caller
+  // reads to know how many bars before the boundary the cue has to be armed
+  const pre = fx.reduce((n, [k, o]) => Math.max(n, TFX[k] ? TFX[k].pre(o || {}) : 0), 0);
+  const post = fx.reduce((n, [k, o]) => Math.max(n, TFX[k] ? TFX[k].post(o || {}) : 0), 0);
+  TRANS[id] = { id, cat, name, fx, pre, post };
+});
+
+/* Schedule one transition around a boundary at `tB`. `env` carries what the primitives cannot know
+   for themselves: the tempo, the kit, the noise buffer, and how many beats of room there actually
+   are either side — a lead-in must never reach back into a section that has already played. */
+function applyTrans(tn, T, tB, env) {
+  if (!tn || !T || !T.fx || !T.fx.length) return;
+  const ctx = env.ctx, top = ctx.sampleRate / 2 - 100;
+  const N = { ...tn, ctx, beat: env.beat, noise: env.noise, kit: env.kit,
+    maxPre: env.maxPre == null ? 64 : env.maxPre,
+    maxPost: env.maxPost == null ? 64 : env.maxPost,
+    open: Math.min(tn.open || FILTER_OPEN, top),
+    hz: v => Math.max(20, Math.min(v, top)) };
+  for (const [id, o] of T.fx) { const P = TFX[id]; if (P) P.run(N, tB, o || {}); }
+}
+// every parameter a preset writes, for the collision check — two envelopes on one AudioParam is a
+// silent bug at runtime and a loud one here
+const transOwns = T => (T && T.fx || []).flatMap(([id]) => (TFX[id] || {}).owns || []);
+
 // Sidechain pump. The pitched bus runs through a gain that gets slammed down on every kick
 // and breathes back before the next one — the ducking that defines house, techno and EDM.
 // We schedule the envelope directly instead of running a real compressor with a detector:
@@ -752,4 +1146,4 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
   });
 }
 
-export { DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };

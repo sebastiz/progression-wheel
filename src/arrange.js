@@ -87,7 +87,72 @@ const remapSecs = (secs, oldPlan, newPlan, origin, letterOf, clone) => {
   return out;
 };
 
-export { MAX_ROWS, idAll, instKeysOf, planAdd, planDel, planDup, planMove, planReps, remapSecs };
+/* The same problem as melodies, for everything else stored per section instance — a move, a
+   transition. A build set on C2 is stored under "C2", and moving a chorus past another makes the
+   old C2 into C1: leave the key alone and the build plays under a different chorus from the one it
+   was set on. Section-*type* keys (a bare letter) are left as they are, since types don't renumber. */
+const remapKeyed = (map, oldPlan, newPlan, origin, letterOf) => {
+  const entries = Object.entries(map || {});
+  if (!entries.some(([k]) => k.length > 1)) return map;      // nothing keyed to an instance
+  const oldKeys = instKeysOf(oldPlan, letterOf), newKeys = instKeysOf(newPlan, letterOf);
+  const out = {};
+  for (const [k, v] of entries) if (k.length === 1) out[k] = v;
+  newKeys.forEach((ks, i) => {
+    const from = origin[i];
+    if (from == null || from < 0) return;                    // a new section starts with no move
+    const src = oldKeys[from] || [];
+    if (!src.length) return;
+    ks.forEach((k, j) => {                                   // extra passes repeat the last written one
+      const v = map[src[Math.min(j, src.length - 1)]];
+      if (v) out[k] = v;
+    });
+  });
+  return out;
+};
+
+/* ---- transition cues ----
+   A section move is scheduled when its section starts, which is why the scheduler can look it up on
+   the downbeat and be done. A transition cannot: it belongs to the section it leads *into*, but the
+   riser, the roll and the silence all happen before that section has started, so by the downbeat it
+   is already too late to schedule them.
+
+   So the arrangement is turned into cues ahead of time: "at bar 14, schedule a boundary at bar 18".
+   The scheduler then fires by bar index, exactly as it already does for automation lanes, and the
+   boundary's time is one multiplication away because every bar is the same length.
+
+   Two clamps, both about not reaching into music that has already played: a lead-in never runs back
+   past the section before it (a two-bar verse cannot host a four-bar riser — it shortens), and the
+   first section of a song has nothing before it at all, so it keeps only the part of its transition
+   that happens after the downbeat. `presetOf` returns the resolved preset for an instance, or null:
+   the caller owns the instance-then-letter fallback, since that is a song's business, not a plan's. */
+const transCues = (insts, presetOf, barBeats) => {
+  const list = (insts || []).map((d, i) => presetOf(d, i));
+  // the lead-in an instance's own transition actually gets: what it asked for, or the whole of the
+  // section before it, whichever is less
+  const preOf = i => {
+    const T = list[i];
+    if (!T || !T.fx || !T.fx.length) return 0;
+    const prev = insts[i - 1];
+    return Math.min(T.pre || 0, prev ? prev.nbars * barBeats : 0);
+  };
+  const cues = {};
+  insts.forEach((d, i) => {
+    const T = list[i];
+    if (!T || !T.fx || !T.fx.length) return;
+    const pre = preOf(i);
+    const fire = d.startBar - Math.ceil(pre / barBeats);
+    if (fire < 0) return;                     // its lead-in would start before the song does
+    /* …and the tail stops where the next seam's lead-in starts. A four-bar fade-in on a four-bar
+       section and a four-bar lead-in out of it write the same gain over the same bars, and the
+       second one to be scheduled cancels the first — so the fade-in yields, since the transition
+       people actually hear is the one arriving. */
+    (cues[fire] = cues[fire] || []).push({ at: d.startBar, id: T.id, key: d.key,
+      maxPre: pre, maxPost: Math.max(0, d.nbars * barBeats - preOf(i + 1)) });
+  });
+  return cues;
+};
+
+export { MAX_ROWS, idAll, instKeysOf, planAdd, planDel, planDup, planMove, planReps, remapKeyed, remapSecs, transCues };
 
 /* ---- automation lanes ----
    A section move is a preset applied to a whole section. Automation is the other half: a curve you

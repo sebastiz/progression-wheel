@@ -600,6 +600,128 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`moves: ${Object.keys(M.MOVES).length} checked, including a 1.2s section`);
 }
 
+/* ---- transitions: every preset lands on the boundary and puts the mix back where it found it ----
+   A transition writes to nodes the whole song plays through, so the failure that matters is not a
+   wrong sound — it is a filter left shut or a gain left at zero, which silences everything after
+   the seam. Every preset is therefore run and then checked for what it *left behind*. */
+{
+  const BEAT = 0.5, TB = 20;                    // 120bpm, a boundary 20 seconds in
+  const REST = { lp: null, hp: 20, gain: 1, wash: 0, echo: 0 };   // where each parameter must end up
+  const cats = new Set(M.TRANS_CATS.map(c => c[0]));
+  let checked = 0, prims = new Set();
+  for (const [id, T] of Object.entries(M.TRANS)) {
+    if (!id) { if (T.fx.length) problems.push("transition: the empty id must schedule nothing"); continue; }
+    if (!cats.has(T.cat)) { problems.push(`transition ${id}: unknown family "${T.cat}"`); continue; }
+    if (!T.name) problems.push(`transition ${id}: no name`);
+    // no two primitives may write the same shared parameter — the second cancel eats the first
+    const owns = M.transOwns(T);
+    const dup = owns.find((p, i) => owns.indexOf(p) !== i);
+    if (dup) problems.push(`transition ${id}: two primitives both write \`${dup}\``);
+    for (const [k] of T.fx) { if (!M.TFX[k]) problems.push(`transition ${id}: no such primitive "${k}"`); prims.add(k); }
+
+    nodes.length = 0;
+    const dest = baseNode("dest");
+    const tn = M.makeTrans(ctx, dest, BEAT, false);
+    const built = nodes.length;
+    const before = problems.length;
+    try { M.applyTrans(tn, T, TB, { ctx, beat: BEAT, noise, kit: "acoustic", maxPre: 64, maxPost: 64 }); }
+    catch (e) { problems.push(`transition ${id} threw: ${e.message}`); continue; }
+
+    // the window it was allowed: its declared lead-in, and its tail plus the ~1.4s a crash rings
+    const lo = TB - T.pre * BEAT - 1e-6, hi = TB + T.post * BEAT + 1.4 + 1e-6;
+    const params = [["lp", tn.lp.frequency], ["hp", tn.hp.frequency], ["gain", tn.gain.gain],
+                    ["wash", tn.wash.gain], ["echo", tn.echo.gain]];
+    for (const [pname, p] of params) {
+      const evs = p._events.filter(e => e.kind !== "cancel");
+      if (!evs.length) continue;
+      if (!owns.includes(pname)) problems.push(`transition ${id}: wrote \`${pname}\` without declaring it`);
+      for (const e of evs) {
+        if (e.t < lo || e.t > hi) problems.push(`transition ${id}: ${pname} event at ${e.t}s is outside its window (${lo.toFixed(2)}..${hi.toFixed(2)})`);
+        if (pname === "lp" || pname === "hp") {
+          if (!(e.v > 0)) problems.push(`transition ${id}: ${pname} cutoff ${e.v} Hz is not positive`);
+          if (e.v > 22050) problems.push(`transition ${id}: ${pname} cutoff ${e.v} Hz is above Nyquist`);
+        }
+      }
+      // …and hands the mix back: a filter left shut or a gain left down silences the rest of the song
+      const end = evs[evs.length - 1];
+      const rest = pname === "lp" ? Math.min(M.FILTER_OPEN, ctx.sampleRate / 2 - 100) : REST[pname];
+      if (Math.abs(end.v - rest) > 0.5)
+        problems.push(`transition ${id}: leaves \`${pname}\` at ${end.v} instead of ${rest} — everything after the seam stays that way`);
+      // 5 ms of slack for the snap back to rest: a preset with no tail restores its parameter just
+      // after the downbeat rather than exactly on it, so the ramp *to* the downbeat still lands
+      if (end.t > TB + T.post * BEAT + 0.005)
+        problems.push(`transition ${id}: still writing \`${pname}\` at ${end.t}s, past its declared window`);
+    }
+    // one-shots: started, stopped, and routed to the fx bus rather than straight at the mix
+    const srcs = nodes.slice(built).filter(n => n._kind === "buf" || n._kind === "osc");
+    const reaches = (n, target, seen = new Set()) => n === target
+      || (!seen.has(n) && (seen.add(n), (n._conns || []).some(c => reaches(c, target, seen))));
+    for (const s of srcs) {
+      if (!s._started) problems.push(`transition ${id}: unstarted ${s._kind}`);
+      if (s._t1 == null) problems.push(`transition ${id}: a ${s._kind} never stops`);
+      if (s._kind === "buf" && !s.loop && s._t1 - s._t0 > noiseDur + 1e-9)
+        problems.push(`transition ${id}: noise rings past its buffer without looping`);
+      if (s._t0 < lo) problems.push(`transition ${id}: a ${s._kind} starts at ${s._t0}s, before its lead-in`);
+      if (!reaches(s, tn.fx)) problems.push(`transition ${id}: a ${s._kind} bypasses the fx bus — it would land in every stem`);
+    }
+    if (problems.length === before) { checked++; console.log(`trans ${id.padEnd(10)} ${T.cat.padEnd(5)} ${(-T.pre).toString().padStart(4)}…+${T.post} beats · ${T.fx.map(f => f[0]).join(" + ")}`); }
+  }
+  // every primitive in the table is reachable from a preset, and every preset's primitive exists
+  for (const k of Object.keys(M.TFX)) if (!prims.has(k)) problems.push(`primitive ${k} is in no preset — unreachable content`);
+  // a lead-in longer than the section before it must shorten, not reach back into a section that
+  // has already played: with one beat of room, nothing may be scheduled earlier than one beat back
+  for (const id of ["rise4", "fulldrop", "roll2", "revcym2"]) {
+    nodes.length = 0;
+    const dest = baseNode("dest");
+    const tn = M.makeTrans(ctx, dest, BEAT, false);
+    const built = nodes.length;
+    M.applyTrans(tn, M.TRANS[id], 1, { ctx, beat: BEAT, noise, kit: "909", maxPre: 1, maxPost: 1 });
+    for (const s of nodes.slice(built).filter(n => n._kind === "buf" || n._kind === "osc"))
+      if (s._t0 < 1 - BEAT - 1e-6) problems.push(`transition ${id}: clamped to one beat but a ${s._kind} starts ${(1 - s._t0).toFixed(2)}s early`);
+    for (const p of [tn.lp.frequency, tn.hp.frequency, tn.gain.gain])
+      for (const e of p._events) if (e.t < 1 - BEAT - 1e-6 && e.kind !== "cancel")
+        problems.push(`transition ${id}: clamped to one beat but writes at ${e.t}s`);
+  }
+  /* With no room at all — the first section of a song — every preset must still be safe to fire:
+     nothing scheduled before the boundary, nothing left holding a parameter down, and whatever
+     happens *on* the downbeat still happening. */
+  {
+    let landed = 0;
+    for (const [id, T] of Object.entries(M.TRANS)) {
+      if (!id) continue;
+      nodes.length = 0;
+      const dest = baseNode("dest");
+      const tn = M.makeTrans(ctx, dest, BEAT, false);
+      const built = nodes.length;
+      try { M.applyTrans(tn, T, 5, { ctx, beat: BEAT, noise, kit: "acoustic", maxPre: 0, maxPost: 0 }); }
+      catch (e) { problems.push(`transition ${id} threw with no room: ${e.message}`); continue; }
+      for (const s of nodes.slice(built).filter(n => n._kind === "buf" || n._kind === "osc"))
+        if (s._t0 < 5 - 1e-9) problems.push(`transition ${id}: with no lead-in a ${s._kind} still starts ${(5 - s._t0).toFixed(2)}s early`);
+      for (const [pname, p] of [["lp", tn.lp.frequency], ["hp", tn.hp.frequency], ["gain", tn.gain.gain],
+                                ["wash", tn.wash.gain], ["echo", tn.echo.gain]]) {
+        const evs = p._events.filter(e => e.kind !== "cancel");
+        if (!evs.length) continue;
+        if (evs.some(e => e.t < 5 - 1e-9)) problems.push(`transition ${id}: with no lead-in it still writes \`${pname}\` before the boundary`);
+        const rest = pname === "lp" ? Math.min(M.FILTER_OPEN, ctx.sampleRate / 2 - 100) : REST[pname];
+        if (Math.abs(evs[evs.length - 1].v - rest) > 0.5)
+          problems.push(`transition ${id}: with no room it leaves \`${pname}\` at ${evs[evs.length - 1].v}`);
+      }
+      if (nodes.slice(built).some(n => n._kind === "buf" || n._kind === "osc")) landed++;
+    }
+    // the impacts are the ones that must survive it — a crash is anchored to the downbeat, not to a lead-in
+    if (landed < Object.values(M.TRANS).filter(T => T.cat === "hit").length)
+      problems.push(`transitions: only ${landed} presets still make a sound on a first section — every impact should`);
+  }
+  // the fx bus is what keeps risers and crashes out of every stem but their own
+  {
+    const dest = baseNode("dest");
+    if (M.makeTrans(ctx, dest, BEAT, true).fx.gain.value !== 0)
+      problems.push("makeTrans: a stem render must silence the fx bus, or every stem carries its own copy of each riser");
+  }
+  const byCat = M.TRANS_CATS.map(([c, n]) => `${n} ${Object.values(M.TRANS).filter(T => T.cat === c).length}`).join(", ");
+  console.log(`transitions: ${checked} presets across ${M.TRANS_CATS.length} families (${byCat}), ${Object.keys(M.TFX).length} primitives`);
+}
+
 /* ---- no leftovers of the pre-parts section shape ----
    A section is `{ ids, layers:[{bars, flat, instr}] }`. The old shape put bars/flat/instr on the
    section itself with a barsB/flatB/instrB twin. A single missed fallback of the old shape blanks
@@ -677,6 +799,29 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     const tick = code.slice(code.indexOf("// section moves: fire once"), code.indexOf("const dstep ="));
     if (!/moves\[b\.inst\]/.test(tick)) problems.push("src: playback ignores a section instance's own move");
     if (!/moves\[b\.base\]/.test(tick)) problems.push("src: playback has no section-type fallback — moves saved before they were per-instance are lost");
+    // the move's riser and impact are added sources: on the master they land in every stem
+    if (!/applyMove\([\s\S]*?m\.tn\.fx\)/.test(tick))
+      problems.push("src: a move's riser and impact go somewhere other than the fx bus — they will be in every stem");
+  }
+  /* Transitions are armed from the cue table, ahead of the boundary they belong to. Fire them on the
+     section's own downbeat the way a move is fired and every lead-in is already too late to sound. */
+  {
+    const tick = code.slice(code.indexOf("/* Transitions: armed at the bar"), code.indexOf("const dstep ="));
+    if (!tick) problems.push("src: the transition block has moved — playback is unchecked");
+    else {
+      if (!/cues\b/.test(tick)) problems.push("src: playback does not read the cue table — transitions would fire on the downbeat, too late for a lead-in");
+      if (!/c\.at - structBar/.test(tick)) problems.push("src: the boundary time is not derived from the cue's own bar");
+      if (!/maxPre/.test(tick) || !/maxPost/.test(tick))
+        problems.push("src: playback does not pass the clamped windows — a lead-in could reach into a section that already played");
+      if (!/lastCueBar/.test(tick)) problems.push("src: transitions are not guarded by the bar index — the lookahead would restack them");
+    }
+    // the picker and the strip must resolve the same way playback does
+    if (!/const effTrans = d =>[^\n]*secTrans\[d\.key\][^\n]*secTrans\[d\.base\]/.test(code))
+      problems.push("src: the strip does not resolve a transition instance-first — a transition set on one pass would be invisible there");
+    if (!/setSecTrans\(remapKeyed\(/.test(code))
+      problems.push("src: transitions are not remapped when the arrangement is edited — moving a section would leave them on the wrong one");
+    if (!/setSecTrans\(s\.secTrans \|\| \{\}\)/.test(code))
+      problems.push("src: a loaded sketch does not restore its transitions");
   }
   /* Autosave must not restore over a shared link: arriving at somebody else's song and being handed
      your own instead is the worst thing it could do. The check has to happen before the first
@@ -1028,7 +1173,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const doc = M.makeSong({ name: "test", progId: "edm", tonic: 0, genre: "House", emotion: null,
     mode: null, colour: "triads", patId: "house16", drum: "house16d", secDrum: { V: "deep" },
     instr: "acoustic_grand_piano", melInstr: "flute", kit: "909", pump: "classic",
-    secMove: { C: "drop" }, delayId: "8d", bpm: 128, selStruct: "", contrast: { id: "", sec: "C" },
+    secMove: { C: "drop" }, secTrans: { C: "fulldrop", C2: "gap1" }, delayId: "8d", bpm: 128, selStruct: "", contrast: { id: "", sec: "C" },
     edits: {}, inserts: [], quals: {}, removed: [], order: null, melos });
   if (!doc.melos) problems.push("makeSong dropped the melodies");
   const code = await M.encodeSong(doc);
@@ -1037,6 +1182,9 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   else {
     if (round.progId !== doc.progId || round.bpm !== doc.bpm || round.kit !== doc.kit || round.delayId !== doc.delayId)
       problems.push("the link lost part of the arrangement");
+    // a transition is part of the arrangement, and a per-instance one is the easiest thing to drop
+    if (round.secMove.C !== "drop" || round.secTrans.C !== "fulldrop" || round.secTrans.C2 !== "gap1")
+      problems.push("the link lost a section's move or transition");
     const rm = M.songMelos(round);
     if (!same(rm, melos)) problems.push("the link lost the melodies");
   }
@@ -1733,6 +1881,70 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     const before = JSON.stringify(plan);
     M.planMove(plan, 1, 1); M.planReps(plan, 1, 3); M.planDup(plan, 1); M.planDel(plan, 1); M.planAdd(plan, 1, "Drop");
     if (JSON.stringify(plan) !== before) problems.push("an arrangement edit mutated the plan it was given");
+  }
+  /* Moves and transitions are stored per instance too, and they have exactly the melodies' problem:
+     a build set on the second chorus is stored under "C2", and moving a chorus makes the old C2 into
+     C1. Section-*type* keys are bare letters and must be left alone — types don't renumber. */
+  {
+    const two = [{ sec:"Verse", nums:"LOOP", reps:1 },
+                 { sec:"Chorus", nums:"LOOP", reps:1 }, { sec:"Chorus", nums:"LOOP", reps:1 }];
+    const map = { C: "rise2", C1: "fulldrop", C2: "stop", V1: "fadein" };
+    const [next, origin] = M.planMove(two, 2, -1);          // swap the two choruses
+    const out = M.remapKeyed(map, two, next, origin, L);
+    if (out.C !== "rise2") problems.push("remapKeyed: the section-type default was disturbed by a move");
+    if (out.C1 !== "stop" || out.C2 !== "fulldrop")
+      problems.push(`remapKeyed: swapping choruses did not carry their transitions (C1=${out.C1}, C2=${out.C2})`);
+    if (out.V1 !== "fadein") problems.push("remapKeyed: the verse lost its transition");
+    const [nx2, or2] = M.planAdd(two, 1, "Drop");           // a new section arrives with nothing set
+    const out2 = M.remapKeyed(map, two, nx2, or2, L);
+    if (out2.D1) problems.push("remapKeyed: a brand-new section arrived with someone else's transition");
+    if (M.remapKeyed({ C: "rise2" }, two, nx2, or2, L).C !== "rise2")
+      problems.push("remapKeyed: a map of only type keys should come back untouched");
+  }
+
+  /* ---- transition cues: armed early enough to sound, never early enough to reach backwards ---- */
+  {
+    // V1 four bars, C1 two bars, C2 four bars — 4/4 throughout
+    const insts = [{ key:"V1", startBar:0, nbars:4 }, { key:"C1", startBar:4, nbars:2 },
+                   { key:"C2", startBar:6, nbars:4 }];
+    const T = id => M.TRANS[id];
+    const cuesOf = pick => M.transCues(insts, d => T(pick[d.key] || ""), 4);
+
+    // a four-bar riser into C1 is armed four bars early, at the top of the verse
+    let c = cuesOf({ C1: "rise4" });
+    if (!c[0] || c[0][0].at !== 4) problems.push(`transCues: a 4-bar lead-in into bar 4 fired at ${Object.keys(c)}`);
+    if (c[0] && c[0][0].maxPre !== 16) problems.push(`transCues: gave ${c[0][0].maxPre} beats of lead-in, the verse has 16`);
+    // …but into C2 it only has C1's two bars to work in, so it shortens rather than starting inside V1
+    c = cuesOf({ C2: "rise4" });
+    if (!c[4]) problems.push(`transCues: a lead-in longer than the section before it did not clamp (fired at ${Object.keys(c)})`);
+    if (c[4] && c[4][0].maxPre !== 8) problems.push(`transCues: clamped to ${c[4][0].maxPre} beats, C1 is 8`);
+    // the first section has nothing before it, so its cue arrives with no lead-in at all — the
+    // riser is dropped rather than squeezed into a squeak, and whatever lands on the downbeat stays
+    c = cuesOf({ V1: "rise4" });
+    if (!c[0] || c[0][0].maxPre !== 0) problems.push("transCues: the first section should be cued with no lead-in");
+    c = cuesOf({ V1: "fadein" });
+    if (!c[0] || c[0][0].at !== 0) problems.push("transCues: an entry on the first section did not fire");
+    // the tail is the incoming section's own length, so a fade-in cannot run past the section
+    if (c[0] && c[0][0].maxPost !== 16) problems.push(`transCues: gave ${c[0][0].maxPost} beats of tail, V1 is 16`);
+    // a tail yields to the next seam's lead-in: C1 is two bars, and a four-bar riser into C2 wants
+    // both of them, so C1's own fade-in gets nothing rather than being cancelled halfway through
+    c = cuesOf({ C1: "fadein4", C2: "rise4" });
+    const c1 = Object.values(c).flat().find(x => x.key === "C1");
+    if (!c1 || c1.maxPost !== 0) problems.push(`transCues: C1's tail is ${c1 && c1.maxPost} beats, but the next lead-in claims all of it`);
+    // with nothing arriving after it, the same fade-in gets the section's full length
+    c = cuesOf({ C1: "fadein4" });
+    const c1b = Object.values(c).flat().find(x => x.key === "C1");
+    if (!c1b || c1b.maxPost !== 8) problems.push(`transCues: C1's tail is ${c1b && c1b.maxPost} beats, C1 is 8`);
+    // two transitions can be armed on the same bar without either being lost
+    c = cuesOf({ C1: "gap1", C2: "rise2" });
+    const all = Object.values(c).flat();
+    if (all.length !== 2) problems.push(`transCues: ${all.length} cues from two transitions`);
+    // "no transition" is not a cue
+    if (Object.keys(cuesOf({ C1: "" })).length) problems.push("transCues: the empty preset produced a cue");
+    // in 3/4 the same lead-in is a different number of bars — beats, not bars, is why this works
+    const waltz = M.transCues(insts, d => (d.key === "C2" ? T("rise4") : null), 3);
+    if (!waltz[4]) problems.push(`transCues: in 3/4 the cue landed at ${Object.keys(waltz)}`);
+    console.log(`transition cues: lead-ins armed, clamped to the section before, and ${M.TRANS_CATS.length} families of preset resolved`);
   }
   console.log(`arrangement edits: 5 operations, melodies traced through every one`);
 
