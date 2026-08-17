@@ -531,6 +531,7 @@ export default function ProgressionWheel() {
   const [narSel, setNarSel] = useState({ key:"", id:"" });  // melodic narrative written across the whole song
   const [narUndo, setNarUndo] = useState(null);             // melody snapshot from before the last narrative write
   const [varySt, setVarySt] = useState({ key:"", val:1 });  // how much a narrative varies each repeat of a section
+  const [secNar, setSecNar] = useState({});                 // section key → its own melodic narrative
   const [showLand, setShowLand] = useState(false);          // landing-notes collapse
   const [curQ, setCurQ] = useState(null);                   // {sym, col} playhead in melody grids
   const [curInst, setCurInst] = useState(null);             // instance key currently playing
@@ -1499,6 +1500,27 @@ export default function ProgressionWheel() {
     setNarUndo(melos);                       // one step back, in case it wrote over something good
     setMelos({ progId, secs });
   };
+  /* One section's own narrative, written over whatever is there. A song-wide narrative is a first
+     draft of the whole thing; this is for the bridge that should not be another arch, or the second
+     chorus you want to climb where the first fell. It hands the generator exactly the numbers the
+     song-wide pass would have — which section this is, which pass of its kind, and where it sits in
+     the running order — so a section rewritten on its own still sits where it sits, rather than
+     coming out as if it were the opening bar of the song. */
+  const applySecNarrative = (d, id) => {
+    setSecNar({ ...secNar, [d.key]: id });
+    const nar = NARRATIVES.find(n => n.id === id);
+    if (!nar) return;                                  // "" means: leave the notes alone
+    const idx = sections.insts.findIndex(o => o.key === d.key);
+    const total = sections.insts.length;
+    const kin = sections.insts.filter(o => o.base === d.base);
+    const pass = Math.max(0, kin.findIndex(o => o.key === d.key));
+    const spots = rhythmSpots(ROLE_RHYTHM[d.base] || "straight", meloBeats, meloSub, barBeats);
+    const gen = nar.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, nd: scaleSemis.length, spots,
+      chordDegs: chordDegsOf(d.cs), role: d.base, pass, passes: kin.length,
+      idx, total, frac: total > 1 ? idx / (total - 1) : 0 });
+    setNarUndo(melos);                                 // one step back, same as the song-wide write
+    putLayer(d.key, 0, varyBars(gen, { pass, role: d.base, nd: scaleSemis.length, amount: varyAmt }));
+  };
   const undoNarrative = () => {
     if (!narUndo) return;
     setMelos(narUndo); setNarUndo(null); setNarSel({ key: progId, id: "" });
@@ -1701,7 +1723,11 @@ export default function ProgressionWheel() {
         const b = struct[structBar];
         if (b && b.mb === 0) {
           m.lastMoveBar = structBar;
-          const mv = b.base != null ? moveRef.current.moves[b.base] : "";
+          // this instance's own move if it has one, else whatever the section type is set to.
+          // Songs saved before moves were per-instance only carry the section-type key, so the
+          // fallback is what keeps them sounding the way they were saved.
+          const mv = (b.inst != null && moveRef.current.moves[b.inst])
+            || (b.base != null ? moveRef.current.moves[b.base] : "") || "";
           const spec = (MOVES[mv] || {}).spec || null;
           const nb = (b.inst != null && moveRef.current.instBars[b.inst]) || 1;
           applyMove(m.ctx, m.filt, spec, t, nb * (patLen / (subRef.current || 2)) * beat, m.noise, m.master);
@@ -2460,7 +2486,7 @@ export default function ProgressionWheel() {
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-    kit, pump, secMove, delayId, bpm: effBpm, selStruct, contrast,
+    kit, pump, secMove, secNar, delayId, bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
@@ -2473,7 +2499,7 @@ export default function ProgressionWheel() {
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-      kit, pump, secMove, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
+      kit, pump, secMove, secNar, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -2659,6 +2685,7 @@ export default function ProgressionWheel() {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
     setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
     setSecMove(s.secMove || {});
+    setSecNar(s.secNar || {});
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
     setNChordsSt({ key:s.progId, val:s.nChords || 0 });
@@ -2876,6 +2903,16 @@ export default function ProgressionWheel() {
            chorus — and that is not obvious from the controls themselves, so the background has to
            say it. It takes the part's own colour as a tint, so which tab you are on is legible from
            the panel and not only from the tab strip. */
+        /* a section's own move and melodic shape, sitting under its chords */
+        .secopts { gap:6px; flex-wrap:wrap; align-items:center; margin:5px 0 2px; }
+        .secopt { display:inline-flex; align-items:center; gap:4px; font-size:var(--fs-sm); color:var(--muted); }
+        .secopt select { font-size:var(--fs-sm); padding:3px 6px; border-radius:var(--r-sm);
+          background:var(--surface-2); color:var(--text); border:1px solid var(--line-2); max-width:220px; }
+        @media (max-width: 560px) {
+          .secopt select { min-height:30px; }
+          .secopt { flex:1 1 100%; }
+          .secopt select { flex:1 1 auto; max-width:none; }
+        }
         .lytabs { margin-bottom:-1px; position:relative; z-index:1; }
         .lytab { font-size:var(--fs-sm); padding:4px 12px; border:1px solid var(--line-2); border-bottom:none;
           border-radius:var(--r-md) var(--r-md) 0 0; background:var(--surface); color:var(--muted);
@@ -4013,7 +4050,11 @@ export default function ProgressionWheel() {
                       {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
                     </select>
                   </label>
-                  <label className="secdrum" title="Arrangement move for this section — a filter sweep, riser or drop, run across the section's whole length">
+                  {/* the move for every pass of this section type. Each pass can override it in
+                      its own card below — the second chorus wanting a different build from the
+                      first is the normal case, not the exception. */}
+                  <label className="secdrum" title={"Arrangement move for every " + g.word.toLowerCase()
+                    + " — a filter sweep, riser or drop, run across the section's whole length. Any single one can override it below."}>
                     <span aria-hidden="true">🎛</span>
                     <select value={secMove[g.base] || ""}
                       onChange={e => setSecMove({ ...secMove, [g.base]: e.target.value })}>
@@ -4064,6 +4105,36 @@ export default function ProgressionWheel() {
                 )}
                 <div className="arrch">{d.str}</div>
                 {d.note && <div className="arrnote">{d.note}</div>}
+                {/* This one pass's own move and its own melodic shape. Both fall back to what the
+                    section type is set to, so a song stays as simple as you leave it — but the
+                    second chorus wanting a different build, or the bridge wanting to fall where
+                    everything else rises, is the normal case rather than the exception. */}
+                <div className="row secopts">
+                  <label className="secopt" title={"Arrangement move for this " + d.word.toLowerCase()
+                    + " alone — a filter sweep, riser or drop across its bars. Left as it is, it does whatever every "
+                    + d.word.toLowerCase() + " does."}>
+                    <span aria-hidden="true">🎛</span>
+                    <select value={secMove[d.key] || ""}
+                      onChange={e => setSecMove({ ...secMove, [d.key]: e.target.value })}>
+                      <option value="">{secMove[d.base] && MOVES[secMove[d.base]]
+                        ? "as every " + d.word.toLowerCase() + " — " + MOVES[secMove[d.base]].name
+                        : "— no move —"}</option>
+                      {Object.entries(MOVES).map(([id, mv]) => id
+                        ? <option key={id} value={id}>{mv.name}</option> : null)}
+                    </select>
+                  </label>
+                  <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
+                    + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
+                    <span aria-hidden="true">🎵</span>
+                    <select value={secNar[d.key] || ""} onChange={e => applySecNarrative(d, e.target.value)}>
+                      <option value="">{curNar ? "as the song — " + curNar.name : "— no shape written —"}</option>
+                      {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                    </select>
+                  </label>
+                  {secNar[d.key] && <button className="mini"
+                    title="Write this section's shape again — after a key change, or edits you want to throw away"
+                    onClick={() => applySecNarrative(d, secNar[d.key])}>↻</button>}
+                </div>
                 {open && (() => {
                   const tab = melTab[d.key] || "write";
                   const pick = sugSel[d.key] || { pat: MELODY_PATTERNS[0].id, start: 0 };
@@ -4403,7 +4474,7 @@ export default function ProgressionWheel() {
           {(() => {
             if (!selSong.startsWith(progId + ":")) {
               return tips ? <p className="keytag" style={{ marginTop:8 }}>
-                Ten songs run on this engine — pick one to see the progression in its own key.</p> : null;
+                {prog.songs.length} songs run on this engine — pick one to see the progression in its own key.</p> : null;
             }
             const i = +selSong.split(":")[1];
             const k = (SONG_KEYS[progId] || [])[i];

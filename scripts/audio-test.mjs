@@ -652,6 +652,32 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/varyBars\(/.test(fn))
       problems.push("src: applyNarrative no longer varies repeats — every pass of a section will be identical");
   }
+  /* A section's own narrative has to be handed the same position in the song the song-wide write
+     would have handed it — which pass of its kind it is, and where it sits in the running order.
+     Written without those, a section rewritten on its own comes out as if it were the opening bar:
+     wrong register, wrong density, and identical to every other pass of the same section. */
+  {
+    const fn = code.slice(code.indexOf("const applySecNarrative ="), code.indexOf("const undoNarrative ="));
+    if (!fn) problems.push("src: applySecNarrative has moved — this guard no longer reads it");
+    for (const arg of ["pass", "passes", "idx", "total", "frac", "role"])
+      if (!new RegExp("\\b" + arg + "\\s*[:,]").test(fn))
+        problems.push(`src: applySecNarrative does not pass \`${arg}\` — the section will be written as if it were somewhere else in the song`);
+    // and they have to be *worked out*, not written in. Handing the generator a constant position
+    // passes the check above and still writes every pass of a section identically.
+    const literal = fn.match(/\b(pass|passes|idx|total)\s*:\s*-?\d/);
+    if (literal) problems.push(`src: applySecNarrative hard-codes ${literal[1]} — every section would be written as if it were in the same place`);
+    if (!/sections\.insts/.test(fn) || !/findIndex/.test(fn))
+      problems.push("src: applySecNarrative does not work out where the section sits from the running order");
+    if (!/varyBars\(/.test(fn)) problems.push("src: applySecNarrative does not vary repeats");
+  }
+  /* Moves are per section instance now, with the section type as the fallback. Songs saved before
+     that only carry the type key, so dropping the fallback silently strips the moves off every
+     song anyone has already made. */
+  {
+    const tick = code.slice(code.indexOf("// section moves: fire once"), code.indexOf("const dstep ="));
+    if (!/moves\[b\.inst\]/.test(tick)) problems.push("src: playback ignores a section instance's own move");
+    if (!/moves\[b\.base\]/.test(tick)) problems.push("src: playback has no section-type fallback — moves saved before they were per-instance are lost");
+  }
   /* Autosave must not restore over a shared link: arriving at somebody else's song and being handed
      your own instead is the worst thing it could do. The check has to happen before the first
      `await`, or the address bar may have been read after another effect has moved on. */
@@ -1017,6 +1043,59 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (await M.decodeSong("dnot-valid-base64!!") !== null) problems.push("a corrupt link should decode to null, not throw");
   if (await M.decodeSong("") !== null) problems.push("an empty link should decode to null");
   console.log(`song document: ${code.length} chars encoded (${code[0] === "d" ? "deflated" : "plain"}), melodies intact`);
+}
+
+/* ---- the progression catalogue and the genre index ----
+   Picking a genre is how most people start, so the genre index is the front door to the whole
+   catalogue: a progression no genre lists is a progression nobody finds, and a genre with two
+   alternatives is not offering a choice. Both are checked here, along with the numerals themselves
+   — an unknown numeral resolves to `undefined` and takes the whole page down with it. */
+{
+  const ids = Object.keys(M.PROGRESSIONS);
+  const nums = new Set();
+  for (const [id, p] of Object.entries(M.PROGRESSIONS)) {
+    if (!p.label || !p.mode || !p.numerals.length) problems.push(`progression ${id} is incomplete`);
+    const defs = M.modeFamily(p.mode) === "minor" ? M.MINOR_NUM : M.MAJOR_NUM;
+    for (const n of p.numerals) {
+      nums.add(n);
+      // this is the one that blanks the screen: chordName(undefined) throws on the first render
+      if (!defs[n]) problems.push(`progression ${id} uses "${n}", which its mode has no chord for`);
+    }
+    if (!Array.isArray(p.songs) || p.songs.length < 4) problems.push(`progression ${id} lists ${(p.songs || []).length} songs`);
+    if (new Set(p.songs).size !== p.songs.length) problems.push(`progression ${id} lists a song twice`);
+    // the song menu offers every song; a key for one that does not exist would show a blank chart
+    const keys = M.SONG_KEYS[id];
+    if (keys && keys.length !== p.songs.length)
+      problems.push(`progression ${id} has ${keys.length} song keys for ${p.songs.length} songs`);
+    // every progression has to survive being loaded: these two have no per-id fallback worth relying on
+    if (!M.PATTERNS[M.PATTERN_DEFAULT[id] || "pop"]) problems.push(`progression ${id} defaults to a strum pattern that does not exist`);
+    if (!(M.BPM_DEFAULT[id] > 0)) problems.push(`progression ${id} has no tempo`);
+  }
+  // two progressions with the same chords in the same order are one progression listed twice
+  const byNums = {};
+  for (const [id, p] of Object.entries(M.PROGRESSIONS)) {
+    const k = p.mode + ":" + p.numerals.join(" ");
+    if (byNums[k]) problems.push(`${id} and ${byNums[k]} are the same progression`);
+    byNums[k] = id;
+  }
+
+  const rows = M.GENRE_GROUPS.flatMap(([fam, list]) => list.map(([name, progs]) => ({ fam, name, progs })));
+  const seenGenre = new Set();
+  for (const r of rows) {
+    if (seenGenre.has(r.name)) problems.push(`genre "${r.name}" is listed twice`);
+    seenGenre.add(r.name);
+    for (const p of r.progs) if (!M.PROGRESSIONS[p]) problems.push(`genre "${r.name}" offers "${p}", which is not a progression`);
+    if (new Set(r.progs).size !== r.progs.length) problems.push(`genre "${r.name}" lists the same progression twice`);
+    // three was a default and two alternatives. A genre has to actually offer a choice.
+    if (r.progs.length < 5) problems.push(`genre "${r.name}" only offers ${r.progs.length} progressions`);
+  }
+  // and nothing in the catalogue may be unreachable — the genre picker is the front door
+  const reachable = new Set(rows.flatMap(r => r.progs));
+  const orphans = ids.filter(i => !reachable.has(i));
+  if (orphans.length) problems.push(`no genre offers: ${orphans.join(", ")}`);
+  const counts = rows.map(r => r.progs.length).sort((a, b) => a - b);
+  console.log(`progressions: ${ids.length} loops, ${nums.size} distinct numerals, all reachable from ${rows.length} genres`);
+  console.log(`  per genre: ${counts[0]} at least, ${counts[counts.length >> 1]} typical, ${counts[counts.length - 1]} at most`);
 }
 
 /* ---- song structures are well-formed, and the dance ones phrase properly ---- */
