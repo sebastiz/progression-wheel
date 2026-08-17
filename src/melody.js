@@ -63,13 +63,23 @@ const hash01 = n => {
    `kind` is how it is drawn: "sel" a menu, "amt" a 0..max slider, "bi" a slider centred on zero.
    `dflt` is what "no modulation" looks like — every one of these must be audibly nothing, so a
    part with default settings sounds exactly as it did before any of this existed. */
+/* Euclidean rhythm: spread `k` hits as evenly as possible over `n` steps. Bjorklund's algorithm is
+   the textbook way and is forty lines; this closed form gives the same family of patterns in one.
+   (3,8) is the tresillo, (5,8) the cinquillo, (7,16) the Brazilian samba bell — almost every
+   traditional rhythm on earth is a Euclidean pattern, and the ones that are not sound wrong. */
+const euclidHit = (k, n, step) => {
+  if (!k || !n || k >= n) return true;                 // nothing to thin out
+  const i = ((step % n) + n) % n;
+  return (i * k) % n < k;
+};
+
 const MOD_GROUPS = [
   /* Note effects. Everything in this group runs *before* there is any sound: it rewrites the stream
      of notes the instrument is then asked to play, which is a different layer from anything below.
      An arpeggiator is the famous member of the family; the rest are its siblings. Because they work
      on notes rather than on audio, they follow the harmony and the key on their own — a chord effect
      stays in the scale when you change key, which no audio effect could manage. */
-  { id:"pattern", name:"Pattern", tip:"What the part plays, before anything is done to the sound",
+  { id:"pattern", name:"Pattern", tip:"Which notes play and when — before there is any sound at all",
     mods:[
       { k:"arp", name:"Arp", kind:"sel", dflt:"", opts:"ARPS", off:"off — play the grid",
         tip:"Ignore this part's written notes and walk the chord under each bar instead — it re-follows the harmony whenever you change a chord" },
@@ -78,16 +88,21 @@ const MOD_GROUPS = [
       { k:"arpOct", name:"Arp range", kind:"sel", dflt:1, needs:"arp",
         opts:[[1, "1 oct"], [2, "2 oct"], [3, "3 oct"], [4, "4 oct"]],
         tip:"How many octaves the arp climbs through" },
-      { k:"chord", name:"Harmonise", kind:"sel", dflt:"", off:"off — one note",
-        opts:[["3", "+ a third"], ["5", "+ a fifth"], ["35", "full triad"], ["357", "seventh chord"], ["15", "power fifth"]],
-        tip:"Turn every note into a chord, built out of the scale — so it stays in key when you change key, and moves with the mode. A one-finger pad." },
-      { k:"strum", name:"Strum", kind:"amt", dflt:0, max:100, unit:"ms",
-        tip:"Spread the notes of a chord over a few milliseconds instead of hitting them together. The difference between a keyboard and a guitar." },
-      { k:"ratchet", name:"Ratchet", kind:"sel", dflt:1,
-        opts:[[1, "off"], [2, "×2"], [3, "×3"], [4, "×4"], [6, "×6"]],
-        tip:"Retrigger every note inside its own slot. Two is a flam, four is a roll, six is the stutter under a trap hi-hat." },
-      { k:"octJump", name:"Octave jump", kind:"amt", dflt:0, max:100, unit:"%",
-        tip:"How often a note leaps an octave instead of playing where it was written. The wandering octaves under an acid line or a techno bass — the same every time the song plays, not random." },
+      { k:"euclid", name:"Euclid", kind:"sel", dflt:0, off:"off — play every note",
+        opts:[[1, "1 hit"], [2, "2 hits"], [3, "3 hits"], [4, "4 hits"], [5, "5 hits"], [6, "6 hits"],
+              [7, "7 hits"], [8, "8 hits"], [9, "9 hits"], [11, "11 hits"], [13, "13 hits"]],
+        tip:"Keep only this many notes, spaced as evenly as the grid allows. Spreading 3 hits over 8 gives the tresillo, 5 over 8 the cinquillo — nearly every traditional rhythm on earth is one of these, and the ones that are not sound wrong." },
+      { k:"euclidLen", name:"Euclid over", kind:"sel", dflt:16, needs:"euclid",
+        opts:[[4, "4 steps"], [6, "6 steps"], [8, "8 steps"], [9, "9 steps"], [12, "12 steps"], [16, "16 steps"], [32, "32 steps"]],
+        tip:"How many steps the hits are spread across. Fewer than the bar has and the figure repeats inside it; more and it takes several bars to come round." },
+      { k:"retro", name:"Reverse", kind:"sel", dflt:"", off:"off — forwards",
+        opts:[["bar", "each bar backwards"], ["sec", "the whole part backwards"]],
+        tip:"Play the notes in reverse. A phrase read backwards keeps its shape and loses its direction, which is why it works as a bridge or a second half." },
+      { k:"shift", name:"Shift", kind:"bi", dflt:0, min:-8, max:8, unit:" steps",
+        tip:"Rotate the whole part earlier or later by grid steps, wrapping round. The same notes landing in different places — the cheapest way to find a groove you would not have written." },
+      { k:"rate", name:"Speed", kind:"sel", dflt:1,
+        opts:[[0.25, "¼ — quarter time"], [0.5, "½ — half time"], [1, "×1 — as written"], [2, "×2 — double time"], [4, "×4"]],
+        tip:"Read the written notes faster or slower without touching the tempo. Half time on a bass under a full-speed drum part is most of what makes a beat feel heavy." },
       { k:"gate", name:"Gate", kind:"sel", dflt:"", opts:"GATES", off:"off",
         tip:"Chop this part into a rhythmic pulse — the trance gate. Works best on a held pad or a long arp." },
       { k:"gateLen", name:"Gate length", kind:"sel", dflt:16, needs:"gate",
@@ -95,10 +110,53 @@ const MOD_GROUPS = [
               [11, "11 steps"], [10, "10 steps"], [9, "9 steps"], [7, "7 steps"], [5, "5 steps"], [3, "3 steps"]],
         tip:"How many steps of the gate play before it starts again. Anything but 16 and the pattern no longer fits the bar, so it walks around the beat and takes several bars to come back — polymeter, and most of what makes a minimal groove keep moving." },
     ] },
-  { id:"pitch", name:"Pitch", tip:"Where the part sits and how wide it spreads",
+  /* Note effects that answer "and again": the same note more than once. Kept apart from Pattern
+     because Pattern decides which notes exist and these decide how many times each one is heard —
+     and because eighteen note effects in one panel is a list, not a choice. */
+  { id:"repeat", name:"Repeat", tip:"The same note more than once — rolls, echoes and strums",
+    mods:[
+      { k:"ratchet", name:"Ratchet", kind:"sel", dflt:1,
+        opts:[[1, "off"], [2, "×2"], [3, "×3"], [4, "×4"], [6, "×6"], [8, "×8"]],
+        tip:"Retrigger every note inside its own slot. Two is a flam, four is a roll, eight is the stutter under a trap hi-hat." },
+      { k:"ratchetFade", name:"Roll fade", kind:"bi", dflt:0, min:-100, max:100, unit:"%", needs:"ratchet",
+        tip:"Whether a roll gets quieter as it goes or louder. Left fades away, right builds into the next note." },
+      { k:"echo", name:"Note echo", kind:"sel", dflt:0, off:"off",
+        opts:[[1, "1 repeat"], [2, "2 repeats"], [3, "3 repeats"], [4, "4 repeats"], [6, "6 repeats"], [8, "8 repeats"]],
+        tip:"Play the note again after it, in time. Unlike the Echo in Space this is real notes, not a recording of them — so the repeats follow the instrument, the filter and everything else the part does." },
+      { k:"echoTime", name:"Echo time", kind:"sel", dflt:1, opts:"ECHO_TIMES", needs:"echo",
+        tip:"How long after the note each repeat lands, in beats" },
+      { k:"echoFade", name:"Echo fade", kind:"amt", dflt:50, max:100, unit:"%", needs:"echo",
+        tip:"How much quieter each repeat is than the one before. Nothing at all is a hard machine-gun repeat; a lot dies away after one." },
+      { k:"echoPitch", name:"Echo pitch", kind:"bi", dflt:0, min:-12, max:12, unit:"st", needs:"echo",
+        tip:"Move each repeat by this many semitones from the last. Rising repeats climb away from the note; falling ones sink under it. Only a note effect can do this — a delay can only repeat what it was given." },
+      { k:"strum", name:"Strum", kind:"amt", dflt:0, max:100, unit:"ms",
+        tip:"Spread the notes of a chord over a few milliseconds instead of hitting them together. The difference between a keyboard and a guitar." },
+      { k:"strumDir", name:"Strum way", kind:"sel", dflt:"up", needs:"strum",
+        opts:[["up", "upstroke"], ["down", "downstroke"], ["alt", "alternating"]],
+        tip:"Which end of the chord the strum starts from. Alternating gives the up-down of a hand actually playing it." },
+    ] },
+  { id:"pitch", name:"Pitch", tip:"Which notes come out — the note effects that work on pitch",
     mods:[
       { k:"semis", name:"Transpose", kind:"bi", dflt:0, min:-12, max:12, unit:"st",
         tip:"Move this part by semitones. Unlike Octave this can leave the key — a −3 pad under a major tune is the oldest trick there is." },
+      { k:"dia", name:"Scale steps", kind:"bi", dflt:0, min:-7, max:7, unit:"",
+        tip:"Move this part by steps of the scale rather than semitones, so it stays in key however far it goes. Up a third is harmony; up a seventh is the same tune somewhere else entirely." },
+      { k:"snap", name:"Snap to", kind:"sel", dflt:"", off:"off — as written",
+        opts:[["key", "the key"], ["pent", "pentatonic"], ["blues", "blues scale"], ["tri", "the chord tones"]],
+        tip:"Fold every note into a smaller set of notes. Pentatonic is the safety net — nothing in it can sound wrong against anything else — and chord tones lock the part to the harmony." },
+      { k:"invert", name:"Invert", kind:"sel", dflt:"", off:"off",
+        opts:[["tonic", "around the tonic"], ["first", "around its first note"], ["fifth", "around the fifth"]],
+        tip:"Turn the tune upside down: every rise becomes a fall of the same size. The oldest transformation in counterpoint, and it keeps the rhythm exactly." },
+      { k:"chord", name:"Harmonise", kind:"sel", dflt:"", off:"off — one note",
+        opts:[["3", "+ a third"], ["5", "+ a fifth"], ["35", "full triad"], ["357", "seventh chord"], ["15", "power fifth"]],
+        tip:"Turn every note into a chord, built out of the scale — so it stays in key when you change key, and moves with the mode. A one-finger pad." },
+      { k:"voicing", name:"Voicing", kind:"sel", dflt:"close", needs:"chord",
+        opts:[["close", "close"], ["open", "open"], ["spread", "spread wide"], ["drop", "drop the top"]],
+        tip:"How far apart the notes of the chord sit. Close is a stack; open and spread put air between them, which is the difference between a chord and a texture." },
+      { k:"rpitch", name:"Stray notes", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"How often a note wanders a step or two off what was written, staying in the scale. A little makes a repeated line feel played rather than looped." },
+      { k:"octJump", name:"Octave jump", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"How often a note leaps an octave instead of playing where it was written. The wandering octaves under an acid line or a techno bass — the same every time the song plays, not random." },
       { k:"oct2", name:"Double", kind:"sel", dflt:0,
         opts:[[0, "off"], [1, "+1 oct"], [-1, "−1 oct"], [2, "+2 oct"], [-2, "−2 oct"]],
         tip:"Play every note twice, the second one an octave away. The cheapest way to make a thin lead sound expensive." },
@@ -159,14 +217,22 @@ const MOD_GROUPS = [
     mods:[
       { k:"len", name:"Note length", kind:"amt", dflt:100, max:200, unit:"%",
         tip:"Stretch or shorten every note without moving where it starts. Short is staccato, long runs the notes into each other." },
+      { k:"rlen", name:"Length spread", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"How much the note lengths vary from one to the next. Every note exactly as long as every other is the sound of a sequencer, not a player." },
       { k:"nudge", name:"Nudge", kind:"bi", dflt:0, min:-50, max:50, unit:"ms",
         tip:"Push the whole part early or late by a few milliseconds. Late is a lazy, behind-the-beat feel; early leans forward." },
+      { k:"hum", name:"Humanise", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Scatter each note slightly off where it was written, by a different amount each time. Nudge moves the whole part; this loosens it." },
       { k:"swing", name:"Swing", kind:"amt", dflt:0, max:100, unit:"%",
         tip:"Delay this part's off-beats. Swing on one part against a straight one is most of what makes a groove." },
       { k:"prob", name:"Play chance", kind:"amt", dflt:100, max:100, unit:"%",
         tip:"Skip some notes. Below 100% the part thins out differently in each bar — the same every time the song is played, so it stays yours." },
       { k:"accent", name:"Accent", kind:"amt", dflt:0, max:100, unit:"%",
         tip:"Play the downbeats harder than the rest. Nothing sounds more like a machine than every note at the same level." },
+      { k:"rvel", name:"Level spread", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"How much the notes vary in how hard they are played, note to note. Together with Velocity → tone this is most of what separates a part that was played from one that was programmed." },
+      { k:"ramp", name:"Swell", kind:"bi", dflt:0, min:-100, max:100, unit:"%",
+        tip:"Get louder or quieter across the section. Right is a crescendo into whatever comes next; left backs off towards it. Measured over the section, so it re-times itself when the arrangement changes." },
     ] },
   { id:"space", name:"Space", tip:"How far away the part is, and how it answers the kick",
     mods:[
@@ -178,6 +244,10 @@ const MOD_GROUPS = [
         tip:"How hard the kick ducks this part. All the way left follows the global Pump; move it and this part gets its own depth — a bass that ducks hard under a pad that barely moves." },
     ] },
 ];
+/* Note-echo spacings, in beats. Note values rather than milliseconds, so the repeats stay in time
+   when the tempo changes — the whole reason to do this with notes rather than with a delay line. */
+const ECHO_TIMES = [[0.25, "1/16"], [0.375, "dotted 1/16"], [0.5, "1/8"], [0.75, "dotted 1/8"],
+  [1, "1/4"], [1.5, "dotted 1/4"], [2, "1/2"], [3, "dotted 1/2"], [4, "a bar"]];
 // LFO speeds, in beats per cycle. Named in beats rather than Hz so they stay in time at any tempo.
 const LFO_RATES = [[8, "8 bars"], [4, "4 bars"], [2, "2 bars"], [1, "1 bar"], [0.5, "1/2"],
   [0.25, "1/4"], [0.125, "1/8"], [0.0625, "1/16"]];
@@ -1196,4 +1266,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, modOf, modCount, VARIATIONS, VARY_LEVELS, barNotes, varyBars, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };
+export { MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, barNotes, varyBars, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };

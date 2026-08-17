@@ -7,7 +7,7 @@ import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyM
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapSecs } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
@@ -390,7 +390,7 @@ const POS_MAJ = [0,7,2,9,4,11,6,1,8,3,10,5];
 const MOD_TABLES = {
   ARPS: ARPS.map(a => [a.id, a.name]),
   GATES: GATES.map(g => [g.id, g.name]),
-  ARP_RATES, LFO_RATES,
+  ARP_RATES, LFO_RATES, ECHO_TIMES,
 };
 // a menu hands back a string; the stored value has to keep the type its default has, or a rate of
 // "4" fails every `=== 4` comparison the scheduler makes
@@ -1864,13 +1864,49 @@ export default function ProgressionWheel() {
             }
             if (m.partVerb[li]) m.partVerb[li].gain.setValueAtTime(val("verb") / 100, t);
           };
+          /* Which written column a part reads this tick. Four of the pattern effects are all the
+             same operation underneath — a map from "where we are" to "what to play" — so they are
+             one function rather than four scattered edits that would have to agree with each other.
+             `null` means the part is silent here, which is how Euclid thins a line out.
+             The order matters: speed first (it decides which column we are even asking about), then
+             reverse, then shift, and Euclid last as a mask over the result. */
+          const colFor = (ly, N, melStep, mb) => {
+            const raw = mb * MB + melStep;
+            const rate = modOf(ly, "rate");
+            // half time reads each column twice and covers half the notes; double time reads two
+            // columns in the time of one and comes round again inside the same bar
+            let c = rate === 1 ? raw : Math.floor(raw * rate);
+            if (rate < 1 && (raw * rate) % 1 !== 0) return null;   // between columns at half speed
+            const retro = modOf(ly, "retro");
+            if (retro === "bar") c = Math.floor(c / MB) * MB + (MB - 1 - ((c % MB) + MB) % MB);
+            else if (retro === "sec") c = N - 1 - (((c % N) + N) % N);
+            c = (((c + modOf(ly, "shift")) % N) + N) % N;
+            const k = modOf(ly, "euclid");
+            if (k && !euclidHit(k, modOf(ly, "euclidLen"), raw)) return null;
+            return c;
+          };
           /* When a part's notes land, once per part per tick. Nudge moves the whole part off the
-             beat; swing delays its off-beats only. Both are clamped forward, because an offline
-             render starts at time zero and scheduling before it throws rather than rounding up. */
-          const timeFor = (ly, step) => {
+             beat by a fixed amount, humanise scatters each note by a different one, and swing
+             delays its off-beats only. All are clamped forward, because an offline render starts at
+             time zero and scheduling before it throws rather than rounding up. */
+          const timeFor = (ly, li, step) => {
+            const h = modOf(ly, "hum") / 100;
             const off = modOf(ly, "nudge") / 1000
+              + (h ? (hash01(m.step * 3571 + li * 89) - 0.5) * h * 0.06 : 0)
               + (step % 2 ? (modOf(ly, "swing") / 100) * (beat / (subRef.current || 2)) * 0.5 : 0);
             return Math.max(m.ctx.currentTime, t + off);
+          };
+          /* How hard this note is played, before the part's level. The pulse accent is always
+             there; Accent leans on the downbeats, Level spread varies note to note, and Swell rides
+             the whole thing across the section — measured as a fraction of the section's own length,
+             so it re-times itself when the arrangement changes rather than needing to be redrawn. */
+          const velFor = (ly, li, step, nbars) => {
+            const r = modOf(ly, "rvel") / 100;
+            const ramp = modOf(ly, "ramp") / 100;
+            const through = nbars > 1 ? mb / (nbars - 1) : (mb ? 1 : 0);
+            return humVel(accent) * accentOf(ly, step)
+              * (r ? 1 + (hash01(m.step * 6151 + li * 401) - 0.5) * r : 1)
+              * (ramp ? Math.max(0.05, 1 + ramp * (through - 0.5)) : 1);
           };
           /* Whether this note sounds at all, and how hard. Both are per part and both are hashed
              from the position in the song rather than drawn at random, so a part that plays 7 notes
@@ -1901,13 +1937,44 @@ export default function ProgressionWheel() {
              sound exists, which is why they follow the key and the chord on their own.
              `Harmonise` builds its extra notes out of the scale, so it stays in key. */
           const CHORD_STEPS = { "3": [2], "5": [4], "35": [2, 4], "357": [2, 4, 6], "15": [4, 7] };
+          // how far apart the notes of a harmonised chord sit, as octave offsets per voice
+          const VOICING = { close: [0, 0, 0], open: [0, -1, 0], spread: [0, 1, 2], drop: [0, 0, -1] };
           const harmOf = (ly, deg, scale) => {
             const steps = CHORD_STEPS[modOf(ly, "chord")];
             if (!steps || deg == null) return [];
+            const v = VOICING[modOf(ly, "voicing")] || VOICING.close;
             // scale degrees, so a third is a major or minor third depending on where in the key it
             // falls — the thing that makes this sound like harmony rather than a fixed interval
-            return steps.map(s => scale[(deg + s) % scale.length] + 12 * Math.floor((deg + s) / scale.length)
-              - scale[deg]);
+            return steps.map((s, j) => scale[(deg + s) % scale.length] + 12 * Math.floor((deg + s) / scale.length)
+              - scale[deg] + 12 * (v[j % v.length] || 0));
+          };
+          /* Fold a note into a smaller set of pitches. The grid is already in the key, so this only
+             bites once Transpose has taken a part out of it or Stray notes have wandered — which is
+             exactly when you want it. Pentatonic is the safety net: nothing in it clashes with
+             anything else in the key. */
+          const SNAP_SETS = { pent: [0, 2, 4, 7, 9], blues: [0, 3, 5, 6, 7, 10] };
+          const snapMidi = (ly, midi, scale, tonic) => {
+            const mode = modOf(ly, "snap");
+            if (!mode) return midi;
+            const set = mode === "key" ? scale.map(s => ((s % 12) + 12) % 12)
+              : mode === "tri" ? (m.voicing || []).map(n => ((n % 12) + 12) % 12)
+              : SNAP_SETS[mode].map(s => (s + tonic) % 12);
+            if (!set.length) return midi;
+            const pc = ((Math.round(midi) % 12) + 12) % 12;
+            let best = 0, bestD = 99;
+            for (const s of set) {
+              // nearest by distance round the octave, so a note never leaps to reach its target
+              const d = Math.min(((s - pc) + 12) % 12, ((pc - s) + 12) % 12);
+              if (d < bestD) { bestD = d; best = ((s - pc) + 18) % 12 - 6; }
+            }
+            return midi + best;
+          };
+          // mirror a scale degree around an axis — every rise becomes a fall of the same size
+          const invertDeg = (ly, deg, first, nd) => {
+            const how = modOf(ly, "invert");
+            if (!how) return deg;
+            const axis = how === "tonic" ? 0 : how === "fifth" ? 4 : (first == null ? deg : first);
+            return Math.max(0, Math.min(nd - 1, 2 * axis - deg));
           };
           /* One note, with everything a part's settings do to it: transposed, detuned, stretched,
              harmonised into a chord, strummed, ratcheted, jumped an octave, and doubled. Shared by
@@ -1915,29 +1982,50 @@ export default function ProgressionWheel() {
           const fireNote = (ly, li, voice, tp, midi0, dur0, dest, held, harm, slot = 0) => {
             const midi = midi0 + modOf(ly, "semis") + modOf(ly, "detune") / 100;
             const rat = Math.max(1, modOf(ly, "ratchet"));
-            const dur = (dur0 / rat) * (modOf(ly, "len") / 100);
+            const seed = m.step * 5099 + li * 271 + Math.round(midi0) * 17;
+            const rl = modOf(ly, "rlen") / 100;
+            const dur = (dur0 / rat) * (modOf(ly, "len") / 100)
+              * (rl ? Math.max(0.15, 1 + (hash01(seed + 1471) - 0.5) * rl * 1.4) : 1);
             const dbl = modOf(ly, "oct2");
             const strum = modOf(ly, "strum") / 1000;        // milliseconds between the notes of a chord
             const kind = isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice;
-            const shape = shapeOf(ly);
+            const base = shapeOf(ly);
             // an octave jump replaces the note rather than adding to it — it is a different note,
             // not a thicker one. Hashed from the position, so the wandering is the same every play.
             const jump = modOf(ly, "octJump");
-            const seed = m.step * 5099 + li * 271 + Math.round(midi0) * 17;
             const up = jump && hash01(seed) * 100 < jump ? (hash01(seed + 8161) < 0.5 ? 12 : -12) : 0;
             const stack = [midi + up, ...(harm || []).map(h => midi + up + h)];
             if (dbl) stack.push(midi + up + 12 * dbl);
-            for (let k = 0; k < rat; k++) {                 // ratchet: the same chord, k times over
-              const tk = tp + k * (dur0 / rat);
-              stack.forEach((mi, j) => {
-                // fold anything out of hearing back in rather than letting it whistle or disappear
-                const md = Math.max(21, Math.min(108, mi));
-                // `slot` is this note's place among the ones sounding together, so a strum spreads
-                // a chord written into the grid as well as one Harmonise built
-                const tj = tk + (slot + j) * strum;
-                if (!(realRef.current && playLeadSampled(m.sampler, voice, tj, md, dur, dest, shape)))
-                  leadNote(m.ctx, tj, md, dur, kind, held && rat === 1, dest, shape);
-              });
+            const dir = modOf(ly, "strumDir");
+            // alternating means a hand going back down for the next chord, not for the next note
+            const down = dir === "down" || (dir === "alt" && Math.floor(m.step / (MB || 1)) % 2 === 1);
+            const fade = modOf(ly, "ratchetFade") / 100;
+            /* The note echo. Real notes rather than a delay line, so each repeat goes through the
+               part's own instrument, filter and envelope, and can move in pitch as it goes — which
+               a delay could never do, because a delay can only repeat what it was handed. */
+            const reps = modOf(ly, "echo"), gapBeats = modOf(ly, "echoTime");
+            const efade = modOf(ly, "echoFade") / 100, epitch = modOf(ly, "echoPitch");
+            for (let e = 0; e <= reps; e++) {
+              const eLvl = Math.pow(1 - efade * 0.85, e);
+              if (eLvl < 0.02) break;                        // too quiet to be worth scheduling
+              const eT = tp + e * gapBeats * beat, eSemis = e * epitch;
+              for (let k = 0; k < rat; k++) {                // ratchet: the same chord, k times over
+                const tk = eT + k * (dur0 / rat);
+                // a roll that fades away, or one that builds into the note after it
+                const rLvl = rat > 1 && fade ? Math.max(0.08, 1 - fade * (k / (rat - 1) - 0.5) * 1.6) : 1;
+                const lvl = eLvl * rLvl;
+                const shape = lvl === 1 ? base : { ...base, lvl };
+                stack.forEach((mi, j) => {
+                  // fold anything out of hearing back in rather than letting it whistle or disappear
+                  const md = Math.max(21, Math.min(108, mi + eSemis));
+                  // `slot` is this note's place among the ones sounding together, so a strum spreads
+                  // a chord written into the grid as well as one Harmonise built
+                  const at = down ? (stack.length - 1 - j) : j;
+                  const tj = tk + (slot + at) * strum;
+                  if (!(realRef.current && playLeadSampled(m.sampler, voice, tj, md, dur, dest, shape)))
+                    leadNote(m.ctx, tj, md, dur, kind, held && rat === 1 && !reps, dest, shape);
+                });
+              }
             }
           };
           // the filter envelope, opened at the note and falling back to where Low-pass is set.
@@ -1955,32 +2043,51 @@ export default function ProgressionWheel() {
             lp.frequency.exponentialRampToValueAtTime(Math.max(30, cutHz), tp + dec);
           };
           // play one melody layer's column with its own voice (falling back to the global lead)
-          const playLayer = (ly, flat, voice, li, oct, gain, send) => {
+          const playLayer = (ly, flat, voice, li, oct, gain, send, nbars) => {
             if (!flat || !flat.length || melStep == null || !gain) return;
-            const N = flat.length, col = (mb * MB + melStep) % N;
+            const N = flat.length;
+            const col = colFor(ly, N, melStep, mb);    // null = the pattern effects silence this tick
+            if (col == null) return;
             if (!playChance(ly, li, m.step)) return;
-            const tp = timeFor(ly, melStep);
+            const tp = timeFor(ly, li, melStep);
             const dest = chainOf(li).gain;
-            const vel = humVel(accent) * accentOf(ly, melStep);
+            const vel = velFor(ly, li, melStep, nbars);
             dest.gain.setValueAtTime(gain * vel, tp);
             if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, tp);
             const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
             if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
             const cells = flat[col] || [];
             if (cells.length) fireFenv(ly, li, tp, vel);
+            // the bar's first written note, so Invert can mirror the phrase around where it began
+            const firstDeg = (() => {
+              const at = Math.floor(col / MB) * MB;
+              for (let c = at; c < Math.min(at + MB, N); c++) if ((flat[c] || []).length) return flat[c][0];
+              return null;
+            })();
+            const nd = mel.scale.length;
+            const stray = modOf(ly, "rpitch"), dia = modOf(ly, "dia");
             // sorted, so a strum runs up the chord rather than in whatever order the grid stored it
-            [...cells].sort((a, b) => a - b).forEach((deg, slot) => {
+            [...cells].sort((a, b) => a - b).forEach((deg0, slot) => {
               const held = mel.legato;
               const prev = flat[col - 1] || [];
-              if (held && col > 0 && prev.includes(deg)) return; // still ringing from last slot
+              if (held && col > 0 && prev.includes(deg0)) return; // still ringing from last slot
               let run = 1;
-              if (held) while (col + run < N && (flat[col + run] || []).includes(deg)) run++;
-              const midi = base + 12 * (oct || 0) + mel.scale[deg];
+              if (held) while (col + run < N && (flat[col + run] || []).includes(deg0)) run++;
+              /* The pitch-domain note effects, in the order they have to happen: mirror the written
+                 note, wander off it, then move it by scale steps. All three work on the *degree*
+                 rather than the semitone, which is what keeps them in the key however far they go. */
+              let deg = invertDeg(ly, deg0, firstDeg, nd);
+              if (stray && hash01(m.step * 7127 + li * 331 + slot * 13) * 100 < stray)
+                deg += hash01(m.step * 991 + slot * 7) < 0.5 ? -1 : 1;
+              deg += dia;
+              // a degree past either end of the scale is the same note an octave away
+              const oc = Math.floor(deg / nd), d = ((deg % nd) + nd) % nd;
+              const midi = snapMidi(ly, base + 12 * (oct || 0) + 12 * oc + mel.scale[d], mel.scale, mel.tonic);
               // `run` counts melody columns, so a note's length has to be measured in columns
               // — on a sixteenth grid a one-column note is a sixteenth, not an eighth
               const colDur = beat / (subRef.current || 2);
               fireNote(ly, li, voice, tp, midi, held ? colDur * (run + 0.35) : colDur * 0.92, dest, held,
-                harmOf(ly, deg, mel.scale), slot);
+                harmOf(ly, d, mel.scale), slot);
             });
           };
           /* The arpeggiator. Rather than reading the grid, an arped part takes the chord under
@@ -1988,10 +2095,11 @@ export default function ProgressionWheel() {
              moment you change a chord, which is the whole point of arping in a sketchpad.
              The step index comes from the absolute tick, not a running counter, so the line is
              identical whether it is played, rendered or bounced to a stem. */
-          const playArp = (ly, fx, voice, li, oct, gain, send) => {
+          const playArp = (ly, fx, voice, li, oct, gain, send, nbars) => {
             const mode = ARP_BY_ID[fx.arp];
             if (!mode || !gain || !m.voicing || !m.voicing.length) return;
-            const stride = L / (fx.arpRate * barBeatsRef.current);
+            const rate = modOf(ly, "rate");
+            const stride = L / (fx.arpRate * rate * barBeatsRef.current);
             if (stride < 1 || i % Math.round(stride) !== 0) return;     // not an arp step
             if (!playChance(ly, li, m.step)) return;
             const one = m.voicing.length;                                // notes in one octave
@@ -1999,15 +2107,24 @@ export default function ProgressionWheel() {
             for (let o = 0; o < Math.max(1, fx.arpOct); o++)
               for (const n of m.voicing) pool.push(n + 12 * o);
             const stepIdx = Math.floor(m.step / Math.round(stride));
-            let midi = pool[Math.min(pool.length - 1, Math.max(0, mode.seq(stepIdx, pool.length, one)))] + 12 * (oct || 0);
+            // Euclid thins an arp exactly as it thins a written line — the arp decides which note,
+            // Euclid decides whether this step gets one at all
+            const ek = modOf(ly, "euclid");
+            if (ek && !euclidHit(ek, modOf(ly, "euclidLen"), stepIdx)) return;
+            // an arp walks the chord's own notes, so Scale steps and Reverse move it through the
+            // pool rather than through the scale — the same idea in the set the arp is actually using
+            const dir = modOf(ly, "retro") ? -1 : 1;
+            const seqAt = mode.seq(stepIdx * dir + modOf(ly, "shift"), pool.length, one);
+            let midi = pool[Math.min(pool.length - 1, Math.max(0,
+              ((seqAt + modOf(ly, "dia")) % pool.length + pool.length) % pool.length))] + 12 * (oct || 0);
             // Four octaves of arp on a part already lifted two is a piercing 12 kHz whistle, and
             // the same stack on a sub bass falls below hearing. Fold stray octaves back into the
             // audible range rather than letting the two settings multiply into something unusable.
             while (midi > 108) midi -= 12;
             while (midi < 24) midi += 12;
             const chain = chainOf(li);
-            const tp = timeFor(ly, stepIdx);
-            const vel = humVel(accent) * accentOf(ly, stepIdx);
+            const tp = timeFor(ly, li, stepIdx);
+            const vel = velFor(ly, li, stepIdx, nbars);
             chain.gain.gain.setValueAtTime(gain * vel, tp);
             if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, tp);
             const leadKey = isGM(voice) ? voice : null;
@@ -2020,7 +2137,8 @@ export default function ProgressionWheel() {
             const steps = { "3": [1], "5": [2], "35": [1, 2], "357": [1, 2, 3], "15": [2, 4] }[modOf(ly, "chord")];
             const harm = steps && at >= 0
               ? steps.map(s => pool[Math.min(pool.length - 1, at + s)] - pool[at]) : [];
-            fireNote(ly, li, voice, tp, midi, (beat / fx.arpRate) * 0.92, chain.gain, false, harm);
+            fireNote(ly, li, voice, tp, snapMidi(ly, midi, mel.scale, mel.tonic),
+              (beat / (fx.arpRate * rate)) * 0.92, chain.gain, false, harm);
           };
           const anySolo = sec.layers.some(ly => ly.solo);
           sec.layers.forEach((ly, li) => {
@@ -2060,8 +2178,10 @@ export default function ProgressionWheel() {
               // silent for the rest of the session.
               m.partGate[li].gain.setTargetAtTime(1, t, 0.01);
             }
-            if (fx.arp) playArp(ly, fx, voice, li, ly.oct || 0, gain, ly.send || 0);
-            else playLayer(ly, ly.flat, voice, li, ly.oct || 0, gain, ly.send || 0);
+            // how many bars this section runs for, so Swell can measure its way across it
+            const nbars = (sec.layers[0] && sec.layers[0].bars.length) || 1;
+            if (fx.arp) playArp(ly, fx, voice, li, ly.oct || 0, gain, ly.send || 0, nbars);
+            else playLayer(ly, ly.flat, voice, li, ly.oct || 0, gain, ly.send || 0, nbars);
           });
           const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
           if (melStep != null) {

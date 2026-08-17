@@ -544,7 +544,7 @@ function makeSampler(ctx) {
     const S = shape || NO_SHAPE;
     const src = ctx.createBufferSource(); src.buffer = best.buf;
     src.playbackRate.value = Math.pow(2, (midi - best.m) / 12);
-    const lvl = gain * Math.min(1.6, S.sus || 1);
+    const lvl = gain * Math.min(1.6, S.sus || 1) * (S.lvl == null ? 1 : S.lvl);
     const g = ctx.createGain();
     const atk = S.atk || 0;
     if (atk > 0) {                                   // ramp in rather than starting at full
@@ -634,7 +634,7 @@ function driveCurve(amt) {
 
 /* No envelope shaping: nothing added to the attack, every stage at its own length. A part with the
    Envelope group untouched passes this, and the voice is exactly what it always was. */
-const NO_SHAPE = { atk: 0, dec: 1, sus: 1, rel: 1 };
+const NO_SHAPE = { atk: 0, dec: 1, sus: 1, rel: 1, lvl: 1 };
 
 // Melody lead voices — chosen from the "Lead" dropdown. Each spec is a stack of
 // partials (oscillator type · harmonic multiple · relative level) plus an
@@ -697,7 +697,10 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
   const S = shape || NO_SHAPE;
   const atk = Math.max(legato ? Math.max(V.atk, 0.03) : V.atk, S.atk || 0);
   const rel = (legato ? V.rel * 1.6 : V.rel) * (S.rel || 1);
-  const peak = V.vol;
+  // `lvl` scales the whole note. It exists for the note echo, whose repeats have to get quieter
+  // one at a time — a level that belongs to the note, not to the part, so it cannot live on the
+  // part's gain node the way every other level in here does.
+  const peak = V.vol * (S.lvl == null ? 1 : S.lvl);
   // sustain is a share of the peak, so scaling it must not push a note louder than its own attack
   const sus = peak * Math.min(1, V.sus * (S.sus || 1));
   const decEnd = Math.min(atk, 0.12) + 0.12 * (S.dec || 1);   // how long the fall to sustain takes

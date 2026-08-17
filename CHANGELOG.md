@@ -1,6 +1,46 @@
 # Changelog
 
 ## Unreleased
+- **Twenty more note effects — the layer the arpeggiator lives in, worked through properly.** A note
+  event has exactly five things an effect can touch: its pitch, when it starts, how long it lasts,
+  how hard it is played, and whether it exists at all. The app covered patches of that; it now
+  covers all five. **Fifty-eight modulations across eight groups**, up from 38 across seven.
+
+  **Pattern** — which notes play and when:
+  - **Euclid** keeps only N notes, spread as evenly as the grid allows. 3 over 8 is the tresillo,
+    5 over 8 the cinquillo; most traditional rhythms on earth are a Euclidean pattern, and the ones
+    that are not sound wrong. Its own step count too, so the figure can be shorter or longer than the bar.
+  - **Reverse** — each bar backwards, or the whole part.
+  - **Shift** — rotate the part by grid steps, wrapping round.
+  - **Speed** — read the written notes at ¼, ½, ×2 or ×4 without touching the tempo. Half time on a
+    bass under a full-speed drum part is most of what makes a beat feel heavy.
+
+  **Repeat** (new group) — the same note more than once:
+  - **Note echo** with its own time, fade and **pitch shift per repeat**. Real notes, not a delay
+    line, so the repeats go through the part's own instrument and filter — and can climb or sink,
+    which a delay can never do because a delay only gives back what it was handed.
+  - **Roll fade** — whether a ratchet dies away or builds into the next note.
+  - **Strum way** — upstroke, downstroke or alternating.
+
+  **Pitch** — now the pitch-domain note effects together:
+  - **Scale steps** moves by steps of the scale rather than semitones, so it stays in key however far it goes.
+  - **Snap to** folds every note into the key, pentatonic, the blues scale or the chord tones.
+    Pentatonic is the safety net — nothing in it can clash with anything else.
+  - **Invert** turns the tune upside down around the tonic, the fifth, or its own first note.
+  - **Voicing** — close, open, spread or drop-the-top for a harmonised chord.
+  - **Stray notes** — how often a note wanders a step off what was written, staying in the scale.
+
+  **Feel** — **Humanise** (scatter each note, where Nudge moves the whole part), **Length spread**,
+  **Level spread**, and **Swell**, which rides the level across the section and re-times itself when
+  the arrangement changes.
+
+  Pattern was split into **Pattern** and **Repeat**, and the pitch-domain effects moved into
+  **Pitch** — eighteen note effects in one panel is a list, not a choice.
+
+  Every one of the twenty was checked by rendering the song with it turned up and comparing against
+  the same render with everything at default. The Euclidean generator is checked against named
+  rhythms and against the property that makes it Euclidean at all: for every k ≤ n ≤ 32, the right
+  number of hits with gaps never differing by more than one step. Version bumped to 4.66.0.
 - **An Envelope group, and the rest of the arpeggiator's family.** Ten new controls in two places,
   filling the two biggest gaps in what a part could be made to sound like.
 
