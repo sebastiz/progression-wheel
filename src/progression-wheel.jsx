@@ -1,13 +1,13 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
-import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
+import { decodeSong, encodeSong, makeSong, songBeats, songMelos } from "./song.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
@@ -506,6 +506,12 @@ export default function ProgressionWheel() {
   // per-section-type chord mute, keyed by base letter. Dropping the chords for a breakdown while
   // the drums carry on is a basic arrangement move that had no way to be expressed before.
   const [secQuiet, setSecQuiet] = useState({});
+  /* A section instance's own drum bars, written on its grid. The catalogue choice above is per
+     section *type*, so every chorus shared one groove and none of them could be edited at all;
+     this is per pass and editable, and it is stored in the same array-of-step-strings the
+     catalogue uses, so playback, MIDI and the stem bounce need no path of their own. */
+  const [secBeat, setSecBeat] = useState({});
+  const [openBeats, setOpenBeats] = useState({});            // which section drum grids are open
   const [custom, setCustom] = useState({ key:"", plan:null });   // edited copy of a structure's plan
   const [auto, setAuto] = useState({ key:"", filter:null, level:null });  // drawn automation lanes
   const [editArr, setEditArr] = useState(false);                 // arrangement-editing mode on the strip
@@ -517,6 +523,7 @@ export default function ProgressionWheel() {
      rather than to the boundary, because a boundary has no stable name — insert a verse and every
      later boundary is a different boundary, while C2 is still C2 and carries its own transition. */
   const [secTrans, setSecTrans] = useState({});
+  const [gridSt, setGridSt] = useState({ key:"", val:"" });     // melody grid resolution, keyed by progression
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
   const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
   const [humanise, setHumanise] = useState(0);                  // timing + velocity looseness, 0..1
@@ -575,7 +582,7 @@ export default function ProgressionWheel() {
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(0);
   const humRef = useRef(0), barBeatsRef = useRef(4);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
-  const secDrumRef = useRef({}), secQuietRef = useRef({}), autoRef = useRef({});
+  const secDrumRef = useRef({}), secQuietRef = useRef({}), secBeatRef = useRef({}), autoRef = useRef({});
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
   const subRef = useRef(2), melRef = useRef(8);
   const moveRef = useRef({ moves:{}, instBars:{} });
@@ -955,6 +962,8 @@ export default function ProgressionWheel() {
     // under the first one as soon as you move a section
     setSecMove(remapKeyed(secMove, cur, next, origin, letterFor));
     setSecTrans(remapKeyed(secTrans, cur, next, origin, letterFor));
+    // deep-copied, or duplicating a section would give the copy the original's own array to edit
+    setSecBeat(remapKeyed(secBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
     if (sel != null) setSelRow(sel);
   };
   const rowsNow = () => (effPlan || []).map(r => ({ ...r }));
@@ -1015,7 +1024,7 @@ export default function ProgressionWheel() {
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = swingAmt;
   humRef.current = humanise;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
-  secDrumRef.current = secDrum; secQuietRef.current = secQuiet;
+  secDrumRef.current = secDrum; secQuietRef.current = secQuiet; secBeatRef.current = secBeat;
   // automation belongs to the song it was drawn on, so it stops applying when you switch away
   autoRef.current = auto.key === planKey ? auto : {};
   kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0; delayRef.current = delayId;
@@ -1044,10 +1053,46 @@ export default function ProgressionWheel() {
     const keep = {};
     for (const [k, v] of Object.entries(secDrum)) if (!v || drumFitsMeter(DRUMS[v], mid)) keep[k] = v;
     if (Object.keys(keep).length !== Object.keys(secDrum).length) setSecDrum(keep);
+    // an edited bar is a pattern like any other, and one written in 4/4 is the wrong length in 3/4:
+    // its sixteenths would fall between the new bar's ticks and most of the groove would vanish
+    const want = beatSteps((METER_BY_ID[mid] || METERS[0]).beats);
+    const kb = {};
+    for (const [k, bars] of Object.entries(secBeat)) if (bars && bars[0] && bars[0].length === want) kb[k] = bars;
+    if (Object.keys(kb).length !== Object.keys(secBeat).length) setSecBeat(kb);
   };
-  const meloBeats = rhythm.pattern.length;                  // grid columns per bar (6 in waltz time, 16 on a sixteenth rhythm)
-  const meloSub = subOf(rhythm);                            // columns per beat: 2 = eighths, 4 = sixteenths
   const barBeats = beatsOf(rhythm);                         // 4 in common time, 3 in waltz time
+  /* How finely the melody grid divides a beat. This was `rhythm.pattern.length`, which tied the
+     writing grid to the strum pattern: a sixteenth grid meant picking a sixteenth strum, which
+     changes the sound as well. It is its own choice now, defaulting to what the pattern implies —
+     `barBeats * subOf(rhythm)` is the pattern's own length, so a song that leaves it alone is
+     unchanged. Changing it re-times what is written (`rescaleBar`), so notes keep the moment they
+     sound at rather than the column they were stored in. */
+  const meloSub = gridSub(gridSt.key === progId ? gridSt.val : "", subOf(rhythm));
+  const meloBeats = barBeats * meloSub;                     // grid columns per bar (6 in waltz time, 16 on a sixteenth grid)
+  /* The melody grid and the drum grid sit one above the other and describe the same bars, so they
+     have to line up. That means one label gutter and a column unit scaled by each grid's own step
+     count, or bar 3 is in two different places and neither grid can be read against the other —
+     which is the whole point of stacking them. */
+  /* The two grids are aligned, so they have to stay aligned when one is scrolled — a section wider
+     than the panel is the normal case, not the exception, and a drum grid parked two bars away from
+     the melody above it would undo the whole point of lining them up. */
+  const syncScroll = e => {
+    const el = e.currentTarget, x = el.scrollLeft;
+    for (const other of document.querySelectorAll(`.mscroll[data-sync="${el.dataset.sync}"]`))
+      if (other !== el && Math.round(other.scrollLeft) !== Math.round(x)) other.scrollLeft = x;
+  };
+  const GRID_GUT = 52;                                      // the row-label column, wide enough for "Open hat"
+  const beatCols = beatSteps(barBeats);                     // steps a written drum bar has
+  /* Matching the widths means matching cell *and* gap, because a grid with twice the columns also
+     has twice the gaps — which is exactly why the two used to drift apart by a bar's width over
+     four bars. With `gridR` drum steps per melody column, cell+gap on one has to be gridR times
+     cell+gap on the other: 26+4 against 2×(13+2) when the melody is in eighths, and identical when
+     it is in sixteenths and the two grids have the same columns anyway. */
+  const gridR = Math.max(1, beatCols / meloBeats);
+  const melCell = gridR === 1 ? 15 : 26;
+  const beatCell = gridR === 1 ? 15 : 13, beatGap = gridR === 1 ? 4 : 2;
+  // and the drum grid's gutter takes the gap difference back, or its narrower gaps start it two
+  // pixels left of the melody grid and every bar line is out by the same two pixels
   barBeatsRef.current = barBeats;
   // How finely the scheduler has to tick this bar: enough for the strum pattern and for every
   // drum pattern that could play (the global one plus any per-section override). Computed over
@@ -1056,8 +1101,11 @@ export default function ProgressionWheel() {
     const lens = [DRUMS[drum], ...Object.values(secDrum).map(id => DRUMS[id])]
       .filter(d => d && d.pattern && drumBeatsOf(d.pattern) === barBeats)
       .map(d => d.pattern.length);
+    // an edited bar is sixteenths, and a bar that does not tick that finely would drop every
+    // second hit of one between its ticks
+    Object.values(secBeat).forEach(bars => { if (bars && bars.length) lens.push(bars[0].length); });
     return lens.reduce((a, b) => lcm(a, b), meloBeats);
-  }, [drum, secDrum, meloBeats, barBeats]);
+  }, [drum, secDrum, secBeat, meloBeats, barBeats]);
   subRef.current = meloSub; melRef.current = meloBeats;
   /* A move or a transition is the instance's own if it has one, and the section letter's otherwise.
      Playback, the strip and the pickers all have to agree about that, and they did not: the strip
@@ -1234,6 +1282,42 @@ export default function ProgressionWheel() {
         layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), ...patch } : cloneLayer(ly)) };
     }
     setMelos({ progId, secs: next });
+  };
+  /* ---- the drum grid ----
+     The catalogue pattern a section is playing, which is what its grid opens showing: its type's
+     override if it has one, else the song's. `beatFrom` lays it onto the sixteenth grid with the
+     same resampler playback uses, so an eighth-note pattern arrives on every other step exactly as
+     it sounds — you are editing what you were hearing, not a blank bar beside it. */
+  const beatCat = d => {
+    const id = (d && d.base != null && secDrum[d.base]) || drum;
+    return DRUMS[id] ? DRUMS[id].pattern : null;
+  };
+  const beatSeed = d => {
+    const pat = beatCat(d), n = beatSteps(barBeats);
+    return Array.from({ length: d.nbars }, () => pat ? beatFrom(pat, n) : blankBeat(n));
+  };
+  // the bars on screen for a section: its own if written, else the catalogue laid onto the grid.
+  // Sized to the section, so stretching a verse gives the new bars rather than dropping them.
+  const beatBars = d => {
+    const own = secBeat[d.key], n = beatSteps(barBeats);
+    if (!own || !own.length) return beatSeed(d);
+    return Array.from({ length: d.nbars }, (_, b) => {
+      const bar = own[Math.min(b, own.length - 1)];
+      return bar && bar.length === n ? bar : blankBeat(n);
+    });
+  };
+  const putBeat = (key, bars) => setSecBeat({ ...secBeat, [key]: bars });
+  const tapBeat = (d, bar, step, ch) => {
+    const bars = beatBars(d);
+    putBeat(d.key, bars.map((b, i) => i === bar ? beatToggle(b, step, ch) : [...b]));
+  };
+  // hand the section back to the catalogue — the grid goes on showing what is playing, unwritten
+  const resetBeat = key => { const next = { ...secBeat }; delete next[key]; setSecBeat(next); };
+  const copyBeat = (d, to) => {
+    const bars = beatBars(d), next = { ...secBeat };
+    for (const o of to) next[o.key] = Array.from({ length: o.nbars },
+      (_, b) => [...bars[Math.min(b, bars.length - 1)]]);
+    setSecBeat(next);
   };
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
@@ -1734,6 +1818,11 @@ export default function ProgressionWheel() {
         const b = struct[structBar];
         const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
         if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
+        /* …and a section that has been written on its own grid plays that instead, bar by bar, so a
+           fill can land in the last bar of a verse. A section stretched since it was written repeats
+           its last written bar rather than falling silent — the same rule melodies follow. */
+        const own = b && b.inst != null ? secBeatRef.current[b.inst] : null;
+        if (own && own.length) dpat = own[Math.min(b.mb, own.length - 1)];
       }
       /* Automation lanes: on each bar's downbeat, ramp to the value the curve holds a bar later.
          Per bar rather than per tick because that is already smooth to the ear and keeps the event
@@ -2479,6 +2568,10 @@ export default function ProgressionWheel() {
       // per-bar drum pattern: a section's own kit if it set one, else the global choice
       const drumForBar = bi => {
         const b = bars[bi];
+        // a section's own written bars first, then its type's catalogue choice, then the song's —
+        // the same order playback resolves, so the file is what you heard
+        const own = b && b.inst != null ? secBeat[b.inst] : null;
+        if (own && own.length) return own[Math.min(b.mb, own.length - 1)];
         const id = (b && b.base != null && secDrum[b.base]) || drum;
         return DRUMS[id] ? DRUMS[id].pattern : null;
       };
@@ -2737,7 +2830,7 @@ export default function ProgressionWheel() {
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-    kit, pump, secMove, secTrans, secNar, delayId, bpm: effBpm, selStruct, contrast,
+    kit, pump, secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
@@ -2750,7 +2843,7 @@ export default function ProgressionWheel() {
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-      kit, pump, secMove, secTrans, secNar, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
+      kit, pump, secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -2935,8 +3028,9 @@ export default function ProgressionWheel() {
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
     setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
-    setSecMove(s.secMove || {}); setSecTrans(s.secTrans || {});
+    setSecMove(s.secMove || {}); setSecTrans(s.secTrans || {}); setSecBeat(songBeats(s));
     setSecNar(s.secNar || {});
+    setGridSt({ key:s.progId, val:s.grid || "" });                                 // absent in sketches saved before the grid was its own choice
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
     setNChordsSt({ key:s.progId, val:s.nChords || 0 });
@@ -3143,8 +3237,8 @@ export default function ProgressionWheel() {
         @media (max-width: 560px) {
           .lybtn { padding:7px 13px; font-size:var(--fs-md); min-height:32px; }
           .mini { padding:6px 10px; min-height:32px; }
-          .partmix { gap:8px 12px; padding:9px 10px; }
-          .partmix .lvl { width:120px; height:26px; }
+          .parthdr { gap:8px 12px; }
+          .parthdr .lvl { width:120px; height:26px; }
           label.secdrum select { min-height:32px; padding:5px 6px; }
           .selwrap select { min-height:34px; }
         }
@@ -3177,7 +3271,7 @@ export default function ProgressionWheel() {
           background:var(--ly, var(--line-3)); color:var(--bg); font-variant-numeric:tabular-nums; }
         .modtab .lydot { background:var(--green); }
         .lyflag { font-style:normal; font-size:var(--fs-xs); color:var(--amber); }
-        .partpanel { padding:9px 11px 11px; border-radius:0 var(--r-md) var(--r-md) var(--r-md);
+        .partpanel { padding:7px 10px 8px; border-radius:0 var(--r-md) var(--r-md) var(--r-md);
           border:1px solid color-mix(in srgb, var(--ly) 34%, var(--line-2));
           border-left:3px solid color-mix(in srgb, var(--ly) 62%, var(--line-2));
           background:
@@ -3185,7 +3279,7 @@ export default function ProgressionWheel() {
             var(--surface-2);
           margin-bottom:8px; }
         .partinstr { flex:1 1 150px; min-width:130px; max-width:280px; }
-        .parthdr { margin-bottom:7px; }
+        .parthdr { margin-bottom:6px; }
         .partname { font-size:var(--fs-sm); font-weight:600; color:var(--ly); letter-spacing:.02em; }
         .modtabs { gap:3px; flex-wrap:wrap; margin:9px 0 7px; border-bottom:1px solid var(--line-2); padding-bottom:6px; }
         .modtab { font-size:var(--fs-sm); padding:3px 9px; border-radius:var(--r-pill); border:1px solid transparent;
@@ -3194,7 +3288,9 @@ export default function ProgressionWheel() {
         .modtab.on { background:var(--surface); border-color:var(--line-2); color:var(--text); }
         /* A grid rather than a wrapping row: 28 controls of different widths in a flex row is a
            staircase, and the labels stop lining up the moment one of them is a word longer. */
-        .modgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(232px, 1fr)); gap:6px 12px; }
+        /* Two columns, not three: three fits the height budget and truncates every control's
+           label to "off — play the g", which is a worse card than a taller one. */
+        .modgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(232px, 1fr)); gap:5px 11px; }
         .modctl { display:flex; align-items:center; gap:7px; min-width:0; }
         .modlbl { font-size:var(--fs-sm); color:var(--muted); flex:0 0 78px; }
         .modlbl.modon { color:var(--text); font-weight:600; }
@@ -3211,18 +3307,32 @@ export default function ProgressionWheel() {
           .modtab { padding:6px 11px; min-height:30px; }
           .modctl .lvl { height:26px; }
         }
-        .partmix { padding:7px 9px; background:var(--surface); border:1px solid var(--line-2); border-radius:var(--r-md); }
+
         .lybtn { font-size:var(--fs-sm); padding:2px 9px; border-radius:var(--r-pill); border:1px solid var(--line-2); background:var(--surface); color:var(--muted); cursor:pointer; }
         .mcell.b0 { border-left:2px solid var(--line-3); }
+        /* The drum rows are binary — a cell is on or it is not — so they can be shorter than the
+           melody's without losing anything, which keeps a section card readable at nine rows.
+           The label's right edge carries the kit-family ink, so the three parts of a kit are
+           legible while every cell is still empty. */
+        .mcell.dcell { height:17px; }
+        .mnote.dname { border-right:2px solid transparent; padding-right:5px; font-size:var(--fs-xs); }
+        /* one header shape for both grids, so they stack rather than sit next to each other */
+        .gridhdr { gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0 2px; }
+        .gridname { font-size:var(--fs-sm); color:var(--muted); }
         .mcell.bt { border-left:1px solid var(--line-2); }
         .mcell.mv { touch-action:none; }
         .mscroll.mvmode { user-select:none; -webkit-user-select:none; touch-action:none; }
         .mcell.msel { outline:2px solid var(--blue); outline-offset:-1px; box-shadow:inset 0 0 0 2px rgba(110,168,255,.35); }
         .mcell.mbox { background:rgba(110,168,255,.22); border-color:var(--blue); }
         .mcell.mghost { background:rgba(110,168,255,.5); border-color:var(--blue); }
-        .melmodebar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:8px; }
+        .melmodebar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:6px; }
         .melmodebar .rlbl { font-size:var(--fs-md); color:var(--muted); margin:0 2px; }
         .mscroll { overflow-x:auto; padding-bottom:4px; }
+        /* The row labels live inside the scroller, so a section wider than the panel used to scroll
+           its own legend away — nine drum rows of unlabelled cells. Pinning the gutter keeps
+           "Snare" beside the snare wherever you have scrolled to. */
+        .mline > .mnote, .mline > span:first-child { position:sticky; left:0; z-index:2;
+          background:var(--surface); }
         .sugmel { background:var(--bg); border:1px solid var(--line-2); border-radius:var(--r-lg); padding:10px 12px; margin-bottom:10px; }
         /* the arrangement strip: a fixed label gutter beside a proportional track area */
         .tl { display:flex; gap:8px; align-items:stretch; margin-top:11px; padding:9px 11px 10px;
@@ -3950,6 +4060,17 @@ export default function ProgressionWheel() {
             </select>
             {narUndo && narSel.key === progId && <button className="mini" onClick={undoNarrative}
               title="Put the melodies back as they were before the narrative was written">↶ Undo</button>}
+            {/* How finely you can write, which is not the same decision as how the chords are
+                strummed — it used to be read off the strum pattern, so a sixteenth grid meant
+                picking a sixteenth strum and changing the sound to get it. */}
+            <select value={gridSt.key === progId ? gridSt.val : ""}
+              onChange={e => setGridSt({ key: progId, val: e.target.value })}
+              style={{ flex:"0 1 170px" }}
+              title={"How finely the melody grid divides a beat — " + meloBeats + " columns a bar at the moment. "
+                + (MEL_GRIDS.find(g => g[0] === (gridSt.key === progId ? gridSt.val : ""))|| [])[2]
+                + " Changing it re-times what you have written, so every note keeps the moment it sounds at."}>
+              {MEL_GRIDS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
           </div>
           {curNar
             ? <p className="arrnote" style={{ marginTop:6 }}>{curNar.tip}
@@ -4335,6 +4456,7 @@ export default function ProgressionWheel() {
             const sec = secMelos[d.key] || EMPTY_SEC;
             const cols = d.cs.length * meloBeats;
             const open = !!openSecs[d.key];
+            const beatOpen = !!openBeats[d.key];
             const has = secHasNotes(sec);
             const donor = !has && sections.insts.find(o => o.base === d.base && o.key !== d.key
               && secHasNotes(secMelos[o.key]));
@@ -4362,6 +4484,10 @@ export default function ProgressionWheel() {
                           {recSource === "guitar" ? "🎸" : "🎤"} Rec</button>}
                     <button className="mini" onClick={() => setOpenSecs({ ...openSecs, [d.key]: !open })}>
                       {open ? "▾" : "▸"} melody{has ? " ●" : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenBeats({ ...openBeats, [d.key]: !beatOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own drums — a busier hat in the second chorus, a fill in the last bar. It opens on whatever is playing now."}>
+                      {beatOpen ? "▾" : "▸"} drums{secBeat[d.key] ? " ● " + beatHits(secBeat[d.key]) : ""}
                     </button>
                   </div>
                 </div>
@@ -4499,12 +4625,12 @@ export default function ProgressionWheel() {
                             onClick={() => set(Object.fromEntries(MODS.map(md => [md.k, md.dflt])))}>↺ reset</button>}
                           {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
                             title={"Remove part " + LAYER_NAMES[secL] + " from " + d.key}>🗑</button>}
-                        </div>
 
-                        {/* register, level and the two mix switches: the part's place in the mix,
-                            above the modulation because it is what you reach for first */}
-                        <div className="row partmix" style={{ gap:10, alignItems:"center", flexWrap:"wrap" }}>
-                          <span className="modlbl">Octave</span>
+                        {/* register, level and the two mix switches sit on the same row as the part's
+                            name and voice: which part, what it plays and where it sits in the mix are
+                            one thing, and a boxed second row spent a border and two paddings saying
+                            they were two. It wraps on a narrow card, which is where it needs to. */}
+                          <span className="modlbl" style={{ marginLeft:2 }}>Octave</span>
                           <div className="row" style={{ gap:4, alignItems:"center" }}>
                             <button className="mini" disabled={oct <= LAYER_OCT_MIN}
                               onClick={() => set({ oct: Math.max(LAYER_OCT_MIN, oct - 1) })}
@@ -4560,11 +4686,43 @@ export default function ProgressionWheel() {
                       </>);
                     })()}
 
-                    <div className="seg" style={{ marginBottom:8 }}>
-                      <button className={tab === "write" ? "on" : ""}
-                        onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
-                      <button className={tab === "suggest" ? "on" : ""}
-                        onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
+                    {/* Write/Suggest and Draw/Move were two button rows stacked, which is two rows
+                        of chrome above a grid that is the actual work. One row, and the second
+                        switch appears only in the mode that has it. */}
+                    <div className="melmodebar">
+                      <div className="seg">
+                        <button className={tab === "write" ? "on" : ""}
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
+                        <button className={tab === "suggest" ? "on" : ""}
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
+                      </div>
+                      {tab === "write" && <div className="seg">
+                          <button className={!melMove ? "on" : ""} onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
+                          <button className={melMove ? "on" : ""} onClick={() => setMelMove(true)}>✋ Move</button>
+                        </div>}
+                        {tab === "write" && melMove && (() => {
+                          const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
+                          return (<>
+                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
+                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
+                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
+                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
+                            <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
+                          </>);
+                        })()}
                     </div>
 
                     {tab === "suggest" && (
@@ -4623,40 +4781,9 @@ export default function ProgressionWheel() {
                       </div>
                     )}
 
-                    {tab === "write" && (
-                      <div className="melmodebar">
-                        <div className="seg">
-                          <button className={!melMove ? "on" : ""} onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
-                          <button className={melMove ? "on" : ""} onClick={() => setMelMove(true)}>✋ Move</button>
-                        </div>
-                        {melMove && (() => {
-                          const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
-                          return (<>
-                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
-                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
-                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
-                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
-                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
-                            <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
-                          </>);
-                        })()}
-                      </div>
-                    )}
-
-                    <div className={"mscroll" + (melMove ? " mvmode" : "")}>
-                      <div className="mline" style={{ gridTemplateColumns:`36px repeat(${cols}, minmax(15px,1fr))` }}>
+                    <div className={"mscroll" + (melMove ? " mvmode" : "")}
+                      data-sync={d.key} onScroll={syncScroll}>
+                      <div className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
                         <span />
                         {d.cs.map((c, b) => (
                           <span key={b} className="mbar" style={{ gridColumn:`span ${meloBeats}`,
@@ -4664,7 +4791,7 @@ export default function ProgressionWheel() {
                         ))}
                       </div>
                       {[...scaleSemis.keys()].reverse().map(deg => (
-                        <div key={deg} className="mline" style={{ gridTemplateColumns:`36px repeat(${cols}, minmax(15px,1fr))` }}>
+                        <div key={deg} className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
                           <span className="mnote">{spell((tonic + scaleSemis[deg]) % 12, tonic, effMode)}</span>
                           {Array.from({ length: cols }, (_, c) => {
                             // which parts sound this note here; the cell takes the first one's ink,
@@ -4699,6 +4826,68 @@ export default function ProgressionWheel() {
                       ))}
                     </div>
                   </div>
+                  );
+                })()}
+                {/* This section's own drums. Nine rows, one per kit piece, and a cell is a letter
+                    in the step string the catalogue patterns are already made of — so what you
+                    write here is a pattern like any other, and playback, the exported MIDI and the
+                    drum stem all take it without knowing it was edited.
+                    It opens on whatever is *currently* playing rather than on an empty bar, so the
+                    first thing you do is change a groove rather than build one from nothing. */}
+                {beatOpen && (() => {
+                  const bars = beatBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  const cat = DRUMS[(secDrum[d.base] || drum)];
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      {/* the same control row shape the melody grid above uses, so the two blocks
+                          read as one stack rather than two features that happen to be adjacent */}
+                      <div className="row gridhdr">
+                        <span className="gridname">🥁 {own ? `${d.key}'s own drums` : "following " + ((cat && cat.name) || "the song's drums")}</span>
+                        {own && <button className="mini" onClick={() => resetBeat(d.key)}
+                          title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(d, sameRole)}
+                          title={"Put these drums on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        {/* the same chord header the melody grid carries, on the same columns —
+                            which is what makes a kick legible against the note above it */}
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
+                        {DRUM_VOICES.map(([ch, name, tip, ink]) => (
+                          <div key={ch} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            {/* the ink says which of the three parts of a kit a row belongs to —
+                                metal, backbeat, floor — while its cells are still empty */}
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step].includes(ch);
+                              return (
+                                <div key={c} onClick={() => tapBeat(d, bar, step, ch)}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell dcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        Two pieces on one step play together — that is all layering is here. A crash on
+                        the first step of a section, or a snare through the last bar, is the fill a
+                        transition is waiting for.
+                      </p>}
+                    </div>
                   );
                 })()}
               </div>

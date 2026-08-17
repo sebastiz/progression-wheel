@@ -319,6 +319,24 @@ const rescaleBar = (bar, B) => {
   });
   return out;
 };
+/* ===== the writing grid =====
+   How finely the melody grid divides a beat. This used to be read straight off the strum pattern —
+   `meloBeats = rhythm.pattern.length` — which tied two decisions together that have nothing to do
+   with each other: how the guitar is strummed, and how finely you are allowed to write a tune. You
+   could have a sixteenth grid only by picking a sixteenth *strum*, which also changes the sound.
+
+   The grid is its own choice now, and "as the rhythm" is still the default, so a song that never
+   touches this behaves exactly as it did. Changing it re-times what is already written, because
+   `rescaleBar` maps every note to the nearest column of the new grid — a note keeps the moment it
+   sounds at, not the column number it happened to be stored in. */
+const MEL_GRIDS = [
+  ["",  "Grid: as the rhythm", "Follow the strum pattern — eighths, or sixteenths on a · 16ths rhythm."],
+  ["2", "Grid: eighths",       "Two columns a beat, whatever the rhythm is doing. Simple to read, and enough for most toplines."],
+  ["4", "Grid: sixteenths",    "Four columns a beat — 16th toplines, arps and offbeat lines over any rhythm, including an acoustic strum."],
+];
+// columns per beat: the song's own choice if it has one, else whatever the strum pattern implies
+const gridSub = (val, patSub) => (val && Number(val)) || patSub;
+
 /* ===== rhythm cells =====
    Generated melodies used to put one note on every beat, all the same length, which is why they
    came out stiff no matter which contour you picked. Rhythm is a separate dimension from pitch, so
@@ -1266,4 +1284,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, barNotes, varyBars, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, barNotes, varyBars, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };

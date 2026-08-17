@@ -91,7 +91,7 @@ const remapSecs = (secs, oldPlan, newPlan, origin, letterOf, clone) => {
    transition. A build set on C2 is stored under "C2", and moving a chorus past another makes the
    old C2 into C1: leave the key alone and the build plays under a different chorus from the one it
    was set on. Section-*type* keys (a bare letter) are left as they are, since types don't renumber. */
-const remapKeyed = (map, oldPlan, newPlan, origin, letterOf) => {
+const remapKeyed = (map, oldPlan, newPlan, origin, letterOf, clone = v => v) => {
   const entries = Object.entries(map || {});
   if (!entries.some(([k]) => k.length > 1)) return map;      // nothing keyed to an instance
   const oldKeys = instKeysOf(oldPlan, letterOf), newKeys = instKeysOf(newPlan, letterOf);
@@ -104,7 +104,9 @@ const remapKeyed = (map, oldPlan, newPlan, origin, letterOf) => {
     if (!src.length) return;
     ks.forEach((k, j) => {                                   // extra passes repeat the last written one
       const v = map[src[Math.min(j, src.length - 1)]];
-      if (v) out[k] = v;
+      // cloned, because a value that is an object — a section's drum bars — would otherwise be the
+      // *same* array in two sections, and editing one pass would edit the other
+      if (v) out[k] = clone(v);
     });
   });
   return out;

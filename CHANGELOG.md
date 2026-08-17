@@ -1,6 +1,46 @@
 # Changelog
 
 ## Unreleased
+- **A drum grid for every section.** Drums were the one part of the app you could only *choose*,
+  never write: 58 catalogue patterns, one override per section **type**, so every chorus shared a
+  groove and none of them could be edited. Each section card now has a **▸ drums** grid — nine rows
+  (crash, ride, open hat, hat, clap, rim, snare, boom, kick) across that section's bars, in
+  sixteenths.
+
+  - **It opens on what is already playing**, the current pattern laid onto the fine grid, so you
+    start by changing a groove rather than building one from nothing. Until you touch a cell the
+    section is still just following the menu.
+  - **It belongs to one pass**, so the second chorus gets the busier hat and the last verse the
+    fill. *copy to every chorus* spreads it, *↺ Reset* hands the section back.
+  - **Two pieces on one step play together** — that is all layering is. And a snare through the last
+    bar is the fill a transition was waiting for.
+  - Under the hood an edited bar is stored in the same array-of-step-strings the catalogue uses, so
+    playback, the exported MIDI and the drum stem all take it without knowing it was edited.
+
+  **The two grids in a section card now read as one stack.** They describe the same bars, so they
+  are drawn on the same geometry: one label gutter, the same chord header, and a column unit scaled
+  by each grid's own step count so a bar line falls in the same place in both — a grid with twice
+  the columns also has twice the gaps, which is what used to push them a whole bar apart by the end
+  of four. They scroll together, and the row labels are pinned, so "Snare" stays beside the snare
+  however far along a section you are.
+
+  **And the part panel is condensed.** Which part, what it plays and where it sits in the mix were
+  two rows with a bordered box around the second, saying they were two things; they are one row now.
+  Write/Suggest and Draw/Move were two stacked button rows above a grid that is the actual work;
+  they are one row, and the second switch appears only in the mode that has it. With the panel's own
+  padding trimmed, a section card is about a tenth shorter with its melody open — without making any
+  control smaller, which is why the modulation grid stayed at two columns: three fits the height
+  budget and truncates every label to "off — play the g".
+- **The writing grid is its own choice.** How finely you can write a melody was read straight off
+  the strum pattern — so a sixteenth grid meant picking a sixteenth *strum*, which changes the sound
+  as well. Two decisions with nothing to do with each other were tied together, and in 3/4 and 5/4 a
+  fine grid could not exist at all, because there is no sixteenth strum in either.
+
+  A **Grid** menu on the Arrange tab now sets it directly: *as the rhythm* (the default, so nothing
+  changes for a song that leaves it alone), *eighths*, or *sixteenths*. Write a 16th topline over an
+  acoustic strum, or keep a plain eighth grid under a busy 16ths rhythm. Changing it re-times what
+  you have already written, so every note keeps the moment it sounds at rather than the column it
+  happened to be stored in, and it saves with the sketch and the shared link.
 - **Forty-nine transitions: what happens at the seam between two sections.** A section move shapes a
   section. Nothing shaped the *join* into one — and the join is where a build pays off, where a drop
   lands, and where four good loops in a row stop sounding like four loops in a row.
