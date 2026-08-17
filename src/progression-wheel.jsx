@@ -3237,8 +3237,8 @@ export default function ProgressionWheel() {
         @media (max-width: 560px) {
           .lybtn { padding:7px 13px; font-size:var(--fs-md); min-height:32px; }
           .mini { padding:6px 10px; min-height:32px; }
-          .partmix { gap:8px 12px; padding:9px 10px; }
-          .partmix .lvl { width:120px; height:26px; }
+          .parthdr { gap:8px 12px; }
+          .parthdr .lvl { width:120px; height:26px; }
           label.secdrum select { min-height:32px; padding:5px 6px; }
           .selwrap select { min-height:34px; }
         }
@@ -3271,7 +3271,7 @@ export default function ProgressionWheel() {
           background:var(--ly, var(--line-3)); color:var(--bg); font-variant-numeric:tabular-nums; }
         .modtab .lydot { background:var(--green); }
         .lyflag { font-style:normal; font-size:var(--fs-xs); color:var(--amber); }
-        .partpanel { padding:9px 11px 11px; border-radius:0 var(--r-md) var(--r-md) var(--r-md);
+        .partpanel { padding:7px 10px 8px; border-radius:0 var(--r-md) var(--r-md) var(--r-md);
           border:1px solid color-mix(in srgb, var(--ly) 34%, var(--line-2));
           border-left:3px solid color-mix(in srgb, var(--ly) 62%, var(--line-2));
           background:
@@ -3279,7 +3279,7 @@ export default function ProgressionWheel() {
             var(--surface-2);
           margin-bottom:8px; }
         .partinstr { flex:1 1 150px; min-width:130px; max-width:280px; }
-        .parthdr { margin-bottom:7px; }
+        .parthdr { margin-bottom:6px; }
         .partname { font-size:var(--fs-sm); font-weight:600; color:var(--ly); letter-spacing:.02em; }
         .modtabs { gap:3px; flex-wrap:wrap; margin:9px 0 7px; border-bottom:1px solid var(--line-2); padding-bottom:6px; }
         .modtab { font-size:var(--fs-sm); padding:3px 9px; border-radius:var(--r-pill); border:1px solid transparent;
@@ -3288,7 +3288,9 @@ export default function ProgressionWheel() {
         .modtab.on { background:var(--surface); border-color:var(--line-2); color:var(--text); }
         /* A grid rather than a wrapping row: 28 controls of different widths in a flex row is a
            staircase, and the labels stop lining up the moment one of them is a word longer. */
-        .modgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(232px, 1fr)); gap:6px 12px; }
+        /* Two columns, not three: three fits the height budget and truncates every control's
+           label to "off — play the g", which is a worse card than a taller one. */
+        .modgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(232px, 1fr)); gap:5px 11px; }
         .modctl { display:flex; align-items:center; gap:7px; min-width:0; }
         .modlbl { font-size:var(--fs-sm); color:var(--muted); flex:0 0 78px; }
         .modlbl.modon { color:var(--text); font-weight:600; }
@@ -3305,7 +3307,7 @@ export default function ProgressionWheel() {
           .modtab { padding:6px 11px; min-height:30px; }
           .modctl .lvl { height:26px; }
         }
-        .partmix { padding:7px 9px; background:var(--surface); border:1px solid var(--line-2); border-radius:var(--r-md); }
+
         .lybtn { font-size:var(--fs-sm); padding:2px 9px; border-radius:var(--r-pill); border:1px solid var(--line-2); background:var(--surface); color:var(--muted); cursor:pointer; }
         .mcell.b0 { border-left:2px solid var(--line-3); }
         /* The drum rows are binary — a cell is on or it is not — so they can be shorter than the
@@ -3323,7 +3325,7 @@ export default function ProgressionWheel() {
         .mcell.msel { outline:2px solid var(--blue); outline-offset:-1px; box-shadow:inset 0 0 0 2px rgba(110,168,255,.35); }
         .mcell.mbox { background:rgba(110,168,255,.22); border-color:var(--blue); }
         .mcell.mghost { background:rgba(110,168,255,.5); border-color:var(--blue); }
-        .melmodebar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:8px; }
+        .melmodebar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:6px; }
         .melmodebar .rlbl { font-size:var(--fs-md); color:var(--muted); margin:0 2px; }
         .mscroll { overflow-x:auto; padding-bottom:4px; }
         /* The row labels live inside the scroller, so a section wider than the panel used to scroll
@@ -4623,12 +4625,12 @@ export default function ProgressionWheel() {
                             onClick={() => set(Object.fromEntries(MODS.map(md => [md.k, md.dflt])))}>↺ reset</button>}
                           {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
                             title={"Remove part " + LAYER_NAMES[secL] + " from " + d.key}>🗑</button>}
-                        </div>
 
-                        {/* register, level and the two mix switches: the part's place in the mix,
-                            above the modulation because it is what you reach for first */}
-                        <div className="row partmix" style={{ gap:10, alignItems:"center", flexWrap:"wrap" }}>
-                          <span className="modlbl">Octave</span>
+                        {/* register, level and the two mix switches sit on the same row as the part's
+                            name and voice: which part, what it plays and where it sits in the mix are
+                            one thing, and a boxed second row spent a border and two paddings saying
+                            they were two. It wraps on a narrow card, which is where it needs to. */}
+                          <span className="modlbl" style={{ marginLeft:2 }}>Octave</span>
                           <div className="row" style={{ gap:4, alignItems:"center" }}>
                             <button className="mini" disabled={oct <= LAYER_OCT_MIN}
                               onClick={() => set({ oct: Math.max(LAYER_OCT_MIN, oct - 1) })}
@@ -4684,11 +4686,43 @@ export default function ProgressionWheel() {
                       </>);
                     })()}
 
-                    <div className="seg" style={{ marginBottom:8 }}>
-                      <button className={tab === "write" ? "on" : ""}
-                        onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
-                      <button className={tab === "suggest" ? "on" : ""}
-                        onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
+                    {/* Write/Suggest and Draw/Move were two button rows stacked, which is two rows
+                        of chrome above a grid that is the actual work. One row, and the second
+                        switch appears only in the mode that has it. */}
+                    <div className="melmodebar">
+                      <div className="seg">
+                        <button className={tab === "write" ? "on" : ""}
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
+                        <button className={tab === "suggest" ? "on" : ""}
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
+                      </div>
+                      {tab === "write" && <div className="seg">
+                          <button className={!melMove ? "on" : ""} onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
+                          <button className={melMove ? "on" : ""} onClick={() => setMelMove(true)}>✋ Move</button>
+                        </div>}
+                        {tab === "write" && melMove && (() => {
+                          const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
+                          return (<>
+                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
+                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
+                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
+                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
+                            <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
+                          </>);
+                        })()}
                     </div>
 
                     {tab === "suggest" && (
@@ -4742,38 +4776,6 @@ export default function ProgressionWheel() {
                                 Write to grid</button>
                               <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {LAYER_NAMES[secL]}</button>
                             </div>
-                          </>);
-                        })()}
-                      </div>
-                    )}
-
-                    {tab === "write" && (
-                      <div className="melmodebar">
-                        <div className="seg">
-                          <button className={!melMove ? "on" : ""} onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
-                          <button className={melMove ? "on" : ""} onClick={() => setMelMove(true)}>✋ Move</button>
-                        </div>
-                        {melMove && (() => {
-                          const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
-                          return (<>
-                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
-                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
-                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
-                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
-                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
-                            <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
                           </>);
                         })()}
                       </div>

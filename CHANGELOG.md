@@ -23,6 +23,14 @@
   the columns also has twice the gaps, which is what used to push them a whole bar apart by the end
   of four. They scroll together, and the row labels are pinned, so "Snare" stays beside the snare
   however far along a section you are.
+
+  **And the part panel is condensed.** Which part, what it plays and where it sits in the mix were
+  two rows with a bordered box around the second, saying they were two things; they are one row now.
+  Write/Suggest and Draw/Move were two stacked button rows above a grid that is the actual work;
+  they are one row, and the second switch appears only in the mode that has it. With the panel's own
+  padding trimmed, a section card is about a tenth shorter with its melody open — without making any
+  control smaller, which is why the modulation grid stayed at two columns: three fits the height
+  budget and truncates every label to "off — play the g".
 - **The writing grid is its own choice.** How finely you can write a melody was read straight off
   the strum pattern — so a sixteenth grid meant picking a sixteenth *strum*, which changes the sound
   as well. Two decisions with nothing to do with each other were tied together, and in 3/4 and 5/4 a
