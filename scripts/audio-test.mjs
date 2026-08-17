@@ -1427,6 +1427,9 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
    reloaded, and a key that song.js does not carry is a setting that silently vanishes from a
    shared link. All of that is checked from the table itself, so it stays true as the table grows. */
 {
+  const TABLES = { ARPS: M.ARPS.map(a => [a.id]), GATES: M.GATES.map(x => [x.id]),
+    ARP_RATES: M.ARP_RATES, LFO_RATES: M.LFO_RATES, ECHO_TIMES: M.ECHO_TIMES };
+  const optsOf = md => (typeof md.opts === "string" ? TABLES[md.opts] : md.opts) || [];
   const seen = new Set();
   for (const g of M.MOD_GROUPS) {
     if (!g.id || !g.name || !Array.isArray(g.mods) || !g.mods.length)
@@ -1442,9 +1445,8 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (!("dflt" in md)) problems.push(`modulation ${md.k} has no default`);
       // a default must be reachable from the control, or a part can never be put back
       if (md.kind === "sel") {
-        const opts = typeof md.opts === "string" ? { ARPS: M.ARPS.map(a => [a.id]), GATES: M.GATES.map(x => [x.id]),
-          ARP_RATES: M.ARP_RATES, LFO_RATES: M.LFO_RATES }[md.opts] : md.opts;
-        if (!opts) problems.push(`modulation ${md.k} names an option table that does not exist: ${md.opts}`);
+        const opts = typeof md.opts === "string" ? TABLES[md.opts] : md.opts;
+        if (!opts || !opts.length) problems.push(`modulation ${md.k} names an option table that does not exist: ${md.opts}`);
         else if (md.off == null && !opts.some(([v]) => v === md.dflt))
           problems.push(`modulation ${md.k}'s default ${JSON.stringify(md.dflt)} is not one of its options`);
         else if (opts.some(([v]) => typeof v !== typeof (md.off != null ? opts[0][0] : md.dflt)))
@@ -1474,12 +1476,18 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
      until the change is made here too, which is the point — a default that is not a no-op means a
      part sounds different the moment it is saved and reopened. */
   const NEUTRAL = {
-    arp:"", arpRate:4, arpOct:1, chord:"", strum:0, ratchet:1, octJump:0, gate:"", gateLen:16,
-    semis:0, oct2:0, detune:0,
+    // Pattern — which notes play and when
+    arp:"", arpRate:4, arpOct:1, euclid:0, euclidLen:16, retro:"", shift:0, rate:1, gate:"", gateLen:16,
+    // Repeat — the same note more than once
+    ratchet:1, ratchetFade:0, echo:0, echoTime:1, echoFade:50, echoPitch:0, strum:0, strumDir:"up",
+    // Pitch — which notes come out
+    semis:0, dia:0, snap:"", invert:"", chord:"", voicing:"close", rpitch:0, octJump:0, oct2:0, detune:0,
+    // Tone, Envelope, Movement
     cut:100, res:0, hp:0, fenv:0, fdec:30, drive:0,
     atk:0, dec:0, sus:0, rel:0, vfilt:0,
     wob:0, wobRate:2, trem:0, tremRate:4, pan:0, apan:0, apanRate:1,
-    len:100, nudge:0, swing:0, prob:100, accent:0,
+    // Feel and Space
+    len:100, rlen:0, nudge:0, hum:0, swing:0, prob:100, accent:0, rvel:0, ramp:0,
     send:0, verb:0, duck:null,
   };
   for (const md of M.MODS) {
@@ -1489,9 +1497,6 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   }
   for (const k of Object.keys(NEUTRAL)) if (!M.MOD_BY_KEY[k]) problems.push(`the test declares an "off" value for ${k}, which no longer exists`);
   // every modulation moved off its default — the state a fully-worked part is in
-  const optsOf = md => (typeof md.opts === "string"
-    ? { ARPS: M.ARPS.map(a => [a.id]), GATES: M.GATES.map(x => [x.id]), ARP_RATES: M.ARP_RATES, LFO_RATES: M.LFO_RATES }[md.opts]
-    : md.opts);
   const allOn = Object.fromEntries(M.MODS.map(md => [md.k, md.kind === "sel"
     ? optsOf(md).map(([v]) => v).find(v => v !== md.dflt)
     : (md.dflt === md.max / (md.scale || 1) ? 0 : md.max / (md.scale || 1))]));
@@ -1558,6 +1563,61 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     const c3 = nodes.find(n => n._kind === "conv");
     if (ir(c1).join() === ir(c3).join()) problems.push("the reverb send uses the same impulse as the bus reverb");
     if (!ir(c3).some(v => v !== 0)) problems.push("the reverb send has a silent impulse");
+  }
+
+  /* The Euclidean generator. It has an actual right answer — E(3,8) is the tresillo and nothing
+     else — so this checks named rhythms rather than only shape. The general properties matter too:
+     the right number of hits, and the gaps between them never differing by more than one step,
+     which is the definition of "as evenly as possible" and the whole point of the algorithm. */
+  {
+    const pat = (k, n) => Array.from({ length: n }, (_, i) => M.euclidHit(k, n, i) ? "x" : ".").join("");
+    for (const [k, n, want, name] of [
+      [3, 8, "x..x..x.", "tresillo"],
+      [4, 16, "x...x...x...x...", "four to the floor"],
+      [2, 4, "x.x.", "backbeat"],
+      [4, 8, "x.x.x.x.", "eighths"],
+    ]) if (pat(k, n) !== want) problems.push(`euclid(${k},${n}) is ${pat(k, n)}, not the ${name} ${want}`);
+    for (let n = 2; n <= 32; n++) for (let k = 1; k < n; k++) {
+      const p = pat(k, n), hits = [...p].filter(c => c === "x").length;
+      if (hits !== k) problems.push(`euclid(${k},${n}) placed ${hits} hits, not ${k}`);
+      // gaps between successive hits, round the loop
+      const at = [...p].map((c, i) => c === "x" ? i : -1).filter(i => i >= 0);
+      const gaps = at.map((v, i) => (i ? v - at[i - 1] : v + n - at[at.length - 1]));
+      if (Math.max(...gaps) - Math.min(...gaps) > 1)
+        problems.push(`euclid(${k},${n}) is uneven: gaps ${Math.min(...gaps)}..${Math.max(...gaps)}`);
+    }
+    if (!M.euclidHit(0, 16, 3)) problems.push("euclid with no hits set should not silence the part");
+    if (!M.euclidHit(16, 16, 5)) problems.push("euclid with as many hits as steps should let everything through");
+  }
+  /* The column map — the four Pattern effects that all reduce to "which written column do I read".
+     Reimplemented here from the source's own expression so the properties are stated independently
+     of it: half time must *stretch* the pattern rather than skip every other note (reading the same
+     column twice would retrigger it, which is the bug this shape exists to avoid), reverse must be
+     an exact mirror, and shift must be a rotation that loses nothing. */
+  {
+    const MB = 8, N = 16;
+    const src = code.slice(code.indexOf("const colFor ="), code.indexOf("/* When a part's notes land"));
+    for (const piece of ["rate", "retro", "shift", "euclid"])
+      if (!new RegExp('modOf\\(ly, "' + piece + '"\\)').test(src))
+        problems.push(`src: colFor no longer reads ${piece} — that pattern effect does nothing`);
+    const colFor = (mods, melStep, mb) => {
+      const raw = mb * MB + melStep, rate = mods.rate == null ? 1 : mods.rate;
+      let c = rate === 1 ? raw : Math.floor(raw * rate);
+      if (rate < 1 && (raw * rate) % 1 !== 0) return null;
+      if (mods.retro === "bar") c = Math.floor(c / MB) * MB + (MB - 1 - ((c % MB) + MB) % MB);
+      else if (mods.retro === "sec") c = N - 1 - (((c % N) + N) % N);
+      return (((c + (mods.shift || 0)) % N) + N) % N;
+    };
+    const run = mods => Array.from({ length: N }, (_, i) => colFor(mods, i % MB, Math.floor(i / MB)));
+    const plain = run({});
+    if (plain.join() !== [...Array(N).keys()].join()) problems.push("colFor does not play the written notes at its defaults");
+    const half = run({ rate: 0.5 }), sounded = half.filter(c => c != null);
+    if (new Set(sounded).size !== sounded.length) problems.push("half time reads a column twice — it would retrigger the note instead of holding it");
+    if (sounded.length !== N / 2) problems.push(`half time sounded ${sounded.length} of ${N} steps, not half`);
+    if (run({ retro: "sec" }).join() !== [...plain].reverse().join()) problems.push("reverse is not an exact mirror");
+    const shifted = run({ shift: 3 });
+    if (new Set(shifted).size !== N) problems.push("shift loses or repeats a column — it should be a rotation");
+    if (shifted[0] !== 3) problems.push(`shift +3 starts at column ${shifted[0]}, not 3`);
   }
 
   const bySlider = M.MODS.filter(md => md.kind !== "sel").length;

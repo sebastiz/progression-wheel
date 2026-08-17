@@ -359,18 +359,41 @@ stays short.
 
 | Group | Where it sits | Modulations |
 | --- | --- | --- |
-| Pattern | *before the sound* — note effects | arp (+rate, +range), harmonise, strum, ratchet, octave jump, gate (+length) |
-| Pitch | oscillator | transpose, octave double, detune |
+| Pattern | *note effect* — which notes, when | arp (+rate, +range), euclid (+length), reverse, shift, speed, gate (+length) |
+| Repeat | *note effect* — how many times | ratchet (+fade), note echo (+time, +fade, +pitch), strum (+direction) |
+| Pitch | *note effect* + oscillator | transpose, scale steps, snap to, invert, harmonise (+voicing), stray notes, octave jump, double, detune |
 | Tone | filter + waveshaper | low-pass, resonance, high-pass, filter envelope (+decay), drive |
 | Envelope | amplifier | attack, decay, sustain, release, velocity → tone |
 | Movement | modulators (LFO) | wobble, tremolo, pan, auto-pan (each with its own tempo-synced rate) |
-| Feel | *performance* | note length, nudge, swing, play chance, accent |
+| Feel | *performance* | note length, length spread, nudge, humanise, swing, play chance, accent, level spread, swell |
 | Space | effects + dynamics | echo send, reverb send, pump |
 
-The order is a synth's signal chain, and two groups sit deliberately outside it. **Pattern** runs
-before any sound exists — it rewrites the stream of note events, which is why a harmoniser there
-stays in key when the key changes and no audio effect could. **Feel** is performance rather than
-synthesis: microtiming and dynamics, the layer a player adds on top of a fixed instrument.
+The order is a synth's signal chain, and four groups sit deliberately outside it.
+
+**Pattern, Repeat and most of Pitch are note effects** — they run before any sound exists, rewriting
+the stream of note events the instrument is then handed. That is why a harmoniser there stays in key
+when the key changes, and why the note echo can transpose its repeats: a delay line can only give
+back what it was handed, while a note effect is deciding what to play. A note event has exactly five
+properties an effect can touch, and the groups cover all five:
+
+| Property | Effects |
+| --- | --- |
+| pitch | transpose, scale steps, snap to, invert, harmonise, stray notes, octave jump, double, detune |
+| onset | arp, reverse, shift, speed, gate, nudge, humanise, swing, strum |
+| duration | note length, length spread |
+| velocity | accent, level spread, swell, echo fade, roll fade |
+| existence | euclid, play chance |
+
+**Feel** is the fourth: performance rather than synthesis — microtiming and dynamics, the layer a
+player adds on top of a fixed instrument.
+
+Four of the Pattern effects (euclid, reverse, shift, speed) are the same operation underneath — a
+map from where the playhead is to which written column to read — so they live in one `colFor`
+function returning `null` for "silent here", rather than four scattered edits that would have to
+agree with each other. The **Euclidean generator** has an actual right answer, so `npm test` checks
+named rhythms (E(3,8) is the tresillo and nothing else) as well as the general property that makes
+it Euclidean at all: for every k ≤ n ≤ 32, the right number of hits and gaps that never differ by
+more than one step.
 
 **Envelope** modifies the chosen instrument's own envelope rather than replacing it — `atk` is a
 floor on the attack, the other three are multipliers on the stages the voice already has, and
