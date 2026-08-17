@@ -257,9 +257,21 @@ MIDI signature describes the same bar its beats do.
 ### Grid resolution
 
 A rhythm pattern carries `sub` — columns per beat, 2 for eighths and 4 for sixteenths — so
-`beatsOf(p) = pattern.length / sub` is the meter. Nothing assumes an eighth-note grid: the melody
-grid is `meloBeats` columns wide (the pattern's length), note values in the score are read as
-multiples of `sub`, and MIDI writes `T / sub` ticks per column.
+`beatsOf(p) = pattern.length / sub` is the meter. Nothing assumes an eighth-note grid: note values
+in the score are read as multiples of `sub`, and MIDI writes `T / sub` ticks per column.
+
+The **writing grid is its own choice** (`MEL_GRIDS`, `gridSub`), not the strum pattern's length.
+It used to be exactly `rhythm.pattern.length`, which tied together two decisions with nothing to do
+with each other — how the guitar is strummed and how finely you may write — so a sixteenth grid
+meant picking a sixteenth strum and changing the sound to get it. There is also no sixteenth strum
+in 3/4 or 5/4, so a fine grid there could not exist at all.
+
+`meloBeats` is now `barBeats * meloSub`, with `meloSub` the song's own choice falling back to
+`subOf(rhythm)`. The safety of that rests on one identity, which `npm test` checks against every
+pattern in the table: with no choice made, `beatsOf(p) * subOf(p) === p.pattern.length`. If those
+ever diverge, every song written before the grid became its own control re-times itself on load.
+Changing the grid is safe because `rescaleBar` maps each note to the nearest column of the new
+grid — a note keeps the moment it sounds at, not the column index it was stored under.
 
 Patterns of different lengths coexist because each **bar ticks at the finest resolution in play** —
 `tickCount` is the lcm of the strum pattern and every drum pattern that could sound (global plus

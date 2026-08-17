@@ -197,6 +197,36 @@ for (const [id, p] of Object.entries(M.PATTERNS)) {
 }
 for (const [prog, id] of Object.entries(M.PATTERN_DEFAULT))
   if (!M.PATTERNS[id]) problems.push(`PATTERN_DEFAULT[${prog}] → unknown pattern "${id}"`);
+
+/* ---- the writing grid ----
+   The melody grid used to *be* the strum pattern's length. Now it is `barBeats × gridSub`, and the
+   whole safety of that refactor rests on one identity: with no choice made, those are the same
+   number for every pattern in the table. If they ever diverge, every song written before the grid
+   became its own control silently re-times itself on load. */
+{
+  for (const [id, p] of Object.entries(M.PATTERNS)) {
+    const derived = M.beatsOf(p) * M.gridSub("", M.subOf(p));
+    if (derived !== p.pattern.length)
+      problems.push(`pattern ${id}: the default grid is ${derived} columns, the pattern is ${p.pattern.length} — old songs would re-time on load`);
+    // and every choice the menu offers must give a whole bar, on every pattern, in every meter
+    for (const [val] of M.MEL_GRIDS) {
+      const sub = M.gridSub(val, M.subOf(p)), cols = M.beatsOf(p) * sub;
+      if (!Number.isInteger(cols) || cols < 1) problems.push(`pattern ${id} at grid "${val}": ${cols} columns`);
+      if (cols % sub !== 0) problems.push(`pattern ${id} at grid "${val}": ${cols} columns is not ${sub} a beat`);
+      if (M.qbeats(cols, sub).length !== M.beatsOf(p))
+        problems.push(`pattern ${id} at grid "${val}": ${M.qbeats(cols, sub).length} beat positions in a ${M.beatsOf(p)}-beat bar`);
+    }
+  }
+  if (M.MEL_GRIDS[0][0] !== "") problems.push("MEL_GRIDS: the first option must be the follow-the-rhythm default");
+  if (M.MEL_GRIDS.some(([, name, tip]) => !name || !tip)) problems.push("MEL_GRIDS: every option needs a name and a tip");
+  // switching the grid is only safe because a note keeps the moment it sounds at, not its column
+  const bar = [[0], [], [], [], [2], [], [], []];                  // beats 1 and 3 on an eighth grid
+  const fine = M.rescaleBar(bar, 16);
+  if (JSON.stringify(fine[0]) !== "[0]" || JSON.stringify(fine[8]) !== "[2]")
+    problems.push("switching to a sixteenth grid moved the notes off their beats");
+  const cols = M.MEL_GRIDS.map(([v]) => M.beatsOf(M.PATTERNS.pop) * M.gridSub(v, M.subOf(M.PATTERNS.pop)));
+  console.log(`writing grid: ${M.MEL_GRIDS.length} choices (${cols.join("/")} columns a bar on a 4/4 strum), default matches every pattern`);
+}
 /* ---- time signatures ----
    A meter in the menu with no strum pattern or no kit is a dead end: picking it would leave the
    song silent or unplayable, which is worse than not offering it. */
@@ -295,7 +325,10 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     });
   };
   // every contour, on every rhythm cell, at both resolutions — the combination the app can produce
-  for (const [B, sub, beats] of [[8, 2, 4], [16, 4, 4], [6, 2, 3]]) {
+  // every contour × cell × resolution the app can now produce. The last two are only reachable
+  // since the writing grid stopped being read off the strum pattern: there is no sixteenth strum
+  // in 3/4 or 5/4, so a sixteenth grid there had no way of existing before.
+  for (const [B, sub, beats] of [[8, 2, 4], [16, 4, 4], [6, 2, 3], [12, 4, 3], [20, 4, 5]]) {
     for (const r of M.RHYTHMS) {
       const spots = M.rhythmSpots(r.id, B, sub, beats);
       if (!spots.length) { problems.push(`rhythm ${r.id} resolves to nothing at B=${B}`); continue; }
@@ -335,7 +368,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       }
     }
   }
-  console.log(`melody generators: ${gens} runs across ${M.RHYTHMS.length} rhythms × 3 grids`);
+  console.log(`melody generators: ${gens} runs across ${M.RHYTHMS.length} rhythms × 5 grids`);
 
   /* The basslines bring their own rhythm rather than taking it from the Rhythm menu, so they need
      their own check: each one must actually articulate. Two of the same pitch on adjacent columns
@@ -822,6 +855,8 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       problems.push("src: transitions are not remapped when the arrangement is edited — moving a section would leave them on the wrong one");
     if (!/setSecTrans\(s\.secTrans \|\| \{\}\)/.test(code))
       problems.push("src: a loaded sketch does not restore its transitions");
+    if (!/setGridSt\(\{ key:s\.progId, val:s\.grid/.test(code))
+      problems.push("src: a loaded sketch does not restore its writing grid — every melody would re-time on load");
   }
   /* Autosave must not restore over a shared link: arriving at somebody else's song and being handed
      your own instead is the worst thing it could do. The check has to happen before the first
@@ -1173,7 +1208,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const doc = M.makeSong({ name: "test", progId: "edm", tonic: 0, genre: "House", emotion: null,
     mode: null, colour: "triads", patId: "house16", drum: "house16d", secDrum: { V: "deep" },
     instr: "acoustic_grand_piano", melInstr: "flute", kit: "909", pump: "classic",
-    secMove: { C: "drop" }, secTrans: { C: "fulldrop", C2: "gap1" }, delayId: "8d", bpm: 128, selStruct: "", contrast: { id: "", sec: "C" },
+    secMove: { C: "drop" }, secTrans: { C: "fulldrop", C2: "gap1" }, delayId: "8d", grid: "4", bpm: 128, selStruct: "", contrast: { id: "", sec: "C" },
     edits: {}, inserts: [], quals: {}, removed: [], order: null, melos });
   if (!doc.melos) problems.push("makeSong dropped the melodies");
   const code = await M.encodeSong(doc);
@@ -1185,6 +1220,8 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // a transition is part of the arrangement, and a per-instance one is the easiest thing to drop
     if (round.secMove.C !== "drop" || round.secTrans.C !== "fulldrop" || round.secTrans.C2 !== "gap1")
       problems.push("the link lost a section's move or transition");
+    // the writing grid decides how many columns a melody has, so losing it re-times every note
+    if (round.grid !== "4") problems.push("the link lost the writing grid");
     const rm = M.songMelos(round);
     if (!same(rm, melos)) problems.push("the link lost the melodies");
   }

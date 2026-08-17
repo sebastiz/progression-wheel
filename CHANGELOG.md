@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **The writing grid is its own choice.** How finely you can write a melody was read straight off
+  the strum pattern — so a sixteenth grid meant picking a sixteenth *strum*, which changes the sound
+  as well. Two decisions with nothing to do with each other were tied together, and in 3/4 and 5/4 a
+  fine grid could not exist at all, because there is no sixteenth strum in either.
+
+  A **Grid** menu on the Arrange tab now sets it directly: *as the rhythm* (the default, so nothing
+  changes for a song that leaves it alone), *eighths*, or *sixteenths*. Write a 16th topline over an
+  acoustic strum, or keep a plain eighth grid under a busy 16ths rhythm. Changing it re-times what
+  you have already written, so every note keeps the moment it sounds at rather than the column it
+  happened to be stored in, and it saves with the sketch and the shared link.
 - **Forty-nine transitions: what happens at the seam between two sections.** A section move shapes a
   section. Nothing shaped the *join* into one — and the join is where a build pays off, where a drop
   lands, and where four good loops in a row stop sounding like four loops in a row.

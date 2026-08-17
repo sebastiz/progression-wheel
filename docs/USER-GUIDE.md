@@ -338,6 +338,12 @@ dance rhythm lives — the offbeat stab, the skipping garage accent, the rolling
 - Picking a 16ths rhythm **doubles the melody grid** to sixteen columns a bar, so you can write 16th
   toplines, arps and offbeat lines. Switch back to an eighth-note rhythm and any melody you've
   written is re-timed so every note stays where it sounds.
+- You no longer have to change your strum to get that grid. The **Grid** menu on the Arrange tab,
+  beside the melodic narrative, sets it directly: *as the rhythm* (the default), *eighths* or
+  *sixteenths*. So you can write a sixteenth topline over an acoustic strum, or keep a simple
+  eighth grid under a busy 16ths rhythm — and 3/4 and 5/4 can have a fine grid at all, which they
+  couldn't before, since there is no sixteenth strum in either. Changing it re-times what you have
+  written, the same way switching rhythm does.
 - The drum patterns at this resolution (*House · 16th hats*, *Techno · driving 16ths*, *UK garage
   2-step*, *Drum & bass*, *Amen break*, *Big beat breaks*, *Trap · rolling hats*, *Dubstep*,
   *Hip-hop 16ths*, *Footwork*) can be used with any rhythm — an eighth-note strum with a sixteenth

@@ -7,7 +7,7 @@ import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS,
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
@@ -517,6 +517,7 @@ export default function ProgressionWheel() {
      rather than to the boundary, because a boundary has no stable name — insert a verse and every
      later boundary is a different boundary, while C2 is still C2 and carries its own transition. */
   const [secTrans, setSecTrans] = useState({});
+  const [gridSt, setGridSt] = useState({ key:"", val:"" });     // melody grid resolution, keyed by progression
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
   const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
   const [humanise, setHumanise] = useState(0);                  // timing + velocity looseness, 0..1
@@ -1045,9 +1046,15 @@ export default function ProgressionWheel() {
     for (const [k, v] of Object.entries(secDrum)) if (!v || drumFitsMeter(DRUMS[v], mid)) keep[k] = v;
     if (Object.keys(keep).length !== Object.keys(secDrum).length) setSecDrum(keep);
   };
-  const meloBeats = rhythm.pattern.length;                  // grid columns per bar (6 in waltz time, 16 on a sixteenth rhythm)
-  const meloSub = subOf(rhythm);                            // columns per beat: 2 = eighths, 4 = sixteenths
   const barBeats = beatsOf(rhythm);                         // 4 in common time, 3 in waltz time
+  /* How finely the melody grid divides a beat. This was `rhythm.pattern.length`, which tied the
+     writing grid to the strum pattern: a sixteenth grid meant picking a sixteenth strum, which
+     changes the sound as well. It is its own choice now, defaulting to what the pattern implies —
+     `barBeats * subOf(rhythm)` is the pattern's own length, so a song that leaves it alone is
+     unchanged. Changing it re-times what is written (`rescaleBar`), so notes keep the moment they
+     sound at rather than the column they were stored in. */
+  const meloSub = gridSub(gridSt.key === progId ? gridSt.val : "", subOf(rhythm));
+  const meloBeats = barBeats * meloSub;                     // grid columns per bar (6 in waltz time, 16 on a sixteenth grid)
   barBeatsRef.current = barBeats;
   // How finely the scheduler has to tick this bar: enough for the strum pattern and for every
   // drum pattern that could play (the global one plus any per-section override). Computed over
@@ -2737,7 +2744,7 @@ export default function ProgressionWheel() {
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-    kit, pump, secMove, secTrans, secNar, delayId, bpm: effBpm, selStruct, contrast,
+    kit, pump, secMove, secTrans, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
@@ -2750,7 +2757,7 @@ export default function ProgressionWheel() {
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-      kit, pump, secMove, secTrans, secNar, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
+      kit, pump, secMove, secTrans, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -2937,6 +2944,7 @@ export default function ProgressionWheel() {
     setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
     setSecMove(s.secMove || {}); setSecTrans(s.secTrans || {});
     setSecNar(s.secNar || {});
+    setGridSt({ key:s.progId, val:s.grid || "" });                                 // absent in sketches saved before the grid was its own choice
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
     setNChordsSt({ key:s.progId, val:s.nChords || 0 });
@@ -3950,6 +3958,17 @@ export default function ProgressionWheel() {
             </select>
             {narUndo && narSel.key === progId && <button className="mini" onClick={undoNarrative}
               title="Put the melodies back as they were before the narrative was written">↶ Undo</button>}
+            {/* How finely you can write, which is not the same decision as how the chords are
+                strummed — it used to be read off the strum pattern, so a sixteenth grid meant
+                picking a sixteenth strum and changing the sound to get it. */}
+            <select value={gridSt.key === progId ? gridSt.val : ""}
+              onChange={e => setGridSt({ key: progId, val: e.target.value })}
+              style={{ flex:"0 1 170px" }}
+              title={"How finely the melody grid divides a beat — " + meloBeats + " columns a bar at the moment. "
+                + (MEL_GRIDS.find(g => g[0] === (gridSt.key === progId ? gridSt.val : ""))|| [])[2]
+                + " Changing it re-times what you have written, so every note keeps the moment it sounds at."}>
+              {MEL_GRIDS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
           </div>
           {curNar
             ? <p className="arrnote" style={{ marginTop:6 }}>{curNar.tip}
