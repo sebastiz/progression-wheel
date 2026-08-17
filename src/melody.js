@@ -64,6 +64,11 @@ const hash01 = n => {
    `dflt` is what "no modulation" looks like — every one of these must be audibly nothing, so a
    part with default settings sounds exactly as it did before any of this existed. */
 const MOD_GROUPS = [
+  /* Note effects. Everything in this group runs *before* there is any sound: it rewrites the stream
+     of notes the instrument is then asked to play, which is a different layer from anything below.
+     An arpeggiator is the famous member of the family; the rest are its siblings. Because they work
+     on notes rather than on audio, they follow the harmony and the key on their own — a chord effect
+     stays in the scale when you change key, which no audio effect could manage. */
   { id:"pattern", name:"Pattern", tip:"What the part plays, before anything is done to the sound",
     mods:[
       { k:"arp", name:"Arp", kind:"sel", dflt:"", opts:"ARPS", off:"off — play the grid",
@@ -73,8 +78,22 @@ const MOD_GROUPS = [
       { k:"arpOct", name:"Arp range", kind:"sel", dflt:1, needs:"arp",
         opts:[[1, "1 oct"], [2, "2 oct"], [3, "3 oct"], [4, "4 oct"]],
         tip:"How many octaves the arp climbs through" },
+      { k:"chord", name:"Harmonise", kind:"sel", dflt:"", off:"off — one note",
+        opts:[["3", "+ a third"], ["5", "+ a fifth"], ["35", "full triad"], ["357", "seventh chord"], ["15", "power fifth"]],
+        tip:"Turn every note into a chord, built out of the scale — so it stays in key when you change key, and moves with the mode. A one-finger pad." },
+      { k:"strum", name:"Strum", kind:"amt", dflt:0, max:100, unit:"ms",
+        tip:"Spread the notes of a chord over a few milliseconds instead of hitting them together. The difference between a keyboard and a guitar." },
+      { k:"ratchet", name:"Ratchet", kind:"sel", dflt:1,
+        opts:[[1, "off"], [2, "×2"], [3, "×3"], [4, "×4"], [6, "×6"]],
+        tip:"Retrigger every note inside its own slot. Two is a flam, four is a roll, six is the stutter under a trap hi-hat." },
+      { k:"octJump", name:"Octave jump", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"How often a note leaps an octave instead of playing where it was written. The wandering octaves under an acid line or a techno bass — the same every time the song plays, not random." },
       { k:"gate", name:"Gate", kind:"sel", dflt:"", opts:"GATES", off:"off",
         tip:"Chop this part into a rhythmic pulse — the trance gate. Works best on a held pad or a long arp." },
+      { k:"gateLen", name:"Gate length", kind:"sel", dflt:16, needs:"gate",
+        opts:[[16, "16 — in time"], [15, "15 steps"], [14, "14 steps"], [13, "13 steps"], [12, "12 steps"],
+              [11, "11 steps"], [10, "10 steps"], [9, "9 steps"], [7, "7 steps"], [5, "5 steps"], [3, "3 steps"]],
+        tip:"How many steps of the gate play before it starts again. Anything but 16 and the pattern no longer fits the bar, so it walks around the beat and takes several bars to come back — polymeter, and most of what makes a minimal groove keep moving." },
     ] },
   { id:"pitch", name:"Pitch", tip:"Where the part sits and how wide it spreads",
     mods:[
@@ -100,6 +119,24 @@ const MOD_GROUPS = [
         tip:"How long the filter takes to fall back. Short is a click of brightness, long is a sweep on every note." },
       { k:"drive", name:"Drive", kind:"amt", dflt:0, max:100, unit:"%",
         tip:"Overdrive this part. Gentle amounts thicken it; hard amounts are the point of a reese bass." },
+    ] },
+  /* The amplifier stage. These four shape the level of a single note over its life, which is most of
+     what tells the ear *what instrument this is* — strip the first thirty milliseconds off a piano
+     and it stops sounding like a piano. They are modifiers on the chosen instrument's own envelope
+     rather than absolute times, so a pad and a pluck both stay themselves when you reach for them,
+     and every default is dead centre: no change at all. */
+  { id:"envelope", name:"Envelope", tip:"How one note rises and falls — the shape the ear reads as the instrument",
+    mods:[
+      { k:"atk", name:"Attack", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"How long the note takes to arrive. Nothing here plays as written — turn it up and a stab becomes a swell, a plucked bass becomes a pad. The one control that most changes what an instrument sounds like." },
+      { k:"dec", name:"Decay", kind:"bi", dflt:0, min:-100, max:100, unit:"",
+        tip:"How quickly the note falls back from its peak to the level it holds at. Short is a pluck, long is a bowed note." },
+      { k:"sus", name:"Sustain", kind:"bi", dflt:0, min:-100, max:100, unit:"",
+        tip:"How loudly the note holds once it has settled. Down towards nothing is percussive; up is an organ that just keeps going." },
+      { k:"rel", name:"Release", kind:"bi", dflt:0, min:-100, max:100, unit:"",
+        tip:"How long the note rings on after it ends. Left is staccato and tight, right leaves a tail that overlaps the next note." },
+      { k:"vfilt", name:"Velocity → tone", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"How much a harder note also opens the filter. On a real instrument playing harder is brighter as well as louder, and that link is most of why a flat MIDI part sounds like a machine. Works with Accent." },
     ] },
   { id:"movement", name:"Movement", tip:"Things that move on their own, in time with the tempo",
     mods:[

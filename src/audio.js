@@ -534,17 +534,28 @@ function makeSampler(ctx) {
     return best;
   };
   const covers = (k, midi) => !!nearest(k, midi);
-  const play = (k, t, midi, gain, dur, dest) => {
+  /* A sample already carries its own attack and decay in the recording, so the part's envelope can
+     only shape it from outside: hold it back on the way in, scale where it settles, and let it ring
+     longer or cut it shorter on the way out. Decay is the one stage that has no meaning here — it is
+     baked into the recorded note — so it is left alone rather than faked. */
+  const play = (k, t, midi, gain, dur, dest, shape) => {
     const best = nearest(k, midi);
     if (!best) return false;
+    const S = shape || NO_SHAPE;
     const src = ctx.createBufferSource(); src.buffer = best.buf;
     src.playbackRate.value = Math.pow(2, (midi - best.m) / 12);
-    const g = ctx.createGain(); g.gain.setValueAtTime(gain, t);
-    const end = t + (dur || 1.2);
-    g.gain.setValueAtTime(gain, Math.max(t, end - 0.12));
-    g.gain.exponentialRampToValueAtTime(0.0006, end + 0.08);
+    const lvl = gain * Math.min(1.6, S.sus || 1);
+    const g = ctx.createGain();
+    const atk = S.atk || 0;
+    if (atk > 0) {                                   // ramp in rather than starting at full
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(lvl, t + atk);
+    } else g.gain.setValueAtTime(lvl, t);
+    const end = t + (dur || 1.2), tail = 0.08 * (S.rel || 1);
+    g.gain.setValueAtTime(lvl, Math.max(t + atk, end - 0.12));
+    g.gain.exponentialRampToValueAtTime(0.0006, end + tail);
     src.connect(g).connect(dest || ctx.destination);
-    src.start(t); src.stop(end + 0.15);
+    src.start(t); src.stop(end + tail + 0.07);
     return true;
   };
   return { load, ready, play, covers };
@@ -571,9 +582,9 @@ function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest, voicing)
   return true;
 }
 // play one melody note as a real sample if the chosen lead voice is a GM instrument that's loaded
-function playLeadSampled(sampler, kind, t, midi, dur, dest) {
+function playLeadSampled(sampler, kind, t, midi, dur, dest, shape) {
   if (!sampler || !isGM(kind) || !sampler.ready(kind)) return false;
-  return sampler.play(kind, t, midi, 0.55, dur, dest);   // false if no loaded anchor is close → synth covers this note
+  return sampler.play(kind, t, midi, 0.55, dur, dest, shape);   // false if no loaded anchor is close → synth covers this note
 }
 /* A reverb impulse: decaying noise. Seeded from an integer hash rather than Math.random, for the
    same reason the melody generators are — two renders of one song have to come out identical, and
@@ -620,6 +631,10 @@ function driveCurve(amt) {
   }
   return c;
 }
+
+/* No envelope shaping: nothing added to the attack, every stage at its own length. A part with the
+   Envelope group untouched passes this, and the voice is exactly what it always was. */
+const NO_SHAPE = { atk: 0, dec: 1, sus: 1, rel: 1 };
 
 // Melody lead voices — chosen from the "Lead" dropdown. Each spec is a stack of
 // partials (oscillator type · harmonic multiple · relative level) plus an
@@ -672,12 +687,20 @@ const LEAD_SPECS = {
 };
 // legato=true softens the attack and lets the note ring past its slot so a
 // moving line flows together instead of re-articulating on every eighth.
-function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
+function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape) {
   const V = LEAD_SPECS[kind] || LEAD_SPECS.synth;
   const hz = midiHz(midi);
-  const atk = legato ? Math.max(V.atk, 0.03) : V.atk;
-  const rel = legato ? V.rel * 1.6 : V.rel;
-  const peak = V.vol, sus = peak * V.sus;
+  /* The part's own envelope, folded into the voice's rather than replacing it. `add` lengthens the
+     attack, the three multipliers stretch or squash the stages the voice already has. That way a
+     bell and a pad both keep their character when the same control is moved, and NO_SHAPE — every
+     multiplier at 1, nothing added — reproduces the voice exactly as it was before any of this. */
+  const S = shape || NO_SHAPE;
+  const atk = Math.max(legato ? Math.max(V.atk, 0.03) : V.atk, S.atk || 0);
+  const rel = (legato ? V.rel * 1.6 : V.rel) * (S.rel || 1);
+  const peak = V.vol;
+  // sustain is a share of the peak, so scaling it must not push a note louder than its own attack
+  const sus = peak * Math.min(1, V.sus * (S.sus || 1));
+  const decEnd = Math.min(atk, 0.12) + 0.12 * (S.dec || 1);   // how long the fall to sustain takes
   const t1 = t + atk;                          // reach peak
   const t2 = Math.max(t1 + 0.01, t + dur);     // sustain end / release start
   const t3 = t2 + rel;                         // silence
@@ -685,7 +708,7 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(peak, t1);
   if (V.sus > 0) {
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, sus), Math.min(t2, t1 + 0.12));
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, sus), Math.min(t2, t1 + decEnd));
     g.gain.setValueAtTime(Math.max(0.0002, sus), t2);
   }
   g.gain.exponentialRampToValueAtTime(0.0006, t3);
@@ -726,4 +749,4 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
   });
 }
 
-export { DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };

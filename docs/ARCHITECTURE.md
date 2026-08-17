@@ -357,14 +357,27 @@ rather than six edits, five of which are easy to forget; melodies once vanished 
 for exactly that reason. Only fields that differ from their default are written, so a shared link
 stays short.
 
-| Group | Modulations |
-| --- | --- |
-| Pattern | arp (+rate, +range), gate |
-| Pitch | transpose, octave double, detune |
-| Tone | low-pass, resonance, high-pass, filter envelope (+decay), drive |
-| Movement | wobble, tremolo, pan, auto-pan (each LFO with its own tempo-synced rate) |
-| Feel | note length, nudge, swing, play chance, accent |
-| Space | echo send, reverb send, pump |
+| Group | Where it sits | Modulations |
+| --- | --- | --- |
+| Pattern | *before the sound* — note effects | arp (+rate, +range), harmonise, strum, ratchet, octave jump, gate (+length) |
+| Pitch | oscillator | transpose, octave double, detune |
+| Tone | filter + waveshaper | low-pass, resonance, high-pass, filter envelope (+decay), drive |
+| Envelope | amplifier | attack, decay, sustain, release, velocity → tone |
+| Movement | modulators (LFO) | wobble, tremolo, pan, auto-pan (each with its own tempo-synced rate) |
+| Feel | *performance* | note length, nudge, swing, play chance, accent |
+| Space | effects + dynamics | echo send, reverb send, pump |
+
+The order is a synth's signal chain, and two groups sit deliberately outside it. **Pattern** runs
+before any sound exists — it rewrites the stream of note events, which is why a harmoniser there
+stays in key when the key changes and no audio effect could. **Feel** is performance rather than
+synthesis: microtiming and dynamics, the layer a player adds on top of a fixed instrument.
+
+**Envelope** modifies the chosen instrument's own envelope rather than replacing it — `atk` is a
+floor on the attack, the other three are multipliers on the stages the voice already has, and
+`NO_SHAPE` (nothing added, every multiplier 1) reproduces the voice exactly as it was. Absolute
+times would flatten a bell and a pad into the same instrument the moment either control moved. The
+sampled path takes the same shape but ignores decay: a recorded note's decay is in the recording,
+so it is left alone rather than faked.
 
 Three properties hold the table together, and `npm test` checks each:
 
@@ -417,9 +430,18 @@ movement stays in time when the tempo changes. Filter frequencies go through `ny
 Audio *throws* on a cutoff above Nyquist rather than clamping, and an offline render at another
 sample rate is exactly where that bites.
 
-Note-level modulations (transpose, detune, double, length, nudge, swing, play chance, accent) are
-applied in `fireNote`/`timeFor`/`playChance`, shared by the grid and the arp so a control means the
-same thing whichever is playing. Timing offsets clamp forward: an offline render starts at time zero
+Note-level modulations (transpose, detune, double, harmonise, strum, ratchet, octave jump, length,
+nudge, swing, play chance, accent) are applied in `fireNote`/`timeFor`/`playChance`, shared by the
+grid and the arp so a control means the same thing whichever is playing. Harmonise builds its extra
+notes from **scale degrees** on the grid path and from the **chord's own pool** on the arp path — an
+arp is already walking that chord, so taking its harmony from anywhere else would have the two
+disagreeing about what the bar's chord is.
+
+The scheduler's helpers are siblings inside `emitTick`, not nested, so one reaching for another's
+loop variable is not a scope error the bundler reports: esbuild assumes it is a global and emits it
+untouched, and it becomes a ReferenceError the moment a control is first turned up. `npm test` walks
+each helper and checks it takes the shared variables it uses — added after `fireNote` reached for
+`li` and the octave jump silently hashed `NaN` instead. Timing offsets clamp forward: an offline render starts at time zero
 and scheduling before it throws. Play chance is hashed from position in the song, never drawn at
 random, so a part that plays 7 notes in 10 plays the *same* 7 every time.
 

@@ -1,6 +1,39 @@
 # Changelog
 
 ## Unreleased
+- **An Envelope group, and the rest of the arpeggiator's family.** Ten new controls in two places,
+  filling the two biggest gaps in what a part could be made to sound like.
+
+  **Envelope** (new, seventh group) — attack, decay, sustain, release, and **velocity → tone**.
+  These shape one note's rise and fall, which is most of what tells the ear what instrument it is:
+  strip the first thirty milliseconds off a piano and it stops sounding like a piano. They are
+  modifiers on the chosen instrument's own envelope rather than absolute times, so a bell and a pad
+  both stay themselves when the same control moves, and every default is dead centre. Velocity →
+  tone links how hard a note is played to how far the filter opens — the link a real instrument has
+  and a flat MIDI part does not.
+
+  **Pattern** gains five siblings for the arp, all of them note effects: they rewrite the notes
+  before any sound exists, which is why they follow the key and the chord on their own.
+  - **Harmonise** — every note becomes a chord, built out of the scale, so it stays in key when you
+    change key. On an arp it takes its harmony from the chord's own pool instead, or the two would
+    disagree about what the bar's chord is.
+  - **Strum** — spread a chord's notes over a few milliseconds. The difference between a keyboard
+    and a guitar.
+  - **Ratchet** — retrigger every note inside its own slot. Two is a flam, six is a trap stutter.
+  - **Octave jump** — how often a note leaps an octave instead of playing where it was written.
+    Hashed from its position, so the wandering is the same every time the song plays.
+  - **Gate length** — how many of the gate's steps play before it starts again. Anything but 16 no
+    longer fits the bar, so the pattern walks around the beat and takes several bars to come back.
+
+  Thirty-eight modulations across seven groups now, ordered as a synth's signal chain. All ten were
+  checked by rendering the song with each turned up and comparing: every one changes the audio, and
+  with everything back at its default the render is identical to the one from before any of this
+  existed.
+
+  **A bug caught by that check:** the scheduler's helpers sit side by side rather than nested, so
+  `fireNote` reaching for `li` was not a scope error the bundler reports — esbuild assumed a global
+  and emitted it untouched, and the octave jump silently hashed `NaN` and never fired. `npm test`
+  now walks each helper and checks it takes the shared variables it uses. Version bumped to 4.65.0.
 - **A melodic shape per section.** A narrative wrote one idea across the whole song and that was the
   only way to use it. Each section now has its own shape chooser, sitting under its chords: write an
   arch across everything, then give the bridge a lament and the last chorus a climb. It writes only
