@@ -3,13 +3,13 @@ import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_ID
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
 import { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
-import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
+import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
-import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapSecs } from "./arrange.js";
+import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -446,6 +446,9 @@ const SEC_COL = {
   B:"#B7A6E0", S:"#C77DD9",                              // departures: bridge, solo
   I:"#8B94A3", O:"#8B94A3", L:"#8B94A3", T:"#9A8F7E",    // intro, outro, loop, tag
 };
+// what the strip marks a seam with — read off the transition table so a new family cannot arrive
+// without one
+const TRANS_GLYPH = Object.fromEntries(TRANS_CATS.map(([id, , , g]) => [id, g]));
 
 /* ===== discovery tools ===== */
 // borrowed + mediant menus: [tag, semitone offset, quality, where] — where: 0 = before the tonic's
@@ -509,6 +512,11 @@ export default function ProgressionWheel() {
   const [selRow, setSelRow] = useState(0);                       // plan row the editor is pointed at
   const drawRef = useRef(null);                                  // in-progress automation drag
   const [secMove, setSecMove] = useState({});
+  /* What happens at the seam *into* a section, keyed the same way a move is: the instance's own
+     (`secTrans.C2`), else the section letter's (`secTrans.C`). Keyed to the section it leads into
+     rather than to the boundary, because a boundary has no stable name — insert a verse and every
+     later boundary is a different boundary, while C2 is still C2 and carries its own transition. */
+  const [secTrans, setSecTrans] = useState({});
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
   const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
   const [humanise, setHumanise] = useState(0);                  // timing + velocity looseness, 0..1
@@ -943,6 +951,10 @@ export default function ProgressionWheel() {
     const secs = melos.progId === progId ? melos.secs : {};
     setCustom({ key: planKey, plan: next });
     setMelos({ progId, secs: remapSecs(secs, cur, next, origin, letterFor, cloneLayer) });
+    // …and so does anything else keyed to an instance, or a build set on the second chorus plays
+    // under the first one as soon as you move a section
+    setSecMove(remapKeyed(secMove, cur, next, origin, letterFor));
+    setSecTrans(remapKeyed(secTrans, cur, next, origin, letterFor));
     if (sel != null) setSelRow(sel);
   };
   const rowsNow = () => (effPlan || []).map(r => ({ ...r }));
@@ -1047,8 +1059,32 @@ export default function ProgressionWheel() {
     return lens.reduce((a, b) => lcm(a, b), meloBeats);
   }, [drum, secDrum, meloBeats, barBeats]);
   subRef.current = meloSub; melRef.current = meloBeats;
+  /* A move or a transition is the instance's own if it has one, and the section letter's otherwise.
+     Playback, the strip and the pickers all have to agree about that, and they did not: the strip
+     read the letter alone, so a build set on the second chorus was inaudible in its own tooltip. */
+  const effMove = d => (d && (secMove[d.key] || secMove[d.base])) || "";
+  const effTrans = d => (d && (secTrans[d.key] || secTrans[d.base])) || "";
+  /* Forty-nine transitions only work as a menu if they arrive grouped, so the six families are
+     optgroups; and the inherited value is the first option rather than something you find out by
+     pressing play, exactly as a move's is. */
+  const transSelect = (val, onChange, inherit) => (
+    <select value={val} onChange={onChange}>
+      <option value="">{inherit ? "as every " + inherit : "— no transition —"}</option>
+      {TRANS_CATS.map(([cat, name, tip]) => (
+        <optgroup key={cat} label={name + " · " + tip}>
+          {Object.values(TRANS).filter(T => T.cat === cat)
+            .map(T => <option key={T.id} value={T.id}>{T.name}</option>)}
+        </optgroup>
+      ))}
+    </select>
+  );
+  // where each transition has to be armed — computed once per arrangement rather than per tick,
+  // because most of a transition sounds before the section it belongs to has started
+  const cues = useMemo(() => transCues(sections.insts,
+    d => TRANS[(secTrans[d.key] || secTrans[d.base]) || ""], barBeats),
+    [sections.insts, secTrans, barBeats]);
   // bars per section instance, so a move's sweep can span exactly one instance
-  moveRef.current = { moves: secMove,
+  moveRef.current = { moves: secMove, cues,
     instBars: Object.fromEntries(sections.insts.map(d => [d.key, d.cs.length])) };
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
   const chordId = (c, i) => c.inserted ? c.baseName
@@ -1555,9 +1591,16 @@ export default function ProgressionWheel() {
   autoFilt.type = "lowpass"; autoFilt.frequency.value = FILTER_OPEN; autoFilt.Q.value = 0.6;
   const autoGain = ctx.createGain(); autoGain.gain.value = 1;
   autoFilt.connect(autoGain);
+  /* The transition stage sits between the master and the automation lanes, with its own filters and
+     its own gain. Its own, and not the move filter's, because a move's envelope stops on a boundary
+     and a transition's runs across one — two envelopes on one AudioParam and the second silently
+     eats the first. On the master path rather than the pitched bus because drums bypass that bus
+     entirely, and a stutter that leaves the drums running is not a stutter.
+     `fx` is where risers, rolls and crashes go: added sources, so they belong to exactly one stem. */
+  const tn = makeTrans(ctx, autoFilt, 60 / (bpmRef.current || 120), !!(stem && stem.kind !== "fx"));
   let master;
   if (stem) {
-    master = ctx.createGain(); master.gain.value = 0.65; master.connect(autoFilt);
+    master = ctx.createGain(); master.gain.value = 0.65; master.connect(tn.in);
     autoGain.connect(ctx.destination);
   } else {
     const limiter = ctx.createDynamicsCompressor();  // tame peaks so stacked samples don't clip
@@ -1566,7 +1609,7 @@ export default function ProgressionWheel() {
   limiter.threshold.value = -5; limiter.knee.value = 3; limiter.ratio.value = 12;
   limiter.attack.value = 0.002; limiter.release.value = 0.14;
   limiter.connect(ctx.destination);
-  master = ctx.createGain(); master.gain.value = 0.65; master.connect(autoFilt);
+  master = ctx.createGain(); master.gain.value = 0.65; master.connect(tn.in);
   autoGain.connect(limiter);
   }
   // section-move filter: a build sweeps the whole pitched mix including its reverb tail, which is
@@ -1593,7 +1636,8 @@ export default function ProgressionWheel() {
   // a wet-only room the parts send to by amount, separate from the bus reverb everything already
   // sits in — a send has to be silent at zero, and the bus one passes its dry signal through
   const verb = makeVerbSend(ctx, wetDuck, 2.2);
-  const m = { ctx, master, music, cduck, wetDuck, filt, autoFilt, autoGain, verb, stem: stem || null, lastAutoBar: -1, lastMoveBar: -1,
+  const m = { ctx, master, music, cduck, wetDuck, filt, autoFilt, autoGain, verb, tn, stem: stem || null,
+    lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
     partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
     partDrive: [], partDriveAmt: [], partHp: [], partLp: [], partTrem: [], partPan: [],
     partWob: [], partTremLfo: [], partPanLfo: [],
@@ -1730,7 +1774,25 @@ export default function ProgressionWheel() {
             || (b.base != null ? moveRef.current.moves[b.base] : "") || "";
           const spec = (MOVES[mv] || {}).spec || null;
           const nb = (b.inst != null && moveRef.current.instBars[b.inst]) || 1;
-          applyMove(m.ctx, m.filt, spec, t, nb * (patLen / (subRef.current || 2)) * beat, m.noise, m.master);
+          // the riser and the impact are added sources, not processing, so they go to the fx bus:
+          // on the master they landed in every stem and four stems summed to four risers
+          applyMove(m.ctx, m.filt, spec, t, nb * (patLen / (subRef.current || 2)) * beat, m.noise, m.tn.fx);
+        }
+      }
+      /* Transitions: armed at the bar the cue table says, not at the boundary they belong to —
+         most of a transition sounds before the section it leads into has started. `at` is the
+         boundary's bar, and bars are all the same length here, so its time is a multiplication
+         rather than something the scheduler has to remember across ticks.
+         Looping one section skips any cue whose lead-in falls outside the window: the bars it
+         would have sounded over are not being played. Entries, which start on the downbeat, run
+         either way. */
+      if (i === 0 && struct && structBar >= 0 && structBar !== m.lastCueBar) {
+        m.lastCueBar = structBar;
+        const barDur2 = barBeatsRef.current * beat;
+        for (const c of (moveRef.current.cues || {})[structBar] || []) {
+          applyTrans(m.tn, TRANS[c.id], t + (c.at - structBar) * barDur2,
+            { ctx: m.ctx, beat, noise: m.noise, kit: kitRef.current,
+              maxPre: c.maxPre, maxPost: c.maxPost });
         }
       }
       const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
@@ -2325,6 +2387,11 @@ export default function ProgressionWheel() {
       const voice = (withNotes.layers[i].instr) || melInstr;
       out.push({ kind:"part", i, name:"part-" + LAYER_NAMES[i] + "-" + voice });
     }
+    /* Risers, rolls and crashes are added sources rather than processing, so they bounce as their
+       own track: on the master they went into every stem, and four stems summed to four risers.
+       A DAW wants them separate anyway — the fx track is the one you ride by hand. */
+    if (Object.values(secMove).some(Boolean) || Object.values(secTrans).some(Boolean))
+      out.push({ kind:"fx", name:"fx" });
     return out;
   };
   const exportStems = async () => {
@@ -2670,7 +2737,7 @@ export default function ProgressionWheel() {
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-    kit, pump, secMove, secNar, delayId, bpm: effBpm, selStruct, contrast,
+    kit, pump, secMove, secTrans, secNar, delayId, bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
@@ -2683,7 +2750,7 @@ export default function ProgressionWheel() {
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-      kit, pump, secMove, secNar, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
+      kit, pump, secMove, secTrans, secNar, delayId, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -2868,7 +2935,7 @@ export default function ProgressionWheel() {
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
     setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
-    setSecMove(s.secMove || {});
+    setSecMove(s.secMove || {}); setSecTrans(s.secTrans || {});
     setSecNar(s.secNar || {});
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
     setPatSel({ key:s.progId, id:s.patId }); setBpmSt({ key:s.progId, val:s.bpm });
@@ -4077,7 +4144,13 @@ export default function ProgressionWheel() {
                       const acc = SEC_COL[r.base] || "#8B94A3";
                       const now = playing && r.items.some(d => d.key === curInst);
                       const looped = r.items.some(d => d.key === loopSec);
-                      const mv = secMove[r.base] && MOVES[secMove[r.base]];
+                      // the effective values, instance first — the strip used to read the section
+                      // letter alone, so anything set on one pass was invisible here
+                      // both tables have a "none" entry under the empty id, so the id is what
+                      // decides whether there is anything to mark, not the lookup
+                      const mvId = effMove(r.items[0]), trs = r.items.map(effTrans);
+                      const mv = mvId && MOVES[mvId];
+                      const tr = trs[0] && TRANS[trs[0]], trMixed = trs.some(x => x !== trs[0]);
                       const n = r.items.length;
                       return (
                         <button key={r.startBar} className={"tlsec" + (now ? " now" : "") + (looped ? " looped" : "")
@@ -4085,11 +4158,16 @@ export default function ProgressionWheel() {
                           style={{ flex: r.bars + " 0 0%", background: acc + (now ? "44" : "22"), borderColor: acc + (now ? "" : "77") }}
                           onClick={() => editArr ? setSelRow(r.row) : startMetro(r.startBar)}
                           title={`${r.sec}${n > 1 ? ` ×${n}` : ""} · ${r.bars} bar${r.bars > 1 ? "s" : ""} from bar ${r.startBar + 1}`
-                            + (mv ? ` · ${mv.name}` : "") + (looped ? " · looping" : "")
+                            + (mv ? ` · ${mv.name}` : "")
+                            + (tr ? ` · into it: ${tr.name}${trMixed ? " (first pass)" : ""}` : "")
+                            + (looped ? " · looping" : "")
                             + (editArr ? " — tap to edit this section" : " — tap to play from here")}>
                           {/* the label is left-aligned and clipped rather than centred, so a narrow
                               block truncates to its first letters instead of showing a word's middle */}
                           <span className="tlsecl" style={{ color: acc }}>{r.sec}{n > 1 ? " ×" + n : ""}</span>
+                          {/* the transition mark sits at the block's leading edge, because that is
+                              where it happens — the seam, not the section */}
+                          {tr && <span className="tlmv" aria-hidden="true">{TRANS_GLYPH[tr.cat]}</span>}
                           {mv && <span className="tlmv" aria-hidden="true">🎛</span>}
                         </button>
                       );
@@ -4245,6 +4323,13 @@ export default function ProgressionWheel() {
                       {Object.entries(MOVES).map(([id, mv]) => <option key={id} value={id}>{mv.name}</option>)}
                     </select>
                   </label>
+                  {/* and what happens at the seam *into* every one of them. A move shapes the
+                      section; this shapes the bar it arrives on. */}
+                  <label className="secdrum" title={"Transition into every " + g.word.toLowerCase()
+                    + " — a riser, a crash, a bar of silence, a fade. It runs across the boundary rather than the section, so most of it sounds in the section before. Any single one can override it below."}>
+                    <span aria-hidden="true">⇥</span>
+                    {transSelect(secTrans[g.base] || "", e => setSecTrans({ ...secTrans, [g.base]: e.target.value }), null)}
+                  </label>
                 </div>
                 {g.items.map((d, di) => {
             const sec = secMelos[d.key] || EMPTY_SEC;
@@ -4306,6 +4391,14 @@ export default function ProgressionWheel() {
                       {Object.entries(MOVES).map(([id, mv]) => id
                         ? <option key={id} value={id}>{mv.name}</option> : null)}
                     </select>
+                  </label>
+                  <label className="secopt" title={"Transition into this " + d.word.toLowerCase()
+                    + " alone — what happens on the bar it arrives on. Most of it sounds in the section before, so a lead-in longer than that section shortens to fit. Left as it is, it does whatever every "
+                    + d.word.toLowerCase() + " does."}>
+                    <span aria-hidden="true">⇥</span>
+                    {transSelect(secTrans[d.key] || "", e => setSecTrans({ ...secTrans, [d.key]: e.target.value }),
+                      secTrans[d.base] && TRANS[secTrans[d.base]]
+                        ? d.word.toLowerCase() + " — " + TRANS[secTrans[d.base]].name : null)}
                   </label>
                   <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
                     + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>

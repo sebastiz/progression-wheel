@@ -1,6 +1,45 @@
 # Changelog
 
 ## Unreleased
+- **Forty-nine transitions: what happens at the seam between two sections.** A section move shapes a
+  section. Nothing shaped the *join* into one — and the join is where a build pays off, where a drop
+  lands, and where four good loops in a row stop sounding like four loops in a row.
+
+  A transition is attached to the section it leads into (the **⇥** menu, beside the section's 🎛),
+  with the same instance-then-section-type fallback a move has: *into every chorus* by default, and
+  any single chorus can differ. They come in six families, because the six things a seam can do are
+  genuinely different jobs:
+
+  | Family | What it does | Some of them |
+  | --- | --- | --- |
+  | **Lifts** | rise into it | riser at 1, 2 or 4 bars; reverse cymbal; uplifter; snare roll; hat roll; roll + riser; filter opens into it; bass falls away; reverb swells into it |
+  | **Impacts** | land on the downbeat | crash; sub boom; the drop; silence then the drop; riser → drop; roll → drop; reverse cymbal → drop; the full drop |
+  | **Cuts** | take something away | half a beat, a beat, two beats or a bar of silence; stutter; fast stutter; stutter into silence |
+  | **Colour** | bend the seam | filter dip; underwater; echo throw; echo throw into silence; reverb wash; highpass pinch; duck through the seam |
+  | **Falls** | let it down | downlifter; pitch fall; fade into it; tape stop; filter closes into it; spin down |
+  | **Entries** | shape the first bars | fade in over 2 or 4 bars; opens up over 2 or 4 bars; bass arrives late; reverb blooms open; stutter in; crash then open up |
+
+  Getting *out* of a chorus is as much a decision as getting into one, which is why Falls and
+  Entries are there at all — most tools only offer you the way in.
+
+  - **Windows are in beats, and they clamp.** A four-bar riser into a chorus that follows a two-bar
+    pre-chorus shortens to two bars rather than starting inside the verse. On the first section of a
+    song there is no room at all, so the riser is skipped and the crash still lands.
+  - **They are armed early.** Most of a transition sounds before the section it belongs to has
+    started, so the arrangement is turned into cues ahead of time rather than looked up on the
+    downbeat, where a lead-in would already be too late.
+  - **The strip shows them** — the family's glyph at the leading edge of the block, which is where
+    the transition happens — and the tooltip names it.
+- **Risers and crashes bounce as their own `fx` stem.** They were going to the master, so every stem
+  carried a copy of each one and a four-stem bounce summed to four risers — against the one thing
+  stems have to do. They now have their own bus and their own track, which is what a DAW wants
+  anyway. This applies to the existing section moves as much as to the new transitions.
+- **A move set on one pass now follows that pass.** Moves have been per-instance for a while, but a
+  plan edit didn't carry them: move a chorus past another and the build stayed on the numbered slot
+  rather than on the chorus it was set on. Melodies have always been carried through an edit; moves
+  and transitions now are too.
+- **The arrangement strip reads a section's own move.** It showed the section *type's* move only, so
+  a build set on the second chorus alone was invisible in its own tooltip.
 - **Twenty more note effects — the layer the arpeggiator lives in, worked through properly.** A note
   event has exactly five things an effect can touch: its pitch, when it starts, how long it lasts,
   how hard it is played, and whether it exists at all. The app covered patches of that; it now
