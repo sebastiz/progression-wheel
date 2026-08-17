@@ -16,6 +16,13 @@
     bar is the fill a transition was waiting for.
   - Under the hood an edited bar is stored in the same array-of-step-strings the catalogue uses, so
     playback, the exported MIDI and the drum stem all take it without knowing it was edited.
+
+  **The two grids in a section card now read as one stack.** They describe the same bars, so they
+  are drawn on the same geometry: one label gutter, the same chord header, and a column unit scaled
+  by each grid's own step count so a bar line falls in the same place in both — a grid with twice
+  the columns also has twice the gaps, which is what used to push them a whole bar apart by the end
+  of four. They scroll together, and the row labels are pinned, so "Snare" stays beside the snare
+  however far along a section you are.
 - **The writing grid is its own choice.** How finely you can write a melody was read straight off
   the strum pattern — so a sixteenth grid meant picking a sixteenth *strum*, which changes the sound
   as well. Two decisions with nothing to do with each other were tied together, and in 3/4 and 5/4 a

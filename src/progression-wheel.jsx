@@ -1069,6 +1069,30 @@ export default function ProgressionWheel() {
      sound at rather than the column they were stored in. */
   const meloSub = gridSub(gridSt.key === progId ? gridSt.val : "", subOf(rhythm));
   const meloBeats = barBeats * meloSub;                     // grid columns per bar (6 in waltz time, 16 on a sixteenth grid)
+  /* The melody grid and the drum grid sit one above the other and describe the same bars, so they
+     have to line up. That means one label gutter and a column unit scaled by each grid's own step
+     count, or bar 3 is in two different places and neither grid can be read against the other —
+     which is the whole point of stacking them. */
+  /* The two grids are aligned, so they have to stay aligned when one is scrolled — a section wider
+     than the panel is the normal case, not the exception, and a drum grid parked two bars away from
+     the melody above it would undo the whole point of lining them up. */
+  const syncScroll = e => {
+    const el = e.currentTarget, x = el.scrollLeft;
+    for (const other of document.querySelectorAll(`.mscroll[data-sync="${el.dataset.sync}"]`))
+      if (other !== el && Math.round(other.scrollLeft) !== Math.round(x)) other.scrollLeft = x;
+  };
+  const GRID_GUT = 52;                                      // the row-label column, wide enough for "Open hat"
+  const beatCols = beatSteps(barBeats);                     // steps a written drum bar has
+  /* Matching the widths means matching cell *and* gap, because a grid with twice the columns also
+     has twice the gaps — which is exactly why the two used to drift apart by a bar's width over
+     four bars. With `gridR` drum steps per melody column, cell+gap on one has to be gridR times
+     cell+gap on the other: 26+4 against 2×(13+2) when the melody is in eighths, and identical when
+     it is in sixteenths and the two grids have the same columns anyway. */
+  const gridR = Math.max(1, beatCols / meloBeats);
+  const melCell = gridR === 1 ? 15 : 26;
+  const beatCell = gridR === 1 ? 15 : 13, beatGap = gridR === 1 ? 4 : 2;
+  // and the drum grid's gutter takes the gap difference back, or its narrower gaps start it two
+  // pixels left of the melody grid and every bar line is out by the same two pixels
   barBeatsRef.current = barBeats;
   // How finely the scheduler has to tick this bar: enough for the strum pattern and for every
   // drum pattern that could play (the global one plus any per-section override). Computed over
@@ -3284,6 +3308,15 @@ export default function ProgressionWheel() {
         .partmix { padding:7px 9px; background:var(--surface); border:1px solid var(--line-2); border-radius:var(--r-md); }
         .lybtn { font-size:var(--fs-sm); padding:2px 9px; border-radius:var(--r-pill); border:1px solid var(--line-2); background:var(--surface); color:var(--muted); cursor:pointer; }
         .mcell.b0 { border-left:2px solid var(--line-3); }
+        /* The drum rows are binary — a cell is on or it is not — so they can be shorter than the
+           melody's without losing anything, which keeps a section card readable at nine rows.
+           The label's right edge carries the kit-family ink, so the three parts of a kit are
+           legible while every cell is still empty. */
+        .mcell.dcell { height:17px; }
+        .mnote.dname { border-right:2px solid transparent; padding-right:5px; font-size:var(--fs-xs); }
+        /* one header shape for both grids, so they stack rather than sit next to each other */
+        .gridhdr { gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0 2px; }
+        .gridname { font-size:var(--fs-sm); color:var(--muted); }
         .mcell.bt { border-left:1px solid var(--line-2); }
         .mcell.mv { touch-action:none; }
         .mscroll.mvmode { user-select:none; -webkit-user-select:none; touch-action:none; }
@@ -3293,6 +3326,11 @@ export default function ProgressionWheel() {
         .melmodebar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:8px; }
         .melmodebar .rlbl { font-size:var(--fs-md); color:var(--muted); margin:0 2px; }
         .mscroll { overflow-x:auto; padding-bottom:4px; }
+        /* The row labels live inside the scroller, so a section wider than the panel used to scroll
+           its own legend away — nine drum rows of unlabelled cells. Pinning the gutter keeps
+           "Snare" beside the snare wherever you have scrolled to. */
+        .mline > .mnote, .mline > span:first-child { position:sticky; left:0; z-index:2;
+          background:var(--surface); }
         .sugmel { background:var(--bg); border:1px solid var(--line-2); border-radius:var(--r-lg); padding:10px 12px; margin-bottom:10px; }
         /* the arrangement strip: a fixed label gutter beside a proportional track area */
         .tl { display:flex; gap:8px; align-items:stretch; margin-top:11px; padding:9px 11px 10px;
@@ -4741,8 +4779,9 @@ export default function ProgressionWheel() {
                       </div>
                     )}
 
-                    <div className={"mscroll" + (melMove ? " mvmode" : "")}>
-                      <div className="mline" style={{ gridTemplateColumns:`36px repeat(${cols}, minmax(15px,1fr))` }}>
+                    <div className={"mscroll" + (melMove ? " mvmode" : "")}
+                      data-sync={d.key} onScroll={syncScroll}>
+                      <div className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
                         <span />
                         {d.cs.map((c, b) => (
                           <span key={b} className="mbar" style={{ gridColumn:`span ${meloBeats}`,
@@ -4750,7 +4789,7 @@ export default function ProgressionWheel() {
                         ))}
                       </div>
                       {[...scaleSemis.keys()].reverse().map(deg => (
-                        <div key={deg} className="mline" style={{ gridTemplateColumns:`36px repeat(${cols}, minmax(15px,1fr))` }}>
+                        <div key={deg} className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
                           <span className="mnote">{spell((tonic + scaleSemis[deg]) % 12, tonic, effMode)}</span>
                           {Array.from({ length: cols }, (_, c) => {
                             // which parts sound this note here; the cell takes the first one's ink,
@@ -4801,28 +4840,40 @@ export default function ProgressionWheel() {
                   const cat = DRUMS[(secDrum[d.base] || drum)];
                   return (
                     <div style={{ marginTop:6 }}>
-                      <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
-                        <span className="keytag" style={{ margin:0 }}>
-                          {own ? `${d.key}'s own drums` : `following ${(cat && cat.name) || "the song's drums"}`}
-                          {" · "}{n} steps × {d.nbars} bar{d.nbars > 1 ? "s" : ""}
-                        </span>
+                      {/* the same control row shape the melody grid above uses, so the two blocks
+                          read as one stack rather than two features that happen to be adjacent */}
+                      <div className="row gridhdr">
+                        <span className="gridname">🥁 {own ? `${d.key}'s own drums` : "following " + ((cat && cat.name) || "the song's drums")}</span>
                         {own && <button className="mini" onClick={() => resetBeat(d.key)}
                           title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(d, sameRole)}
                           title={"Put these drums on the other " + sameRole.length + " " + d.word.toLowerCase()
                             + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
                       </div>
-                      <div className="mscroll">
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        {/* the same chord header the melody grid carries, on the same columns —
+                            which is what makes a kick legible against the note above it */}
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
                         {DRUM_VOICES.map(([ch, name, tip, ink]) => (
-                          <div key={ch} className="mline" style={{ gridTemplateColumns:`58px repeat(${cols}, minmax(13px,1fr))` }}>
-                            <span className="mnote" title={tip}>{name}</span>
+                          <div key={ch} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            {/* the ink says which of the three parts of a kit a row belongs to —
+                                metal, backbeat, floor — while its cells are still empty */}
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
                             {Array.from({ length: cols }, (_, c) => {
                               const bar = Math.floor(c / n), step = c % n;
                               const on = bars[bar][step].includes(ch);
                               return (
                                 <div key={c} onClick={() => tapBeat(d, bar, step, ch)}
                                   style={on ? { background: ink, borderColor: ink } : null}
-                                  className={"mcell" + (on ? " on" : "")
+                                  className={"mcell dcell" + (on ? " on" : "")
                                     + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
                               );
                             })}
