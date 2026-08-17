@@ -5,6 +5,7 @@ import { BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFr
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
+import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
@@ -2620,6 +2621,73 @@ export default function ProgressionWheel() {
     } catch (e) { setIoNote("Export failed in this viewer — try on desktop."); }
   };
 
+  /* ---- Ableton Live Set ----
+     The same notes the MIDI export writes, in the form Live actually wants: named, coloured tracks
+     laid out as an arrangement, at the right tempo, with every section a locator on the ruler.
+     A MIDI file gives Live bare clips and nothing around them; this gives it the song.
+
+     What it cannot give is the sound. Every instrument here is a Web Audio graph, and there is no
+     way to hand Live one — so the tracks arrive empty of devices for you to drop your own on. That
+     is a limit of what the two programs share, not of the file format: the MIDI export has exactly
+     the same one. The stem bounce remains the reference for what it should sound like. */
+  const alsSpec = () => {
+    const { bars, parts, drumForBar, meta } = midiParts();
+    const B = barBeats, tracks = [];
+    // chords: the same voicing the MIDI writer uses, one bar each
+    const chordNotes = [];
+    bars.forEach((b, bi) => {
+      const notes = [36 + b.chord.root - 12, ...chordIvs(b.chord.quality).map(x => 60 + b.chord.root + x)];
+      for (const n of notes) chordNotes.push({ t: bi * B, dur: B, note: n, vel: 78 });
+    });
+    if (chordNotes.length) tracks.push({ name: "Chords", color: ALS_COLORS.chords, vol: 0.85,
+      notes: chordNotes, end: bars.length * B, note: "was " + instr });
+    // drums: each bar's own pattern, at whatever step count that pattern has
+    const drumNotes = [];
+    bars.forEach((_, bi) => {
+      const pat = drumForBar(bi);
+      if (!pat || !pat.length) return;
+      const steps = pat.length, stepB = B / steps;
+      for (let s = 0; s < steps; s++) {
+        const acc = accentAt(s, steps / B);
+        for (const ch of (pat[s] || "")) drumNotes.push({ t: bi * B + s * stepB,
+          dur: Math.min(0.25, stepB * 0.5), note: DRUM_MIDI[ch] || 42,
+          vel: ([42, 46, 51, 37].includes(DRUM_MIDI[ch]) ? 62 : 92) * acc });
+      }
+    });
+    if (drumNotes.length) tracks.push({ name: "Drums", color: ALS_COLORS.drums, vol: 0.85,
+      notes: drumNotes, end: bars.length * B, note: kit + " kit — drop a Drum Rack on this" });
+    // melody parts: grid columns merged into held notes, the same way the MIDI writer merges them
+    (parts || []).forEach((part, p) => {
+      if (!part || !part.cols) return;
+      const cols = part.cols, notes = [], colB = 1 / meloSub;
+      const at = (i, n) => (cols[i] || []).includes(n);
+      for (let i = 0; i < cols.length; i++) for (const n of (cols[i] || [])) {
+        if (i > 0 && at(i - 1, n)) continue;                    // a held note, already counted
+        let run = 1;
+        while (i + run < cols.length && at(i + run, n)) run++;
+        notes.push({ t: i * colB, dur: run * colB, note: n,
+          vel: 96 * (part.gain == null ? 1 : part.gain) * accentAt(i % (B * meloSub), meloSub) });
+      }
+      if (notes.length) tracks.push({ name: "Part " + (LAYER_NAMES[p] || p + 1),
+        color: ALS_COLORS.part, vol: 0.8, notes, end: bars.length * B,
+        note: "was " + (part.voice || melInstr) });
+    });
+    const M = METER_BY_ID[curMeter] || METERS[0];
+    return { bpm: effBpm, tsNum: M.num, tsDen: M.den, tracks,
+      locators: (meta.markers || []).map(mk => ({ beat: mk.bar * B, name: mk.name })),
+      name: sketchName.trim() || "Progression Wheel" };
+  };
+  const exportAls = async () => {
+    try {
+      const bytes = await alsBytes(alsSpec());
+      if (!bytes) { setIoNote("This browser cannot gzip — use Export MIDI instead."); return; }
+      download(bytes, "application/gzip", "als");
+      const n = alsSpec().tracks.length;
+      setIoNote(`Live Set exported — ${n} track${n === 1 ? "" : "s"} at ${effBpm} bpm, sections as locators. `
+        + "The tracks arrive without instruments: drop your own on each, and use the stems as the reference.");
+    } catch (e) { setIoNote("Live Set export failed in this viewer — try on desktop."); }
+  };
+
   /* A chord chart, as plain text. MIDI is for a DAW and a wav is for listening; this is for handing
      to somebody who plays an instrument, or pasting into a message. Sections are grouped the way the
      arrangement strip groups them, because "Chorus x2" is how you would say it out loud. */
@@ -4105,6 +4173,8 @@ export default function ProgressionWheel() {
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as one multi-track MIDI file">↓ Export MIDI</button>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidiSplit}
               title="One MIDI file per track, zipped — for a DAW that imports multi-track files badly, or when you want to drag one part onto one track">↓ MIDI ×tracks</button>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportAls}
+              title="Export as an Ableton Live Set — named, coloured tracks laid out as an arrangement, at this tempo, with every section a locator on the ruler. The tracks arrive without instruments (a Web Audio synth is not something Live can be handed), so drop your own on each and use the stems as the reference for how it should sound.">↓ Live Set</button>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportChart}
               title="A plain-text chord chart — the form, the chords and the bar counts, for a player rather than a DAW">↓ Chart</button>
             <button className="mini" onClick={copyChart} title="Copy the chord chart to the clipboard">⧉ Copy chart</button>

@@ -15,6 +15,7 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/patterns.js` | strum and drum patterns, kits, pumps, grid-resolution helpers, the drum-grid voices | — |
 | `src/audio.js` | synth voices, drum kits, sidechain, section moves, the GM sampler | theory |
 | `src/midi.js` | writing and reading Standard MIDI Files | theory, patterns |
+| `src/als.js` | writing an Ableton Live Set — gzipped XML | — |
 | `src/pitch.js` | the McLeod-Pitch-Method transcriber | — |
 | `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
 | `src/song.js` | the serialisable song document, melody and drum-bar packing, link encoding | melody |
@@ -414,6 +415,23 @@ format has always supported.
 - **A stretched section repeats its last written bar** rather than falling silent — the rule
   melodies already follow.
 - `tickCount` includes an edited bar's step count, or its sixteenths fall between the bar's ticks.
+
+### Exporting to Ableton
+
+`src/als.js` writes a `.als`, which is gzipped XML — so it needs no library, just
+`CompressionStream("gzip")`, the same API the shared link uses for deflate. It carries what a MIDI
+file cannot: named and coloured tracks laid out as an arrangement, the tempo, and every section as
+a **locator** on Live's ruler.
+
+What it cannot carry is the sound, and no format could. Every instrument here is a Web Audio graph;
+there is no way to hand Live one, so tracks arrive without devices. Times are in beats throughout,
+which is Live's unit, and notes are grouped into a `KeyTrack` per pitch, which is how Live stores
+them rather than a choice.
+
+`npm test` checks both halves of what is knowable without Live: that the document is well-formed
+(every element closes, no bare `&` from a section name) and says what it should, and that the bytes
+are really gzip and decompress back to the document. Whether Live *accepts* the schema is the part
+only Live can answer.
 
 ### Melody parts
 
