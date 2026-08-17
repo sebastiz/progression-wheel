@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- **A drum grid for every section.** Drums were the one part of the app you could only *choose*,
+  never write: 58 catalogue patterns, one override per section **type**, so every chorus shared a
+  groove and none of them could be edited. Each section card now has a **▸ drums** grid — nine rows
+  (crash, ride, open hat, hat, clap, rim, snare, boom, kick) across that section's bars, in
+  sixteenths.
+
+  - **It opens on what is already playing**, the current pattern laid onto the fine grid, so you
+    start by changing a groove rather than building one from nothing. Until you touch a cell the
+    section is still just following the menu.
+  - **It belongs to one pass**, so the second chorus gets the busier hat and the last verse the
+    fill. *copy to every chorus* spreads it, *↺ Reset* hands the section back.
+  - **Two pieces on one step play together** — that is all layering is. And a snare through the last
+    bar is the fill a transition was waiting for.
+  - Under the hood an edited bar is stored in the same array-of-step-strings the catalogue uses, so
+    playback, the exported MIDI and the drum stem all take it without knowing it was edited.
 - **The writing grid is its own choice.** How finely you can write a melody was read straight off
   the strum pattern — so a sixteenth grid meant picking a sixteenth *strum*, which changes the sound
   as well. Two decisions with nothing to do with each other were tied together, and in 3/4 and 5/4 a

@@ -330,6 +330,26 @@ edge of the block, which is where the transition actually happens.
 
 Risers, rolls and crashes bounce as their own **fx** stem, so you can ride them by hand in a DAW.
 
+### Writing a section's own drums
+
+Every section card has a **▸ drums** button beside **▸ melody**. It opens a nine-row grid — crash,
+ride, open hat, hat, clap, rim, snare, boom, kick — across that section's bars, in sixteenths.
+
+- **It opens on what is already playing.** The drum menu's pattern is laid onto the grid, so you
+  start by changing a groove rather than building one from nothing. Until you click a cell the
+  section is still just *following* that pattern; the header tells you which.
+- **It belongs to that pass alone.** The second chorus can have the busier hat, and the last verse
+  the fill, without touching the others. **copy to every chorus** puts it on the siblings when you
+  do want them the same, and **↺ Reset** hands the section back to the menu.
+- **Two pieces on one step play together** — that is all layering is here. A clap over the snare, an
+  open hat on the offbeat, a crash on the first step of a chorus.
+- **A snare through the last bar** is the fill a transition is waiting for: put a roll or a riser on
+  the next section's **⇥** menu and the two line up.
+
+The grid follows your time signature — 16 steps in 4/4, 12 in 3/4 and 6/8, 20 in 5/4 — and what you
+write goes into the exported MIDI, the Live Set and the drum stem, because an edited bar is a drum
+pattern like any other.
+
 ### Sixteenths
 
 Most rhythms divide each beat in two. The ones marked **· 16ths** divide it in four, which is where

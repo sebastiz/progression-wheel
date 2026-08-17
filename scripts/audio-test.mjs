@@ -175,6 +175,68 @@ for (const kit of ["acoustic", "909", "808"]) {
   console.log(`midi ${kit.padEnd(8)} → ${bytes.length} bytes, ${chunks} tracks, kit program ${wantProg ? M.KIT_PROGRAM[kit] : "none (GM standard)"}`);
 }
 
+/* ---- the drum grid: an edited bar is a pattern like any other ----
+   That is the whole design. A section's written bars go into the same array-of-step-strings the
+   catalogue uses, so if they ever stop being a valid pattern, playback, the MIDI writer and the
+   drum stem all break at once and none of them would say so. */
+{
+  // every row the grid draws has to be a piece the app can actually sound and export
+  for (const [ch, name, tip, ink] of M.DRUM_VOICES) {
+    if (M.DRUM_MIDI[ch] == null) problems.push(`drum voice ${ch} (${name}) has no MIDI note`);
+    if (!name || !tip || !ink) problems.push(`drum voice ${ch}: missing name, tip or ink`);
+    nodes.length = 0;
+    const dest = baseNode("dest");
+    M.drumSound(ctx, 0, ch, noise, dest, "acoustic");
+    if (!nodes.some(n => n._kind === "buf" || n._kind === "osc")) problems.push(`drum voice ${ch} makes no sound`);
+  }
+  if (new Set(M.DRUM_ORDER).size !== M.DRUM_VOICES.length) problems.push("DRUM_VOICES has a duplicate letter");
+
+  // an edited bar's step count must read back as the meter it was written in, or playback samples
+  // it onto the wrong grid and most of the groove falls between the ticks
+  for (const beats of [...new Set(M.METERS.map(m => m.beats))]) {
+    const n = M.beatSteps(beats);
+    if (M.drumBeatsOf(M.blankBeat(n)) !== beats)
+      problems.push(`a ${beats}-beat bar is ${n} steps, which reads back as ${M.drumBeatsOf(M.blankBeat(n))} beats`);
+    for (const m of M.METERS) if (m.beats === beats && !M.drumFitsMeter({ pattern: M.blankBeat(n) }, m.id))
+      problems.push(`an edited ${m.id} bar does not fit ${m.id}`);
+  }
+  // opening the grid shows what is already playing: the catalogue pattern laid onto the fine grid
+  const seed = M.beatFrom(M.DRUMS.rock.pattern, 16);
+  const at = ch => seed.map((s, i) => s.includes(ch) ? i : -1).filter(i => i >= 0);
+  if (JSON.stringify(at("K")) !== "[0,8]") problems.push(`rock seeded its kick at ${at("K")}, want beats 1 and 3`);
+  if (JSON.stringify(at("S")) !== "[4,12]") problems.push(`rock seeded its snare at ${at("S")}, want beats 2 and 4`);
+  if (at("H").length !== 8) problems.push(`rock seeded ${at("H").length} hats, want 8 eighths`);
+  // toggling is add/remove, and a step is always written in kit order so two identical bars compare equal
+  let bar = M.blankBeat(8);
+  bar = M.beatToggle(bar, 0, "K"); bar = M.beatToggle(bar, 0, "H");
+  if (bar[0] !== "HK") problems.push(`two pieces on one step wrote "${bar[0]}", want kit order "HK"`);
+  if (M.beatToggle(bar, 0, "K")[0] !== "H") problems.push("toggling a piece off did not remove it");
+  if (M.beatHits([["HK", "", "S"], ["K"]]) !== 4) problems.push("beatHits miscounts");
+
+  /* And it reaches the exported file. This is the claim that matters for a DAW: a crash written on
+     the downbeat of bar 2 has to arrive as note 49 on channel 10, at the right tick. */
+  {
+    const custom = M.beatToggle(M.blankBeat(16), 0, "X");
+    const two = [{ chord: { root: 0, quality: "min" } }, { chord: { root: 5, quality: "maj" } }];
+    const bytes = M.midiBytes(120, 4, two, bi => (bi === 1 ? custom : M.DRUMS.rock.pattern), null, "acoustic");
+    const crash = [...bytes].some((b, i) => b === 0x99 && bytes[i + 1] === M.DRUM_MIDI.X);
+    if (!crash) problems.push("a crash written on the grid never reaches the exported MIDI");
+    // and the bar it was not written in still has its own pattern
+    const kick = [...bytes].some((b, i) => b === 0x99 && bytes[i + 1] === M.DRUM_MIDI.K);
+    if (!kick) problems.push("the unedited bar lost its catalogue pattern in the export");
+  }
+  // a section's bars survive the trip to a link and back, joined form and all
+  {
+    const beats = { C1: [M.beatToggle(M.blankBeat(16), 0, "K"), M.blankBeat(16)] };
+    const round = M.unpackBeats(M.packBeats(beats));
+    if (JSON.stringify(round) !== JSON.stringify(beats)) problems.push("drum bars do not survive packing");
+    if (M.packBeats({}) !== null) problems.push("an unwritten song should pack no drum bars at all");
+    const packed = M.packBeats(beats).C1[0];
+    if (packed.length >= JSON.stringify(beats.C1[0]).length) problems.push("packing a drum bar made it bigger");
+  }
+  console.log(`drum grid: ${M.DRUM_VOICES.length} voices, ${M.beatSteps(4)}/${M.beatSteps(3)}/${M.beatSteps(5)} steps a bar, seeded from the catalogue and exported to MIDI`);
+}
+
 /* ---- the dance defaults all point at things that exist ---- */
 for (const [prog, id] of Object.entries(M.DRUM_DEFAULT))
   if (!M.DRUMS[id]) problems.push(`DRUM_DEFAULT[${prog}] → unknown pattern "${id}"`);
@@ -857,6 +919,22 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       problems.push("src: a loaded sketch does not restore its transitions");
     if (!/setGridSt\(\{ key:s\.progId, val:s\.grid/.test(code))
       problems.push("src: a loaded sketch does not restore its writing grid — every melody would re-time on load");
+  }
+  /* An edited drum bar has to be resolved the same way in three places, or the file and the bounce
+     stop being what you heard. */
+  {
+    const tick = code.slice(code.indexOf("let dpat = drumRef.current"), code.indexOf("const dstep ="));
+    if (!/secBeatRef\.current\[b\.inst\]/.test(tick))
+      problems.push("src: playback ignores a section's own drum bars");
+    if (!/Math\.min\(b\.mb, own\.length - 1\)/.test(tick))
+      problems.push("src: playback does not repeat the last written bar when a section is stretched");
+    const midi = code.slice(code.indexOf("const drumForBar = bi =>"), code.indexOf("const anyDrum ="));
+    if (!/secBeat\[b\.inst\]/.test(midi))
+      problems.push("src: the MIDI export ignores a section's own drum bars — the file would not be what plays");
+    if (!/bars\[0\]\.length/.test(code.slice(code.indexOf("const tickCount = useMemo"), code.indexOf("subRef.current = meloSub"))))
+      problems.push("src: the tick count does not account for an edited bar — its sixteenths would fall between ticks");
+    if (!/setSecBeat\(songBeats\(s\)\)/.test(code))
+      problems.push("src: a loaded sketch does not restore its drum bars");
   }
   /* Autosave must not restore over a shared link: arriving at somebody else's song and being handed
      your own instead is the worst thing it could do. The check has to happen before the first

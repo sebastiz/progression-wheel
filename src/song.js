@@ -63,6 +63,22 @@ const unpackMelos = p => {
   return { progId: p.p || "", secs };
 };
 
+/* ===== drum bars =====
+   An edited bar is a list of step strings — ["KH","","SH",""] — which JSON writes as a great many
+   quotes around very little content. Joining a bar on "." is lossless, since no kit letter is a
+   dot, and about a third the size; a whole song still has to fit in a link. */
+const packBeats = beats => {
+  const out = {};
+  for (const [k, bars] of Object.entries(beats || {}))
+    if (bars && bars.length) out[k] = bars.map(b => b.join("."));
+  return Object.keys(out).length ? out : null;
+};
+const unpackBeats = p => {
+  const out = {};
+  for (const [k, bars] of Object.entries(p || {})) out[k] = (bars || []).map(b => String(b).split("."));
+  return out;
+};
+
 /* ===== the document ===== */
 // Everything needed to rebuild a song. Kept flat and short-keyed so the encoded form stays small.
 function makeSong(s) {
@@ -70,14 +86,15 @@ function makeSong(s) {
     v: 1,
     name: s.name, progId: s.progId, tonic: s.tonic, genre: s.genre, emotion: s.emotion,
     mode: s.mode, colour: s.colour, patId: s.patId, drum: s.drum, secDrum: s.secDrum, secQuiet: s.secQuiet, custom: s.custom, auto: s.auto, nChords: s.nChords,
-    instr: s.instr, melInstr: s.melInstr, kit: s.kit, pump: s.pump, secMove: s.secMove, secTrans: s.secTrans, secNar: s.secNar, delayId: s.delayId, grid: s.grid,
+    instr: s.instr, melInstr: s.melInstr, kit: s.kit, pump: s.pump, secMove: s.secMove, secTrans: s.secTrans, secBeat: packBeats(s.secBeat), secNar: s.secNar, delayId: s.delayId, grid: s.grid,
     bpm: s.bpm, selStruct: s.selStruct, contrast: s.contrast,
     edits: s.edits, inserts: s.inserts, quals: s.quals, removed: s.removed, order: s.order,
     melos: packMelos(s.melos),
   };
 }
-// melodies read back out; everything else is already in its final shape
+// melodies and drum bars read back out; everything else is already in its final shape
 const songMelos = doc => unpackMelos(doc && doc.melos);
+const songBeats = doc => unpackBeats(doc && doc.secBeat);
 
 /* ===== link encoding =====
    JSON → deflate (native CompressionStream, no library) → base64url. Falls back to plain base64
@@ -115,4 +132,4 @@ async function decodeSong(str) {
   } catch (e) { return null; }
 }
 
-export { packBars, unpackBars, packMelos, unpackMelos, makeSong, songMelos, encodeSong, decodeSong, b64url, unb64url };
+export { packBars, unpackBars, packMelos, unpackMelos, packBeats, unpackBeats, makeSong, songMelos, songBeats, encodeSong, decodeSong, b64url, unb64url };

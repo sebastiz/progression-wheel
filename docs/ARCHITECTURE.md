@@ -12,12 +12,12 @@ DAG, so any module can be read (or tested) without loading the app:
 | --- | --- | --- |
 | `src/theory.js` | pitch classes, chord qualities and intervals, modes, key spelling | — |
 | `src/progressions.js` | the progression catalogue, genre/emotion index, structure plans | — |
-| `src/patterns.js` | strum and drum patterns, kits, pumps, grid-resolution helpers | — |
+| `src/patterns.js` | strum and drum patterns, kits, pumps, grid-resolution helpers, the drum-grid voices | — |
 | `src/audio.js` | synth voices, drum kits, sidechain, section moves, the GM sampler | theory |
 | `src/midi.js` | writing and reading Standard MIDI Files | theory, patterns |
 | `src/pitch.js` | the McLeod-Pitch-Method transcriber | — |
 | `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
-| `src/song.js` | the serialisable song document, melody packing, link encoding | melody |
+| `src/song.js` | the serialisable song document, melody and drum-bar packing, link encoding | melody |
 | `src/wav.js` | 16-bit PCM wav writing | — |
 | `src/zip.js` | a store-only ZIP writer, for the stem archive | — |
 | `src/arrange.js` | editing a song's arrangement, carrying melodies through it, automation lanes | — |
@@ -390,6 +390,30 @@ post-gain so an echo throw into a hole rings over the silence that follows it.
 Anything keyed to an instance moves when the arrangement does: `remapKeyed` carries `secMove` and
 `secTrans` through a plan edit the way `remapSecs` carries melodies, so a build set on the second
 chorus doesn't end up on the first the moment a section is moved.
+
+### The drum grid
+
+A drum pattern was always a grid — `["KH","H","SH","H"]` is one string per step, one letter per
+piece — it simply had no editor, and its only per-section control was the catalogue choice, keyed
+by section *type*. So every chorus shared one groove and none of them could be changed.
+
+`secBeat` is a section **instance**'s own bars, and it is stored in exactly that array-of-step-
+strings shape. That is the whole design decision: an edited bar is a pattern like any other, so
+playback (`dpat`), the MIDI writer (`drumForBar`) and the drum stem all take it without knowing it
+was edited, and two pieces at one step is `"KH"` — layering is string concatenation, which the
+format has always supported.
+
+- **Rows** are `DRUM_VOICES`: nine pieces, each with a MIDI note, a synthesis voice and an ink.
+- **Steps** are `beatSteps(barBeats)` — sixteenths, so 16 in 4/4, 12 in 3/4 and 6/8, 20 in 5/4.
+  Those are exactly the lengths `drumBeatsOf` reads back as the right meter, which is what keeps an
+  edited bar a legal pattern. Changing the time signature drops edits that no longer fit, the same
+  way it drops a catalogue choice that no longer fits.
+- **Opening the grid seeds it from what is playing** (`beatFrom`, via the same `sampleAt` resampler
+  playback uses), so the first thing you do is change a groove rather than build one from nothing.
+  The seed is not stored: a section is "following Rock backbeat" until you touch it.
+- **A stretched section repeats its last written bar** rather than falling silent — the rule
+  melodies already follow.
+- `tickCount` includes an edited bar's step count, or its sixteenths fall between the bar's ticks.
 
 ### Melody parts
 

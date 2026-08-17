@@ -1,12 +1,12 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
-import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
+import { decodeSong, encodeSong, makeSong, songBeats, songMelos } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
@@ -506,6 +506,12 @@ export default function ProgressionWheel() {
   // per-section-type chord mute, keyed by base letter. Dropping the chords for a breakdown while
   // the drums carry on is a basic arrangement move that had no way to be expressed before.
   const [secQuiet, setSecQuiet] = useState({});
+  /* A section instance's own drum bars, written on its grid. The catalogue choice above is per
+     section *type*, so every chorus shared one groove and none of them could be edited at all;
+     this is per pass and editable, and it is stored in the same array-of-step-strings the
+     catalogue uses, so playback, MIDI and the stem bounce need no path of their own. */
+  const [secBeat, setSecBeat] = useState({});
+  const [openBeats, setOpenBeats] = useState({});            // which section drum grids are open
   const [custom, setCustom] = useState({ key:"", plan:null });   // edited copy of a structure's plan
   const [auto, setAuto] = useState({ key:"", filter:null, level:null });  // drawn automation lanes
   const [editArr, setEditArr] = useState(false);                 // arrangement-editing mode on the strip
@@ -576,7 +582,7 @@ export default function ProgressionWheel() {
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(0);
   const humRef = useRef(0), barBeatsRef = useRef(4);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
-  const secDrumRef = useRef({}), secQuietRef = useRef({}), autoRef = useRef({});
+  const secDrumRef = useRef({}), secQuietRef = useRef({}), secBeatRef = useRef({}), autoRef = useRef({});
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
   const subRef = useRef(2), melRef = useRef(8);
   const moveRef = useRef({ moves:{}, instBars:{} });
@@ -956,6 +962,8 @@ export default function ProgressionWheel() {
     // under the first one as soon as you move a section
     setSecMove(remapKeyed(secMove, cur, next, origin, letterFor));
     setSecTrans(remapKeyed(secTrans, cur, next, origin, letterFor));
+    // deep-copied, or duplicating a section would give the copy the original's own array to edit
+    setSecBeat(remapKeyed(secBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
     if (sel != null) setSelRow(sel);
   };
   const rowsNow = () => (effPlan || []).map(r => ({ ...r }));
@@ -1016,7 +1024,7 @@ export default function ProgressionWheel() {
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = swingAmt;
   humRef.current = humanise;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
-  secDrumRef.current = secDrum; secQuietRef.current = secQuiet;
+  secDrumRef.current = secDrum; secQuietRef.current = secQuiet; secBeatRef.current = secBeat;
   // automation belongs to the song it was drawn on, so it stops applying when you switch away
   autoRef.current = auto.key === planKey ? auto : {};
   kitRef.current = kit; pumpRef.current = PUMP_AMT[pump] || 0; delayRef.current = delayId;
@@ -1045,6 +1053,12 @@ export default function ProgressionWheel() {
     const keep = {};
     for (const [k, v] of Object.entries(secDrum)) if (!v || drumFitsMeter(DRUMS[v], mid)) keep[k] = v;
     if (Object.keys(keep).length !== Object.keys(secDrum).length) setSecDrum(keep);
+    // an edited bar is a pattern like any other, and one written in 4/4 is the wrong length in 3/4:
+    // its sixteenths would fall between the new bar's ticks and most of the groove would vanish
+    const want = beatSteps((METER_BY_ID[mid] || METERS[0]).beats);
+    const kb = {};
+    for (const [k, bars] of Object.entries(secBeat)) if (bars && bars[0] && bars[0].length === want) kb[k] = bars;
+    if (Object.keys(kb).length !== Object.keys(secBeat).length) setSecBeat(kb);
   };
   const barBeats = beatsOf(rhythm);                         // 4 in common time, 3 in waltz time
   /* How finely the melody grid divides a beat. This was `rhythm.pattern.length`, which tied the
@@ -1063,8 +1077,11 @@ export default function ProgressionWheel() {
     const lens = [DRUMS[drum], ...Object.values(secDrum).map(id => DRUMS[id])]
       .filter(d => d && d.pattern && drumBeatsOf(d.pattern) === barBeats)
       .map(d => d.pattern.length);
+    // an edited bar is sixteenths, and a bar that does not tick that finely would drop every
+    // second hit of one between its ticks
+    Object.values(secBeat).forEach(bars => { if (bars && bars.length) lens.push(bars[0].length); });
     return lens.reduce((a, b) => lcm(a, b), meloBeats);
-  }, [drum, secDrum, meloBeats, barBeats]);
+  }, [drum, secDrum, secBeat, meloBeats, barBeats]);
   subRef.current = meloSub; melRef.current = meloBeats;
   /* A move or a transition is the instance's own if it has one, and the section letter's otherwise.
      Playback, the strip and the pickers all have to agree about that, and they did not: the strip
@@ -1241,6 +1258,42 @@ export default function ProgressionWheel() {
         layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), ...patch } : cloneLayer(ly)) };
     }
     setMelos({ progId, secs: next });
+  };
+  /* ---- the drum grid ----
+     The catalogue pattern a section is playing, which is what its grid opens showing: its type's
+     override if it has one, else the song's. `beatFrom` lays it onto the sixteenth grid with the
+     same resampler playback uses, so an eighth-note pattern arrives on every other step exactly as
+     it sounds — you are editing what you were hearing, not a blank bar beside it. */
+  const beatCat = d => {
+    const id = (d && d.base != null && secDrum[d.base]) || drum;
+    return DRUMS[id] ? DRUMS[id].pattern : null;
+  };
+  const beatSeed = d => {
+    const pat = beatCat(d), n = beatSteps(barBeats);
+    return Array.from({ length: d.nbars }, () => pat ? beatFrom(pat, n) : blankBeat(n));
+  };
+  // the bars on screen for a section: its own if written, else the catalogue laid onto the grid.
+  // Sized to the section, so stretching a verse gives the new bars rather than dropping them.
+  const beatBars = d => {
+    const own = secBeat[d.key], n = beatSteps(barBeats);
+    if (!own || !own.length) return beatSeed(d);
+    return Array.from({ length: d.nbars }, (_, b) => {
+      const bar = own[Math.min(b, own.length - 1)];
+      return bar && bar.length === n ? bar : blankBeat(n);
+    });
+  };
+  const putBeat = (key, bars) => setSecBeat({ ...secBeat, [key]: bars });
+  const tapBeat = (d, bar, step, ch) => {
+    const bars = beatBars(d);
+    putBeat(d.key, bars.map((b, i) => i === bar ? beatToggle(b, step, ch) : [...b]));
+  };
+  // hand the section back to the catalogue — the grid goes on showing what is playing, unwritten
+  const resetBeat = key => { const next = { ...secBeat }; delete next[key]; setSecBeat(next); };
+  const copyBeat = (d, to) => {
+    const bars = beatBars(d), next = { ...secBeat };
+    for (const o of to) next[o.key] = Array.from({ length: o.nbars },
+      (_, b) => [...bars[Math.min(b, bars.length - 1)]]);
+    setSecBeat(next);
   };
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
@@ -1741,6 +1794,11 @@ export default function ProgressionWheel() {
         const b = struct[structBar];
         const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
         if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
+        /* …and a section that has been written on its own grid plays that instead, bar by bar, so a
+           fill can land in the last bar of a verse. A section stretched since it was written repeats
+           its last written bar rather than falling silent — the same rule melodies follow. */
+        const own = b && b.inst != null ? secBeatRef.current[b.inst] : null;
+        if (own && own.length) dpat = own[Math.min(b.mb, own.length - 1)];
       }
       /* Automation lanes: on each bar's downbeat, ramp to the value the curve holds a bar later.
          Per bar rather than per tick because that is already smooth to the ear and keeps the event
@@ -2486,6 +2544,10 @@ export default function ProgressionWheel() {
       // per-bar drum pattern: a section's own kit if it set one, else the global choice
       const drumForBar = bi => {
         const b = bars[bi];
+        // a section's own written bars first, then its type's catalogue choice, then the song's —
+        // the same order playback resolves, so the file is what you heard
+        const own = b && b.inst != null ? secBeat[b.inst] : null;
+        if (own && own.length) return own[Math.min(b.mb, own.length - 1)];
         const id = (b && b.base != null && secDrum[b.base]) || drum;
         return DRUMS[id] ? DRUMS[id].pattern : null;
       };
@@ -2744,7 +2806,7 @@ export default function ProgressionWheel() {
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-    kit, pump, secMove, secTrans, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
+    kit, pump, secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
@@ -2757,7 +2819,7 @@ export default function ProgressionWheel() {
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-      kit, pump, secMove, secTrans, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
+      kit, pump, secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -2942,7 +3004,7 @@ export default function ProgressionWheel() {
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
     setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
-    setSecMove(s.secMove || {}); setSecTrans(s.secTrans || {});
+    setSecMove(s.secMove || {}); setSecTrans(s.secTrans || {}); setSecBeat(songBeats(s));
     setSecNar(s.secNar || {});
     setGridSt({ key:s.progId, val:s.grid || "" });                                 // absent in sketches saved before the grid was its own choice
     setDelaySt({ key:s.progId, val:s.delayId || "off" });                          // absent in sketches saved before moves existed
@@ -4354,6 +4416,7 @@ export default function ProgressionWheel() {
             const sec = secMelos[d.key] || EMPTY_SEC;
             const cols = d.cs.length * meloBeats;
             const open = !!openSecs[d.key];
+            const beatOpen = !!openBeats[d.key];
             const has = secHasNotes(sec);
             const donor = !has && sections.insts.find(o => o.base === d.base && o.key !== d.key
               && secHasNotes(secMelos[o.key]));
@@ -4381,6 +4444,10 @@ export default function ProgressionWheel() {
                           {recSource === "guitar" ? "🎸" : "🎤"} Rec</button>}
                     <button className="mini" onClick={() => setOpenSecs({ ...openSecs, [d.key]: !open })}>
                       {open ? "▾" : "▸"} melody{has ? " ●" : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenBeats({ ...openBeats, [d.key]: !beatOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own drums — a busier hat in the second chorus, a fill in the last bar. It opens on whatever is playing now."}>
+                      {beatOpen ? "▾" : "▸"} drums{secBeat[d.key] ? " ● " + beatHits(secBeat[d.key]) : ""}
                     </button>
                   </div>
                 </div>
@@ -4718,6 +4785,56 @@ export default function ProgressionWheel() {
                       ))}
                     </div>
                   </div>
+                  );
+                })()}
+                {/* This section's own drums. Nine rows, one per kit piece, and a cell is a letter
+                    in the step string the catalogue patterns are already made of — so what you
+                    write here is a pattern like any other, and playback, the exported MIDI and the
+                    drum stem all take it without knowing it was edited.
+                    It opens on whatever is *currently* playing rather than on an empty bar, so the
+                    first thing you do is change a groove rather than build one from nothing. */}
+                {beatOpen && (() => {
+                  const bars = beatBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  const cat = DRUMS[(secDrum[d.base] || drum)];
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                        <span className="keytag" style={{ margin:0 }}>
+                          {own ? `${d.key}'s own drums` : `following ${(cat && cat.name) || "the song's drums"}`}
+                          {" · "}{n} steps × {d.nbars} bar{d.nbars > 1 ? "s" : ""}
+                        </span>
+                        {own && <button className="mini" onClick={() => resetBeat(d.key)}
+                          title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(d, sameRole)}
+                          title={"Put these drums on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll">
+                        {DRUM_VOICES.map(([ch, name, tip, ink]) => (
+                          <div key={ch} className="mline" style={{ gridTemplateColumns:`58px repeat(${cols}, minmax(13px,1fr))` }}>
+                            <span className="mnote" title={tip}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step].includes(ch);
+                              return (
+                                <div key={c} onClick={() => tapBeat(d, bar, step, ch)}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        Two pieces on one step play together — that is all layering is here. A crash on
+                        the first step of a section, or a snare through the last bar, is the fill a
+                        transition is waiting for.
+                      </p>}
+                    </div>
                   );
                 })()}
               </div>

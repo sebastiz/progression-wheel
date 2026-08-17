@@ -210,6 +210,42 @@ const PUMPS = [["off","No pump"], ["subtle","Subtle"], ["classic","Classic pump"
 const PUMP_AMT = { off:0, subtle:0.3, classic:0.6, hard:0.85 };
 // Channel letter → General MIDI percussion note, for the exported channel-10 drum track.
 const DRUM_MIDI = { K:36, B:35, S:38, H:42, O:46, C:39, P:37, R:51, X:49 };
+/* ===== the drum grid =====
+   A drum pattern was already a grid — `["KH","H","SH","H"]` is one string per step, one letter per
+   piece — it just had no editor. These are the rows one gets, ordered the way a drum editor is:
+   metal at the top, the kick at the bottom.
+
+   Everything here works on the same array-of-step-strings the catalogue uses, which is the whole
+   point: playback, the MIDI writer and the stem bounce already consume that shape, so an edited
+   pattern needs no path of its own anywhere downstream. Two pieces at one step is `"KH"` — so
+   layering is string concatenation, and the format has always supported it. */
+// [letter, name, what it is for, ink] — three inks, because a drum grid reads as three parts:
+// metal on top, the backbeat in the middle, the floor underneath
+const DRUM_VOICES = [
+  ["X", "Crash",    "the section change — loud, and once", "#7FB4D8"],
+  ["R", "Ride",     "a wash to carry a chorus where a hat would tick", "#7FB4D8"],
+  ["O", "Open hat", "the offbeat that makes house sound like house", "#7FB4D8"],
+  ["H", "Hat",      "the tick the groove is measured in", "#7FB4D8"],
+  ["C", "Clap",     "the backbeat, layered over or instead of the snare", "#E0B85A"],
+  ["P", "Rim",      "a quiet backbeat — verses, half-time, anything that should not shout", "#E0B85A"],
+  ["S", "Snare",    "the backbeat", "#E0B85A"],
+  ["B", "Boom",     "the 808 sub, long and tuned — under the kick or instead of it", "#E8794F"],
+  ["K", "Kick",     "the floor", "#E8794F"],
+];
+const DRUM_ORDER = DRUM_VOICES.map(([ch]) => ch);
+// steps in an edited bar: sixteenths, whatever the meter. 16 in 4/4, 12 in 3/4 and 6/8, 20 in 5/4 —
+// which is exactly what `drumBeatsOf` reads back, so an edited bar is a pattern like any other
+const beatSteps = beats => beats * 4;
+const blankBeat = n => Array.from({ length: n }, () => "");
+// a step's pieces, always in kit order, so two identical bars are identical strings
+const beatSort = s => DRUM_ORDER.filter(ch => s.includes(ch)).join("");
+const beatToggle = (bar, step, ch) => bar.map((s, i) =>
+  i === step ? beatSort(s.includes(ch) ? s.split("").filter(c => c !== ch).join("") : s + ch) : s);
+const beatHits = bars => (bars || []).reduce((n, b) => n + b.reduce((m, s) => m + s.length, 0), 0);
+/* A catalogue pattern laid onto an n-step bar, so opening the grid shows what is already playing
+   rather than an empty one. `sampleAt` is the same resampler playback uses, so an eighth-note
+   pattern lands on every other step exactly as it sounds. */
+const beatFrom = (pat, n) => Array.from({ length: n }, (_, i) => beatSort(sampleAt(pat, i, n) || ""));
 // GM percussion-set program numbers (0-indexed) so an exported file opens with a kit that
 // matches what you heard. GM has no 909, so it borrows the Electronic set.
 const KIT_PROGRAM = { "909":24, "808":25 };
@@ -219,4 +255,4 @@ const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16"
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
+export { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
