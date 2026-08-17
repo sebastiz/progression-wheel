@@ -1,6 +1,34 @@
 # Changelog
 
 ## Unreleased
+- **A melodic shape per section.** A narrative wrote one idea across the whole song and that was the
+  only way to use it. Each section now has its own shape chooser, sitting under its chords: write an
+  arch across everything, then give the bridge a lament and the last chorus a climb. It writes only
+  that section, over whatever is there.
+
+  It is handed the same position in the song the song-wide write would have given it — which pass of
+  its kind it is, and where it sits in the running order — so a section rewritten on its own still
+  sits where it sits, and the second chorus still comes out different from the first. (Verified: two
+  choruses given the same shape one after the other came out different from each other, and nothing
+  else in the song moved.)
+
+- **A move per section, not per section type.** The move chooser was in the section-type header, so
+  every chorus had to build the same way. Each section now has its own, showing what it inherits as
+  its first option — *"as every chorus — Build · filter opens"* — so setting it for the whole type
+  still works and any single pass can differ. Songs saved before this keep their moves: playback
+  falls back to the section type when an instance has none.
+
+- **Six to ten suggested progressions per genre, up from three.** Every one of the 106 genres was
+  offering a default and two alternatives, which left a third of the catalogue unreachable from the
+  place people actually start. All 106 lists were rewritten — median seven each, ordered so the
+  first is what the genre sounds like at its most typical and the tail is where it borrows from.
+  Every progression in the catalogue is now reachable from at least one genre, and `npm test`
+  enforces both halves of that.
+
+  The catalogue itself was already the right size — 33 distinct loops, each with ten reference
+  songs — so nothing new was invented to pad it out. What was missing was the way in.
+
+  Version bumped to 4.64.0.
 - **Every instrument in a section gets its own tab, and 28 modulations behind it.** The Arrange view
   had one row of part buttons shared across the whole song and five controls behind them. Now each
   section carries a tab per instrument — added the moment you add one — and each tab opens that

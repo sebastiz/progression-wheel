@@ -72,6 +72,16 @@ structures get their 8/16/32-bar phrasing. Note that `reps` creates one section 
 `HOLD1|16` would be sixteen one-bar sections, sixteen rows in the arrangement and sixteen markers, so
 long sections are written as `LOOP|4` rather than `HOLD1|16`.
 
+### The genre index
+
+`GENRE_GROUPS` maps 106 genres onto the 33-progression catalogue, six to ten each, ordered so the
+first is what the genre sounds like at its most typical and the tail is where it borrows from.
+`progList[0]` is the default pick, so the head of each list is load-bearing — changing it changes
+what a genre loads. Three per genre (what it used to be) was a default and two alternatives, and it
+left a third of the catalogue unreachable from the place people actually start. `npm test` holds
+both ends: no genre may offer fewer than five, and no progression may be unreachable from every
+genre.
+
 `STRUCTURES`/`PLANS` (per progression) and `UNIVERSAL` hold arrangement plans as compact rows:
 `"Section|nums|reps|note"`, where `nums` is numerals or a token (`LOOP`, `HALF1`, `HALF2`, `HOLD1`)
 resolved against a chord pool. `resolveWith(nums, pool)` + `poolFor(sectionLetter)` implement
@@ -313,7 +323,12 @@ everything else keeps the acoustic defaults.
 
 ### Section moves
 
-`MOVES` are arrangement automations attached to a section letter (like `secDrum`). `applyMove`
+`MOVES` are arrangement automations attached to a section — either to *one instance* (`secMove.C2`)
+or, as a default for all of them, to the **section letter** (`secMove.C`). Playback takes the
+instance's own move if it has one and falls back to the letter, which is also what keeps songs saved
+before moves were per-instance sounding the way they were saved: they only carry the letter key.
+A section's own chooser shows the inherited value as its first option ("as every chorus — Build"),
+so the fallback is visible rather than something you find out by pressing play. `applyMove`
 schedules the whole thing at the section's downbeat: an exponential cutoff envelope on the
 move filter, plus the optional riser (noise through a rising bandpass, cut on the boundary) and
 impact (sub boom + crash). The duration passed in is the section instance's own length, so a sweep
@@ -535,6 +550,14 @@ existing note excludes the degrees its abutting neighbours already hold.
 
 The amount is a UI-level choice (`varySt`, like `narSel`) rather than part of the song document —
 what gets saved is the melodies it produced.
+
+**Per section.** `applySecNarrative` writes one section's part A with a narrative of its own — the
+bridge that should not be another arch, the second chorus you want to climb where the first fell.
+It hands the generator exactly the numbers the song-wide write would have (`pass`, `passes`, `idx`,
+`total`, `frac`), worked out from `sections.insts` rather than written in, so a section rewritten on
+its own still sits where it sits in the song. `npm test` rejects a hard-coded position: passing
+`pass: 0` would satisfy a naive "does it pass a pass?" check and still write every chorus
+identically. The choice is stored per section in `secNar` and carried in the song document.
 
 ## Notation
 
