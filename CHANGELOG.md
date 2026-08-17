@@ -1,6 +1,45 @@
 # Changelog
 
 ## Unreleased
+- **Every instrument in a section gets its own tab, and 28 modulations behind it.** The Arrange view
+  had one row of part buttons shared across the whole song and five controls behind them. Now each
+  section carries a tab per instrument — added the moment you add one — and each tab opens that
+  instrument's own settings panel, on its own tinted background because everything in it belongs to
+  that section alone. The same pad can be clean in the verse and gated, driven and sidechained in
+  the chorus.
+
+  | Group | What is in it |
+  | --- | --- |
+  | **Pattern** | arp (+ rate, + range), gate |
+  | **Pitch** | transpose, octave double, detune |
+  | **Tone** | low-pass, resonance, high-pass, filter envelope (+ decay), drive |
+  | **Movement** | wobble, tremolo, pan, auto-pan — four tempo-synced LFOs |
+  | **Feel** | note length, nudge, swing, play chance, accent |
+  | **Space** | echo, reverb, pump |
+
+  Twenty-eight in all, up from five, shown a group at a time — 28 sliders at once is a mixing desk,
+  not a sketchpad. A rate stays hidden until the thing it paces is turned up. Each tab shows how
+  many settings it carries, so a part you have worked on is visible without opening it.
+
+  - **Copy settings between sections.** One menu on the panel: to every other verse, to every other
+    section, or to a named one. It moves the whole set — instrument, register, level and all the
+    modulation — and leaves each section's notes alone.
+  - **↺ reset** puts every modulation on a part back to default without touching its instrument,
+    register or level.
+  - Which part is open is now **per section**. It used to be one choice for the whole song, so
+    opening the bass in the chorus switched the verse to its bass too.
+
+  Under it, each part now runs its own chain — `drive → high-pass → low-pass → tremolo → pan → gate`,
+  with sends to the delay and to a new wet-only reverb — in the order a hardware synth uses, so the
+  filter tames what the drive makes rather than the other way round.
+
+  **Fixed on the way: two exports of one song were different files.** The drum noise buffer, the
+  reverb impulse and the plucked-string excitation were all built from `Math.random`, so every
+  render came out audibly different — and a stem carried a different noise burst from the mix it
+  was supposed to add back up to. All three are hashed now. Repeat renders match exactly on RMS and
+  to within 3×10⁻⁸ on peak, which is below one 24-bit LSB.
+
+  Version bumped to 4.63.0.
 - **Repeats can now gain and lose notes, not just move them.** The variations were all the same
   size as each other — a note moved, a note repitched. Six new kinds of edit, and note count is a
   real axis: a repeat can be busier than the first time round, or barer.

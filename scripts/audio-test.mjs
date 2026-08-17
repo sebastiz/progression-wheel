@@ -69,9 +69,14 @@ const ctx = {
   },
   createDelay(max) { const n = baseNode("delay"); n.delayTime = mkParam("delayTime", "delay"); n._max = max; return n; },
   createBuffer(chs, len, rate) {
-    return { length: len, duration: len / rate, getChannelData: () => new Float32Array(len) };
+    // the channel arrays have to persist: handing back a fresh zeroed array each call means every
+    // buffer reads as silence and nothing written into one can ever be checked
+    const data = Array.from({ length: chs }, () => new Float32Array(len));
+    return { length: len, duration: len / rate, numberOfChannels: chs, getChannelData: ch => data[ch] };
   },
   createConvolver() { const n = baseNode("conv"); n.buffer = null; return n; },
+  createWaveShaper() { const n = baseNode("shaper"); n.curve = null; return n; },
+  createStereoPanner() { const n = baseNode("panner"); n.pan = mkParam("pan", "panner"); return n; },
   createDynamicsCompressor() {
     const n = baseNode("comp");
     for (const k of ["threshold","knee","ratio","attack","release"]) n[k] = mkParam(k, "comp");
@@ -1333,6 +1338,150 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`repeat variation: ${M.VARIATIONS.length} kinds of edit over ${combos} narrative×role×level combos, ${combos - repeats} give four different passes`);
   console.log(`  note count vs the first pass: ${spread.more} more, ${spread.fewer} fewer, ${spread.same} unchanged; ${(worstKeep * 100) | 0}% of the phrase survives at worst`);
   console.log(`  stepping up a level changes the result in ${steps - flat}/${steps} cases`);
+}
+
+/* ---- per-part modulation ----
+   Every setting a part carries is one entry in MOD_GROUPS, and that entry is read by five different
+   things: the control that draws it, the scheduler that applies it, the packer that saves it, the
+   copier that moves it between sections and the reset that clears it. A bad entry is therefore not a
+   cosmetic problem — a wrong default is a part that sounds different the moment it is saved and
+   reloaded, and a key that song.js does not carry is a setting that silently vanishes from a
+   shared link. All of that is checked from the table itself, so it stays true as the table grows. */
+{
+  const seen = new Set();
+  for (const g of M.MOD_GROUPS) {
+    if (!g.id || !g.name || !Array.isArray(g.mods) || !g.mods.length)
+      problems.push(`modulation group ${g.id || "?"} has no id, name or mods`);
+    if (!g.tip) problems.push(`modulation group ${g.id} has no explanation`);
+    for (const md of g.mods) {
+      if (seen.has(md.k)) problems.push(`modulation ${md.k} is listed twice`);
+      seen.add(md.k);
+      if (!md.name) problems.push(`modulation ${md.k} has no name`);
+      // every control carries its own explanation: 28 unlabelled sliders is a synth manual
+      if (!md.tip || md.tip.length < 20) problems.push(`modulation ${md.k} has no real tip`);
+      if (!["sel", "amt", "bi"].includes(md.kind)) problems.push(`modulation ${md.k} has kind "${md.kind}", which nothing draws`);
+      if (!("dflt" in md)) problems.push(`modulation ${md.k} has no default`);
+      // a default must be reachable from the control, or a part can never be put back
+      if (md.kind === "sel") {
+        const opts = typeof md.opts === "string" ? { ARPS: M.ARPS.map(a => [a.id]), GATES: M.GATES.map(x => [x.id]),
+          ARP_RATES: M.ARP_RATES, LFO_RATES: M.LFO_RATES }[md.opts] : md.opts;
+        if (!opts) problems.push(`modulation ${md.k} names an option table that does not exist: ${md.opts}`);
+        else if (md.off == null && !opts.some(([v]) => v === md.dflt))
+          problems.push(`modulation ${md.k}'s default ${JSON.stringify(md.dflt)} is not one of its options`);
+        else if (opts.some(([v]) => typeof v !== typeof (md.off != null ? opts[0][0] : md.dflt)))
+          problems.push(`modulation ${md.k} mixes option types — a menu hands back a string and the scheduler compares with ===`);
+      } else {
+        if (typeof md.max !== "number") problems.push(`modulation ${md.k} is a slider with no maximum`);
+        const min = md.auto ? -1 : (md.min != null ? md.min : 0);
+        const shown = md.dflt == null ? -1 : md.dflt * (md.scale || 1);
+        if (shown < min || shown > md.max)
+          problems.push(`modulation ${md.k}'s default sits outside its own slider`);
+        if (md.kind === "bi" && md.min >= 0) problems.push(`modulation ${md.k} is centred on zero but cannot go below it`);
+      }
+      if (md.needs && !M.MOD_BY_KEY[md.needs]) problems.push(`modulation ${md.k} depends on ${md.needs}, which is not a modulation`);
+    }
+  }
+  // A part with no settings must read as every default. This is what makes "reset" and "a brand new
+  // part" the same thing, and what stops an old saved sketch changing the moment it is opened.
+  for (const md of M.MODS) {
+    if (M.modOf({}, md.k) !== md.dflt) problems.push(`a fresh part does not read ${md.k} as its default`);
+    if (M.modOf({ [md.k]: md.dflt }, md.k) !== md.dflt) problems.push(`${md.k} does not survive being set to its own default`);
+  }
+  if (M.modCount({}) !== 0) problems.push("a part with no settings is not counted as unmodulated");
+  /* What "off" is, written out a second time and on purpose. `modOf` returning the default is
+     circular — it proves the table agrees with itself, not that the default is silent. These are
+     the values the scheduler treats as no modulation at all: a filter fully open, a note at its
+     written length, every note played, nothing added. Change a default in melody.js and this fails
+     until the change is made here too, which is the point — a default that is not a no-op means a
+     part sounds different the moment it is saved and reopened. */
+  const NEUTRAL = {
+    arp:"", arpRate:4, arpOct:1, gate:"",
+    semis:0, oct2:0, detune:0,
+    cut:100, res:0, hp:0, fenv:0, fdec:30, drive:0,
+    wob:0, wobRate:2, trem:0, tremRate:4, pan:0, apan:0, apanRate:1,
+    len:100, nudge:0, swing:0, prob:100, accent:0,
+    send:0, verb:0, duck:null,
+  };
+  for (const md of M.MODS) {
+    if (!(md.k in NEUTRAL)) problems.push(`modulation ${md.k} has no declared "off" value in the test`);
+    else if (md.dflt !== NEUTRAL[md.k])
+      problems.push(`${md.k} defaults to ${JSON.stringify(md.dflt)}, but "off" for it is ${JSON.stringify(NEUTRAL[md.k])}`);
+  }
+  for (const k of Object.keys(NEUTRAL)) if (!M.MOD_BY_KEY[k]) problems.push(`the test declares an "off" value for ${k}, which no longer exists`);
+  // every modulation moved off its default — the state a fully-worked part is in
+  const optsOf = md => (typeof md.opts === "string"
+    ? { ARPS: M.ARPS.map(a => [a.id]), GATES: M.GATES.map(x => [x.id]), ARP_RATES: M.ARP_RATES, LFO_RATES: M.LFO_RATES }[md.opts]
+    : md.opts);
+  const allOn = Object.fromEntries(M.MODS.map(md => [md.k, md.kind === "sel"
+    ? optsOf(md).map(([v]) => v).find(v => v !== md.dflt)
+    : (md.dflt === md.max / (md.scale || 1) ? 0 : md.max / (md.scale || 1))]));
+  if (M.modCount(allOn) !== M.MODS.length)
+    problems.push(`a fully modulated part counts ${M.modCount(allOn)} of ${M.MODS.length} settings`);
+
+  /* Saving. Every modulation except the handful song.js packs under their own legacy key has to be
+     in LAYER_FX, or it is dropped from saved sketches and shared links without a word. */
+  const fxKeys = new Set(M.LAYER_FX.map(([k]) => k));
+  for (const md of M.MODS) {
+    if (md.own && fxKeys.has(md.k)) problems.push(`${md.k} is packed twice — once by song.js and once through LAYER_FX`);
+    if (!md.own && !fxKeys.has(md.k)) problems.push(`${md.k} is not in LAYER_FX, so it is lost when a song is saved`);
+  }
+  // and the round trip itself, with every modulation moved off its default
+  {
+    const layer = { bars: [[[0], []], [[2], []]], instr: "saw", oct: 1, vol: 0.7, mute: false, solo: true, ...allOn };
+    const doc = M.makeSong({ progId: "axis", melos: { progId: "axis", secs: { V1: { ids: ["a", "b"], layers: [layer] } } } });
+    const back = M.songMelos(doc).secs.V1.layers[0];
+    for (const md of M.MODS)
+      if (M.modOf(back, md.k) !== allOn[md.k])
+        problems.push(`${md.k} does not survive a save: ${JSON.stringify(allOn[md.k])} → ${JSON.stringify(M.modOf(back, md.k))}`);
+    for (const [k, v] of [["instr", "saw"], ["oct", 1], ["vol", 0.7], ["solo", true]])
+      if (back[k] !== v) problems.push(`a part's ${k} does not survive a save`);
+  }
+
+  /* The drive curve. It is the one non-linear thing in a part's chain, so it is also the one that
+     could quietly change a part's level, or fold the signal back on itself and turn a lead into a
+     square wave. It has to be odd, rising, inside ±1, and hit exactly ±1 at the ends. */
+  for (const amt of [0.05, 0.25, 0.5, 1]) {
+    const c = M.driveCurve(amt);
+    if (c.length < 256) problems.push(`drive curve at ${amt} is only ${c.length} points — audible stair-stepping`);
+    if (Math.abs(c[0] + 1) > 1e-6 || Math.abs(c[c.length - 1] - 1) > 1e-6)
+      problems.push(`drive curve at ${amt} does not reach ±1 — it changes the part's level`);
+    for (let i = 1; i < c.length; i++) if (c[i] < c[i - 1])
+      problems.push(`drive curve at ${amt} falls at ${i} — it would fold the waveform, not overdrive it`);
+    // an even-length curve has no sample at exactly zero, so the property to check is that it is
+    // odd — c(-x) = -c(x). A curve that is not adds a DC offset to everything through it.
+    for (let i = 0; i < c.length; i++) if (Math.abs(c[i] + c[c.length - 1 - i]) > 1e-6)
+      { problems.push(`drive curve at ${amt} is not odd-symmetric — it adds a DC offset`); break; }
+    if (amt > 0.1 && !(c[(c.length * 0.75) | 0] > 0.75))
+      problems.push(`drive curve at ${amt} does not actually compress the peaks`);
+  }
+
+  /* Everything that bakes noise into audio must be reproducible. Two exports of one song have to be
+     the same file, and a stem has to carry the same noise as the mix it came from — with
+     Math.random it carried a different one and the stems stopped adding up. */
+  {
+    const bufOf = fn => { const b = fn(); return Array.from(b.getChannelData ? b.getChannelData(0).slice(0, 64) : []); };
+    const a = bufOf(() => M.makeNoise(ctx)), b = bufOf(() => M.makeNoise(ctx));
+    if (a.join() !== b.join()) problems.push("the drum noise buffer is not reproducible");
+    if (!a.some(v => v !== 0) || a.every(v => v === a[0])) problems.push("the drum noise buffer is not noise");
+    nodes.length = 0;
+    const r1 = M.makeReverb(ctx, baseNode("dest"), 0.2, 0.2);
+    const c1 = nodes.find(n => n._kind === "conv");
+    nodes.length = 0;
+    M.makeReverb(ctx, baseNode("dest"), 0.2, 0.2);
+    const c2 = nodes.find(n => n._kind === "conv");
+    const ir = c => Array.from(c.buffer.getChannelData(0).slice(0, 64));
+    if (ir(c1).join() !== ir(c2).join()) problems.push("the reverb impulse is not reproducible");
+    // the wet-only send is a different room from the bus reverb, or sending to it would just
+    // double the part through the same tail
+    nodes.length = 0;
+    M.makeVerbSend(ctx, baseNode("dest"), 0.2);
+    const c3 = nodes.find(n => n._kind === "conv");
+    if (ir(c1).join() === ir(c3).join()) problems.push("the reverb send uses the same impulse as the bus reverb");
+    if (!ir(c3).some(v => v !== 0)) problems.push("the reverb send has a silent impulse");
+  }
+
+  const bySlider = M.MODS.filter(md => md.kind !== "sel").length;
+  console.log(`part modulation: ${M.MODS.length} across ${M.MOD_GROUPS.length} groups (${bySlider} sliders, ${M.MODS.length - bySlider} menus), all defaulting to no-op and surviving a save`);
 }
 
 /* ---- editing an arrangement without losing the melodies ----

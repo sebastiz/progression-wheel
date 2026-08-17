@@ -5,10 +5,20 @@ import { chordIvs } from "./theory.js";
 
 /* ===== sounds ===== */
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
+/* Noise from an integer hash rather than Math.random. Every buffer of noise in here is baked into
+   audio the app hands the user — a drum hit, a reverb tail — and two renders of one song have to
+   come out identical. It matters most for stems: with random noise a drum stem carries a different
+   crack from the one in the mix, and the stems stop adding back up to the file they came from. */
+const hashNoise = n => {
+  let h = (n | 0) ^ 0x9e3779b9;
+  h = Math.imul(h ^ (h >>> 16), 0x21f0aaad);
+  h = Math.imul(h ^ (h >>> 15), 0x735a2d97);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+};
 function makeNoise(ctx) {
   const b = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.3), ctx.sampleRate);
   const d = b.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < d.length; i++) d[i] = hashNoise(i) * 2 - 1;
   return b;
 }
 function env(ctx, t, vol, attack, decay, exp = true, dest) {
@@ -234,7 +244,10 @@ function ksPluck(ctx, t, freq, dur, vol, bright, dest) {
   const nlen = Math.max(2, Math.ceil(ctx.sampleRate * period));
   const buf = ctx.createBuffer(1, nlen, ctx.sampleRate);
   const d = buf.getChannelData(0);
-  for (let i = 0; i < nlen; i++) d[i] = Math.random() * 2 - 1;
+  // Seeded from the note's own length, so two plucks of different pitches are still different
+  // excitations — but the same note plucked in two renders of one song is the same sound. With
+  // Math.random here a song exported twice came out audibly different both times.
+  for (let i = 0; i < nlen; i++) d[i] = hashNoise(nlen * 31 + i) * 2 - 1;
   const src = ctx.createBufferSource(); src.buffer = buf;
   const ig = ctx.createGain(); ig.gain.value = 1;
   src.connect(ig); ig.connect(delay);
@@ -562,22 +575,50 @@ function playLeadSampled(sampler, kind, t, midi, dur, dest) {
   if (!sampler || !isGM(kind) || !sampler.ready(kind)) return false;
   return sampler.play(kind, t, midi, 0.55, dur, dest);   // false if no loaded anchor is close → synth covers this note
 }
-// a convolution reverb bus: input node feeding a dry path + a wet (reverb) path
-/* `wetDest` lets the caller intercept the reverb return — the sidechain routes it through its own
-   duck node so the tail keeps pumping even though the dry signals now duck individually. */
-function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16, wetDest = null) {
+/* A reverb impulse: decaying noise. Seeded from an integer hash rather than Math.random, for the
+   same reason the melody generators are — two renders of one song have to come out identical, and
+   a stem bounce has to sum back to the mix it came from. With a random impulse the reverb tail of
+   a stem is a different tail from the mix's, and the stems quietly stop adding up. */
+function reverbIR(ctx, seconds, seed = 1) {
   const rate = ctx.sampleRate, len = Math.max(1, Math.floor(rate * seconds));
   const ir = ctx.createBuffer(2, len, rate);
   for (let ch = 0; ch < 2; ch++) {
     const d = ir.getChannelData(ch);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+    // the two channels take different seeds, or the reverb would be dead centre and mono
+    for (let i = 0; i < len; i++) d[i] = (hashNoise(seed * 7919 + ch * 104729 + i) * 2 - 1) * Math.pow(1 - i / len, 2.6);
   }
-  const conv = ctx.createConvolver(); conv.buffer = ir;
+  return ir;
+}
+// a convolution reverb bus: input node feeding a dry path + a wet (reverb) path
+/* `wetDest` lets the caller intercept the reverb return — the sidechain routes it through its own
+   duck node so the tail keeps pumping even though the dry signals now duck individually. */
+function makeReverb(ctx, dest, seconds = 1.6, mix = 0.16, wetDest = null) {
+  const conv = ctx.createConvolver(); conv.buffer = reverbIR(ctx, seconds);
   const wet = ctx.createGain(); wet.gain.value = mix;
   const input = ctx.createGain(); input.gain.value = 1;
   input.connect(dest);                    // dry
   input.connect(conv); conv.connect(wet); wet.connect(wetDest || dest);   // wet
   return input;
+}
+/* A wet-only reverb, for parts that send to it by amount. The shared `makeReverb` bus always
+   passes its dry signal through, which is right for "everything goes through the room" and wrong
+   for a send: a part would be heard twice, once at full level through the send. */
+function makeVerbSend(ctx, dest, seconds = 2.2) {
+  const conv = ctx.createConvolver(); conv.buffer = reverbIR(ctx, seconds, 3);
+  conv.connect(dest);
+  return conv;
+}
+/* The overdrive curve. Normalised by tanh(k) so the peak stays where it was and turning Drive up
+   thickens the part rather than just making it louder. There is deliberately no curve for zero —
+   the caller leaves the shaper's curve null there, because even a straight-line curve resamples
+   the signal and a part at default settings must be bit-for-bit what it was. */
+function driveCurve(amt) {
+  const n = 1024, c = new Float32Array(n), k = 1 + amt * 60;
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / (n - 1) - 1;
+    c[i] = Math.tanh(k * x) / Math.tanh(k);
+  }
+  return c;
 }
 
 // Melody lead voices — chosen from the "Lead" dropdown. Each spec is a stack of
@@ -685,4 +726,4 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest) {
   });
 }
 
-export { DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, midiHz, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };

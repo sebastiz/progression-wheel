@@ -3,11 +3,11 @@ import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_ID
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
 import { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
-import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
+import { DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, applyMove, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songMelos } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapSecs } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
@@ -383,6 +383,55 @@ const FN_TEXT = { T:"#171E28", S:"#0D1A16", D:"#2A0F0B" };
 const GOLD = "#E5B554", LAV = "#A493EE", PATH = "#F2EDE0";
 const POS_MAJ = [0,7,2,9,4,11,6,1,8,3,10,5];
 
+/* ---- one modulation control ----
+   Every one of the part modulations is drawn by this, from its entry in MOD_GROUPS. That is the
+   point of the table: a new modulation is one line of data, not a slider hand-written into a panel
+   that already has two dozen of them and no two quite alike. */
+const MOD_TABLES = {
+  ARPS: ARPS.map(a => [a.id, a.name]),
+  GATES: GATES.map(g => [g.id, g.name]),
+  ARP_RATES, LFO_RATES,
+};
+// a menu hands back a string; the stored value has to keep the type its default has, or a rate of
+// "4" fails every `=== 4` comparison the scheduler makes
+const castLike = (dflt, s) => (typeof dflt === "number" ? +s : s);
+function ModCtl({ mod, ly, onSet, disabled }) {
+  const raw = modOf(ly, mod.k);
+  const sc = mod.scale || 1;                       // stored 0..1, shown 0..100 for the two legacy mods
+  const on = raw !== mod.dflt;                     // is this one doing anything?
+  const lbl = <span className={"modlbl" + (on ? " modon" : "")}>{mod.name}</span>;
+  if (mod.kind === "sel") {
+    const opts = typeof mod.opts === "string" ? MOD_TABLES[mod.opts] : mod.opts;
+    return (
+      <label className="modctl" title={mod.tip}>
+        {lbl}
+        <select className="fxsel" value={raw} disabled={disabled}
+          onChange={e => onSet({ [mod.k]: castLike(mod.dflt, e.target.value) })}>
+          {mod.off != null && <option value="">{mod.off}</option>}
+          {opts.map(([v, name]) => <option key={v} value={v}>{name}</option>)}
+        </select>
+      </label>
+    );
+  }
+  // a slider. `auto` mods (Pump) sit one step below their minimum to mean "follow the global one",
+  // which is a real value the part can be set back to rather than a checkbox beside the slider.
+  const min = mod.auto ? -1 : (mod.min != null ? mod.min : 0);
+  const cur = raw == null ? -1 : Math.round(raw * sc);
+  const txt = raw == null ? "auto" : Math.round(raw * sc) + (mod.unit || "");
+  return (
+    <label className="modctl" title={mod.tip}>
+      {lbl}
+      <input className="lvl" type="range" min={min} max={mod.max} value={cur} disabled={disabled}
+        onChange={e => {
+          const n = +e.target.value;
+          onSet({ [mod.k]: mod.auto && n < 0 ? null : n / sc });
+        }} />
+      <span className="modval">{txt}</span>
+      {on && <button type="button" className="modrst" title={"Back to " + mod.name + "'s default"}
+        onClick={() => onSet({ [mod.k]: mod.dflt })}>↺</button>}
+    </label>
+  );
+}
 // section-type accent colours for the song write-out grouping
 /* One colour per section letter. Chosen by function rather than prettiness, so the arrangement
    strip reads as a shape: statements green, hooks gold, lifts blue/pink, the drop hot, the quiet
@@ -496,7 +545,11 @@ export default function ProgressionWheel() {
   const [showScore, setShowScore] = useState(false);        // notation panel collapse
   const [realSounds, setRealSounds] = useState(true);       // use real instrument samples when available
   const [melMove, setMelMove] = useState(false);            // melody grid: draw vs move mode
-  const [melLayer, setMelLayer] = useState(0);              // which melody layer edits target: 0 = A, 1 = B
+  /* Which part is open, per section instance. It used to be one number for the whole song, which
+     meant opening the bass in the chorus also switched the verse to its bass — the sections carry
+     different parts and are edited one at a time, so the choice belongs to the section. */
+  const [secPart, setSecPart] = useState({});               // section key → part index
+  const [modTab, setModTab] = useState({});                 // section key → which modulation group is open
   const [melSel, setMelSel] = useState({ key:"", layer:0, notes:{} }); // selected melody notes ("c:deg" → true)
   const [melBox, setMelBox] = useState(null);               // live marquee box while selecting
   const [melGhost, setMelGhost] = useState(null);           // live {key,dc,dd} while dragging a group
@@ -1158,13 +1211,36 @@ export default function ProgressionWheel() {
       { bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: LAYER_DEFAULT_INSTR[at] || null,
         oct: LAYER_DEFAULT_OCT[at] || 0, vol: LAYER_DEFAULT_VOL[at] == null ? 1 : LAYER_DEFAULT_VOL[at],
         mute: false, solo: false, send: 0 }] });
-    setMelLayer(at);
+    setSecPart(p => ({ ...p, [key]: at }));      // a new instrument opens on its own tab
   };
   const removeLayer = (key, L) => {
     const sec = secMelos[key]; if (!sec || L === 0 || !layerOf(sec, L)) return;   // part A is the section
     putSec(key, { layers: sec.layers.filter((_, i) => i !== L).map(cloneLayer) });
-    setMelLayer(l => (l >= L ? Math.max(0, l - 1) : l));
+    setSecPart(p => ({ ...p, [key]: (p[key] || 0) >= L ? Math.max(0, L - 1) : p[key] || 0 }));
     if (melSel.key === key && melSel.layer >= L) setMelSel({ key:"", layer:0, notes:{} });
+  };
+  /* Copy one part's whole settings set onto the same part of other sections — every field it
+     carries except its notes, which stay each section's own. The point of the feature is that
+     "the bass sound I built in the first chorus" is a thing you can move, and building it again
+     by hand in four more sections is how a sketch stops being a sketch. */
+  const copyPartSettings = (fromKey, L, toKeys) => {
+    const src = layerOf(secMelos[fromKey], L); if (!src) return 0;
+    const { bars, flat, ...settings } = cloneLayer(src);      // everything but the notes
+    const secs = melos.progId === progId ? melos.secs : {};
+    const next = { ...secs };
+    let n = 0;
+    for (const key of toKeys) {
+      const sec = secMelos[key]; if (!sec || key === fromKey) continue;
+      // a section with fewer parts gets one made, so "copy to every verse" means every verse
+      const grown = sec.layers.length > L ? sec.layers.map(cloneLayer)
+        : [...sec.layers.map(cloneLayer), ...Array.from({ length: L + 1 - sec.layers.length }, () =>
+            ({ bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: null,
+               oct: 0, vol: 1, mute: false, solo: false, send: 0 }))];
+      next[key] = { ids: sec.ids, layers: grown.map((ly, i) => i === L ? { ...ly, ...settings } : ly) };
+      n++;
+    }
+    if (n) setMelos({ progId, secs: next });
+    return n;
   };
   const setSecInstr = (key, L, val) => {
     const sec = secMelos[key]; if (!sec) return;
@@ -1492,12 +1568,25 @@ export default function ProgressionWheel() {
   const sampler = makeSampler(ctx);                // real-instrument samples (load when online)
   const mi = (meloRef.current || {}).melInstr, leadKey = isGM(mi) ? mi : null;
   if (realRef.current) { sampler.load(instrRef.current); if (leadKey) sampler.load(leadKey); }
-  const m = { ctx, master, music, cduck, wetDuck, filt, autoFilt, autoGain, stem: stem || null, lastAutoBar: -1, lastMoveBar: -1,
-    partGain: [], partGate: [], partDuck: [], partSend: [], delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
+  // a wet-only room the parts send to by amount, separate from the bus reverb everything already
+  // sits in — a send has to be silent at zero, and the bus one passes its dry signal through
+  const verb = makeVerbSend(ctx, wetDuck, 2.2);
+  const m = { ctx, master, music, cduck, wetDuck, filt, autoFilt, autoGain, verb, stem: stem || null, lastAutoBar: -1, lastMoveBar: -1,
+    partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
+    partDrive: [], partDriveAmt: [], partHp: [], partLp: [], partTrem: [], partPan: [],
+    partWob: [], partTremLfo: [], partPanLfo: [],
+    // the reference the LFOs start from: fixed at build, so their phase does not depend on which
+    // bar a part first played in — the property a stem needs to line up with the mix
+    t0: ctx.currentTime,
+    delay, voicing: null, lastChordName: null, sampler, lastInstr: instrRef.current, lastLead: leadKey,
     leadLoaded: new Set(leadKey ? [leadKey] : []),
     step: from * (tickRef.current || patRef.current.length || 8), nextTime: ctx.currentTime + 0.1, noise: makeNoise(ctx) };
     return m;
   };
+  /* A filter frequency Web Audio will accept. Setting one above Nyquist throws rather than politely
+     clamping, and an offline render at a different sample rate is exactly where that bites. */
+  const nyq = (m, hz) => Math.max(20, Math.min(hz, m.ctx.sampleRate / 2 - 100));
+  const LFO_RUN = 3600;            // an hour: longer than any song, and every oscillator must stop
   // One tick of the song: chord, drums, melody parts, moves. `live` drives the on-screen
   // playhead; an offline render passes false because there is nothing to light up.
   const emitTick = (m, live) => {
@@ -1651,33 +1740,163 @@ export default function ProgressionWheel() {
         if (sec && sec.layers.some(ly => ly.flat.length || ly.arp)) {
           const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
           /* One part's signal chain, built on first use and reused after:
-               gain (level · mute · solo) → gate (note gate) → duck (this part's sidechain) → bus
-             The echo send is taken after the gate, so a gated part throws gated repeats rather
-             than a smooth pad's worth of echo the dry signal never had. */
+
+               gain ─ drive ─ high-pass ─ low-pass ─ tremolo ─ pan ─ gate ─┬─ duck ─→ pitched bus
+               (level·mute·solo)          ▲            ▲        ▲          ├─ echo send → delay
+                                          │            │        │          └─ reverb send → room
+                                        wobble      tremolo   auto-pan
+                                                 (three tempo-synced LFOs)
+
+             The order is the one a hardware synth uses and it matters: distortion before the
+             filter (so the filter tames the harmonics the drive just made, rather than the drive
+             re-brightening a filtered signal), the gate last of the level stages so it chops
+             everything above it at once, and both sends taken after the gate — a gated part throws
+             gated repeats rather than a smooth pad's worth of echo the dry signal never had.
+
+             Every node is built whether or not the part uses it. Building lazily would mean an
+             LFO's phase depended on which bar a control was first turned up in, and a stem bounce
+             would no longer line up with the mix it came from. */
           const chainOf = li => {
             let dest = m.partGain[li];
             if (!dest) {
-              dest = m.partGain[li] = m.ctx.createGain();
-              const gate = m.partGate[li] = m.ctx.createGain(); gate.gain.value = 1;
-              const pduck = m.partDuck[li] = m.ctx.createGain(); pduck.gain.value = 1;
-              dest.connect(gate); gate.connect(pduck); pduck.connect(m.music);
+              const C = m.ctx;
+              dest = m.partGain[li] = C.createGain();
+              const drive = m.partDrive[li] = C.createWaveShaper();
+              const hp = m.partHp[li] = C.createBiquadFilter();
+              hp.type = "highpass"; hp.frequency.value = 20; hp.Q.value = 0.7;
+              const lp = m.partLp[li] = C.createBiquadFilter();
+              lp.type = "lowpass"; lp.frequency.value = nyq(m, FILTER_OPEN); lp.Q.value = 0.7;
+              const trem = m.partTrem[li] = C.createGain(); trem.gain.value = 1;
+              // Safari on older iOS has no StereoPannerNode; a part simply stays centred there
+              const pan = m.partPan[li] = C.createStereoPanner ? C.createStereoPanner() : null;
+              const gate = m.partGate[li] = C.createGain(); gate.gain.value = 1;
+              const pduck = m.partDuck[li] = C.createGain(); pduck.gain.value = 1;
+              dest.connect(drive); drive.connect(hp); hp.connect(lp); lp.connect(trem);
+              if (pan) { trem.connect(pan); pan.connect(gate); } else trem.connect(gate);
+              gate.connect(pduck); pduck.connect(m.music);
               if (m.delay) {                       // a parallel send, so the dry part is untouched
-                const sd = m.partSend[li] = m.ctx.createGain();
+                const sd = m.partSend[li] = C.createGain();
                 sd.gain.value = 0; gate.connect(sd); sd.connect(m.delay.send);
               }
+              if (m.verb) {
+                const vs = m.partVerb[li] = C.createGain();
+                vs.gain.value = 0; gate.connect(vs); vs.connect(m.verb);
+              }
+              /* The three LFOs. Each runs for the whole song at a depth of zero until something
+                 turns it up, so the movement is always in the same place in the bar however long
+                 the part has been playing — and identical in a render and in the stem of it. */
+              const lfo = (target, scale) => {
+                const o = C.createOscillator(), g = C.createGain();
+                o.type = "sine"; o.frequency.value = 1; g.gain.value = 0;
+                o.connect(g); if (target) g.connect(target);
+                o.start(m.t0); o.stop(m.t0 + LFO_RUN);
+                return { osc: o, depth: g, scale };
+              };
+              m.partWob[li] = lfo(lp.frequency);
+              m.partTremLfo[li] = lfo(trem.gain);
+              m.partPanLfo[li] = pan ? lfo(pan.pan) : null;
             }
             return { gain: dest, gate: m.partGate[li], duck: m.partDuck[li] };
           };
+          /* Push every one of a part's modulations onto its chain for this tick. Read from the
+             live layer each tick rather than set once at build, so moving a control while the song
+             is playing is heard on the next tick rather than at the next play. */
+          const applyMods = (li, ly, t) => {
+            const C = m.ctx, beatSec = 60 / bpmRef.current;
+            const val = k => modOf(ly, k);
+            const lp = m.partLp[li], hp = m.partHp[li];
+            // Low-pass: a musical curve, not a linear one — 100% is open, and the bottom of the
+            // range is still a note rather than a rumble.
+            const cutHz = nyq(m, 120 * Math.pow(FILTER_OPEN / 120, val("cut") / 100));
+            const w = val("wob") / 100;
+            // The wobble is a swing around the cutoff rather than on top of it, so turning it up
+            // does not also make the part brighter than it was set to be.
+            lp.Q.value = 0.7 + (val("res") / 100) * 14;
+            if (!val("fenv")) lp.frequency.setValueAtTime(Math.max(30, cutHz * (1 - 0.45 * w)), t);
+            m.partWob[li].depth.gain.setValueAtTime(cutHz * 0.45 * w, t);
+            m.partWob[li].osc.frequency.setValueAtTime(1 / (beatSec * val("wobRate")), t);
+            hp.frequency.setValueAtTime(nyq(m, 20 * Math.pow(1200 / 20, val("hp") / 100)), t);
+            // Drive: null curve is a true bypass, and a part at default settings has to be
+            // bit-for-bit the signal it was before any of this existed
+            const dv = val("drive") / 100;
+            if (dv !== m.partDriveAmt[li]) {
+              m.partDriveAmt[li] = dv;
+              m.partDrive[li].curve = dv > 0 ? driveCurve(dv) : null;
+            }
+            // Tremolo swings down from the level that is set, never up past it
+            const td = (val("trem") / 100) * 0.5;
+            m.partTrem[li].gain.setValueAtTime(1 - td, t);
+            m.partTremLfo[li].depth.gain.setValueAtTime(td, t);
+            m.partTremLfo[li].osc.frequency.setValueAtTime(1 / (beatSec * val("tremRate")), t);
+            if (m.partPan[li]) {
+              const ap = val("apan") / 100;
+              // keep the sweep inside the stereo field wherever Pan has placed the part
+              const base = Math.max(-1 + ap, Math.min(1 - ap, val("pan") / 100));
+              m.partPan[li].pan.setValueAtTime(base, t);
+              m.partPanLfo[li].depth.gain.setValueAtTime(ap, t);
+              m.partPanLfo[li].osc.frequency.setValueAtTime(1 / (beatSec * val("apanRate")), t);
+            }
+            if (m.partVerb[li]) m.partVerb[li].gain.setValueAtTime(val("verb") / 100, t);
+          };
+          /* When a part's notes land, once per part per tick. Nudge moves the whole part off the
+             beat; swing delays its off-beats only. Both are clamped forward, because an offline
+             render starts at time zero and scheduling before it throws rather than rounding up. */
+          const timeFor = (ly, step) => {
+            const off = modOf(ly, "nudge") / 1000
+              + (step % 2 ? (modOf(ly, "swing") / 100) * (beat / (subRef.current || 2)) * 0.5 : 0);
+            return Math.max(m.ctx.currentTime, t + off);
+          };
+          /* Whether this note sounds at all, and how hard. Both are per part and both are hashed
+             from the position in the song rather than drawn at random, so a part that plays 7 notes
+             in 10 plays the same 7 every time the song is played, rendered or bounced. */
+          const playChance = (ly, li, colAbs) => {
+            const p = modOf(ly, "prob");
+            return p >= 100 || hash01(colAbs * 8191 + li * 613) * 100 < p;
+          };
+          const accentOf = (ly, step) => {
+            const a = modOf(ly, "accent") / 100;
+            return a ? (step % (subRef.current || 2) === 0 ? 1 + a * 0.6 : 1 - a * 0.45) : 1;
+          };
+          /* One note, with everything a part's settings do to it: transposed, detuned, stretched or
+             shortened, and doubled an octave away if Double is set. Shared by the grid and the arp,
+             so a control means the same thing whichever of the two is playing. */
+          const fireNote = (ly, voice, tp, midi0, dur0, dest, held) => {
+            const midi = midi0 + modOf(ly, "semis") + modOf(ly, "detune") / 100;
+            const dur = dur0 * (modOf(ly, "len") / 100);
+            const dbl = modOf(ly, "oct2");
+            const kind = isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice;
+            for (const mi of dbl ? [midi, midi + 12 * dbl] : [midi]) {
+              // fold a double back inside hearing rather than letting it whistle or disappear
+              const md = Math.max(21, Math.min(108, mi));
+              if (!(realRef.current && playLeadSampled(m.sampler, voice, tp, md, dur, dest)))
+                leadNote(m.ctx, tp, md, dur, kind, held, dest);
+            }
+          };
+          // the filter envelope, opened at the note and falling back to where Low-pass is set
+          const fireFenv = (ly, li, tp) => {
+            const amt = modOf(ly, "fenv") / 100;
+            if (!amt) return;
+            const cutHz = nyq(m, 120 * Math.pow(FILTER_OPEN / 120, modOf(ly, "cut") / 100));
+            const top = nyq(m, cutHz * (1 + amt * 12));
+            const dec = 0.03 + (modOf(ly, "fdec") / 100) * (beat * 1.2);
+            const lp = m.partLp[li];
+            lp.frequency.setValueAtTime(top, tp);
+            lp.frequency.exponentialRampToValueAtTime(Math.max(30, cutHz), tp + dec);
+          };
           // play one melody layer's column with its own voice (falling back to the global lead)
-          const playLayer = (flat, voice, li, oct, gain, send) => {
+          const playLayer = (ly, flat, voice, li, oct, gain, send) => {
             if (!flat || !flat.length || melStep == null || !gain) return;
             const N = flat.length, col = (mb * MB + melStep) % N;
+            if (!playChance(ly, li, m.step)) return;
+            const tp = timeFor(ly, melStep);
             const dest = chainOf(li).gain;
-            dest.gain.setValueAtTime(gain * humVel(accent), t);
-            if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, t);
+            dest.gain.setValueAtTime(gain * humVel(accent) * accentOf(ly, melStep), tp);
+            if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, tp);
             const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
             if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
-            (flat[col] || []).forEach(deg => {
+            const cells = flat[col] || [];
+            if (cells.length) fireFenv(ly, li, tp);
+            cells.forEach(deg => {
               const held = mel.legato;
               const prev = flat[col - 1] || [];
               if (held && col > 0 && prev.includes(deg)) return; // still ringing from last slot
@@ -1687,13 +1906,7 @@ export default function ProgressionWheel() {
               // `run` counts melody columns, so a note's length has to be measured in columns
               // — on a sixteenth grid a one-column note is a sixteenth, not an eighth
               const colDur = beat / (subRef.current || 2);
-              const dur = held ? colDur * (run + 0.35) : colDur * 0.92;
-              const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, dest);
-              if (!sampled) {
-                // GM instrument with no loaded sample → its family's synth voice; else the synth spec itself
-                const kind = isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice;
-                leadNote(m.ctx, t, midi, dur, kind, held, dest);
-              }
+              fireNote(ly, voice, tp, midi, held ? colDur * (run + 0.35) : colDur * 0.92, dest, held);
             });
           };
           /* The arpeggiator. Rather than reading the grid, an arped part takes the chord under
@@ -1701,11 +1914,12 @@ export default function ProgressionWheel() {
              moment you change a chord, which is the whole point of arping in a sketchpad.
              The step index comes from the absolute tick, not a running counter, so the line is
              identical whether it is played, rendered or bounced to a stem. */
-          const playArp = (fx, voice, li, oct, gain, send) => {
+          const playArp = (ly, fx, voice, li, oct, gain, send) => {
             const mode = ARP_BY_ID[fx.arp];
             if (!mode || !gain || !m.voicing || !m.voicing.length) return;
             const stride = L / (fx.arpRate * barBeatsRef.current);
             if (stride < 1 || i % Math.round(stride) !== 0) return;     // not an arp step
+            if (!playChance(ly, li, m.step)) return;
             const one = m.voicing.length;                                // notes in one octave
             const pool = [];
             for (let o = 0; o < Math.max(1, fx.arpOct); o++)
@@ -1718,22 +1932,25 @@ export default function ProgressionWheel() {
             while (midi > 108) midi -= 12;
             while (midi < 24) midi += 12;
             const chain = chainOf(li);
-            chain.gain.gain.setValueAtTime(gain * humVel(accent), t);
-            if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, t);
-            const dur = (beat / fx.arpRate) * 0.92;
+            const tp = timeFor(ly, stepIdx);
+            chain.gain.gain.setValueAtTime(gain * humVel(accent) * accentOf(ly, stepIdx), tp);
+            if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, tp);
             const leadKey = isGM(voice) ? voice : null;
             if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
-            const sampled = realRef.current && playLeadSampled(m.sampler, voice, t, midi, dur, chain.gain);
-            if (!sampled) leadNote(m.ctx, t, midi, dur, isGM(voice) ? FAM_LEAD[gmFam(voice)] : voice, false, chain.gain);
+            fireFenv(ly, li, tp);
+            fireNote(ly, voice, tp, midi, (beat / fx.arpRate) * 0.92, chain.gain, false);
           };
           const anySolo = sec.layers.some(ly => ly.solo);
           sec.layers.forEach((ly, li) => {
             if (m.stem && !(m.stem.kind === "part" && m.stem.i === li)) return;
             const fx = layerFx(ly);
             const gain = layerGain(ly, anySolo), voice = ly.instr || mel.melInstr;
-            // The chain has to exist before the gate or the sidechain can be scheduled on it —
-            // both fire on ticks where the part may play no note at all.
-            if (fx.gate || fx.duck != null || pumpRef.current) chainOf(li);
+            /* Build the chain for every part on every tick rather than only when something needs
+               it. It is memoised, so the cost is one lookup; what it buys is that a part's LFOs
+               and filter always start at the same moment in the song, whichever settings happen to
+               be turned up — the property a stem bounce needs to line up with the mix. */
+            chainOf(li);
+            applyMods(li, ly, t);
             // this part's own sidechain depth; null means "whatever the global Pump says"
             if (kickNow) {
               const amt = fx.duck == null ? pumpRef.current : fx.duck;
@@ -1753,8 +1970,8 @@ export default function ProgressionWheel() {
               // silent for the rest of the session.
               m.partGate[li].gain.setTargetAtTime(1, t, 0.01);
             }
-            if (fx.arp) playArp(fx, voice, li, ly.oct || 0, gain, ly.send || 0);
-            else playLayer(ly.flat, voice, li, ly.oct || 0, gain, ly.send || 0);
+            if (fx.arp) playArp(ly, fx, voice, li, ly.oct || 0, gain, ly.send || 0);
+            else playLayer(ly, ly.flat, voice, li, ly.oct || 0, gain, ly.send || 0);
           });
           const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
           if (melStep != null) {
@@ -2653,7 +2870,60 @@ export default function ProgressionWheel() {
           label.secdrum select { min-height:32px; padding:5px 6px; }
           .selwrap select { min-height:34px; }
         }
-        .partmix { padding:7px 9px; background:var(--surface-2); border:1px solid var(--hover); border-radius:var(--r-md); }
+        /* ---- a section's instrument tabs and its settings panel ----
+           The panel is deliberately a different surface from everything around it. What is in it
+           belongs to one instrument in one section — the same pad is a different sound in the
+           chorus — and that is not obvious from the controls themselves, so the background has to
+           say it. It takes the part's own colour as a tint, so which tab you are on is legible from
+           the panel and not only from the tab strip. */
+        .lytabs { margin-bottom:-1px; position:relative; z-index:1; }
+        .lytab { font-size:var(--fs-sm); padding:4px 12px; border:1px solid var(--line-2); border-bottom:none;
+          border-radius:var(--r-md) var(--r-md) 0 0; background:var(--surface); color:var(--muted);
+          cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+        .lytab:hover { color:var(--text); }
+        .lytab.on { background:color-mix(in srgb, var(--ly) 13%, var(--surface-2));
+          border-color:color-mix(in srgb, var(--ly) 45%, var(--line-2));
+          color:var(--text); box-shadow:inset 0 2px 0 var(--ly); }
+        .lytab.lyadd { color:var(--muted); }
+        .lydot { font-style:normal; font-size:var(--fs-xs); line-height:1; padding:2px 5px; border-radius:var(--r-pill);
+          background:var(--ly, var(--line-3)); color:var(--bg); font-variant-numeric:tabular-nums; }
+        .modtab .lydot { background:var(--green); }
+        .lyflag { font-style:normal; font-size:var(--fs-xs); color:var(--amber); }
+        .partpanel { padding:9px 11px 11px; border-radius:0 var(--r-md) var(--r-md) var(--r-md);
+          border:1px solid color-mix(in srgb, var(--ly) 34%, var(--line-2));
+          border-left:3px solid color-mix(in srgb, var(--ly) 62%, var(--line-2));
+          background:
+            linear-gradient(color-mix(in srgb, var(--ly) 14%, transparent), color-mix(in srgb, var(--ly) 5%, transparent)),
+            var(--surface-2);
+          margin-bottom:8px; }
+        .partinstr { flex:1 1 150px; min-width:130px; max-width:280px; }
+        .parthdr { margin-bottom:7px; }
+        .partname { font-size:var(--fs-sm); font-weight:600; color:var(--ly); letter-spacing:.02em; }
+        .modtabs { gap:3px; flex-wrap:wrap; margin:9px 0 7px; border-bottom:1px solid var(--line-2); padding-bottom:6px; }
+        .modtab { font-size:var(--fs-sm); padding:3px 9px; border-radius:var(--r-pill); border:1px solid transparent;
+          background:transparent; color:var(--muted); cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+        .modtab:hover { color:var(--text); background:var(--hover); }
+        .modtab.on { background:var(--surface); border-color:var(--line-2); color:var(--text); }
+        /* A grid rather than a wrapping row: 28 controls of different widths in a flex row is a
+           staircase, and the labels stop lining up the moment one of them is a word longer. */
+        .modgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(232px, 1fr)); gap:6px 12px; }
+        .modctl { display:flex; align-items:center; gap:7px; min-width:0; }
+        .modlbl { font-size:var(--fs-sm); color:var(--muted); flex:0 0 78px; }
+        .modlbl.modon { color:var(--text); font-weight:600; }
+        .modval { font-family:ui-monospace,Menlo,monospace; font-size:var(--fs-sm); color:var(--ink);
+          min-width:40px; text-align:right; font-variant-numeric:tabular-nums; }
+        .modctl .lvl { flex:1 1 60px; min-width:52px; }
+        .modctl .fxsel { flex:1 1 60px; min-width:0; }
+        .modrst { border:none; background:transparent; color:var(--muted); cursor:pointer; padding:0 2px;
+          font-size:var(--fs-sm); line-height:1; }
+        .modrst:hover { color:var(--text); }
+        @media (max-width: 560px) {
+          .modgrid { grid-template-columns:1fr; }
+          .lytab { padding:7px 14px; font-size:var(--fs-md); min-height:32px; }
+          .modtab { padding:6px 11px; min-height:30px; }
+          .modctl .lvl { height:26px; }
+        }
+        .partmix { padding:7px 9px; background:var(--surface); border:1px solid var(--line-2); border-radius:var(--r-md); }
         .lybtn { font-size:var(--fs-sm); padding:2px 9px; border-radius:var(--r-pill); border:1px solid var(--line-2); background:var(--surface); color:var(--muted); cursor:pointer; }
         .mcell.b0 { border-left:2px solid var(--line-3); }
         .mcell.bt { border-left:1px solid var(--line-2); }
@@ -3801,7 +4071,7 @@ export default function ProgressionWheel() {
                   const rhy = rhySel[d.key] || "straight";
                   const curRhy = RHYTHMS.find(r => r.id === rhy) || RHYTHMS[0];
                   const nL = nLayers(sec);
-                  const secL = Math.min(melLayer, nL - 1);         // which part this section's edits target
+                  const secL = Math.min(secPart[d.key] || 0, nL - 1);   // which part this section's tabs are showing
                   // a fresh copy of the melody-voice option list (used by both per-layer instrument menus)
                   const leadOpts = () => (<>
                     <option value="">Lead default</option>
@@ -3816,109 +4086,129 @@ export default function ProgressionWheel() {
                   </>);
                   return (
                   <div style={{ marginTop:8 }}>
-                    {/* layer switch + the active layer's own instrument */}
-                    <div className="row" style={{ gap:6, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
-                      <span className="keytag" style={{ margin:0 }}>Part</span>
-                      {sec.layers.map((ly, li) => (
-                        <button key={li} className="lybtn" title={"Melody part " + LAYER_NAMES[li]}
-                          style={{ background: LAYER_INK[li], borderColor: LAYER_INK[li], color:"#0c1116",
-                            opacity: secL === li ? 1 : .45 }}
-                          onClick={() => setMelLayer(li)}>{LAYER_NAMES[li]}</button>
-                      ))}
-                      {nL < MAX_LAYERS &&
-                        <button className="lybtn" onClick={() => addLayer(d.key)}
-                          title="Add another melody part — a bassline, a pad, an arp">＋ part</button>}
-                      <div className="selwrap" style={{ minWidth:150, marginLeft:6 }}>
-                        <span className="keytag">{LAYER_NAMES[secL]} instrument</span>
-                        <select value={(layerOf(sec, secL) || {}).instr || ""}
-                          onChange={e => setSecInstr(d.key, secL, e.target.value)}>
-                          {leadOpts()}
-                        </select>
-                      </div>
-                      {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
-                        title={"Remove part " + LAYER_NAMES[secL]}>🗑 {LAYER_NAMES[secL]}</button>}
-                    </div>
-
-                    {/* the active part's register and level — what turns six voices into an arrangement */}
+                    {/* One tab per instrument in this section, then that instrument's own settings
+                        panel. The panel is tinted and inset because everything in it belongs to
+                        this section alone — the same instrument is a different sound in the chorus,
+                        and nothing else on the page works that way. */}
                     {(() => {
                       const ly = layerOf(sec, secL) || {};
                       const oct = ly.oct || 0, vol = ly.vol == null ? 1 : ly.vol;
                       const anySolo = sec.layers.some(l => l.solo);
                       const set = patch => setLayerProp(d.key, secL, patch);
-                      return (
-                        <div className="row partmix" style={{ gap:10, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
-                          <span className="keytag" style={{ margin:0 }}>Octave</span>
+                      const grp = modTab[d.key] || MOD_GROUPS[0].id;
+                      const ink = LAYER_INK[secL] || "#8B94A3";
+                      // where a copy can go: the other passes of this same section first, since
+                      // that is nearly always what is meant, then anywhere else in the song
+                      const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                      const others = sections.insts.filter(o => o.key !== d.key);
+                      const doCopy = (keys, what) => {
+                        const n = copyPartSettings(d.key, secL, keys);
+                        setIoNote(n ? `${LAYER_NAMES[secL]}'s settings copied to ${what}.` : "Nothing to copy to.");
+                      };
+                      return (<>
+                      <div className="row lytabs" style={{ gap:5, alignItems:"flex-end", flexWrap:"wrap" }}>
+                        {sec.layers.map((l, li) => {
+                          const n = modCount(l);
+                          return (
+                            <button key={li} className={"lytab" + (secL === li ? " on" : "")}
+                              title={"Part " + LAYER_NAMES[li] + (n ? ` — ${n} setting${n > 1 ? "s" : ""} of its own` : "")}
+                              style={{ "--ly": LAYER_INK[li] }}
+                              onClick={() => setSecPart({ ...secPart, [d.key]: li })}>
+                              {LAYER_NAMES[li]}
+                              {l.mute ? <i className="lyflag">m</i> : l.solo ? <i className="lyflag">s</i> : null}
+                              {n > 0 && <i className="lydot">{n}</i>}
+                            </button>
+                          );
+                        })}
+                        {nL < MAX_LAYERS &&
+                          <button className="lytab lyadd" onClick={() => addLayer(d.key)}
+                            title="Add another instrument to this section — a bassline, a pad, an arp. It arrives with its own tab of settings.">＋</button>}
+                      </div>
+
+                      <div className="partpanel" style={{ "--ly": ink }}>
+                        <div className="row parthdr" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                          <span className="partname">{d.key} · part {LAYER_NAMES[secL]}</span>
+                          <select className="fxsel partinstr" value={ly.instr || ""}
+                            title={"The instrument part " + LAYER_NAMES[secL] + " plays in " + d.key + " — each section can give the same part a different voice"}
+                            onChange={e => setSecInstr(d.key, secL, e.target.value)}>
+                            {leadOpts()}
+                          </select>
+                          <select className="fxsel partcopy" value="" title="Copy every setting on this part — instrument, register, level and all its modulation — onto the same part of other sections. Their notes are left alone."
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (v === "role") doCopy(sameRole.map(o => o.key), "every other " + d.word.toLowerCase());
+                              else if (v === "all") doCopy(others.map(o => o.key), "every other section");
+                              else if (v) doCopy([v], v);
+                            }}>
+                            <option value="">⧉ copy settings to…</option>
+                            {sameRole.length > 0 && <option value="role">every other {d.word.toLowerCase()} ({sameRole.length})</option>}
+                            {others.length > 0 && <option value="all">every other section ({others.length})</option>}
+                            {others.length > 0 && <optgroup label="just one">
+                              {others.map(o => <option key={o.key} value={o.key}>{o.key} · {o.word}</option>)}
+                            </optgroup>}
+                          </select>
+                          {modCount(ly) > 0 && <button className="mini" title="Put every modulation on this part back to its default. Its instrument, register and level are left alone."
+                            onClick={() => set(Object.fromEntries(MODS.map(md => [md.k, md.dflt])))}>↺ reset</button>}
+                          {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
+                            title={"Remove part " + LAYER_NAMES[secL] + " from " + d.key}>🗑</button>}
+                        </div>
+
+                        {/* register, level and the two mix switches: the part's place in the mix,
+                            above the modulation because it is what you reach for first */}
+                        <div className="row partmix" style={{ gap:10, alignItems:"center", flexWrap:"wrap" }}>
+                          <span className="modlbl">Octave</span>
                           <div className="row" style={{ gap:4, alignItems:"center" }}>
                             <button className="mini" disabled={oct <= LAYER_OCT_MIN}
                               onClick={() => set({ oct: Math.max(LAYER_OCT_MIN, oct - 1) })}
                               title="Drop this part an octave">−</button>
-                            <span className="octval">{oct > 0 ? "+" + oct : oct}</span>
+                            <span className="modval">{oct > 0 ? "+" + oct : oct}</span>
                             <button className="mini" disabled={oct >= LAYER_OCT_MAX}
                               onClick={() => set({ oct: Math.min(LAYER_OCT_MAX, oct + 1) })}
                               title="Lift this part an octave">＋</button>
                           </div>
-                          <span className="keytag" style={{ margin:0 }}>Level</span>
-                          <input className="lvl" type="range" min="0" max="100" value={Math.round(vol * 100)}
-                            onChange={e => set({ vol: +e.target.value / 100 })}
-                            title={"Level of part " + LAYER_NAMES[secL]} />
-                          <span className="octval">{Math.round(vol * 100)}</span>
-                          <span className="keytag" style={{ margin:0 }}>Echo</span>
-                          <input className="lvl" type="range" min="0" max="100" value={Math.round((ly.send || 0) * 100)}
-                            onChange={e => set({ send: +e.target.value / 100 })}
-                            disabled={delayId === "off"}
-                            title={delayId === "off" ? "Pick a Delay time in the top panel first" : "How much of this part is echoed"} />
-                          <span className="octval">{Math.round((ly.send || 0) * 100)}</span>
+                          <label className="modctl" title={"Level of part " + LAYER_NAMES[secL]}>
+                            <span className="modlbl">Level</span>
+                            <input className="lvl" type="range" min="0" max="100" value={Math.round(vol * 100)}
+                              onChange={e => set({ vol: +e.target.value / 100 })} />
+                            <span className="modval">{Math.round(vol * 100)}%</span>
+                          </label>
                           <button className={"mini" + (ly.mute ? " mixon" : "")} onClick={() => set({ mute: !ly.mute })}
                             title="Silence this part">{ly.mute ? "muted" : "mute"}</button>
                           <button className={"mini" + (ly.solo ? " mixon" : "")} onClick={() => set({ solo: !ly.solo })}
                             title="Hear this part alone">{ly.solo ? "soloed" : "solo"}</button>
                           {anySolo && !ly.solo && <span className="keytag" style={{ margin:0, opacity:.75 }}>another part is soloed</span>}
                         </div>
-                      );
-                    })()}
 
-                    {/* The three production controls that make a part sound like dance music rather
-                        than a tune played on a synth: an arp that follows the chords, a gate that
-                        chops it into a pulse, and its own sidechain depth. */}
-                    {(() => {
-                      const ly = layerOf(sec, secL) || {};
-                      const fx = layerFx(ly);
-                      const set = patch => setLayerProp(d.key, secL, patch);
-                      return (<>
-                        <div className="row partmix" style={{ gap:10, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
-                          <span className="keytag" style={{ margin:0 }}>Arp</span>
-                          <select className="fxsel" value={fx.arp} onChange={e => set({ arp: e.target.value })}
-                            title="Ignore this part's written notes and walk the chord under each bar instead — it re-follows the harmony whenever you change a chord">
-                            <option value="">off — play the grid</option>
-                            {ARPS.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                          </select>
-                          {fx.arp && <>
-                            <select className="fxsel" value={fx.arpRate} onChange={e => set({ arpRate: +e.target.value })}
-                              title="How fast the arp runs">
-                              {ARP_RATES.map(([r, n]) => <option key={r} value={r}>{n}</option>)}
-                            </select>
-                            <select className="fxsel" value={fx.arpOct} onChange={e => set({ arpOct: +e.target.value })}
-                              title="How many octaves the arp climbs through">
-                              {[1, 2, 3, 4].map(o => <option key={o} value={o}>{o} oct</option>)}
-                            </select>
-                          </>}
-                          <span className="keytag" style={{ margin:0 }}>Gate</span>
-                          <select className="fxsel" value={fx.gate} onChange={e => set({ gate: e.target.value })}
-                            title="Chop this part into a rhythmic pulse — the trance gate. Works best on a held pad or a long arp.">
-                            <option value="">off</option>
-                            {GATES.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                          </select>
-                          <span className="keytag" style={{ margin:0 }}>Pump</span>
-                          <input className="lvl" type="range" min="-1" max="100"
-                            value={fx.duck == null ? -1 : Math.round(fx.duck * 100)}
-                            onChange={e => set({ duck: +e.target.value < 0 ? null : +e.target.value / 100 })}
-                            title="How hard the kick ducks this part. All the way left follows the global Pump; move it and this part gets its own depth — a bass that ducks hard under a pad that barely moves." />
-                          <span className="octval">{fx.duck == null ? "auto" : Math.round(fx.duck * 100)}</span>
+                        {/* the modulation, one group at a time — 28 controls at once is a mixing
+                            desk, not a sketchpad */}
+                        <div className="row modtabs">
+                          {MOD_GROUPS.map(g => {
+                            const n = g.mods.reduce((a, md) => a + (modOf(ly, md.k) !== md.dflt ? 1 : 0), 0);
+                            return (
+                              <button key={g.id} className={"modtab" + (grp === g.id ? " on" : "")}
+                                title={g.tip} onClick={() => setModTab({ ...modTab, [d.key]: g.id })}>
+                                {g.name}{n > 0 && <i className="lydot">{n}</i>}
+                              </button>
+                            );
+                          })}
                         </div>
-                        {tips && fx.arp && <p className="arrnote" style={{ marginTop:-4, marginBottom:8 }}>
-                          Part {LAYER_NAMES[secL]} is arping the chords, so its grid below is not
-                          being played — clear the arp to go back to the written notes.
-                        </p>}
+                        <div className="modgrid">
+                          {(MOD_GROUPS.find(g => g.id === grp) || MOD_GROUPS[0]).mods
+                            // a rate only means something once the thing it paces is turned up
+                            .filter(md => !md.needs || modOf(ly, md.needs) !== MOD_BY_KEY[md.needs].dflt)
+                            .map(md => (
+                              <ModCtl key={md.k} mod={md} ly={ly} onSet={set}
+                                disabled={md.needsDelay && delayId === "off"} />
+                            ))}
+                        </div>
+                        {tips && grp === "space" && delayId === "off" &&
+                          <p className="arrnote" style={{ margin:"4px 0 0" }}>Echo needs a Delay time — pick one on the <b>Sound</b> tab.</p>}
+                        {tips && modOf(ly, "arp") &&
+                          <p className="arrnote" style={{ margin:"4px 0 0" }}>
+                            Part {LAYER_NAMES[secL]} is arping the chords, so its grid below is not
+                            being played — clear the arp to go back to the written notes.
+                          </p>}
+                      </div>
                       </>);
                     })()}
 
