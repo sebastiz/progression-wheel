@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **A framework for layering a dance track** — [docs/DANCE-LAYERING.md](docs/DANCE-LAYERING.md).
+  The app grew arrangement tools one at a time — section moves, transitions, automation lanes, a
+  drum grid per section — and this is the reasoning they share: the six roles a track needs one of
+  each of, the scarcity rule (spectrum, rhythmic slot, space — two layers may share at most one),
+  energy as a staircase whose biggest event is a subtraction, and the enter / vary / exit life of a
+  layer. Ends with a table mapping each idea to the control that does it.
 - **↓ Live Set — export the song as an Ableton `.als`.** A MIDI file gives Live bare clips; this
   arrives as the arrangement: named and coloured tracks, the right tempo, and every section as a
   locator on the ruler.
