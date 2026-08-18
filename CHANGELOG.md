@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **A framework for layering a dance track** — [docs/DANCE-LAYERING.md](docs/DANCE-LAYERING.md).
+  The app grew arrangement tools one at a time — section moves, transitions, automation lanes, a
+  drum grid per section — and this is the reasoning they share: the six roles a track needs one of
+  each of, the scarcity rule (spectrum, rhythmic slot, space — two layers may share at most one),
+  energy as a staircase whose biggest event is a subtraction, and the enter / vary / exit life of a
+  layer. Ends with a table mapping each idea to the control that does it.
 - **✦ Vary repeats — variation *inside* a section.** Repeats between sections were already handled:
   a narrative writes chorus 2 as a variation of chorus 1 rather than a copy of it. The boredom one
   level down was not. A section is normally one motif said three or four times — a one-bar riff over

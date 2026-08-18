@@ -58,6 +58,8 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   reasoning behind them
 - **[Architecture](docs/ARCHITECTURE.md)** — the chord pipeline, audio scheduler, melody-persistence
   model, MIDI writer and build
+- **[Layering a dance track](docs/DANCE-LAYERING.md)** — the framework behind the arrangement tools:
+  the six roles, the scarcity rule, energy as a staircase, and which control does which job
 - **[Contributing](CONTRIBUTING.md)** — the app is data-driven; adding progressions, strum patterns,
   drum beats or structures is a one-line table entry
 - **[Changelog](CHANGELOG.md)**
