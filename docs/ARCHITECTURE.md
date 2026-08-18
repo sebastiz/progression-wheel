@@ -15,7 +15,8 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/patterns.js` | strum and drum patterns, kits, pumps, grid-resolution helpers, the drum-grid voices | — |
 | `src/audio.js` | synth voices, drum kits, sidechain, section moves, the GM sampler | theory |
 | `src/midi.js` | writing and reading Standard MIDI Files | theory, patterns |
-| `src/als.js` | writing an Ableton Live Set — gzipped XML | — |
+| `src/als.js` | writing an Ableton Live Set — gzipped XML | als-template |
+| `src/als-template.js` | the shape of a Live Set, generated from one Live saved | — |
 | `src/pitch.js` | the McLeod-Pitch-Method transcriber | — |
 | `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
 | `src/song.js` | the serialisable song document, melody and drum-bar packing, link encoding | melody |
@@ -420,31 +421,45 @@ format has always supported.
 
 `src/als.js` writes a `.als`, which is gzipped XML — so it needs no library, just
 `CompressionStream("gzip")`, the same API the shared link uses for deflate. It carries what a MIDI
-file cannot: named and coloured tracks laid out as an arrangement, the tempo, and every section as
-a **locator** on Live's ruler.
+file cannot: named and coloured tracks laid out as an arrangement, the tempo, and every section as a
+**locator** on Live's ruler.
+
+**The shape is not written from memory — it is taken from a set Live saved.** The first version of
+this exporter built the whole document by hand. Live refused it (*"Invalid Pointee Id"*), and once
+the ids were fixed it crashed the loader outright. That is the lesson worth keeping: a Live Set is
+not a format you can infer from the outside. Live's own document has scenes, a clip slot per scene
+on every track, take lanes, a transport and sixty-odd view states, and a set missing any of them is
+one Live walks off the end of.
+
+So `scripts/als-template.mjs` takes a reference `.als`, strips it to a shell plus one device-free
+MIDI track plus one arrangement clip, punches `%PLACEHOLDERS%` where the song's own values go, and
+writes `src/als-template.js`. Nothing of the reference project survives that — no audio, devices,
+presets, grooves or notes, only structure. `src/als.js` then fills in the tempo, the meter, a track
+per part and the notes. Re-run the generator against a set saved by a newer Live if the format
+moves on; the current template is Live schema `12.0_12300`.
+
+Two things that follow from copying a real set. Live keeps an arrangement clip **twice** — in the
+track's take lane and in its arranger automation — so each part's clip is written to both. And ids
+are drawn from one document-wide space with `NextPointeeId` as the watermark Live allocates from: a
+repeated id, or one at or above that watermark, is the "invalid pointee id" refusal. The exception
+is a handful of tags Live numbers per list rather than per document — `ClipSlot`, `AutomationLane`,
+`TrackSendHolder`, `TakeLane` and the clip's own list ids — which is why every track can carry
+`ClipSlot` 0–7. That list was **measured** by comparing the tracks of a real set, not assumed, and
+every other id in a cloned track is renumbered.
+
+A time signature is one number in that XML: the denominator's place in 1, 2, 4, 8, 16, 32 times 99,
+plus the numerator less one — 4/4 is 201, which is the value the reference set's scenes carry.
 
 What it cannot carry is the sound, and no format could. Every instrument here is a Web Audio graph;
 there is no way to hand Live one, so tracks arrive without devices. Times are in beats throughout,
 which is Live's unit, and notes are grouped into a `KeyTrack` per pitch, which is how Live stores
 them rather than a choice.
 
-**Ids are the part Live is merciless about.** Every `Id` in the document — tracks, clips, key
-tracks, locators, and each `AutomationTarget`, `ModulationTarget` and `Pointee` inside a mixer —
-comes from one document-wide pool, and `NextPointeeId` at the top is the watermark Live allocates
-its own next id from. Two objects sharing an id, or one at or above that watermark, is refused
-before a single note is read: *"The document is corrupt and cannot be loaded. (Invalid Pointee
-Id.)"* Nothing here points at anything else, so the values are arbitrary — unique, non-zero and
-below the watermark is the whole requirement. A single counter therefore hands out every id, which
-is why the file is assembled from the tracks inwards and the header, which has to carry the finished
-watermark, written last.
-
-A time signature is one number in that XML: the denominator's place in 1, 2, 4, 8, 16, 32 times 99,
-plus the numerator less one — 4/4 is 201, the value a fresh set has.
-
-`npm test` checks both halves of what is knowable without Live: that the document is well-formed
-(every element closes, no bare `&` from a section name) and says what it should, that no id is
-duplicated, zero, or above the watermark, and that the bytes are really gzip and decompress back to
-the document. Whether Live *accepts* the schema is the part only Live can answer.
+`npm test` checks what is knowable without Live: that the document is well-formed (every element
+closes, no bare `&` from a section name), that no placeholder survived, that the structure Live
+crashed over is present and its counts agree (a clip slot per scene on every track), that no id is
+shared between tracks or sits at or above the watermark, and that the bytes are really gzip and
+decompress back to the document. Whether Live *accepts* the schema is the part only Live can answer.
 
 ### Melody parts
 

@@ -37,6 +37,11 @@
   audio engine and there is no way to hand Live one — the MIDI export has always had the same
   limitation. Drum notes sit at the General MIDI numbers, which line up with a Drum Rack's default
   layout. Bounce the stems alongside it for the reference of what it should sound like.
+
+  **It is a Live 12 set**, so Live 12 opens it and Live 11 and earlier will not. The document's
+  shape is taken from a set Live itself saved rather than written from the format's description,
+  which is the only way to get scenes, clip slots, take lanes and the rest of what Live's loader
+  expects — see `docs/ARCHITECTURE.md`.
 - **A drum grid for every section.** Drums were the one part of the app you could only *choose*,
   never write: 58 catalogue patterns, one override per section **type**, so every chorus shared a
   groove and none of them could be edited. Each section card now has a **▸ drums** grid — nine rows

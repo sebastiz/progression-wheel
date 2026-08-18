@@ -356,6 +356,10 @@ pattern like any other.
 arrives as the arrangement: named and coloured tracks (Chords, Drums, Part A…), the right tempo, and
 **every section as a locator** on the ruler.
 
+**It is a Live 12 set.** The file is written to the schema Live 12 saves, so Live 12 opens it
+directly and Live 11 and earlier will not — a set can be opened by its own version or a newer one,
+never an older one. On Live 11, use **↓ Export MIDI** instead.
+
 **The tracks arrive without instruments.** Every sound in this app is built in the browser's audio
 engine, and there is no way to hand Live one — so each track waits for you to drop your own
 instrument on it. That is true of the MIDI export too; it is not a limitation of the file. The drum

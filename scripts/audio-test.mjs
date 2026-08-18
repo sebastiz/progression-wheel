@@ -241,7 +241,9 @@ for (const kit of ["acoustic", "909", "808"]) {
 /* ---- the Ableton Live Set ----
    A .als is gzipped XML, so both halves can be checked here: that the document is well-formed and
    says what it should, and that the bytes are really gzip. What cannot be checked here is whether
-   Live accepts it — that needs Live. Everything below is the part that is knowable. */
+   Live accepts it — that needs Live, and the first two attempts at this file were refused and then
+   crashed it. The shape now comes from src/als-template.js, taken from a set Live saved; what these
+   checks defend is the part this file fills in, above all the ids. */
 {
   const spec = {
     bpm: 128, tsNum: 4, tsDen: 4,
@@ -267,53 +269,94 @@ for (const kit of ["acoustic", "909", "808"]) {
     if (ok && stack.length) problems.push(`als: ${stack.length} element(s) left open (${stack.slice(-3).join(" > ")})`);
   }
   if (!/^<\?xml version="1\.0" encoding="UTF-8"\?>/.test(xml)) problems.push("als: no XML declaration");
-  if (!/<Ableton MajorVersion="5"[^>]*MinorVersion="[^"]+"/.test(xml)) problems.push("als: no Ableton root with a schema version");
-  // the things that make it an arrangement rather than a bag of notes
-  if ((xml.match(/<MidiTrack Id=/g) || []).length !== 2) problems.push("als: wrong number of MIDI tracks");
-  if (!/<Manual Value="128" \/>/.test(xml)) problems.push("als: the tempo did not reach the master track");
-  if ((xml.match(/<Locator Id=/g) || []).length !== 2) problems.push("als: the section locators are missing");
-  if ((xml.match(/<MidiNoteEvent /g) || []).length !== 4) problems.push("als: wrong number of notes");
-  if (!/<MidiKey Value="60" \/>/.test(xml) || !/<MidiKey Value="36" \/>/.test(xml))
-    problems.push("als: notes are not grouped into a KeyTrack per pitch, which is how Live stores them");
-  if (!/Duration="4"/.test(xml)) problems.push("als: note durations are not in beats");
-  // names arrive from the user, and one ampersand in a section name is a file Live cannot parse
-  // every & in the document has to be part of an entity: one bare ampersand from a section name is
-  // a file Live refuses to parse at all
-  if (/&(?!(amp|lt|gt|quot|apos);)/.test(xml)) problems.push("als: a bare & reached the document");
-  if (!xml.includes("Drums &amp; &lt;bells&gt;")) problems.push("als: a track name with markup in it was not escaped");
-  if (!/EffectiveName Value="Chords"/.test(xml)) problems.push("als: track names are missing");
-  /* Ids are the thing Live refuses a set over. Every Id in the document comes from one pool, so
-     two objects sharing one — or one sitting at or above NextPointeeId, the watermark Live
-     allocates from — is the "(Invalid Pointee Id.)" dialog rather than a song. This is checkable
-     here in full, which is worth doing: the failure only ever shows up in Live. */
+  if (!/<Ableton MajorVersion="5"[^>]*MinorVersion="12\.[^"]*"/.test(xml)) problems.push("als: not a Live 12 schema header");
+  if (!/Creator="Progression Wheel"/.test(xml)) problems.push("als: the set does not say what wrote it");
+  // a placeholder that survives is a hole in the document, and Live reads it as a value
   {
-    const ids = [...xml.matchAll(/<[A-Za-z][\w.]* Id="(\d+)"/g)].map(m => Number(m[1]));
+    const left = xml.match(/%[A-Z]+%/g);
+    if (left) problems.push(`als: unfilled placeholder(s) ${[...new Set(left)].join(", ")}`);
+  }
+  /* The structure a hand-written set was missing, and which crashed Live rather than being
+     reported: a document has scenes, a transport, a main track, and one clip slot per scene on
+     every track. The counts have to agree — a track with fewer slots than there are scenes is a
+     Session grid with a hole in it. */
+  for (const [tag, what] of [["Scenes", "the scenes"], ["Transport", "the transport"],
+                             ["MainTrack", "the main track"], ["PreHearTrack", "the prehear track"]])
+    if (!xml.includes(`<${tag}`)) problems.push(`als: ${what} block is missing`);
+  const scenes = (xml.match(/<Scene Id=/g) || []).length;
+  const trackXml = [...xml.matchAll(/<MidiTrack [^>]*>/g)].map((m, i, all) => {
+    const from = m.index, to = i + 1 < all.length ? all[i + 1].index : xml.indexOf("</Tracks>");
+    return xml.slice(from, to);
+  });
+  if (trackXml.length !== 2) problems.push(`als: ${trackXml.length} MIDI tracks, expected 2`);
+  for (const t of trackXml) {
+    // the freeze sequencer keeps a second list of its own, so count only the playing one
+    const seq = t.slice(t.indexOf("<MainSequencer>"), t.indexOf("<FreezeSequencer>"));
+    const slots = (seq.match(/<ClipSlot Id=/g) || []).length;
+    if (slots !== scenes) problems.push(`als: a track has ${slots} clip slots for ${scenes} scenes`);
+  }
+  /* Ids are what Live refuses a set over. The ones inside the tracks are this file's own work —
+     every clone is renumbered — so they have to be unique across the document and below
+     NextPointeeId, the watermark Live allocates from. The handful of tags Live itself numbers per
+     list rather than per document are exempt; that list was measured from a real set. */
+  {
+    const LOCAL = ["ClipSlot", "AutomationLane", "TrackSendHolder", "TakeLane", "MidiClip",
+                   "KeyTrack", "RemoteableTimeSignature", "Scene", "SendPreBool", "Locator"];
+    const ids = [];
+    for (const t of trackXml)
+      for (const m of t.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g))
+        if (!LOCAL.includes(m[1])) ids.push({ tag: m[1], id: Number(m[3]) });
     const seen = new Set(), dupes = new Set();
-    for (const id of ids) (seen.has(id) ? dupes : seen).add(id);
-    if (dupes.size) problems.push(`als: ${dupes.size} duplicated Id(s) — Live calls that an invalid pointee id (${[...dupes].slice(0, 4).join(", ")})`);
-    if (ids.includes(0)) problems.push("als: an object claims Id 0");
+    for (const { id } of ids) (seen.has(id) ? dupes : seen).add(id);
+    if (dupes.size) problems.push(`als: ${dupes.size} id(s) shared between tracks — Live calls that an invalid pointee id (${[...dupes].slice(0, 4).join(", ")})`);
+    if (ids.some(x => x.id === 0)) problems.push("als: a track object claims Id 0");
+    if (ids.length < 200) problems.push(`als: only ${ids.length} ids across the tracks — the mixers and controllers are not being written`);
     const npi = Number((xml.match(/<NextPointeeId Value="(\d+)" \/>/) || [])[1]);
     if (!npi) problems.push("als: no NextPointeeId");
     else {
-      const over = ids.filter(id => id >= npi);
-      if (over.length) problems.push(`als: ${over.length} Id(s) at or above NextPointeeId ${npi} (max ${Math.max(...ids)})`);
+      const all = [...xml.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g)]
+        .filter(m => !LOCAL.includes(m[1])).map(m => Number(m[3]));
+      const over = all.filter(id => id >= npi);
+      if (over.length) problems.push(`als: ${over.length} id(s) at or above NextPointeeId ${npi} (max ${Math.max(...all)})`);
       if (npi <= 1000) problems.push("als: NextPointeeId has to clear 1000");
     }
-    if (ids.length < 20) problems.push("als: suspiciously few ids — the mixers are not being written");
-    // the note ids are the clip's own counter, and NoteIdGenerator has to sit above them
-    const noteIds = [...xml.matchAll(/NoteId="(\d+)"/g)].map(m => Number(m[1]));
-    if (noteIds.length !== 4) problems.push("als: notes are missing their note ids");
+  }
+  /* Live keeps an arrangement clip in two places — the take lane and the arranger automation — and
+     writes the same clip into both. One copy is a clip that shows on the timeline and vanishes from
+     the take lane, so the count is two per track, and the notes are written twice with it. */
+  if ((xml.match(/<MidiClip /g) || []).length !== 4)
+    problems.push(`als: ${(xml.match(/<MidiClip /g) || []).length} clips, expected one per track in each of the take lane and the arranger`);
+  if ((xml.match(/<MidiNoteEvent /g) || []).length !== 8) problems.push("als: wrong number of notes");
+  if (!/<MidiKey Value="60" \/>/.test(xml) || !/<MidiKey Value="36" \/>/.test(xml))
+    problems.push("als: notes are not grouped into a KeyTrack per pitch, which is how Live stores them");
+  if (!/Duration="4"/.test(xml)) problems.push("als: note durations are not in beats");
+  // note ids are the clip's own counter and NoteIdGenerator has to sit above the highest of them
+  {
+    const clip = xml.slice(xml.indexOf("<MidiClip "), xml.indexOf("</MidiClip>"));
+    const noteIds = [...clip.matchAll(/NoteId="(\d+)"/g)].map(m => Number(m[1]));
+    const next = Number((clip.match(/<NoteIdGenerator><NextId Value="(\d+)" \/>/) || [])[1]);
+    if (!noteIds.length) problems.push("als: notes have no note ids");
+    if (new Set(noteIds).size !== noteIds.length) problems.push("als: a note id is used twice in one clip");
     if (noteIds.includes(0)) problems.push("als: a note claims id 0");
+    if (!(next > Math.max(...noteIds))) problems.push(`als: NoteIdGenerator ${next} does not clear the note ids`);
   }
   /* A time signature is one number: the denominator's place in 1,2,4,8,16,32 times 99, plus the
-     numerator less one. 4/4 is 201 — the value a fresh set has — and getting it wrong hands Live a
-     song in 1/16. The clip carries the same meter spelled out as a fraction. */
-  if (!/<TimeSignature><LomId Value="0" \/>\s*<Manual Value="201" \/>/.test(xml))
-    problems.push("als: 4/4 did not reach the master track as Live's 201");
-  if (M.alsXml({ ...spec, tsNum: 6, tsDen: 8 }).indexOf('<Manual Value="302" />') < 0)
+     numerator less one. 4/4 is 201 — the value a scene in the reference set carries — and getting
+     it wrong hands Live a song in 1/16. The clip carries the meter spelled out as a fraction. */
+  if (!/<Manual Value="201" \/>/.test(xml)) problems.push("als: 4/4 did not reach the main track as Live's 201");
+  if (!M.alsXml({ ...spec, tsNum: 6, tsDen: 8 }).includes('<Manual Value="302" />'))
     problems.push("als: 6/8 is not encoded the way Live spells it");
   if (!/<Numerator Value="4" \/><Denominator Value="4" \/>/.test(xml))
     problems.push("als: the clip did not get the song's meter");
+  if (!/<Manual Value="128" \/>/.test(xml)) problems.push("als: the tempo did not reach the main track");
+  if ((xml.match(/<Locator Id=/g) || []).length !== 2) problems.push("als: the section locators are missing");
+  // names arrive from the user: every & in the document has to be part of an entity, since one bare
+  // ampersand from a section name is a file Live refuses to parse at all
+  if (/&(?!(amp|lt|gt|quot|apos);)/.test(xml)) problems.push("als: a bare & reached the document");
+  if (!xml.includes("Drums &amp; &lt;bells&gt;")) problems.push("als: a track name with markup in it was not escaped");
+  if (!/EffectiveName Value="Chords"/.test(xml)) problems.push("als: track names are missing");
+  if (!/Annotation Value="Chorus &amp; drop"/.test(xml) && !/Name Value="Chorus &amp; drop"/.test(xml))
+    problems.push("als: a locator name with an ampersand was not escaped");
   // and the file itself is gzip, which is the one thing that makes it a .als rather than XML
   if (typeof CompressionStream === "function") {
     const bytes = await M.alsBytes(spec);
@@ -325,8 +368,8 @@ for (const kit of ["acoustic", "909", "808"]) {
       const back = new Uint8Array(await new Response(new Blob([bytes]).stream()
         .pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
       if (new TextDecoder().decode(back) !== xml) problems.push("als: the gzipped bytes do not decompress to the document");
-      console.log(`live set: ${(xml.match(/<MidiTrack Id=/g) || []).length} tracks, ${(xml.match(/<MidiNoteEvent /g) || []).length} notes, `
-        + `${(xml.match(/<Locator Id=/g) || []).length} locators, ${xml.length} chars → ${bytes.length} gzipped bytes`);
+      console.log(`live set: ${trackXml.length} tracks, ${(xml.match(/<MidiNoteEvent /g) || []).length} notes, `
+        + `${scenes} scenes, ${(xml.match(/<Locator Id=/g) || []).length} locators, ${xml.length} chars → ${bytes.length} gzipped bytes`);
     }
   }
 }
@@ -2456,7 +2499,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "als.js", "progressions.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "als.js", "als-template.js", "progressions.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
