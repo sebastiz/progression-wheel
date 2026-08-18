@@ -38,6 +38,11 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   notes and a scale/pentatonic reference; melodies persist through every edit and transpose with the
   key. A **Suggest** tab writes 16 common melody shapes (chord-tone arpeggios, scale runs, call &
   response, AA / AB / AABA motifs, sequences and more) onto the grid from a chosen starting note
+- **✦ Vary repeats** — a section is one motif said three or four times, and said identically it is
+  what wears a sketch out first. One tap finds where the melody restates itself (a one-bar riff, a
+  two-bar hook, a sequence a step higher), keeps the first statement and varies every one after it —
+  a different landing note, an added or dropped note, a phrase pushed early — drifting a little
+  further with each restatement. Tap again for more, one tap past the top to put it back
 - **Melodic narratives** — one melodic idea written across the *whole* song from a single menu under
   the structure chooser: 19 shapes (arch, terraced climb, range expansion at the hook, descending
   lament, withheld peak, ostinato, call & response, motif development and more) that pick each
