@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+- **Dance arrangement templates — arranged, not just ordered.** A structure was only ever a running
+  order: pick "Big room / festival" and the sections arrived in the right sequence, but every
+  element played from the first bar to the last, which is a track with sections rather than an
+  arrangement — and in dance music the drop lands because the breakdown took the kick away, so if
+  nothing ever leaves, nothing can arrive. Twelve templates (house, tech house, techno, trance, big
+  room, progressive house, melodic techno, drum & bass, dubstep, future bass, trap, UK garage) at
+  the top of the structure picker now set what each section *plays*, not just the order: which drop
+  the drums (or just the kick), which lose the chords, which melody parts are in, the filter shape
+  across each section, what happens at every seam, and the automation lanes drawn across the whole
+  song — plus the tempo, kit, pump and chord rhythm the style is built on. Every one of those is an
+  ordinary control afterwards, and **↻ Re-apply arrangement** puts it back over the sections as they
+  stand now.
+  - **Drums and chords are per pass now, not per section type.** Every groove in a dance track
+    letters G, so "the drums come out for *this* breakdown" — the single most useful arrangement
+    move there is — had nowhere to live. The strip's Drums and Chords lanes toggle one section at a
+    time, each pass has its own 🥁 and 🎹 menus in the section list, and songs saved before this
+    still resolve by section letter when a pass has nothing of its own.
+  - **The arrangement view shows the energy staircase.** A new read-only lane on the strip sums
+    what's playing in each section (drums and the lead worth 3, chords 2, other parts 1 — the
+    weights from docs/DANCE-LAYERING.md), so the shape the template built — rise, collapse, rise —
+    is visible as a picture, and a flat line means everything plays from start to end.
+  - **A move now spans its whole run.** "Build ×4" used to fire four two-bar filter sweeps — a
+    stutter, not a build. Consecutive passes of one row set to the same move are a single sweep
+    across all their bars.
+  - **Three subtraction patterns in the drum menu** — tops only (no kick), kick only, offbeat hats —
+    because the moves dance arrangement is actually made of are what a section *doesn't* play.
 - **A framework for layering a dance track** — [docs/DANCE-LAYERING.md](docs/DANCE-LAYERING.md).
   The app grew arrangement tools one at a time — section moves, transitions, automation lanes, a
   drum grid per section — and this is the reasoning they share: the six roles a track needs one of

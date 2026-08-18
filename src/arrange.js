@@ -22,6 +22,27 @@ const instKeysOf = (plan, letterOf) => {
   });
 };
 
+/* The same expansion, with the bar arithmetic attached: every instance a plan produces, in
+   playing order, with the plan row it came from and where it starts. `barsOf(row)` is the
+   caller's, because how many bars a row is worth depends on the progression it is resolved
+   against — that is a song's business, not a plan's. The scheduler builds its own richer list;
+   this is for the code that has to know a plan's shape *before* React has re-rendered it, which
+   is what applying a whole arrangement at once needs. */
+const planInsts = (plan, barsOf, letterOf) => {
+  const counts = {};
+  let startBar = 0;
+  const out = [];
+  (plan || []).forEach((row, r) => {
+    const L = letterOf(row.sec), nbars = Math.max(1, barsOf(row, r) || 1);
+    for (let i = 0; i < Math.max(1, row.reps || 1); i++) {
+      counts[L] = (counts[L] || 0) + 1;
+      out.push({ key: L + counts[L], base: L, row: r, nbars, startBar });
+      startBar += nbars;
+    }
+  });
+  return out;
+};
+
 const idAll = n => Array.from({ length: n }, (_, i) => i);
 const MAX_ROWS = 24;          // a song with more sections than this is a different kind of document
 
@@ -105,8 +126,11 @@ const remapKeyed = (map, oldPlan, newPlan, origin, letterOf, clone = v => v) => 
     ks.forEach((k, j) => {                                   // extra passes repeat the last written one
       const v = map[src[Math.min(j, src.length - 1)]];
       // cloned, because a value that is an object — a section's drum bars — would otherwise be the
-      // *same* array in two sections, and editing one pass would edit the other
-      if (v) out[k] = clone(v);
+      // *same* array in two sections, and editing one pass would edit the other.
+      // `false` is carried like anything else: for the maps that hold a switch rather than an id,
+      // one pass set to *off* against a section type set to *on* is a real setting, and dropping it
+      // as falsy silently handed that pass back to the type it was overriding.
+      if (v != null && v !== "") out[k] = clone(v);
     });
   });
   return out;
@@ -154,7 +178,7 @@ const transCues = (insts, presetOf, barBeats) => {
   return cues;
 };
 
-export { MAX_ROWS, idAll, instKeysOf, planAdd, planDel, planDup, planMove, planReps, remapKeyed, remapSecs, transCues };
+export { MAX_ROWS, idAll, instKeysOf, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues };
 
 /* ---- automation lanes ----
    A section move is a preset applied to a whole section. Automation is the other half: a curve you

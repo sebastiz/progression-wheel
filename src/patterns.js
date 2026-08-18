@@ -183,6 +183,13 @@ const DRUMS = {};
 ["trap","Trap","BH H H CH H BH CH H"],
 ["dubstep","Dubstep half-time","KH H H H CH H P H"],
 ["electro","Electro house","KH H KCH H KH KH CH H"],
+/* Subtractions. Not grooves in their own right — these are what a section plays when something
+   has been taken away, which is the move dance arrangement is actually made of: the drop lands
+   because the breakdown lost the kick, and the build works because the kick is withheld until the
+   last bar. Written against the house/techno patterns above so they sit under the same phrase. */
+["nokick","Tops only · no kick",". O C O . O C O"],
+["kickonly","Kick only","K . K . K . K ."],
+["ohats","Offbeat hats only",". O . O . O . O"],
 // 4/4 at sixteenths — sixteen steps. This is the resolution the rolling hats, the skipping
 // garage kick and a real breakbeat need; at eighths they can only be approximated.
 ["house16d","House · 16th hats","K H H H KC H H H K H H H KC H H O"],

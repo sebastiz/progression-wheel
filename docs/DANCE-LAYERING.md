@@ -165,6 +165,7 @@ Each idea above has a control that does it.
 
 | Idea | Where |
 | --- | --- |
+| The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — twelve dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build. The strip's **Energy** lane draws the resulting staircase |
 | The staircase of sections | The **structure** chooser, and the arrangement strip's rows and reps — *make the drop twice as long* is a reps edit |
 | Layer entries and exits | A **drum grid per section**, so the second chorus gets the busier hat and the last verse the fill |
 | The six roles, in the drum stack | The grid's nine voices — crash, ride, open hat, hat, clap, rim, snare, boom, kick — read top to bottom as air ⟶ backbeat ⟶ floor |

@@ -10,7 +10,8 @@ import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } fr
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyWithin } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
-import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
+import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
+import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -593,7 +594,7 @@ export default function ProgressionWheel() {
   const secDrumRef = useRef({}), secQuietRef = useRef({}), secBeatRef = useRef({}), autoRef = useRef({});
   const kitRef = useRef("acoustic"), pumpRef = useRef(0), tickRef = useRef(8);
   const subRef = useRef(2), melRef = useRef(8);
-  const moveRef = useRef({ moves:{}, instBars:{} });
+  const moveRef = useRef({ moves:{}, span:{} });
   const delayRef = useRef("off");
   const realRef = useRef(true);
   const clickRef = useRef(false);
@@ -884,9 +885,15 @@ export default function ProgressionWheel() {
       return STRUCTURES[progId] && STRUCTURES[progId][i]
         ? { st: STRUCTURES[progId][i], plan: PLANS[progId][i] } : null;
     }
+    // "t" — an arrangement template: a plan whose rows also carry what plays in them
+    if (p[1] === "t") {
+      const t = DANCE_TEMPLATES[+p[2]];
+      return t ? { st: t, plan: t.plan, tpl: t } : null;
+    }
     const u = UNIVERSAL[+p[2]];
     return u ? { st: u, plan: u.plan } : null;
   }, [selStruct, progId]);
+  const curTpl = structSel && structSel.tpl ? structSel.tpl : null;
 
   const chords2 = useMemo(() => {
     if (!contrast.id || !PROGRESSIONS[contrast.id]) return null;
@@ -970,6 +977,11 @@ export default function ProgressionWheel() {
     // under the first one as soon as you move a section
     setSecMove(remapKeyed(secMove, cur, next, origin, letterFor));
     setSecTrans(remapKeyed(secTrans, cur, next, origin, letterFor));
+    // …including what a section plays. These are keyed per pass now, so a breakdown that has its
+    // drums out has to keep them out when it is moved, and the pass it renumbered into must not
+    // inherit the silence.
+    setSecDrum(remapKeyed(secDrum, cur, next, origin, letterFor));
+    setSecQuiet(remapKeyed(secQuiet, cur, next, origin, letterFor));
     // deep-copied, or duplicating a section would give the copy the original's own array to edit
     setSecBeat(remapKeyed(secBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
     if (sel != null) setSelRow(sel);
@@ -984,6 +996,65 @@ export default function ProgressionWheel() {
   // the section types you can add — one per letter the app knows how to colour, name and letter
   const ADDABLE = ["Intro", "Verse", "Pre-chorus", "Chorus", "Bridge", "Solo", "Groove",
     "Build", "Drop", "Breakdown", "Refrain", "Outro"];
+
+  /* ---- arrangement templates ----
+     A structure is a running order. A template is a running order plus an arrangement: which
+     sections drop the drums, which lose the chords, which parts are in, the filter shape across
+     each one, and what happens at every seam. Without that a picked structure plays every element
+     from the first bar to the last, which is a track with sections rather than an arranged one —
+     and in dance music the drop lands because the breakdown took the kick away, so if nothing ever
+     leaves, nothing can arrive.
+
+     The arrangement is resolved onto *instances* (D1, D2 …), never section letters, because "the
+     second drop is bigger than the first" is the whole craft and a letter cannot say it. And it
+     rides on the plan rows, so moving or duplicating a section carries its arrangement with it,
+     exactly as melodies are carried. */
+  const barsOfRow = row => padEven(resolveWith(row.nums, poolFor(letterFor(row.sec)))).length;
+  /* A template says which parts play in each section; the parts live with the melodies, so this
+     patches their mute flags and leaves every note alone. A section with nothing written in it yet
+     is still given its flags when the template wants it silent — so a melody written later lands in
+     the arrangement rather than in every bar of the song. */
+  const applyPartMutes = parts => {
+    const entries = Object.entries(parts || {});
+    if (!entries.length) return;
+    const secs = melos.progId === progId ? { ...melos.secs } : {};
+    for (const [key, plays] of entries) {
+      const prev = secs[key];
+      const src = (prev && prev.layers && prev.layers.length) ? prev.layers : null;
+      if (!src && plays[0]) continue;       // nothing written here and part A plays — nothing to record
+      const layers = (src || [{ bars: null, instr: null }]).map((ly, i) => ({ ...ly, mute: !plays[i] }));
+      secs[key] = { ids: (prev && prev.ids) || [], layers };
+    }
+    setMelos({ progId, secs });
+  };
+  /* Resolve a plan's rows onto the sections they actually produce and write the lot. `planInsts`
+     rather than `sections.insts` because this runs inside the event that *chooses* the plan — the
+     component has not re-rendered yet, so `sections` is still the previous song's. */
+  const applyArrangement = (plan, sel) => {
+    const A = resolveArrangement(plan, planInsts(plan, barsOfRow, letterFor));
+    setSecDrum(A.secDrum); setSecQuiet(A.secQuiet);
+    setSecMove(A.secMove); setSecTrans(A.secTrans);
+    setAuto({ key: progId + "|" + sel, filter: A.filter, level: A.level });
+    applyPartMutes(A.parts);
+  };
+  /* Picking a template is picking a structure *and* an arrangement, so it also sets the tempo, the
+     kit, the pump and the chord rhythm the style is built on — a big-room shape at 96 bpm over a
+     campfire strum is not the thing the template is for. Every one of them is an ordinary control
+     afterwards, and the arrangement itself is editable everywhere it shows. */
+  const pickStruct = v => {
+    setSelStruct(v);
+    setSelRow(0);
+    setCustom({ key:"", plan:null });
+    const p = v.split(":");
+    const tpl = p[1] === "t" ? DANCE_TEMPLATES[+p[2]] : null;
+    if (!tpl) return;
+    if (tpl.bpm) setBpmSt({ key: progId, val: tpl.bpm });
+    if (tpl.pat && PATTERNS[tpl.pat]) setPatSel({ key: progId, id: tpl.pat });
+    if (tpl.drum && DRUMS[tpl.drum]) setDrumSt({ key: progId, val: tpl.drum });
+    if (tpl.kit) setKitSt({ key: progId, val: tpl.kit });
+    if (tpl.pump) setPumpSt({ key: progId, val: tpl.pump });
+    applyArrangement(tpl.plan, v);
+  };
 
   /* ---- melody scale + targets ---- */
   const scaleSemis = MODES[effMode].semis;
@@ -1120,6 +1191,14 @@ export default function ProgressionWheel() {
      read the letter alone, so a build set on the second chorus was inaudible in its own tooltip. */
   const effMove = d => (d && (secMove[d.key] || secMove[d.base])) || "";
   const effTrans = d => (d && (secTrans[d.key] || secTrans[d.base])) || "";
+  /* Drums and chords resolve the same way, and used to resolve by section letter alone. That made
+     a real arrangement impossible to express: every groove in a track letters G, so "the first
+     groove has no chords and the second one does" had nowhere to live, and a template could only
+     ever say the same thing about all of them. Instance first, letter second — which is also what
+     keeps songs saved before this sounding the way they were saved, since those only ever wrote
+     the letter. */
+  const effDrum = d => (d && (secDrum[d.key] || secDrum[d.base])) || "";
+  const effQuiet = d => !!(d && (secQuiet[d.key] != null ? secQuiet[d.key] : secQuiet[d.base]));
   /* Forty-nine transitions only work as a menu if they arrive grouped, so the six families are
      optgroups; and the inherited value is the first option rather than something you find out by
      pressing play, exactly as a move's is. */
@@ -1139,9 +1218,26 @@ export default function ProgressionWheel() {
   const cues = useMemo(() => transCues(sections.insts,
     d => TRANS[(secTrans[d.key] || secTrans[d.base]) || ""], barBeats),
     [sections.insts, secTrans, barBeats]);
-  // bars per section instance, so a move's sweep can span exactly one instance
-  moveRef.current = { moves: secMove, cues,
-    instBars: Object.fromEntries(sections.insts.map(d => [d.key, d.cs.length])) };
+  /* Where each move starts and how long it runs. A move used to fire on every instance for that
+     instance's length, which quietly ruined the commonest dance edit there is: a build is written
+     as "Build ×4" — four passes of a two-bar half-loop — and what you got was four two-bar filter
+     sweeps rather than one eight-bar climb, so the build sounded like a stutter and the drop
+     landed on nothing. A move now spans the *run*: consecutive passes of the same row set to the
+     same move are one sweep, scheduled on the first of them, and the passes inside it stay out of
+     the way. Changing the move mid-run (a pass with one of its own) starts a new one, which is
+     what asking for it means. */
+  const moveSpan = useMemo(() => {
+    const out = {};
+    let head = null;
+    sections.insts.forEach(d => {
+      const id = (secMove[d.key] || secMove[d.base]) || "";
+      if (head && head.row === d.row && head.id === id) { out[head.key].bars += d.nbars; return; }
+      head = { row: d.row, id, key: d.key };
+      out[d.key] = { id, bars: d.nbars };
+    });
+    return out;
+  }, [sections.insts, secMove]);
+  moveRef.current = { moves: secMove, cues, span: moveSpan };
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
   const chordId = (c, i) => c.inserted ? c.baseName
     : c.c2 ? "c" + c.bi
@@ -1297,7 +1393,7 @@ export default function ProgressionWheel() {
      same resampler playback uses, so an eighth-note pattern arrives on every other step exactly as
      it sounds — you are editing what you were hearing, not a blank bar beside it. */
   const beatCat = d => {
-    const id = (d && d.base != null && secDrum[d.base]) || drum;
+    const id = effDrum(d) || drum;
     return DRUMS[id] ? DRUMS[id].pattern : null;
   };
   const beatSeed = d => {
@@ -1864,8 +1960,9 @@ export default function ProgressionWheel() {
         m.lastChordName = chord.name;
       }
       // a section can drop its chords entirely — the breakdown where only the drums carry on
-      const quiet = struct && struct.length && structBar >= 0 && struct[structBar]
-        && struct[structBar].base != null && !!secQuietRef.current[struct[structBar].base];
+      const qb = struct && struct.length && structBar >= 0 ? struct[structBar] : null;
+      const qv = qb && qb.inst != null ? secQuietRef.current[qb.inst] : undefined;
+      const quiet = !!(qb && qb.base != null && (qv != null ? qv : secQuietRef.current[qb.base]));
       if (sym !== "-") {
         if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
         if (chord && !quiet && (!m.stem || m.stem.kind === "chords")) {
@@ -1876,7 +1973,8 @@ export default function ProgressionWheel() {
       let dpat = drumRef.current;                       // global drum pattern by default
       if (struct && struct.length && structBar >= 0) {   // a section can override with its own kit
         const b = struct[structBar];
-        const sd = b && b.base != null ? secDrumRef.current[b.base] : "";
+        const sd = b ? ((b.inst != null && secDrumRef.current[b.inst])
+          || (b.base != null ? secDrumRef.current[b.base] : "")) : "";
         if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
         /* …and a section that has been written on its own grid plays that instead, bar by bar, so a
            fill can land in the last bar of a verse. A section stretched since it was written repeats
@@ -1916,16 +2014,17 @@ export default function ProgressionWheel() {
         const b = struct[structBar];
         if (b && b.mb === 0) {
           m.lastMoveBar = structBar;
-          // this instance's own move if it has one, else whatever the section type is set to.
-          // Songs saved before moves were per-instance only carry the section-type key, so the
-          // fallback is what keeps them sounding the way they were saved.
-          const mv = (b.inst != null && moveRef.current.moves[b.inst])
-            || (b.base != null ? moveRef.current.moves[b.base] : "") || "";
-          const spec = (MOVES[mv] || {}).spec || null;
-          const nb = (b.inst != null && moveRef.current.instBars[b.inst]) || 1;
-          // the riser and the impact are added sources, not processing, so they go to the fx bus:
-          // on the master they landed in every stem and four stems summed to four risers
-          applyMove(m.ctx, m.filt, spec, t, nb * (patLen / (subRef.current || 2)) * beat, m.noise, m.tn.fx);
+          /* The move that starts here, if one does — resolved instance-then-letter when the run
+             was worked out, so a song saved before moves were per-instance still sounds as saved.
+             A pass in the middle of a run has no entry: its sweep is already running, and firing
+             again would restart the climb from the bottom four bars into it. */
+          const sp = b.inst != null ? moveRef.current.span[b.inst] : null;
+          if (sp) {
+            const spec = (MOVES[sp.id] || {}).spec || null;
+            // the riser and the impact are added sources, not processing, so they go to the fx bus:
+            // on the master they landed in every stem and four stems summed to four risers
+            applyMove(m.ctx, m.filt, spec, t, sp.bars * (patLen / (subRef.current || 2)) * beat, m.noise, m.tn.fx);
+          }
         }
       }
       /* Transitions: armed at the bar the cue table says, not at the boundary they belong to —
@@ -2632,7 +2731,7 @@ export default function ProgressionWheel() {
         // the same order playback resolves, so the file is what you heard
         const own = b && b.inst != null ? secBeat[b.inst] : null;
         if (own && own.length) return own[Math.min(b.mb, own.length - 1)];
-        const id = (b && b.base != null && secDrum[b.base]) || drum;
+        const id = (b && ((b.inst != null && secDrum[b.inst]) || (b.base != null && secDrum[b.base]))) || drum;
         return DRUMS[id] ? DRUMS[id].pattern : null;
       };
       const anyDrum = bars.some((_, i) => drumForBar(i));
@@ -3502,7 +3601,16 @@ export default function ProgressionWheel() {
           font-size:var(--fs-xs); border-radius:var(--r-xs); background:var(--hover); color:var(--muted); border:1px solid var(--line-2);
           cursor:pointer; }
         .tlautox:hover { color:#E9B3AB; border-color:#7A4A44; }
+        /* the energy staircase: one bar per section, height = what is playing in it */
+        .tlnrg { height:26px; align-items:flex-end; }
+        .tlnrgw { min-width:0; display:flex; align-items:flex-end; height:100%;
+          border-bottom:1px solid var(--line-2); }
+        .tlnrgb { width:100%; border-radius:var(--r-xs) var(--r-xs) 0 0; transition:height .12s; }
+        .tlgnrg { height:26px; line-height:26px; }
         .tlgauto { height:30px; line-height:30px; }
+        /* what a template did, said in words beside the strip that draws it */
+        .tplnote { margin-top:9px; padding:8px 11px 9px; background:var(--bg);
+          border:1px solid var(--line-2); border-left:3px solid ${GOLD}; border-radius:var(--r-lg); }
         .tlhead { position:absolute; top:14px; bottom:0; width:2px; background:${GOLD}; border-radius:var(--r-xs);
           pointer-events:none; box-shadow:0 0 6px ${GOLD}AA; }
         @media (max-width:560px) { .tlgut { flex-basis:44px; } .tlglbl { font-size:var(--fs-micro); } }
@@ -4152,8 +4260,14 @@ export default function ProgressionWheel() {
         {tab === "arrange" && <div className="panel accent">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
             <div className="progtitle" style={{ fontSize:17 }}>Song & melody</div>
-            <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => setSelStruct(e.target.value)}>
+            <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => pickStruct(e.target.value)}
+              title="A structure is a running order. An arrangement template is a running order plus what plays in each section — which drop the drums, which lose the chords, where the filter opens and what happens at every seam.">
               <option value="">No structure — just the loop</option>
+              {/* First, because they are the ones that arrive arranged: everything below sets the
+                  order of the sections and then plays every element through all of them. */}
+              <optgroup label="Dance arrangement templates — arranged, not just ordered">
+                {DANCE_TEMPLATES.map((t, i) => <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option>)}
+              </optgroup>
               {(STRUCTURES[progId] || []).length > 0 && (
                 <optgroup label={"Written for " + prog.label}>
                   {(STRUCTURES[progId] || []).map((st, i) => <option key={"p"+i} value={progId + ":p:" + i}>{st.name}</option>)}
@@ -4167,6 +4281,32 @@ export default function ProgressionWheel() {
               ))}
             </select>
           </div>
+
+          {/* What a template did, and how to put it back. A template writes across five different
+              controls at once — the drum menus, the chords, the parts, the moves and transitions,
+              the automation lanes — and a change nobody can see is indistinguishable from one that
+              did not happen, so it says so here and the strip below draws the result. */}
+          {curTpl && (
+            <div className="tplnote">
+              <div className="row" style={{ gap:"6px 8px", alignItems:"baseline", flexWrap:"wrap" }}>
+                <b style={{ color:GOLD }}>{curTpl.name}</b>
+                <span className="keytag" style={{ margin:0 }}>
+                  {curTpl.bpm} bpm · {(DRUMS[curTpl.drum] || {}).name || "the song's drums"}
+                  {curTpl.kit ? " · " + ((DRUM_KITS.find(([k]) => k === curTpl.kit) || [])[1] || curTpl.kit) : ""}
+                </span>
+                <button className="mini" style={{ marginLeft:"auto" }}
+                  onClick={() => applyArrangement(effPlan || curTpl.plan, selStruct)}
+                  title="Write the arrangement over the sections again — after moving, copying or lengthening one, or after changes you would rather throw away. The sections themselves are left as they are.">↻ Re-apply arrangement</button>
+              </div>
+              <p className="arrnote" style={{ marginTop:5 }}>{curTpl.tip}</p>
+              {tips && <p className="keytag" style={{ margin:"4px 0 0" }}>
+                Sets what each section <i>plays</i>, not just the order: which lose the drums, which
+                lose the chords, which parts are in, the filter shape across each one and what happens
+                at every seam. Every one of those is an ordinary control afterwards — the lanes on the
+                strip below toggle them a section at a time.
+              </p>}
+            </div>
+          )}
 
           {/* melodic narrative — one melodic idea written across every section at once */}
           <div className="row" style={{ marginTop:8, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
@@ -4316,8 +4456,8 @@ export default function ProgressionWheel() {
           {sections.insts.length > 0 && (() => {
             const total = sections.totalBars || 1;
             // what each section actually plays, resolved the same way the scheduler resolves it
-            const drumsIn = base => {
-              const dd = DRUMS[secDrum[base] || drum];
+            const drumsIn = d => {
+              const dd = DRUMS[effDrum(d) || drum];
               return !!(dd && dd.pattern);
             };
             const nParts = Math.max(0, ...Object.values(secMelos).map(s => nLayers(s)));
@@ -4339,16 +4479,33 @@ export default function ProgressionWheel() {
                part: drums and chords are stored per section *letter*, so flipping one moves every
                section that letters the same way, while a part's mute is per instance and a click
                on a "×4" run sets all four. The tooltip says which, rather than surprising you. */
+            const runScope = r => (r.items.length > 1 ? `all ${r.items.length} passes` : "this section");
             const lanes = [
-              { name: "Drums", on: d => drumsIn(d.base),
-                scope: r => `every ${r.word} section`,
-                toggle: r => setSecDrum({ ...secDrum, [r.base]: drumsIn(r.base) ? "off" : "" }) },
-              { name: "Chords", on: d => !secQuiet[d.base],
-                scope: r => `every ${r.word} section`,
-                toggle: r => setSecQuiet({ ...secQuiet, [r.base]: !secQuiet[r.base] }) },
+              { name: "Drums", on: drumsIn, scope: runScope,
+                /* Per pass, not per section letter. Every groove in a dance track letters G, so
+                   letter-keying meant one click silenced all of them and "the drums come out for
+                   *this* breakdown" — the single most useful arrangement edit there is — could not
+                   be said at all. Coming back in clears the pass's own setting so it follows the
+                   section type again, unless the type is itself silent, in which case it takes the
+                   song's kit rather than appearing to do nothing. */
+                toggle: r => {
+                  const anyIn = r.items.some(drumsIn), next = { ...secDrum };
+                  r.items.forEach(d => {
+                    if (anyIn) { next[d.key] = "off"; return; }
+                    const bd = DRUMS[secDrum[d.base] || drum];
+                    if (bd && bd.pattern) delete next[d.key]; else next[d.key] = drum;
+                  });
+                  setSecDrum(next);
+                } },
+              { name: "Chords", on: d => !effQuiet(d), scope: runScope,
+                toggle: r => {
+                  const anyIn = r.items.some(d => !effQuiet(d)), next = { ...secQuiet };
+                  r.items.forEach(d => { next[d.key] = anyIn; });
+                  setSecQuiet(next);
+                } },
               ...Array.from({ length: nParts }, (_, i) => ({
                 name: LAYER_NAMES[i], on: d => partIn(d, i),
-                scope: r => (r.items.length > 1 ? `all ${r.items.length} passes` : "this section"),
+                scope: runScope,
                 // a run can hold several instances; mute them together so the lane matches the click
                 toggle: r => setLayerPropMany(r.items.map(d => d.key), i, { mute: r.items.some(d => partIn(d, i)) }),
                 // a part with no notes here has nothing to mute — the lane is empty for a reason
@@ -4367,6 +4524,22 @@ export default function ProgressionWheel() {
               else runs.push({ base: d.base, sec: d.sec, word: d.word, row: d.row,
                 items: [d], bars: d.nbars, startBar: d.startBar });
             });
+            /* ---- the energy staircase ----
+               The lanes say what plays; this says how much, which is the only way to see whether
+               the song has a shape. Weights from docs/DANCE-LAYERING.md — the clock and the hook
+               carry a track, the harmony is worth rather less than people expect, and everything
+               else is a point each. What you are looking for is a staircase with deliberate
+               collapses: a drop lands because the breakdown took the kick and the sub away, not
+               because the drop added anything, and a flat bar across the whole song is exactly the
+               shape of a track where everything plays from the first bar to the last. */
+            const energyAt = d => energyOf({
+              // half a kit, for a pattern with the kick taken out of it: the tops left running
+              // under a build are the dip the build is made of, and scoring them as a whole kit
+              // would draw the one moment the picture exists to show as no change at all
+              drums: drumAmountOf((DRUMS[effDrum(d) || drum] || {}).pattern),
+              chords: !effQuiet(d),
+              parts: Array.from({ length: nParts }, (_, i) => partIn(d, i)) });
+            const runEnergy = r => r.items.reduce((n, d) => n + energyAt(d), 0) / r.items.length;
             // a lane is full, empty, or partly on across the run's instances
             const laneState = (l, r) => {
               const n = r.items.filter(l.on).length;
@@ -4383,6 +4556,7 @@ export default function ProgressionWheel() {
                   <div className="tlglbl tlgruler" />
                   <div className="tlglbl tlgsec">{total} bars</div>
                   {lanes.map(l => <div key={l.name} className="tlglbl">{l.name}</div>)}
+                  <div className="tlglbl tlgnrg">Energy</div>
                   {AUTO_LANES.map(L => <div key={L.id} className="tlglbl tlgauto">{L.name}</div>)}
                 </div>
                 <div className="tltrk">
@@ -4440,6 +4614,26 @@ export default function ProgressionWheel() {
                       })}
                     </div>
                   ))}
+                  {/* The staircase. Read-only on purpose: it is the sum of every lane above it,
+                      so it is changed by changing them. */}
+                  {(() => {
+                    const es = runs.map(runEnergy), top = Math.max(1, ...es);
+                    return (
+                      <div className="tlrow tlnrg">
+                        {runs.map((r, ri) => (
+                          <div key={r.startBar} className="tlnrgw" style={{ flex: r.bars + " 0 0%" }}
+                            title={`${r.sec} · ${Math.round(es[ri] * 10) / 10} of ${top}`
+                              + (ri > 0 ? (es[ri] > es[ri - 1] ? " — a step up from the section before"
+                                : es[ri] < es[ri - 1] ? " — a step down: this is what makes what follows land"
+                                : " — level with the section before") : "")
+                              + ". Drums and the lead count 3, the chords 2, every other part 1. Energy is relative, not absolute: the biggest event in a dance record is usually a subtraction."}>
+                            <div className="tlnrgb" style={{ height: Math.max(7, Math.round(es[ri] / top * 100)) + "%",
+                              background: (SEC_COL[r.base] || "#8B94A3") + "CC" }} />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   {/* Automation lanes. Drag across one to draw a curve; the value is the height
                       you drag at. Drawn in song-bar coordinates so a curve keeps its shape when
                       sections around it move. */}
@@ -4554,10 +4748,15 @@ export default function ProgressionWheel() {
                   <div className="sgrplbl" style={{ color: SEC_COL[g.base] || "#8B94A3" }}>
                     {g.word}{g.items.length > 1 ? "s ×" + g.items.length : ""}
                   </div>
-                  <label className="secdrum" title="Drum kit for this section — overrides the global Drums choice">
+                  <label className="secdrum" title="Drum kit for every pass of this section — overrides the global Drums choice, and clears anything set on a single pass below">
                     <span aria-hidden="true">🥁</span>
+                    {/* a pass's own drums win over the type's, so setting the type has to clear them —
+                        otherwise this control would appear to do nothing on a section a template
+                        (or the strip) has already arranged pass by pass */}
                     <select value={secDrum[g.base] || ""}
-                      onChange={e => setSecDrum({ ...secDrum, [g.base]: e.target.value })}>
+                      onChange={e => { const next = { ...secDrum, [g.base]: e.target.value };
+                        g.items.forEach(d => { delete next[d.key]; });
+                        setSecDrum(next); }}>
                       <option value="">global drums</option>
                       {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
                     </select>
@@ -4654,6 +4853,31 @@ export default function ProgressionWheel() {
                     {transSelect(secTrans[d.key] || "", e => setSecTrans({ ...secTrans, [d.key]: e.target.value }),
                       secTrans[d.base] && TRANS[secTrans[d.base]]
                         ? d.word.toLowerCase() + " — " + TRANS[secTrans[d.base]].name : null)}
+                  </label>
+                  <label className="secopt" title={"Drums for this " + d.word.toLowerCase()
+                    + " alone — its own kit, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it."}>
+                    <span aria-hidden="true">🥁</span>
+                    <select value={secDrum[d.key] || ""}
+                      onChange={e => setSecDrum({ ...secDrum, [d.key]: e.target.value })}>
+                      <option value="">{secDrum[d.base] && DRUMS[secDrum[d.base]]
+                        ? "as every " + d.word.toLowerCase() + " — " + DRUMS[secDrum[d.base]].name
+                        : "— the song's drums —"}</option>
+                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="secopt" title={"Whether the chords sound in this " + d.word.toLowerCase()
+                    + " alone. A drums-only intro and a breakdown with no harmony under it are both this switch."}>
+                    <span aria-hidden="true">🎹</span>
+                    <select value={secQuiet[d.key] == null ? "" : (secQuiet[d.key] ? "out" : "in")}
+                      onChange={e => { const v = e.target.value, next = { ...secQuiet };
+                        if (v === "") delete next[d.key]; else next[d.key] = v === "out";
+                        setSecQuiet(next); }}>
+                      <option value="">{secQuiet[d.base]
+                        ? "as every " + d.word.toLowerCase() + " — chords out"
+                        : "— chords in —"}</option>
+                      <option value="in">Chords in</option>
+                      <option value="out">Chords out</option>
+                    </select>
                   </label>
                   <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
                     + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
@@ -4985,7 +5209,7 @@ export default function ProgressionWheel() {
                   const n = bars[0].length, cols = n * d.nbars;
                   const own = !!secBeat[d.key];
                   const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  const cat = DRUMS[(secDrum[d.base] || drum)];
+                  const cat = DRUMS[effDrum(d) || drum];
                   return (
                     <div style={{ marginTop:6 }}>
                       {/* the same control row shape the melody grid above uses, so the two blocks

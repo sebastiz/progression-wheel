@@ -29,6 +29,15 @@ letters K/S/H per slot, `.` for silence. Match the slot count to the meters it's
 is space-separated numerals or `LOOP` / `HALF1` / `HALF2` / `HOLD1`. Universal (any-progression)
 forms go in `UNIVERSAL` with the same row format.
 
+## Add an arrangement template
+
+Dance templates live in `src/arrange-templates.js` — a structure plus, per row, what *plays*:
+`["Section|nums|reps|note", { drums, chords, parts, move, trans, filter, level }]`, with the
+style's `bpm` / `drum` / `kit` / `pump` / `pat` alongside. Every id must exist in its catalogue
+(the tests check), transitions land once per row, and the energy across the sections has to rise,
+collapse and rise again — a template whose sections all play the same thing is the problem the
+feature exists to fix.
+
 ## Add a colour move
 
 Borrowed chords and mediants live in `BORROWED` / `MEDIANTS` (`[tag, offset, quality, insertPos]`);
