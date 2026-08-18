@@ -714,6 +714,45 @@ its own still sits where it sits in the song. `npm test` rejects a hard-coded po
 `pass: 0` would satisfy a naive "does it pass a pass?" check and still write every chorus
 identically. The choice is stored per section in `secNar` and carried in the song document.
 
+### Varying the repeats *inside* a section
+
+`varyBars` answers the boredom between sections. `varyWithin` answers the one inside a single
+section — the two-bar hook stated four times over eight bars, the one-bar riff that is the whole
+verse. Both drive the same engine: `varyPass` is the walk over `VARIATIONS` described above, and
+`varyBars` and `varyWithin` differ only in what they hand it as the pass and the seed.
+
+Finding the motif is the part that is not shared. The melody is sliced at every length that fits the
+section at least twice and divides it evenly (`unitSpans` — 4, 3, 2, 1 bars), each slicing is grouped
+into runs (`motifRuns`), and the slicing that finds the most restatements wins, longest first on a
+tie — so a two-bar phrase is varied as a phrase (same opening, new ending) rather than bar by bar.
+Two slices are the same motif (`sameMotif`) when either:
+
+- **`unitSim` ≥ 0.65** — the share of columns they agree on, counted only over the columns one of
+  them actually uses. Counting the silence too calls any two sparse bars the same motif: four notes
+  in a sixteenth grid agree on three quarters of their columns by being empty there.
+- **`unitSequence`** — same rhythm, same interval shape, different pitch. A sequence shares no note
+  with the phrase it restates, so nothing pitch-based will ever find it, and a rising sequence stated
+  four times is exactly as tiring as a literal repeat.
+
+The first statement of each run is never edited: it is what the rest are heard as variations of.
+Every restatement after it is run through `varyPass` with its position in the run as the pass, and
+with **one more edit per statement** (capped at +3). The extra edit is not only for drift: past the
+third or fourth restatement the passes are stepping through choices a sparse motif has already run
+out of, and two of them land on the same edit often enough to hear (9 families in the test corpus,
+against 0 once the edit count moves too).
+
+`varyWithin` returns the varied bars *and* what it found (`span`, `repeats`, `varied`), because
+"nothing in this section repeats" is a real answer the caller has to be able to show — and it looks
+identical to "varied it" if all you hand back is a grid.
+
+**In the component.** `varyRepeats` is the button, per section and part. It keeps the melody as it
+stood before the first press in `varyIn` and re-derives from *that* every time, so ×3 is what ×1
+would have been at three edits a repeat rather than three rounds of editing compounded — and one
+press past the top puts the original back. The baseline is only trusted while the grid still holds
+what was last written from it (the notes are compared, not a counter), so a hand-drawn note, an
+undo, or a pattern written over the top between presses starts the count again. `varyIn` is UI state
+like `varySt`: what gets saved is the notes.
+
 ## Notation
 
 `NotationScore` draws the song on a staff in hand-built SVG (no engraving library), matching the

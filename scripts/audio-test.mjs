@@ -981,6 +981,24 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       problems.push("src: applySecNarrative does not work out where the section sits from the running order");
     if (!/varyBars\(/.test(fn)) problems.push("src: applySecNarrative does not vary repeats");
   }
+  /* In-section variation is an *amount*, not a ratchet. Every press has to re-derive the variations
+     from the melody as it stood before the first one — vary the grid that is already varied and the
+     edits compound, so the third press has left the motif behind entirely and there is no way back
+     to it. The baseline is only trusted while the grid still holds what was last written from it, so
+     a note drawn by hand between presses starts the count again rather than being varied away. */
+  {
+    const fn = code.slice(code.indexOf("const varyRepeats ="), code.indexOf("const resetVaryIn ="));
+    if (!fn) problems.push("src: varyRepeats has moved — this guard no longer reads it");
+    if (!/varyWithin\(/.test(fn)) problems.push("src: varyRepeats does not call varyWithin");
+    if (!/st\.base/.test(fn))
+      problems.push("src: varyRepeats varies the current grid rather than the melody it started from — presses would compound");
+    if (!/melKey\(cur\)\s*!==\s*st\.grid/.test(fn))
+      problems.push("src: varyRepeats trusts its counter over the notes on the grid — an edit or an undo between presses would be varied as if it were the original");
+    if (!/putLayer\(/.test(fn)) problems.push("src: varyRepeats never writes the varied melody back");
+    // and it is reachable: a variation engine nothing calls is not a feature
+    if (!/varyRepeats\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to vary a section's repeats");
+  }
   /* Moves are per section instance now, with the section type as the fallback. Songs saved before
      that only carry the type key, so dropping the fallback silently strips the moves off every
      song anyone has already made. */
@@ -1774,6 +1792,153 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`repeat variation: ${M.VARIATIONS.length} kinds of edit over ${combos} narrative×role×level combos, ${combos - repeats} give four different passes`);
   console.log(`  note count vs the first pass: ${spread.more} more, ${spread.fewer} fewer, ${spread.same} unchanged; ${(worstKeep * 100) | 0}% of the phrase survives at worst`);
   console.log(`  stepping up a level changes the result in ${steps - flat}/${steps} cases`);
+}
+
+/* ---- varying the repeats *inside* one section ----
+   The other half of the same problem. A section is usually one motif said three or four times, and
+   said identically it is the thing that wears out first — a hook grid is eight bars of the same two.
+   varyWithin finds the restatements and edits everything but the first of them. What has to hold is
+   the same tension as varyBars, one level down: the restatements have to stop being restatements,
+   the opening statement has to survive untouched, and a melody that never repeats itself must not be
+   quietly rewritten just because the writer pressed the button. */
+{
+  const show = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const rep = (unit, n) => Array.from({ length: n }, () => dup(unit)).flat();
+  const ND = 7;
+  const LEVELS = [1, 2, 3];
+
+  // the slice lengths it will consider: only ones that fit twice and divide the section evenly
+  if (M.unitSpans(8).join() !== "4,2,1") problems.push(`unitSpans(8) offered ${M.unitSpans(8).join()}`);
+  // a three-bar section can hold three one-bar motifs and nothing longer; a one-bar one holds nothing
+  if (M.unitSpans(3).join() !== "1") problems.push(`unitSpans(3) offered ${M.unitSpans(3).join()}`);
+  if (M.unitSpans(1).length) problems.push("unitSpans found a motif in a single bar that cannot hold two of anything");
+  if (M.unitSpans(6).join() !== "3,2,1") problems.push(`unitSpans(6) offered ${M.unitSpans(6).join()}`);
+
+  /* Which slices count as the same motif. The sparse case is the one that matters: in a sixteenth
+     grid two unrelated bars agree on most of their columns by being empty in the same places, and a
+     similarity that counts the silence calls every quiet melody a repeat of itself. */
+  {
+    const a = [[[0], [], [], [], [2], [], [], []]], b = [[[5], [], [], [], [3], [], [], []]];
+    if (M.sameMotif(a, b)) problems.push("sameMotif called two different sparse bars a repeat — it is counting the silence");
+    if (!M.sameMotif(a, dup(a))) problems.push("sameMotif does not recognise a literal repeat");
+    // a sequence: same rhythm, same shape, every note moved up a step. Shares no note with the
+    // phrase it restates, so nothing pitch-based will ever find it, and it is just as tiring.
+    const seq = [a[0].map(c => (c.length ? [c[0] + 1] : []))];
+    if (!M.sameMotif(a, seq)) problems.push("sameMotif misses a sequence — a transposed restatement of the same phrase");
+    // and a phrase that merely shares the rhythm is not the same motif
+    const other = [[[0], [], [], [], [6], [], [], []]];
+    if (M.sameMotif(a, other)) problems.push("sameMotif grouped two phrases that only share a rhythm");
+  }
+
+  // where the runs are: which slice each one restates and how many statements came before it
+  {
+    const A = [[[0], [], [2], [], [4], [], [], []]], B = [[[4], [], [3], [], [1], [], [], []]];
+    const runs = M.motifRuns([...A, ...B, ...A, ...B], 1);
+    if (runs.map(r => r.first).join() !== "0,1,0,1") problems.push(`motifRuns grouped A B A B as ${runs.map(r => r.first).join()}`);
+    if (runs.map(r => r.occ).join() !== "0,0,1,1") problems.push(`motifRuns counted A B A B statements as ${runs.map(r => r.occ).join()}`);
+    const four = M.motifRuns(rep(A, 4), 1);
+    if (four.map(r => r.occ).join() !== "0,1,2,3") problems.push(`motifRuns counted four statements as ${four.map(r => r.occ).join()}`);
+  }
+
+  let secs = 0, dullFirst = 0, dullPair = 0, worstKeep = 1, nothing = 0, flat = 0, steps = 0;
+  for (const [B, sub] of [[8, 2], [16, 4]]) {
+    for (const nar of M.NARRATIVES) {
+      for (const role of ["C", "V", "B"]) {
+        const spots = M.rhythmSpots(M.ROLE_RHYTHM[role] || "straight", B, sub, 4);
+        // a two-bar motif, the shape a hook actually has, and a one-bar riff
+        const phrase = n => nar.gen({ nBars: n, B, sub, nd: ND, spots,
+          chordDegs: Array.from({ length: n }, (_, i) => [[0, 2, 4], [3, 5, 0]][i % 2]), role,
+          pass: 0, passes: 4, idx: 0, total: 4, frac: 0 });
+        for (const [motif, times] of [[phrase(2), 4], [phrase(1), 4], [phrase(2), 2]]) {
+          const base = rep(motif, times), before = show(base);
+          for (const amount of LEVELS) {
+            const res = M.varyWithin(base, { nd: ND, amount, seed: 7 });
+            // the melody it was handed is the writer's own — editing it in place would edit the grid
+            if (show(base) !== before) problems.push(`varyWithin mutated the bars it was given (${nar.id})`);
+            if (!res.repeats) { nothing++; continue; }
+            secs++;
+            const out = res.bars;
+            // still a melody, and still this melody's shape
+            if (out.length !== base.length) problems.push(`varyWithin changed the bar count of ${nar.id}`);
+            for (const bar of out) {
+              if (bar.length !== B) problems.push(`varyWithin changed the bar width of ${nar.id}`);
+              for (const col of bar) for (const d of col)
+                if (!(Number.isInteger(d) && d >= 0 && d < ND)) problems.push(`varyWithin wrote degree ${d} in ${nar.id}`);
+            }
+            // same input, same output — a sketch has to sound like the one that was shared
+            if (show(M.varyWithin(base, { nd: ND, amount, seed: 7 }).bars) !== show(out))
+              problems.push(`varyWithin is not deterministic (${nar.id}/${role})`);
+            /* The opening statement is the thing the rest are heard as variations of. Edit that too
+               and the writer has not been given a variation, they have been given a different tune. */
+            const runs = M.motifRuns(base, res.span);
+            const slice = (bars, r) => show(bars.slice(r.at, r.at + res.span));
+            for (const r of runs) if (!r.occ && slice(out, r) !== slice(base, r))
+              problems.push(`varyWithin edited the first statement of ${nar.id}/${role}`);
+            // and every restatement has to have stopped being one
+            const fams = {};
+            for (const r of runs) (fams[r.first] = fams[r.first] || []).push(slice(out, r));
+            for (const first in fams) {
+              const said = fams[first];
+              if (said.length < 2) continue;
+              if (said.slice(1).some(x => x === said[0])) dullFirst++;
+              // …and from each other: two identical later statements is the same problem one along
+              if (new Set(said).size < said.length) dullPair++;
+            }
+            // it is still the same motif: most of where the notes fall is where it wrote them
+            const onsets = bars => bars.flatMap((b, i) => M.barNotes(b).map(n => i + ":" + n.c));
+            const keep = new Set(onsets(base));
+            const same = onsets(out).filter(o => keep.has(o)).length / Math.max(1, keep.size);
+            worstKeep = Math.min(worstKeep, same);
+            if (same < 0.55) problems.push(`varyWithin rewrote ${nar.id}/${role} — only ${(same * 100) | 0}% of the section left`);
+          }
+          // pressing it again has to do more than pressing it once
+          for (const amount of [2, 3]) {
+            steps++;
+            if (show(M.varyWithin(base, { nd: ND, amount: amount - 1, seed: 7 }).bars)
+              === show(M.varyWithin(base, { nd: ND, amount, seed: 7 }).bars)) flat++;
+          }
+        }
+      }
+    }
+  }
+  if (dullFirst) problems.push(`${dullFirst} motifs still restate their opening statement note-for-note`);
+  if (dullPair) problems.push(`${dullPair} motifs say the same thing twice after being varied`);
+  if (nothing) problems.push(`${nothing} sections built out of a repeated motif came back with no repeats found`);
+  if (flat > steps * 0.05) problems.push(`${flat}/${steps} steps up the in-section variation change nothing`);
+  // amount 0 is the control's off position and has to be exactly that
+  {
+    const A = [[[0], [], [2], [], [4], [], [], []]], base = rep(A, 4);
+    const off = M.varyWithin(base, { nd: ND, amount: 0 });
+    if (show(off.bars) !== show(base)) problems.push("varyWithin edited a melody at amount 0");
+    if (off.repeats) problems.push("varyWithin reported repeats at amount 0 — the caller would say it varied something");
+  }
+  /* A melody that never says the same thing twice has nothing to make less boring, and rewriting it
+     anyway is the button doing the one thing the writer did not ask for. */
+  {
+    const thru = [[[0], [], [1], [], [2], [], [3], []], [[4], [], [5], [], [6], [], [5], []],
+                  [[3], [], [1], [], [0], [], [2], []], [[6], [], [4], [], [2], [], [0], []]];
+    for (const amount of LEVELS) {
+      const res = M.varyWithin(thru, { nd: ND, amount, seed: 3 });
+      if (res.repeats) problems.push("varyWithin found a repeat in a through-composed melody");
+      if (show(res.bars) !== show(thru)) problems.push("varyWithin rewrote a melody that never repeats itself");
+    }
+    // an empty grid is the same answer, and must not throw on the way to it
+    const blank = M.blankBars(4, 8);
+    if (M.varyWithin(blank, { nd: ND, amount: 2 }).repeats) problems.push("varyWithin found a repeat in an empty grid");
+  }
+  /* The slice length is chosen, not assumed. A section built out of a two-bar hook stated four times
+     is four statements of one motif however you cut it, and cutting it into single bars would leave
+     no first statement of the second half intact. */
+  {
+    const A = [[[0], [], [2], [], [4], [], [], []], [[4], [], [3], [], [1], [], [], []]];
+    const res = M.varyWithin(rep(A, 4), { nd: ND, amount: 1, seed: 5 });
+    if (!res.span) problems.push("varyWithin found no motif in a section that is one phrase four times");
+    if (res.repeats < 3) problems.push(`varyWithin found only ${res.repeats} restatements of a phrase stated four times`);
+    if (res.varied < res.repeats) problems.push(`varyWithin left ${res.repeats - res.varied} restatement(s) untouched`);
+  }
+  console.log(`in-section variation: ${secs} repeated-motif sections varied, ${(worstKeep * 100) | 0}% of the section survives at worst`);
+  console.log(`  pressing it again changes the result in ${steps - flat}/${steps} cases`);
 }
 
 /* ---- per-part modulation ----

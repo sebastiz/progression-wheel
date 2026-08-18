@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyWithin } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 // The Progression Wheel — v3 (slim)
@@ -547,6 +547,13 @@ export default function ProgressionWheel() {
   const [narSel, setNarSel] = useState({ key:"", id:"" });  // melodic narrative written across the whole song
   const [narUndo, setNarUndo] = useState(null);             // melody snapshot from before the last narrative write
   const [varySt, setVarySt] = useState({ key:"", val:1 });  // how much a narrative varies each repeat of a section
+  /* In-section variation, per section+part: the melody as it was before any of it (the statement the
+     variations are heard against), the grid we last wrote from it, and how far up the writer has
+     stepped. Keeping the baseline is what makes the button an amount rather than a ratchet — every
+     press re-varies the original by one more edit instead of piling edits onto edits until the motif
+     is gone. It is deliberately not part of the song document: the notes are the song, this is just
+     where the writer had got to with the control. */
+  const [varyIn, setVaryIn] = useState({});
   const [secNar, setSecNar] = useState({});                 // section key → its own melodic narrative
   const [showLand, setShowLand] = useState(false);          // landing-notes collapse
   const [curQ, setCurQ] = useState(null);                   // {sym, col} playhead in melody grids
@@ -1579,6 +1586,58 @@ export default function ProgressionWheel() {
   };
   const clearMelody = (d, sec, L) => {
     putLayer(d.key, L, blankBars(d.cs.length, meloBeats));
+  };
+
+  /* ---- vary the repeats inside one section ----
+     A section is normally one motif said several times — a one-bar riff over four bars, a two-bar
+     hook over eight — and said identically each time it is the part of a sketch that wears out
+     first. This finds the restatements in the part you are editing and edits everything but the
+     first of them: a different landing note, a note added or taken away, a phrase pushed early. The
+     opening statement is left exactly as written, so what comes back is still the tune you wrote,
+     with the repeats no longer being repeats.
+
+     Each press goes one step further rather than one step more scrambled: the variations are always
+     re-derived from the melody as it stood before the first press, so ×3 is what ×1 would have been
+     at three edits a repeat — not three rounds of editing compounded on each other. Tap past the top
+     and it comes back round to the melody you started with, which is the cheapest possible undo for
+     a control whose whole job is to be tried a few times. */
+  const varyKeyOf = (key, L) => key + ":" + L;
+  const melKey = bars => JSON.stringify(bars);
+  const VARY_IN_MAX = 5;                                    // past this the motif stops being the motif
+  const varyRepeats = (d, L) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = varyIn[k];
+    /* The stored baseline is only good while the grid still holds what we last wrote to it. Draw a
+       note, undo, write a pattern over the top — and the melody in front of the writer is a new
+       first statement, not a varied old one. Comparing the notes rather than trusting the counter is
+       what keeps the button honest through an edit it never heard about. */
+    const fresh = !st || melKey(cur) !== st.grid;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17;
+    const res = varyWithin(base, { nd: scaleSemis.length, amount: level, seed });
+    // nothing restates itself here, so there is nothing to make less boring — say so rather than
+    // quietly editing a through-composed melody the writer never asked to have rewritten
+    if (!res.repeats) {
+      setVaryIn({ ...varyIn, [k]: { base, grid: melKey(cur), level: 0, note: "nothing repeats in this melody" } });
+      return;
+    }
+    // one past the top is the way back: the melody as it was, and the next press starts again
+    const back = level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : res.bars;
+    putLayer(d.key, L, bars);
+    setVaryIn({ ...varyIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level,
+      note: back ? "back to the melody you wrote"
+        : `${res.varied} of ${res.repeats} repeat${res.repeats > 1 ? "s" : ""} varied · `
+          + (res.span > 1 ? `${res.span}-bar motif` : "1-bar motif") } });
+  };
+  // back to the melody as it was before the first press, with the counter cleared
+  const resetVaryIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = varyIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...varyIn }; delete next[k]; setVaryIn(next);
   };
 
   /* ---- melodic narrative: one shape written across every section at once ---- */
@@ -3115,7 +3174,7 @@ export default function ProgressionWheel() {
     if (s.melInstr) setMelInstr(s.melInstr);
     // melodies were session-only before this; a sketch without them just loads an empty grid
     setMelos(s.melos ? songMelos(s) : { progId:"", secs:{} });
-    setMelSel({ key:"", layer:0, notes:{} }); setNarUndo(null);
+    setMelSel({ key:"", layer:0, notes:{} }); setNarUndo(null); setVaryIn({});
     setIoNote("Loaded “" + s.name + "”.");
   };
 
@@ -4770,6 +4829,23 @@ export default function ProgressionWheel() {
                           <button className={!melMove ? "on" : ""} onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
                           <button className={melMove ? "on" : ""} onClick={() => setMelMove(true)}>✋ Move</button>
                         </div>}
+                        {/* Varying the repeats is about the whole melody rather than a selection, so it
+                            sits with the mode switch and not among the note tools below. */}
+                        {tab === "write" && (() => {
+                          const vst = varyIn[varyKeyOf(d.key, secL)];
+                          const lv = (vst && vst.level) || 0;
+                          return (<>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => varyRepeats(d, secL)}
+                              title={"Vary the repeats inside this section — the motif is found where it restates itself, "
+                                + "the first statement is left alone, and every one after it gets a different landing note, "
+                                + "an extra note, a phrase pushed early. Tap again for more; one past the top puts the "
+                                + "melody back as you wrote it."}>
+                              ✦ Vary repeats{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
+                          </>);
+                        })()}
                         {tab === "write" && melMove && (() => {
                           const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
                           return (<>

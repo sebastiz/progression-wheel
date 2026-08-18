@@ -1,6 +1,34 @@
 # Changelog
 
 ## Unreleased
+- **✦ Vary repeats — variation *inside* a section.** Repeats between sections were already handled:
+  a narrative writes chorus 2 as a variation of chorus 1 rather than a copy of it. The boredom one
+  level down was not. A section is normally one motif said three or four times — a one-bar riff over
+  four bars, a two-bar hook over eight — and said identically it is the part of a sketch that wears
+  out first, however good the motif was the first time.
+
+  The **Write** tab of every section's melody now has **✦ Vary repeats**, beside the Draw / Move
+  switch. It works out what the part you are editing is built from, keeps the opening statement
+  exactly as written, and edits every restatement after it — a different landing note, a note added
+  or taken away, a phrase pushed early, a held note broken in two — with later statements drifting
+  further than earlier ones, the way a fourth chorus is further from the first than the second is.
+
+  - **It finds the motif rather than assuming one.** Slice lengths that fit the section twice and
+    divide it evenly are all tried, and the one that finds the most restatements wins — longest
+    first, so a two-bar phrase is varied as a phrase (same opening, new ending) rather than bar by
+    bar. A restatement counts when two thirds of its notes are the phrase it repeats, *or* when it is
+    a sequence: the same rhythm and the same shape a step away, which shares no note with the phrase
+    it restates and which no amount of note-matching would ever find.
+  - **Tap again for more.** The button counts ×2, ×3… to ×5, and every tap re-derives the variations
+    from the melody as it stood before the first one — so ×3 is what ×1 would have been at three
+    edits a repeat, not three rounds of editing compounded until the motif is gone. One tap past the
+    top, or **↺**, puts it back exactly as it was. Draw a note, undo, or write a pattern over the top
+    between taps and the count starts again from what is actually on the grid.
+  - **A melody that never repeats itself is left alone**, and says so, rather than being quietly
+    rewritten because the button was pressed.
+  - It reuses the thirteen edits the between-sections variation already had, so the two controls make
+    the same kind of change, and nothing is drawn at random: the same melody at the same level always
+    comes back the same, in the app, in the exported MIDI and in a shared link.
 - **↓ Live Set — export the song as an Ableton `.als`.** A MIDI file gives Live bare clips; this
   arrives as the arrangement: named and coloured tracks, the right tempo, and every section as a
   locator on the ruler.

@@ -1085,16 +1085,15 @@ const VARIATIONS = [
 // a bar list as one comparable string — enough to tell whether an edit actually landed
 const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
 
-/* Vary a later pass of a section. `amount` is how many edits to make: 0 leaves it alone.
-   Pass 0 is never varied — it is the thing the others are variations of. */
-const varyBars = (bars, { pass = 0, role = "V", nd = 7, amount = 1 } = {}) => {
-  const out = bars.map(bar => bar.map(col => [...(col || [])]));
-  if (!amount || !pass || !out.length) return out;
-  /* Every hash here is seeded from the role only, never from the pass. The pass is added afterwards,
-     as a plain `+ pass` on each choice, so consecutive repeats step one place along — a different
-     variation, a different bar, a different note. Folding the pass into the hash instead scrambles
-     the choices, and two repeats then land on the same edit by coincidence often enough to hear. */
-  const seed = role.charCodeAt(0) * 131;
+/* The edit walk itself, over the bars it is given and in place — the engine both varyBars (a later
+   pass of a whole section) and varyWithin (a repeat of a motif inside one section) drive. Returns
+   how many edits actually landed, so the caller can tell "varied" from "had nowhere to go".
+
+   `seed` picks where in the list the walk starts and which choice each variation makes; `pass`
+   steps every one of those choices along by one, which is what makes repeat N and repeat N+1
+   differ by construction rather than by luck. */
+const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1 }) => {
+  if (!amount || !pass || !out.length) return 0;
   /* Walk a rotation of the list rather than drawing from it: a draw can miss a variation entirely
      over its tries, and in a sparse bar most variations have nowhere to go — no interior note to
      lift, no gap to fill — so the one that *can* act has to be reached, not hoped for. */
@@ -1112,9 +1111,129 @@ const varyBars = (bars, { pass = 0, role = "V", nd = 7, amount = 1 } = {}) => {
     const snap = barsKey(out);
     if (VARIATIONS[i].apply(out, nd, hash01(seed + i * 977), pass) && barsKey(out) !== snap) applied++;
   }
+  return applied;
+};
+
+/* Vary a later pass of a section. `amount` is how many edits to make: 0 leaves it alone.
+   Pass 0 is never varied — it is the thing the others are variations of. */
+const varyBars = (bars, { pass = 0, role = "V", nd = 7, amount = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  /* The hash is seeded from the role only, never from the pass. The pass is added afterwards inside
+     varyPass, as a plain `+ pass` on each choice, so consecutive repeats step one place along — a
+     different variation, a different bar, a different note. Folding the pass into the hash instead
+     scrambles the choices, and two repeats then land on the same edit by coincidence often enough
+     to hear. */
+  if (pass) varyPass(out, { pass, seed: role.charCodeAt(0) * 131, nd, amount });
   return out;
 };
 const VARY_LEVELS = [[0, "Identical repeats"], [1, "Vary a little"], [2, "Vary more"], [3, "Vary a lot"]];
+
+/* ---- variation *inside* one section ----
+   varyBars answers the other kind of boredom: chorus 2 arriving note-for-note the same as chorus 1.
+   This one is the boredom inside a single section — the two-bar hook stated four times over eight
+   bars, the one-bar riff that is the whole verse. A motif has to repeat to be a motif; what makes it
+   dull is repeating *unchanged*, and the fix a writer reaches for is always the same one: keep the
+   first statement, then change where the second one lands, push the third early, thin the fourth.
+
+   So the melody is chopped into equal slices, the slices that restate an earlier one are found, and
+   every restatement but the first is run through the same edits varyBars uses on a later pass — with
+   its position in the run as the pass, so the second, third and fourth statements differ from the
+   first *and* from each other. The first statement is never touched: it is the thing the rest are
+   heard as variations of, and varying it too would just be a different tune.
+
+   Nothing here is random: the same melody at the same level always comes back the same, so a shared
+   sketch sounds like the one that was shared.
+
+   Returns the varied bars plus what it found, because "nothing in this section repeats" is a real
+   answer the caller has to be able to tell the writer about, and it looks identical to "varied it"
+   if all you hand back is a grid. */
+
+// one slice as a flat run of columns — a motif is compared across its whole span, bar lines included
+const flatUnit = unit => unit.reduce((a, bar) => a.concat(bar), []);
+const unitDegs = unit => flatUnit(unit).map(col => (col && col.length ? col[0] : null));
+/* How much of one slice is literally the other, counted only over the columns one of them actually
+   uses. Counting the silence too would call any two sparse bars the same motif — in a sixteenth grid
+   with four notes in it, two unrelated bars agree on three quarters of their columns by being empty
+   there. */
+const unitSim = (a, b) => {
+  const x = unitDegs(a), y = unitDegs(b);
+  if (x.length !== y.length) return 0;
+  let hit = 0, tot = 0;
+  for (let i = 0; i < x.length; i++) {
+    if (x[i] == null && y[i] == null) continue;
+    tot++;
+    if (x[i] === y[i]) hit++;
+  }
+  return tot ? hit / tot : 0;
+};
+/* The other way a motif restates itself: same rhythm, same shape, different pitch — a sequence. It
+   shares no note with the phrase it repeats, so no amount of column-matching will ever find it, and
+   a rising sequence stated four times is exactly as tiring as a literal repeat. */
+const unitSequence = (a, b) => {
+  const x = barNotes(flatUnit(a)), y = barNotes(flatUnit(b));
+  if (x.length < 2 || x.length !== y.length) return false;
+  for (let i = 0; i < x.length; i++) if (x[i].c !== y[i].c || x[i].len !== y[i].len) return false;
+  for (let i = 1; i < x.length; i++) if (x[i].d - x[i - 1].d !== y[i].d - y[i - 1].d) return false;
+  return true;
+};
+// two thirds of the notes shared is a restatement; below that it is a different phrase that happens
+// to pass through some of the same notes, and editing it would be editing the tune rather than a repeat
+const SAME_MOTIF = 0.65;
+const sameMotif = (a, b) => unitSim(a, b) >= SAME_MOTIF || unitSequence(a, b);
+/* The slice lengths worth testing: a motif is a bar or a phrase, never seven of them, and there has
+   to be room for at least two statements of it. Only lengths the section divides into evenly — a
+   run of 1½-bar slices across a four-bar verse is not a form anybody wrote. */
+const unitSpans = nBars => [4, 3, 2, 1].filter(s => s * 2 <= nBars && nBars % s === 0);
+
+/* Group a melody's slices into motifs: for each slice, the index of the earliest slice it restates
+   (itself if it starts a new one) and how many statements came before it. */
+const motifRuns = (bars, span) => {
+  const units = [];
+  for (let i = 0; i + span <= bars.length; i += span) units.push(bars.slice(i, i + span));
+  const out = [];
+  units.forEach((u, i) => {
+    let first = i, occ = 0;
+    for (let j = 0; j < i; j++) {
+      if (out[j].first !== j) continue;                  // only ever match the head of a run
+      if (sameMotif(units[j], u)) { first = j; occ = out.filter(o => o.first === j).length; break; }
+    }
+    out.push({ first, occ, at: i * span });
+  });
+  return out;
+};
+
+const varyWithin = (bars, { nd = 7, amount = 1, seed = 0 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0, edits: 0 };
+  if (!amount || out.length < 2) return none;
+  /* Which slice length the section is actually built from is not something to guess — a verse made
+     of a one-bar riff and a chorus made of a two-bar hook both look like eight bars of melody. Try
+     every plausible length and keep the one that finds the most restatements, longest first when two
+     agree: a two-bar phrase varied as a phrase keeps its opening and changes its ending, which is
+     what a writer would do, where varying it bar by bar changes both halves. */
+  let best = null;
+  for (const span of unitSpans(out.length)) {
+    const runs = motifRuns(out, span);
+    const repeats = runs.filter(r => r.occ).length;
+    if (!best || repeats > best.repeats) best = { span, runs, repeats };
+  }
+  if (!best || !best.repeats) return none;
+  let varied = 0, edits = 0;
+  best.runs.forEach(r => {
+    if (!r.occ) return;                                  // the first statement is the reference
+    const slice = out.slice(r.at, r.at + best.span);     // the same bar arrays — edits land in `out`
+    /* Later statements drift further, the way a fourth chorus is further from the first than the
+       second is — and with a ceiling, because a run of eight is meant to still be the same hook at
+       the end of it rather than a different tune. Stepping the edit count and not only the pass is
+       what keeps two late statements apart: past the third or fourth restatement the passes are
+       stepping through choices a sparse motif has already run out of, and two of them land on the
+       same edit often enough to hear. A different number of edits cannot collide that way. */
+    const n = varyPass(slice, { pass: r.occ, seed: seed + r.first * 331 + best.span * 17,
+      nd, amount: amount + Math.min(3, r.occ - 1) });
+    if (n) { varied++; edits += n; }
+  });
+  return { bars: out, span: best.span, repeats: best.repeats, varied, edits };
+};
 
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
 
@@ -1284,4 +1403,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, barNotes, varyBars, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };

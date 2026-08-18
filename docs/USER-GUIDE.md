@@ -509,6 +509,21 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   nudge the selection ▲▼ by a scale step or ◀▶ in time, and **🗑** removes it. **✎ Draw** mode keeps
   the original tap-to-add-or-remove behaviour. The move clamps to the grid, so a selection never
   falls off the edge.
+- **✦ Vary repeats** (**Write** tab, beside the Draw / Move switch) — a section is usually one motif
+  said three or four times, and said identically it's the part of a sketch that wears out first. This
+  finds where the melody you're editing restates itself — a one-bar riff, a two-bar hook, or a
+  sequence that repeats the same shape a step higher — leaves the *first* statement exactly as you
+  wrote it, and edits every restatement after it: a different landing note, a note added or taken
+  away, a phrase pushed early, a held note broken in two. Later statements drift a little further
+  than earlier ones, the way a fourth chorus does.
+
+  Tap again for more (the button counts **×2**, **×3**…, up to ×5) — each tap re-derives from the
+  melody you started with rather than piling edits on edits, so the motif is still the motif at the
+  top of the range. One tap past the top, or **↺**, puts it back exactly as it was; ⌘Z works too. It
+  acts on the part you're editing, in that section only, and it tells you what it found ("3 of 3
+  repeats varied · 2-bar motif"). If nothing in the melody repeats itself there's nothing to make
+  less boring, and it says so rather than rewriting a through-composed line.
+
 - **Suggested melodies** (**Suggest** tab) — pick a common melody shape and a starting scale note,
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear
   melody** empties the section. The 16 shapes cover chord-tone arpeggios (up / down / rolling, which
