@@ -282,6 +282,38 @@ for (const kit of ["acoustic", "909", "808"]) {
   if (/&(?!(amp|lt|gt|quot|apos);)/.test(xml)) problems.push("als: a bare & reached the document");
   if (!xml.includes("Drums &amp; &lt;bells&gt;")) problems.push("als: a track name with markup in it was not escaped");
   if (!/EffectiveName Value="Chords"/.test(xml)) problems.push("als: track names are missing");
+  /* Ids are the thing Live refuses a set over. Every Id in the document comes from one pool, so
+     two objects sharing one — or one sitting at or above NextPointeeId, the watermark Live
+     allocates from — is the "(Invalid Pointee Id.)" dialog rather than a song. This is checkable
+     here in full, which is worth doing: the failure only ever shows up in Live. */
+  {
+    const ids = [...xml.matchAll(/<[A-Za-z][\w.]* Id="(\d+)"/g)].map(m => Number(m[1]));
+    const seen = new Set(), dupes = new Set();
+    for (const id of ids) (seen.has(id) ? dupes : seen).add(id);
+    if (dupes.size) problems.push(`als: ${dupes.size} duplicated Id(s) — Live calls that an invalid pointee id (${[...dupes].slice(0, 4).join(", ")})`);
+    if (ids.includes(0)) problems.push("als: an object claims Id 0");
+    const npi = Number((xml.match(/<NextPointeeId Value="(\d+)" \/>/) || [])[1]);
+    if (!npi) problems.push("als: no NextPointeeId");
+    else {
+      const over = ids.filter(id => id >= npi);
+      if (over.length) problems.push(`als: ${over.length} Id(s) at or above NextPointeeId ${npi} (max ${Math.max(...ids)})`);
+      if (npi <= 1000) problems.push("als: NextPointeeId has to clear 1000");
+    }
+    if (ids.length < 20) problems.push("als: suspiciously few ids — the mixers are not being written");
+    // the note ids are the clip's own counter, and NoteIdGenerator has to sit above them
+    const noteIds = [...xml.matchAll(/NoteId="(\d+)"/g)].map(m => Number(m[1]));
+    if (noteIds.length !== 4) problems.push("als: notes are missing their note ids");
+    if (noteIds.includes(0)) problems.push("als: a note claims id 0");
+  }
+  /* A time signature is one number: the denominator's place in 1,2,4,8,16,32 times 99, plus the
+     numerator less one. 4/4 is 201 — the value a fresh set has — and getting it wrong hands Live a
+     song in 1/16. The clip carries the same meter spelled out as a fraction. */
+  if (!/<TimeSignature><LomId Value="0" \/>\s*<Manual Value="201" \/>/.test(xml))
+    problems.push("als: 4/4 did not reach the master track as Live's 201");
+  if (M.alsXml({ ...spec, tsNum: 6, tsDen: 8 }).indexOf('<Manual Value="302" />') < 0)
+    problems.push("als: 6/8 is not encoded the way Live spells it");
+  if (!/<Numerator Value="4" \/><Denominator Value="4" \/>/.test(xml))
+    problems.push("als: the clip did not get the song's meter");
   // and the file itself is gzip, which is the one thing that makes it a .als rather than XML
   if (typeof CompressionStream === "function") {
     const bytes = await M.alsBytes(spec);

@@ -428,10 +428,23 @@ there is no way to hand Live one, so tracks arrive without devices. Times are in
 which is Live's unit, and notes are grouped into a `KeyTrack` per pitch, which is how Live stores
 them rather than a choice.
 
+**Ids are the part Live is merciless about.** Every `Id` in the document — tracks, clips, key
+tracks, locators, and each `AutomationTarget`, `ModulationTarget` and `Pointee` inside a mixer —
+comes from one document-wide pool, and `NextPointeeId` at the top is the watermark Live allocates
+its own next id from. Two objects sharing an id, or one at or above that watermark, is refused
+before a single note is read: *"The document is corrupt and cannot be loaded. (Invalid Pointee
+Id.)"* Nothing here points at anything else, so the values are arbitrary — unique, non-zero and
+below the watermark is the whole requirement. A single counter therefore hands out every id, which
+is why the file is assembled from the tracks inwards and the header, which has to carry the finished
+watermark, written last.
+
+A time signature is one number in that XML: the denominator's place in 1, 2, 4, 8, 16, 32 times 99,
+plus the numerator less one — 4/4 is 201, the value a fresh set has.
+
 `npm test` checks both halves of what is knowable without Live: that the document is well-formed
-(every element closes, no bare `&` from a section name) and says what it should, and that the bytes
-are really gzip and decompress back to the document. Whether Live *accepts* the schema is the part
-only Live can answer.
+(every element closes, no bare `&` from a section name) and says what it should, that no id is
+duplicated, zero, or above the watermark, and that the bytes are really gzip and decompress back to
+the document. Whether Live *accepts* the schema is the part only Live can answer.
 
 ### Melody parts
 
