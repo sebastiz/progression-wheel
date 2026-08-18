@@ -14,9 +14,10 @@ import * as song from "../src/song.js";
 import * as wav from "../src/wav.js";
 import * as zip from "../src/zip.js";
 import * as arrange from "../src/arrange.js";
+import * as arrTpl from "../src/arrange-templates.js";
 import * as als from "../src/als.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...als };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...als };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -1042,13 +1043,20 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/varyRepeats\(d, secL\)/.test(code))
       problems.push("src: nothing in the melody grid offers to vary a section's repeats");
   }
-  /* Moves are per section instance now, with the section type as the fallback. Songs saved before
-     that only carry the type key, so dropping the fallback silently strips the moves off every
-     song anyone has already made. */
+  /* Moves are per section instance, with the section type as the fallback — songs saved before that
+     only carry the type key, so dropping the fallback silently strips the moves off every song
+     anyone has already made. Both the resolution and the run arithmetic live in the `moveSpan`
+     memo; the scheduler only reads the spans it produces, and must not fire a move on a pass in the
+     middle of one or an eight-bar build restarts its climb halfway up. */
   {
+    const span = code.slice(code.indexOf("const moveSpan = useMemo("), code.indexOf("moveRef.current = {"));
+    if (!/secMove\[d\.key\]/.test(span)) problems.push("src: a section instance's own move is not resolved");
+    if (!/secMove\[d\.base\]/.test(span)) problems.push("src: no section-type fallback — moves saved before they were per-instance are lost");
+    if (!/head\.row === d\.row/.test(span))
+      problems.push("src: consecutive passes of one row are not joined into a single move — a build written as ×4 would sweep four times");
     const tick = code.slice(code.indexOf("// section moves: fire once"), code.indexOf("const dstep ="));
-    if (!/moves\[b\.inst\]/.test(tick)) problems.push("src: playback ignores a section instance's own move");
-    if (!/moves\[b\.base\]/.test(tick)) problems.push("src: playback has no section-type fallback — moves saved before they were per-instance are lost");
+    if (!/moveRef\.current\.span\[b\.inst\]/.test(tick))
+      problems.push("src: playback does not read the move spans — it is firing per pass again");
     // the move's riser and impact are added sources: on the master they land in every stem
     if (!/applyMove\([\s\S]*?m\.tn\.fx\)/.test(tick))
       problems.push("src: a move's riser and impact go somewhere other than the fx bus — they will be in every stem");
@@ -2494,12 +2502,148 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`stem gating: ${GATES.length} sources gated, pump left on the pitched bus`);
 }
 
+/* ---- arrangement templates ----
+   A structure is a running order; a template is a running order *plus* what plays in each section.
+   The checks below are the properties that make it an arrangement rather than a longer list of
+   sections: every id it names has to exist (a typo'd drum kit is silence, and silence looks
+   deliberate), the transitions have to land on the seams rather than on every pass, the automation
+   has to cover the whole song, and — the one that matters — the energy has to move. A template
+   whose sections all play the same thing is the problem it was written to fix. */
+{
+  const POOL = 4, HALF = Math.ceil(POOL / 2);
+  // bars a row is worth on the usual four-chord loop, padded even exactly as the app pads it
+  const barsOfRow = row => {
+    const n = row.nums === "LOOP" ? POOL : row.nums === "HOLD1" ? 1
+      : (row.nums === "HALF1" || row.nums === "HALF2") ? HALF : row.nums.length;
+    return n % 2 ? n + 1 : n;
+  };
+  const kits = new Set(M.DRUM_KITS.map(([k]) => k)), pumps = new Set(M.PUMPS.map(([k]) => k));
+  let rows = 0, subtractions = 0, silences = 0;
+  for (const t of M.DANCE_TEMPLATES) {
+    const where = `template ${t.id}`;
+    if (!M.DRUMS[t.drum] || !M.DRUMS[t.drum].pattern) problems.push(`${where}: unknown drum pattern "${t.drum}"`);
+    if (!M.PATTERNS[t.pat]) problems.push(`${where}: unknown chord rhythm "${t.pat}"`);
+    if (!kits.has(t.kit)) problems.push(`${where}: unknown drum kit "${t.kit}"`);
+    if (!pumps.has(t.pump)) problems.push(`${where}: unknown pump "${t.pump}"`);
+    if (!(t.bpm >= 60 && t.bpm <= 200)) problems.push(`${where}: ${t.bpm} bpm is not a dance tempo`);
+    // the whole template has to fit the 4/4 dance world it is written for, or the bars do not line up
+    if (M.meterOf(M.PATTERNS[t.pat]) !== "4/4") problems.push(`${where}: "${t.pat}" is not a 4/4 rhythm`);
+    if (M.DRUMS[t.drum] && !M.drumFitsMeter(M.DRUMS[t.drum], "4/4")) problems.push(`${where}: "${t.drum}" does not fit 4/4`);
+
+    for (const row of t.plan) {
+      rows++;
+      const a = row.arr || {};
+      const bars = barsOfRow(row) * (row.reps || 1);
+      /* Four bars is a group, eight a phrase, sixteen a section. A row that is not a multiple of
+         four puts every entry after it off the phrase, which is audible to a dancer and fatal to a
+         DJ. */
+      if (bars % 4) problems.push(`${where} / ${row.sec}: ${bars} bars — not a whole four-bar group`);
+      if (a.drums && !M.DRUMS[a.drums]) problems.push(`${where} / ${row.sec}: unknown drums "${a.drums}"`);
+      if (a.drums && a.drums !== "off" && !M.drumFitsMeter(M.DRUMS[a.drums], "4/4"))
+        problems.push(`${where} / ${row.sec}: drums "${a.drums}" do not fit 4/4`);
+      if (a.move && !M.MOVES[a.move]) problems.push(`${where} / ${row.sec}: unknown move "${a.move}"`);
+      if (a.trans && !M.TRANS[a.trans]) problems.push(`${where} / ${row.sec}: unknown transition "${a.trans}"`);
+      if (a.parts != null && /[^A-F]/.test(a.parts)) problems.push(`${where} / ${row.sec}: parts "${a.parts}" names something that is not a part`);
+      for (const lane of ["filter", "level"]) {
+        const v = a[lane];
+        if (v == null) continue;
+        for (const x of (Array.isArray(v) ? v : [v]))
+          if (!(x >= 0 && x <= 1)) problems.push(`${where} / ${row.sec}: ${lane} ${x} is outside 0–1`);
+      }
+      /* A move sweeps the app's own filter and the lane sweeps a second one in series, so a row
+         asking for both is filtered twice and the "build" arrives quieter than the groove. */
+      if (a.move && a.filter != null) problems.push(`${where} / ${row.sec}: a move and a filter lane on the same row filter it twice`);
+      if (a.drums === "off" && (a.parts === "" || a.parts == null) && a.chords === 0)
+        problems.push(`${where} / ${row.sec}: nothing plays at all`);
+      if (a.drums === "off") silences++;
+    }
+
+    const insts = M.planInsts(t.plan, barsOfRow, M.letterFor);
+    const A = M.resolveArrangement(t.plan, insts);
+    const keys = insts.map(d => d.key);
+    // every map is keyed by pass (D1, D2 …), which is the only level at which "the second drop is
+    // bigger than the first" can be said at all
+    for (const [name, map] of [["secDrum", A.secDrum], ["secQuiet", A.secQuiet], ["secMove", A.secMove], ["secTrans", A.secTrans]]) {
+      const bad = Object.keys(map).filter(k => !keys.includes(k));
+      if (bad.length) problems.push(`${where}: ${name} keys ${bad.join(",")} are not sections of this plan`);
+      if (Object.keys(map).length !== keys.length)
+        problems.push(`${where}: ${name} covers ${Object.keys(map).length} of ${keys.length} passes — applying it would leave the last arrangement half in place`);
+    }
+    // a transition belongs to the seam into a row, so a row played four times gets one, not four
+    const byRow = {};
+    insts.forEach(d => (byRow[d.row] = byRow[d.row] || []).push(d));
+    for (const [r, list] of Object.entries(byRow)) {
+      const armed = list.filter(d => A.secTrans[d.key]);
+      if (armed.length > 1) problems.push(`${where} / row ${r}: ${armed.length} passes armed with a transition — a riser before every pass of a drop is a fire alarm`);
+      if (armed.length === 1 && armed[0].key !== list[0].key)
+        problems.push(`${where} / row ${r}: the transition is armed on a later pass than the seam it belongs to`);
+    }
+    // an automation lane that is used has to be written across the whole song, or the bars nobody
+    // wrote interpolate into a slow sweep nobody asked for
+    const total = insts.reduce((n, d) => n + d.nbars, 0);
+    for (const lane of ["filter", "level"]) {
+      const pts = A[lane];
+      if (!pts) continue;
+      if (!pts.length) { problems.push(`${where}: the ${lane} lane is used but empty`); continue; }
+      if (pts[0].bar !== 0) problems.push(`${where}: the ${lane} lane starts at bar ${pts[0].bar}, not the top of the song`);
+      if (pts[pts.length - 1].bar !== total - 1) problems.push(`${where}: the ${lane} lane stops at bar ${pts[pts.length - 1].bar} of ${total}`);
+      if (pts.some((q, i) => i && q.bar <= pts[i - 1].bar)) problems.push(`${where}: the ${lane} lane is not sorted`);
+    }
+
+    /* And the point of the whole exercise. Energy per section, and what it has to do: move, come
+       back down at least once, and rise again afterwards — "the biggest event in the track is a
+       subtraction". A flat line here is the arrangement these templates exist to replace. */
+    const nrg = t.plan.map(row => {
+      const a = row.arr || {};
+      const kit = M.DRUMS[a.drums || t.drum];
+      return M.energyOf({ drums: M.drumAmountOf(kit && kit.pattern), chords: a.chords == null || !!a.chords,
+        parts: ["A", "B", "C", "D", "E", "F"].map(P => (a.parts == null ? P === "A" : a.parts.includes(P))) });
+    });
+    if (new Set(nrg).size < 3)
+      problems.push(`${where}: only ${new Set(nrg).size} energy level(s) across ${nrg.length} sections — everything plays from start to end`);
+    const dip = nrg.findIndex((e, i) => i > 0 && i < nrg.length - 1 && e < nrg[i - 1] && nrg.slice(i + 1).some(x => x > e));
+    if (dip < 0) problems.push(`${where}: nothing is ever taken away and brought back — there is no drop in this arrangement, only a rise`);
+    else subtractions++;
+    /* Failure mode #2 in docs/DANCE-LAYERING.md: riser, snare roll and every layer at once, and
+       then the drop arrives quieter than the build did. A build has to lead into something bigger
+       than itself or it is the loudest bar of the section it was supposed to set up. */
+    t.plan.forEach((row, i) => {
+      if (!/build/i.test(row.sec) || i === t.plan.length - 1) return;
+      if (nrg[i + 1] <= nrg[i])
+        problems.push(`${where} / ${row.sec}: the build (${nrg[i]}) is at least as dense as the ${t.plan[i + 1].sec} it leads into (${nrg[i + 1]})`);
+    });
+    // the full stack is worth having only if it is rare
+    const top = Math.max(...nrg);
+    if (nrg.filter(e => e === top).length > 4)
+      problems.push(`${where}: the fullest arrangement appears ${nrg.filter(e => e === top).length} times — there is nowhere left to go`);
+    if (nrg[0] === top) problems.push(`${where}: it opens at full size`);
+  }
+  /* The arrangement rides on the plan rows, so the editor's operations carry it the way they carry
+     melodies. If it were keyed by row *index* instead, moving a section would hand its arrangement
+     to whichever section took its place. */
+  {
+    const t = M.DANCE_TEMPLATES[0];
+    const rowsIn = t.plan.map(r => ({ ...r }));
+    const [moved] = M.planMove(rowsIn, 0, 1);
+    if (moved[1].arr !== t.plan[0].arr) problems.push("arrangement templates: moving a section leaves its arrangement behind");
+    const [duped] = M.planDup(t.plan.map(r => ({ ...r })), 0);
+    if (duped[1].arr !== t.plan[0].arr) problems.push("arrangement templates: a duplicated section arrives unarranged");
+    // …and re-resolving after an edit still lands on the passes that now exist
+    const insts = M.planInsts(moved, r => (r.nums === "LOOP" ? 4 : 2), M.letterFor);
+    const A2 = M.resolveArrangement(moved, insts);
+    if (Object.keys(A2.secDrum).length !== insts.length)
+      problems.push("arrangement templates: re-applying after an edit misses some of the sections");
+  }
+  console.log(`arrangement templates: ${M.DANCE_TEMPLATES.length} templates, ${rows} sections, `
+    + `${silences} of them with the drums out; every one rises, collapses and rises again (${subtractions})`);
+}
+
 /* ---- the module seams hold ----
    Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "als.js", "als-template.js", "progressions.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "als.js", "als-template.js", "progressions.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
