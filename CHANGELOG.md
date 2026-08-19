@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+- **Paint cells by dragging, on both grids.** A sixteenth hat across four bars was sixty-four
+  separate clicks. Hold the button down and drag and it is one stroke: the cell you press decides
+  what the stroke does — press an empty one and you are drawing, press a full one and you are
+  rubbing out — and every cell the pointer crosses is set to that. Dragging back over your own line
+  therefore erases it, where a stroke that re-toggled would flicker it on and off.
+
+  **The stroke is one undo step**, not one per cell; without that, dragging across a bar buried
+  everything before it and undo could no longer reach any of it. On a touchscreen a drag still
+  scrolls the page and tap-to-toggle stays as it was — painting there would cost you the gesture
+  you scroll with, on the device where the cells are hardest to hit anyway.
+- **Smaller cells on both grids**, so more of a song fits before you have to scroll: melody columns
+  are 20px from 26, drum steps 10px from 13, and the rows are shorter with them. The two grids are
+  deliberately width-matched — cell *and* gap, since a grid with twice the columns has twice the
+  gaps — so both were resized together and their bar lines still land on the same pixel.
 - **The arrangement strip picks what you see.** Every section used to be written out under the
   strip at once — a twelve-section song is a very long page, and all of it is off screen except the
   one you are working on. **Tap a block and that section opens underneath**, and only that one;
