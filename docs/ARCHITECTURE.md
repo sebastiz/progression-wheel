@@ -476,7 +476,7 @@ the list goes through `cloneLayer`, so an edit meant for a part's notes cannot d
 Everything a part carries beyond its notes is one entry in **`MOD_GROUPS`** (melody.js) — 28 of them
 across six groups — and that one entry is read by five different things: `ModCtl`, which draws the
 control; the scheduler, which applies it; `cloneLayer` and `putSec`, which carry it; song.js's
-`packLayer`/`unpackLayer`, which save it; and `copyPartSettings`, which moves it between sections.
+`packLayer`/`unpackLayer`, which save it; and `copySecSettings`, which moves it between sections.
 `LAYER_FX` is derived from the table rather than written by hand. Adding a modulation is one line
 rather than six edits, five of which are easy to forget; melodies once vanished from saved sketches
 for exactly that reason. Only fields that differ from their default are written, so a shared link
@@ -546,8 +546,10 @@ pad is a clean sustained one in the verse and a gated, driven, sidechained one i
 is what the tinted panel in the Arrange view is saying — its background is the part's own
 `LAYER_INK` over the surface, and nothing else on the page is section-scoped that way. The selected
 part is also per section (`secPart`), because opening the bass in the chorus should not switch the
-verse to its bass. `copyPartSettings` moves a whole settings set onto the same part index of other
-sections in one state update, growing a section that has fewer parts, and never touching notes.
+verse to its bass. `copySecSettings` moves every part's settings set onto the matching part index of
+other sections in one state update, growing a section that has fewer parts, and never touching
+notes — it used to move only the part whose tab was open, which on a section with several parts
+quietly left most of the sound behind.
 
 **Arpeggiator** (`ARPS`): an arped part ignores its grid and walks the notes of the chord under the
 current bar, in the chosen order, through `arpOct` octaves at `arpRate` notes per beat. It reads

@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **⧉ copy sound to… copies every part, not just the open tab.** On a section with a lead, a bass
+  and a pad, the copy menu carried only the part you happened to be looking at, which quietly left
+  two-thirds of the sound behind — three trips for a job that reads as one. It now moves every
+  part's settings (instrument, register, level, all modulation) onto the target sections, growing
+  them extra parts if they have fewer. Notes are still left alone, exactly as before.
+- **The melody grid and melody menus sit lighter.** Empty melody cells and the melody-facing
+  dropdowns (narrative, vary, grid, 🎵 Shape, the pattern pickers) shared the page's darkest
+  colour, so the thing you write on read as a hole in the panel. Both now sit a shade above it;
+  the drum grid keeps the darker ground so the two grids stay tellable apart, and the playhead
+  column stepped up a shade with them.
+- **Sections are visibly separate.** The rule between two passes of a section was a 1px hairline
+  in the faintest line colour — at arm's length the cards ran together into one wall of controls.
+  It is now a 2px bar in a clearly visible shade, with a little more room around it.
 - **The section dropdowns now say what they are.** A pass's option row read "Underwater · stays
   shut", "Reverb blooms open", "Funk groove" — each value names a *choice*, none of them names the
   *control*, and the icons beside them only explained themselves through hover tooltips that don't

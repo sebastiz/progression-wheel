@@ -1448,24 +1448,30 @@ export default function ProgressionWheel() {
     setSecPart(p => ({ ...p, [key]: (p[key] || 0) >= L ? Math.max(0, L - 1) : p[key] || 0 }));
     if (melSel.key === key && melSel.layer >= L) setMelSel({ key:"", layer:0, notes:{} });
   };
-  /* Copy one part's whole settings set onto the same part of other sections — every field it
-     carries except its notes, which stay each section's own. The point of the feature is that
-     "the bass sound I built in the first chorus" is a thing you can move, and building it again
-     by hand in four more sections is how a sketch stops being a sketch. */
-  const copyPartSettings = (fromKey, L, toKeys) => {
-    const src = layerOf(secMelos[fromKey], L); if (!src) return 0;
-    const { bars, flat, ...settings } = cloneLayer(src);      // everything but the notes
+  /* Copy a section's whole sound onto other sections — every part's settings (instrument,
+     register, level and all its modulation), never its notes, which stay each section's own. The
+     point of the feature is that "the sound I built in the first chorus" is a thing you can move,
+     and building it again by hand in four more sections is how a sketch stops being a sketch.
+     It used to copy only the part whose tab was open, which on a section with a bass and a pad
+     quietly left two-thirds of the sound behind — the copy has to mean the whole section. */
+  const copySecSettings = (fromKey, toKeys) => {
+    const from = secMelos[fromKey]; if (!from) return 0;
+    const parts = from.layers.map(ly => {
+      const { bars, flat, ...settings } = cloneLayer(ly);     // everything but the notes
+      return settings;
+    });
     const secs = melos.progId === progId ? melos.secs : {};
     const next = { ...secs };
     let n = 0;
     for (const key of toKeys) {
       const sec = secMelos[key]; if (!sec || key === fromKey) continue;
-      // a section with fewer parts gets one made, so "copy to every verse" means every verse
-      const grown = sec.layers.length > L ? sec.layers.map(cloneLayer)
-        : [...sec.layers.map(cloneLayer), ...Array.from({ length: L + 1 - sec.layers.length }, () =>
+      // a section with fewer parts gets them made, so "copy to every verse" means every verse
+      const grown = sec.layers.length >= parts.length ? sec.layers.map(cloneLayer)
+        : [...sec.layers.map(cloneLayer), ...Array.from({ length: parts.length - sec.layers.length }, () =>
             ({ bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: null,
                oct: 0, vol: 1, mute: false, solo: false, send: 0 }))];
-      next[key] = { ids: sec.ids, layers: grown.map((ly, i) => i === L ? { ...ly, ...settings } : ly) };
+      next[key] = { ids: sec.ids,
+        layers: grown.map((ly, i) => i < parts.length ? { ...ly, ...parts[i] } : ly) };
       n++;
     }
     if (n) setMelos({ progId, secs: next });
@@ -3509,7 +3515,9 @@ export default function ProgressionWheel() {
         .struct { border-top:1px solid var(--line); padding:11px 0 2px; margin-top:11px; }
         .stname { font-family:'Fraunces',serif; font-size:var(--fs-xl); font-weight:650; color:var(--ink-serif); }
         .sttip { font-size:var(--fs-lg); color:var(--muted); font-style:italic; line-height:1.45; }
-        .arr { border-top:1px solid var(--line); padding:10px 2px; }
+        /* a 2px rule, not the old 1px hairline — each pass card has to read as its own thing,
+           and at 1px of the faintest line the cards ran together into one wall of controls */
+        .arr { border-top:2px solid var(--line-3); padding:12px 2px; }
         .arrsec { font-size:var(--fs-md); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); font-weight:600; }
         .arrreps { color:${GOLD}; letter-spacing:0; text-transform:none; }
         .arrch { font-family:'Fraunces',serif; font-size:var(--fs-xxl); font-weight:650; color:var(--ink-serif); margin-top:3px; line-height:1.55; }
@@ -3536,13 +3544,16 @@ export default function ProgressionWheel() {
         .mrow.mrowon { background:var(--hover); border-color:${GOLD}; }
         .mline { display:grid; gap:4px; align-items:center; margin-top:4px; }
         .mnote { font-size:var(--fs-sm); color:var(--muted); text-align:right; padding-right:2px; }
-        .mcell { height:16px; background:var(--bg); border:1px solid var(--line); border-radius:var(--r-sm); cursor:pointer; transition:all .08s; }
+        /* empty melody cells sit a shade above the page so the grid reads as a surface you write
+           on, not a hole in the panel; the drum grid below keeps the darker ground (see .dcell) */
+        .mcell { height:16px; background:var(--hover); border:1px solid var(--line-2); border-radius:var(--r-sm); cursor:pointer; transition:all .08s; }
         .mcell:hover { border-color:var(--line-4); }
         /* a filled cell takes its melody part's colour inline (see LAYER_INK); this is the fallback */
         .mcell.on { background:var(--green); border-color:var(--green); }
         /* a cell carrying two parts is split diagonally between their colours, inline */
         .mcell.colnow { border-color:var(--ink-serif); }
-        .mcell.colnow:not(.on) { background:var(--line-2); }
+        /* line-3, not line-2 — the playhead column has to clear the lighter empty-cell ground */
+        .mcell.colnow:not(.on) { background:var(--line-3); }
         .octval { font-family:ui-monospace,Menlo,monospace; font-size:var(--fs-sm); color:var(--ink); min-width:22px; text-align:center; font-variant-numeric:tabular-nums; }
         .lvl { width:104px; accent-color:var(--green); }
         .mini.mixon { background:var(--green); border-color:var(--green); color:var(--bg); }
@@ -3636,7 +3647,7 @@ export default function ProgressionWheel() {
            melody's without losing anything, which keeps a section card readable at nine rows.
            The label's right edge carries the kit-family ink, so the three parts of a kit are
            legible while every cell is still empty. */
-        .mcell.dcell { height:13px; }
+        .mcell.dcell { height:13px; background:var(--bg); border-color:var(--line); }
         .mnote.dname { border-right:2px solid transparent; padding-right:5px; font-size:var(--fs-xs); }
         /* one header shape for both grids, so they stack rather than sit next to each other */
         .gridhdr { gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0 2px; }
@@ -3738,6 +3749,10 @@ export default function ProgressionWheel() {
           border:1px solid var(--line-2); max-width:150px; }
         .secdrum select { font-size:var(--fs-sm); padding:2px 5px; border-radius:var(--r-sm); background:var(--surface-2); color:var(--text);
           border:1px solid var(--line-2); max-width:130px; }
+        /* the melody-facing menus (narrative, vary, grid, shape, pattern pickers) sit a shade
+           lighter than the rest, matching the lifted melody grid they write onto — after every
+           other select rule so the tint wins wherever the class lands */
+        select.melsel { background:var(--hover); border-color:var(--line-3); }
         .mbar { font-size:var(--fs-sm); font-weight:700; border-radius:var(--r-sm); text-align:center; padding:2px 0; margin:0 1px 2px; white-space:nowrap; overflow:hidden; }
         .sug { border-top:1px solid var(--line); padding:10px 2px 8px; margin-top:8px; }
         .modehint { margin:10px 0 0; padding:10px 12px; border:1px solid ${GOLD}55; background:var(--raised); border-radius:var(--r-lg); }
@@ -4424,7 +4439,7 @@ export default function ProgressionWheel() {
           {/* melodic narrative — one melodic idea written across every section at once */}
           <div className="row" style={{ marginTop:8, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
             <span className="keytag" style={{ margin:0 }}>Melodic narrative</span>
-            <select value={narId} onChange={e => applyNarrative(e.target.value)} style={{ flex:"1 1 200px" }}
+            <select className="melsel" value={narId} onChange={e => applyNarrative(e.target.value)} style={{ flex:"1 1 200px" }}
               title="Write one melodic shape across the whole song — each section's register, density and contour chosen from what it is and where it sits">
               <option value="">None — write each section yourself</option>
               {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
@@ -4432,7 +4447,7 @@ export default function ProgressionWheel() {
             {curNar && <button className="mini" onClick={() => applyNarrative(narId)}
               title="Rewrite it — after a key change, a new structure, or edits you want to throw away">↻ Rewrite</button>}
             {/* a second chorus that is note-for-note the first one is the fastest way to sound like a demo */}
-            <select value={varyAmt} onChange={e => { const v = +e.target.value;
+            <select className="melsel" value={varyAmt} onChange={e => { const v = +e.target.value;
                 setVarySt({ key: progId, val: v }); if (narId) applyNarrative(narId, v); }}
               style={{ flex:"0 1 150px" }}
               title="How much each repeat of a section differs from its first time round — a new landing note, a note added or taken away, a phrase pushed early, a held note broken in two. The first time is always left alone.">
@@ -4443,7 +4458,7 @@ export default function ProgressionWheel() {
             {/* How finely you can write, which is not the same decision as how the chords are
                 strummed — it used to be read off the strum pattern, so a sixteenth grid meant
                 picking a sixteenth strum and changing the sound to get it. */}
-            <select value={gridSt.key === progId ? gridSt.val : ""}
+            <select className="melsel" value={gridSt.key === progId ? gridSt.val : ""}
               onChange={e => setGridSt({ key: progId, val: e.target.value })}
               style={{ flex:"0 1 170px" }}
               title={"How finely the melody grid divides a beat — " + meloBeats + " columns a bar at the moment. "
@@ -5045,7 +5060,7 @@ export default function ProgressionWheel() {
                   <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
                     + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
                     <span className="optlbl"><span aria-hidden="true">🎵</span> Shape</span>
-                    <select value={secNar[d.key] || ""} onChange={e => applySecNarrative(d, e.target.value)}>
+                    <select className="melsel" value={secNar[d.key] || ""} onChange={e => applySecNarrative(d, e.target.value)}>
                       <option value="">{curNar ? "as the song — " + curNar.name : "— no shape written —"}</option>
                       {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
                     </select>
@@ -5092,8 +5107,9 @@ export default function ProgressionWheel() {
                       const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
                       const others = sections.insts.filter(o => o.key !== d.key);
                       const doCopy = (keys, what) => {
-                        const n = copyPartSettings(d.key, secL, keys);
-                        setIoNote(n ? `${LAYER_NAMES[secL]}'s settings copied to ${what}.` : "Nothing to copy to.");
+                        const n = copySecSettings(d.key, keys);
+                        setIoNote(n ? `${d.key}'s sound — all ${nL} part${nL > 1 ? "s" : ""} — copied to ${what}.`
+                          : "Nothing to copy to.");
                       };
                       return (<>
                       <div className="row lytabs" style={{ gap:5, alignItems:"flex-end", flexWrap:"wrap" }}>
@@ -5123,14 +5139,14 @@ export default function ProgressionWheel() {
                             onChange={e => setSecInstr(d.key, secL, e.target.value)}>
                             {leadOpts()}
                           </select>
-                          <select className="fxsel partcopy" value="" title="Copy every setting on this part — instrument, register, level and all its modulation — onto the same part of other sections. Their notes are left alone."
+                          <select className="fxsel partcopy" value="" title="Copy this section's whole sound — every part's instrument, register, level and modulation — onto other sections. Their notes are left alone."
                             onChange={e => {
                               const v = e.target.value;
                               if (v === "role") doCopy(sameRole.map(o => o.key), "every other " + d.word.toLowerCase());
                               else if (v === "all") doCopy(others.map(o => o.key), "every other section");
                               else if (v) doCopy([v], v);
                             }}>
-                            <option value="">⧉ copy settings to…</option>
+                            <option value="">⧉ copy sound to…</option>
                             {sameRole.length > 0 && <option value="role">every other {d.word.toLowerCase()} ({sameRole.length})</option>}
                             {others.length > 0 && <option value="all">every other section ({others.length})</option>}
                             {others.length > 0 && <optgroup label="just one">
@@ -5265,14 +5281,14 @@ export default function ProgressionWheel() {
                         <div className="selrow" style={{ flexWrap:"wrap", gap:8 }}>
                           <div className="selwrap" style={{ minWidth:170 }}>
                             <span className="keytag">Melody pattern</span>
-                            <select value={pick.pat}
+                            <select className="melsel" value={pick.pat}
                               onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, pat:e.target.value } })}>
                               {MELODY_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
                           </div>
                           <div className="selwrap" style={{ minWidth:150, flex:"0 0 auto" }}>
                             <span className="keytag">Rhythm</span>
-                            <select value={rhy}
+                            <select className="melsel" value={rhy}
                               onChange={e => setRhySel({ ...rhySel, [d.key]: e.target.value })}
                               title="Where the notes fall in the bar, and how long each lasts — separately from the shape of the tune">
                               {RHYTHMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -5280,7 +5296,7 @@ export default function ProgressionWheel() {
                           </div>
                           <div className="selwrap" style={{ minWidth:120, flex:"0 0 auto" }}>
                             <span className="keytag">Start note</span>
-                            <select value={pick.start}
+                            <select className="melsel" value={pick.start}
                               onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, start:+e.target.value } })}>
                               {scaleSemis.map((s, i) => (
                                 <option key={i} value={i}>{spell((tonic + s) % 12, tonic, effMode)} · degree {i + 1}</option>
