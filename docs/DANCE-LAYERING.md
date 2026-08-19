@@ -167,13 +167,19 @@ Each idea above has a control that does it.
 | --- | --- |
 | The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — twelve dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build. The strip's **Energy** lane draws the resulting staircase |
 | The staircase of sections | The **structure** chooser, and the arrangement strip's rows and reps — *make the drop twice as long* is a reps edit |
-| Layer entries and exits | A **drum grid per section**, so the second chorus gets the busier hat and the last verse the fill |
+| Layer entries and exits | The **arrangement strip's lanes** — one per layer, a block per run of sections, clicked to bring a layer in or drop it out, per pass |
+| Variation within a layer | A **drum grid per section**, so the second chorus gets the busier hat and the last verse the fill |
 | The six roles, in the drum stack | The grid's nine voices — crash, ride, open hat, hat, clap, rim, snare, boom, kick — read top to bottom as air ⟶ backbeat ⟶ floor |
 | Entry and variation | **Section moves**: *build* opens the filter across the section, *riser* adds the noise under it, *drop* slams open with a crash, *fade*, *underwater* and *swell* |
 | The last bar before a boundary | **Transitions**, which belong to the section they lead *into* and schedule their riser, roll or silence ahead of its downbeat |
 | The energy curve, drawn rather than stepped | The **automation lanes** — Filter is the DJ filter across the whole mix, Level is the fade and the hole before a drop |
 | The Hook across the whole form | **Melodic narratives**, which pick each section's register, density and contour from its role and its place in the running order |
 | Checking the stack | Bounce **stems** and mute roles one at a time; the **Live Set** export carries the arrangement out as named, coloured tracks with the sections as locators |
+
+One seam worth knowing about: **Foundation has no lane of its own.** Bass here is a voice family
+rather than a source, so you get one by pointing a part or the chord instrument at it — which means
+"sub out for the breakdown", the single most important move in the whole framework, has to be said
+as a part mute rather than as its own row on the strip.
 
 The one thing no export carries is the sound itself — every instrument here is a browser audio
 graph, so a MIDI file or a Live Set arrives with the arrangement intact and the tracks empty. Bounce

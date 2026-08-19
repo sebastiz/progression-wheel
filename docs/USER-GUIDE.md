@@ -232,18 +232,36 @@ Under the blocks is a lane for each thing that can play: **Drums**, **Chords**, 
 part (**A**, **B**, …). A lane is lit where that element is playing and dark where it isn't, so the
 picture tells you what the song's dynamics actually are: drums dropping out for the verses, the pad
 only arriving at the chorus, the bassline sitting out the breakdown. A half-lit lane means the
-element is on for some passes of that section but not others. **Tap any block to play from there**,
-and a gold playhead runs across every lane as it goes.
+element is on for some passes of that section but not others. A gold playhead runs across every lane
+as the song plays, and a rule at every section boundary carries down the whole strip so a column
+reads as one column.
+
+**Tap a block to open that section underneath the strip**, and only that one — a twelve-section song
+is a very long page otherwise, and all of it is off screen except the section you are working on.
+**▾ All sections** writes them all out again, and while it is on, tapping a block scrolls to that
+section instead of swapping it. **Double-tap a block to play from there**, or use the ▶ on the
+section's own card.
+
+Under the element lanes is **Energy**: a bar per section as tall as what that section plays adds up
+to. It is scaled against the loudest section of this song rather than an absolute ceiling, because
+that is how energy works in an arrangement — a drop lands by how far it stands above the breakdown
+before it. Read it as a staircase, and expect the biggest step *down* to be the thing that makes the
+next drop land. A song where nothing changes draws flat rather than full.
 
 **The lanes are clickable.** Tap a cell to drop that element for that section, tap again to bring it
 back — so the strip is where you *build* the arrangement, not just where you look at it. Drop the
 drums for the verses, take the chords out of a breakdown, keep a pad off the intro, all without
 leaving the strip.
 
-One thing worth knowing, because the tooltip on each cell will tell you and it is easy to miss:
-**drums and chords are set per section type, parts per section.** Dropping the drums on *Verse 1*
-drops them on every verse; muting part A on a *Chorus ×2* mutes it for both passes of that chorus
-but leaves the later choruses alone. Hover before you click and it says exactly what it will do.
+Every lane works per pass, so a click moves the section you clicked and the passes inside it and
+nothing else: muting part A on a *Chorus ×2* mutes it for both passes of that chorus but leaves the
+later choruses alone, and taking the drums out of *this* breakdown leaves every other one playing.
+The tooltip on each cell says what it will do before you do it.
+
+One exception, and it is the honest kind: a section written on its own drum grid plays those bars
+whatever the menus say, "off" included. Its Drums cell therefore reads as in — which is what you
+will hear — and the cell is not clickable, because the lane has no way to silence bars you wrote by
+hand. Open **▸ drums** on the section to change them.
 
 ### Automation — Filter and Level
 
