@@ -519,6 +519,10 @@ export default function ProgressionWheel() {
   const [editArr, setEditArr] = useState(false);                 // arrangement-editing mode on the strip
   const [selRow, setSelRow] = useState(0);                       // plan row the editor is pointed at
   const drawRef = useRef(null);                                  // in-progress automation drag
+  /* Which plan row's sections are written out under the strip; null shows every one of them. A
+     twelve-section song is a very long page, and all of it is off screen except the section you
+     are actually working on — so the strip picks, and the page shows what was picked. */
+  const [focusRow, setFocusRow] = useState(0);
   const [secMove, setSecMove] = useState({});
   /* What happens at the seam *into* a section, keyed the same way a move is: the instance's own
      (`secTrans.C2`), else the section letter's (`secTrans.C`). Keyed to the section it leads into
@@ -3586,7 +3590,11 @@ export default function ProgressionWheel() {
           transition:filter .1s; }
         .tlcell:hover:not(:disabled) { filter:brightness(1.5); outline:1px solid var(--line-4); }
         .tlcell:disabled { cursor:default; opacity:.45; }
-        .tlcell.off { box-shadow:inset 0 0 0 1px var(--line); }
+        /* An off cell has to read as a slot that is empty, not as no slot at all. It used to be
+           --raised on the strip's --bg — a few percent apart, so dropping a layer looked like the
+           row had lost its sections rather than the layer having gone out. Sunk below the strip
+           with a rim around it, it reads as a hole, which is what it is. */
+        .tlcell.off { background:var(--sunk); box-shadow:inset 0 0 0 1px var(--line-3); }
         /* the playhead sits above every lane so you can read the whole column at once */
         .tlauto { position:relative; height:30px; margin-bottom:3px; border-radius:var(--r-sm); cursor:crosshair;
           background:var(--surface-2); border:1px solid var(--line); touch-action:none; overflow:hidden; }
@@ -3612,7 +3620,20 @@ export default function ProgressionWheel() {
         .tplnote { margin-top:9px; padding:8px 11px 9px; background:var(--bg);
           border:1px solid var(--line-2); border-left:3px solid ${GOLD}; border-radius:var(--r-lg); }
         .tlhead { position:absolute; top:14px; bottom:0; width:2px; background:${GOLD}; border-radius:var(--r-xs);
-          pointer-events:none; box-shadow:0 0 6px ${GOLD}AA; }
+          pointer-events:none; box-shadow:0 0 6px ${GOLD}AA; z-index:4; }
+        /* Section boundaries, drawn down the whole strip. Two sections that letter the same way get
+           the same colour, so a 2px gap between them was the only thing saying where one stopped —
+           at which point a run of choruses reads as one long chorus. A seam that carries through
+           the section row, every lane, the staircase and the automation is what makes a column a
+           column.
+
+           Laid out as a flex row with the same bases and the same gap as the rows themselves, so
+           the lines land on the seams with no arithmetic and no drift as sections are added. The
+           line is an inset shadow rather than a border because a border would widen each item by a
+           pixel and walk the overlay out of step with the rows it is meant to be tracking. */
+        .tlbounds { position:absolute; left:0; right:0; top:14px; bottom:0; display:flex; gap:2px;
+          pointer-events:none; z-index:3; }
+        .tlbounds > i + i { box-shadow:inset 1px 0 0 var(--line-4); }
         @media (max-width:560px) { .tlgut { flex-basis:44px; } .tlglbl { font-size:var(--fs-micro); } }
         .sgrp { border:1.5px solid var(--line-2); border-radius:var(--r-lg); padding:2px 11px 9px; margin-top:11px; }
         .sgrp .arr:first-of-type { border-top:none; padding-top:2px; }
@@ -4455,8 +4476,13 @@ export default function ProgressionWheel() {
               live here, and "a four-bar loop with a filter sweep on it" is a perfectly good sketch. */}
           {sections.insts.length > 0 && (() => {
             const total = sections.totalBars || 1;
-            // what each section actually plays, resolved the same way the scheduler resolves it
+            /* What each section actually plays, resolved the same way the scheduler resolves it —
+               including the part that was missed: a section written on its own drum grid plays
+               those bars whatever its pass or its type is set to, "off" included. Read from the
+               menus alone, the lane said a section had no drums while you could hear them. */
+            const ownBeat = d => { const b = secBeat[d.key]; return b && b.length ? b : null; };
             const drumsIn = d => {
+              if (ownBeat(d)) return true;
               const dd = DRUMS[effDrum(d) || drum];
               return !!(dd && dd.pattern);
             };
@@ -4496,7 +4522,11 @@ export default function ProgressionWheel() {
                     if (bd && bd.pattern) delete next[d.key]; else next[d.key] = drum;
                   });
                   setSecDrum(next);
-                } },
+                },
+                /* A pass with its own written bars plays them regardless, so the lane has nothing
+                   it can do here — better to say that than to accept the click and not move. */
+                dead: r => r.items.every(ownBeat),
+                deadTip: r => `${r.sec} has its own drums written — open ▸ drums on the section to change them` },
               { name: "Chords", on: d => !effQuiet(d), scope: runScope,
                 toggle: r => {
                   const anyIn = r.items.some(d => !effQuiet(d)), next = { ...secQuiet };
@@ -4578,14 +4608,27 @@ export default function ProgressionWheel() {
                       const n = r.items.length;
                       return (
                         <button key={r.startBar} className={"tlsec" + (now ? " now" : "") + (looped ? " looped" : "")
-                            + (editArr && selRow === r.row ? " picked" : "")}
+                            + (selRow === r.row ? " picked" : "")}
                           style={{ flex: r.bars + " 0 0%", background: acc + (now ? "44" : "22"), borderColor: acc + (now ? "" : "77") }}
-                          onClick={() => editArr ? setSelRow(r.row) : startMetro(r.startBar)}
+                          /* A tap picks the section and writes it out below; playing from here
+                             moved onto the double tap. Picking is the thing you do constantly and
+                             playing is the thing you do deliberately, and a tap that starts the
+                             audio is a poor way to ask "what is in this chorus". */
+                          onClick={() => {
+                            setSelRow(r.row);
+                            // showing one section: swap it. Showing all of them: leave that choice
+                            // alone and go to the one that was tapped, or the tap does nothing at
+                            // all on a page where the section is three screens down.
+                            if (focusRow == null) document.querySelector(`.sgrp[data-rows~="${r.row}"]`)
+                              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            else setFocusRow(r.row);
+                          }}
+                          onDoubleClick={() => startMetro(r.startBar)}
                           title={`${r.sec}${n > 1 ? ` ×${n}` : ""} · ${r.bars} bar${r.bars > 1 ? "s" : ""} from bar ${r.startBar + 1}`
                             + (mv ? ` · ${mv.name}` : "")
                             + (tr ? ` · into it: ${tr.name}${trMixed ? " (first pass)" : ""}` : "")
                             + (looped ? " · looping" : "")
-                            + (editArr ? " — tap to edit this section" : " — tap to play from here")}>
+                            + " — tap to open it below, double-tap to play from here"}>
                           {/* the label is left-aligned and clipped rather than centred, so a narrow
                               block truncates to its first letters instead of showing a word's middle */}
                           <span className="tlsecl" style={{ color: acc }}>{r.sec}{n > 1 ? " ×" + n : ""}</span>
@@ -4608,7 +4651,8 @@ export default function ProgressionWheel() {
                               : (SEC_COL[r.base] || "#8B94A3") + (st === "on" ? "AA" : "55") }}
                           disabled={dead}
                           onClick={() => l.toggle(r)}
-                          title={dead ? `${l.name} has nothing written in ${r.sec} — write something there first`
+                          title={dead ? (l.deadTip ? l.deadTip(r)
+                              : `${l.name} has nothing written in ${r.sec} — write something there first`)
                             : `${st === "off" ? "Bring in" : "Drop"} ${l.name} for ${l.scope(r)}`
                               + (st === "part" ? " (currently in for some passes and out for others)" : "")} />;
                       })}
@@ -4618,16 +4662,21 @@ export default function ProgressionWheel() {
                       so it is changed by changing them. */}
                   {(() => {
                     const es = runs.map(runEnergy), top = Math.max(1, ...es);
+                    /* Relative scaling has nothing to divide by when every section scores the same,
+                       and drawing them all full height claims everything is maxed when what is true
+                       is that nothing changes across this song. That draws flat instead. */
+                    const flat = Math.max(...es) === Math.min(...es);
                     return (
                       <div className="tlrow tlnrg">
                         {runs.map((r, ri) => (
                           <div key={r.startBar} className="tlnrgw" style={{ flex: r.bars + " 0 0%" }}
                             title={`${r.sec} · ${Math.round(es[ri] * 10) / 10} of ${top}`
-                              + (ri > 0 ? (es[ri] > es[ri - 1] ? " — a step up from the section before"
+                              + (flat ? " — level with every other section: nothing changes across this song"
+                                : ri > 0 ? (es[ri] > es[ri - 1] ? " — a step up from the section before"
                                 : es[ri] < es[ri - 1] ? " — a step down: this is what makes what follows land"
                                 : " — level with the section before") : "")
                               + ". Drums and the lead count 3, the chords 2, every other part 1. Energy is relative, not absolute: the biggest event in a dance record is usually a subtraction."}>
-                            <div className="tlnrgb" style={{ height: Math.max(7, Math.round(es[ri] / top * 100)) + "%",
+                            <div className="tlnrgb" style={{ height: (flat ? 45 : Math.max(7, Math.round(es[ri] / top * 100))) + "%",
                               background: (SEC_COL[r.base] || "#8B94A3") + "CC" }} />
                           </div>
                         ))}
@@ -4678,6 +4727,10 @@ export default function ProgressionWheel() {
                       </div>
                     );
                   })}
+                  {/* one spacer per run, mirroring the rows' own flex bases — see .tlbounds */}
+                  <div className="tlbounds" aria-hidden="true">
+                    {runs.map(r => <i key={r.startBar} style={{ flex: r.bars + " 0 0%" }} />)}
+                  </div>
                   {curSongBar >= 0 &&
                     <div className="tlhead" style={{ left: (curSongBar / total * 100) + "%" }} />}
                 </div>
@@ -4686,6 +4739,13 @@ export default function ProgressionWheel() {
                   nothing to edit without one — a plain loop has no plan, only the loop — so the
                   button is not offered rather than opening onto an empty toolbar. */}
               <div className="row" style={{ gap:"6px 8px", alignItems:"center", flexWrap:"wrap", marginTop:8 }}>
+                {sections.insts.length > 1 &&
+                  <button className="mini" onClick={() => setFocusRow(v => v == null ? selRow : null)}
+                    title={focusRow == null
+                      ? "Write out only the section picked on the strip, rather than all of them"
+                      : "Write out every section at once, not just the one picked on the strip"}>
+                    {focusRow == null ? "▴ One section" : "▾ All sections"}
+                  </button>}
                 {effPlan && effPlan.length
                   ? <button className={"mini" + (editArr ? " mixon" : "")} onClick={() => setEditArr(v => !v)}
                       title="Reorder sections, change how many passes each gets, add and remove them">
@@ -4733,20 +4793,31 @@ export default function ProgressionWheel() {
           {tips && sections.insts.length > 0 && <p className="keytag" style={{ marginTop:6 }}>
             The strip above is the whole song end to end — each block is a section, as wide as it is
             long, and the lanes under it show what is playing where. Gaps in a lane are a part
-            sitting out. Tap a block to play from there.
+            sitting out, and the staircase under them is what they add up to. Tap a block to open
+            that section underneath; double-tap it to play from there.
           </p>}
           {(() => {
+            /* The rows the plan actually has right now. A focus set before an edit can point at a
+               row that has since been deleted or merged away, so it is clamped here rather than
+               trusted — the alternative is a page that goes blank after a delete. */
+            const liveRows = [...new Set(sections.insts.map(d => d.row))];
+            const focus = focusRow == null ? null
+              : (liveRows.includes(focusRow) ? focusRow : liveRows[0]);
+            const shown = focus == null ? sections.insts : sections.insts.filter(d => d.row === focus);
             const groups = [];
-            sections.insts.forEach(d => {
+            shown.forEach(d => {
               const g = groups[groups.length - 1];
               if (g && g.base === d.base) g.items.push(d);
               else groups.push({ base: d.base, word: d.word, items: [d] });
             });
             return groups.map((g, gi) => (
-              <div key={gi} className="sgrp" style={{ borderColor: (SEC_COL[g.base] || "#2A3442") + "55" }}>
+              <div key={gi} className="sgrp" data-rows={[...new Set(g.items.map(d => d.row))].join(" ")}
+                style={{ borderColor: (SEC_COL[g.base] || "#2A3442") + "55" }}>
                 <div className="sgrphdr">
                   <div className="sgrplbl" style={{ color: SEC_COL[g.base] || "#8B94A3" }}>
-                    {g.word}{g.items.length > 1 ? "s ×" + g.items.length : ""}
+                    {g.items.length > 1
+                      ? `${g.word}${/s$/i.test(g.word) ? "es" : "s"} ×${g.items.length}`
+                      : g.word}
                   </div>
                   <label className="secdrum" title="Drum kit for every pass of this section — overrides the global Drums choice, and clears anything set on a single pass below">
                     <span aria-hidden="true">🥁</span>

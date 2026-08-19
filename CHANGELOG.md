@@ -1,6 +1,29 @@
 # Changelog
 
 ## Unreleased
+- **The arrangement strip picks what you see.** Every section used to be written out under the
+  strip at once — a twelve-section song is a very long page, and all of it is off screen except the
+  one you are working on. **Tap a block and that section opens underneath**, and only that one;
+  **▾ All sections** writes them all out again, and while it is on, tapping a block scrolls to that
+  section rather than swapping it. Playing from a point moved onto the double tap, because picking
+  is what you do constantly and starting the audio is a poor way to ask what is in a chorus — the
+  ▶ on each section card does the same job.
+- **Dropping a layer no longer looks like the sections going missing.** An off cell was drawn a few
+  percent away from the strip's own background, so "off" and "not there" were the same picture. It
+  is now sunk below the strip with a rim around it: a hole, which is what it is.
+- **Sections no longer merge into one another.** Two that letter the same way get the same colour,
+  so a 2px gap was all that said where one stopped. Boundaries now carry down the whole strip,
+  through the section row, every lane, the staircase and the automation.
+- **Fixed: the Drums lane could say a section had no drums while you could hear them.** It read the
+  menus alone, but a section written on its own drum grid plays those bars whatever the pass or the
+  type is set to, "off" included. The lane now resolves the way the scheduler does, and the cell is
+  no longer clickable there — it has no way to silence bars you wrote by hand, and saying so beats
+  accepting the click and not moving.
+- **Fixed: a song with no dynamics drew every Energy bar full height**, which claims everything is
+  maxed when what is true is that nothing changes. It draws flat instead.
+- Fixed: a group of choruses was labelled *Choruss*.
+- The user guide described drums and chords as set per section *type*; they have been per pass
+  since the arrangement templates landed.
 - **Dance arrangement templates — arranged, not just ordered.** A structure was only ever a running
   order: pick "Big room / festival" and the sections arrived in the right sequence, but every
   element played from the first bar to the last, which is a track with sections rather than an
