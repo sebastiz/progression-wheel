@@ -1172,8 +1172,8 @@ export default function ProgressionWheel() {
      cell+gap on the other: 26+4 against 2×(13+2) when the melody is in eighths, and identical when
      it is in sixteenths and the two grids have the same columns anyway. */
   const gridR = Math.max(1, beatCols / meloBeats);
-  const melCell = gridR === 1 ? 15 : 26;
-  const beatCell = gridR === 1 ? 15 : 13, beatGap = gridR === 1 ? 4 : 2;
+  const melCell = gridR === 1 ? 12 : 20;
+  const beatCell = gridR === 1 ? 12 : 10, beatGap = gridR === 1 ? 4 : 2;
   // and the drum grid's gutter takes the gap difference back, or its narrower gaps start it two
   // pixels left of the melody grid and every bar line is out by the same two pixels
   barBeatsRef.current = barBeats;
@@ -1623,7 +1623,14 @@ export default function ProgressionWheel() {
   };
   // Drag anywhere draws a selection box; drag a note that's ALREADY selected to move the group.
   const melDown = (e, key, c, deg, sec, L) => {
-    if (!melMove) return;                                   // draw mode → onClick handles taps
+    if (!melMove) {                                         // draw mode → paint, or tap on touch
+      if (e.pointerType === "touch") return;                // onClick handles those, so the page still scrolls
+      e.preventDefault();
+      const bars = dupBars(barsOf(sec, L)); if (!bars) return;
+      paintStart({ kind:"melody", key, layer:L, bars, want: !noteOn(sec, c, deg, L), seen: new Set() });
+      paintMelAt(c, deg);
+      return;
+    }
     e.preventDefault();
     const on = noteOn(sec, c, deg, L);
     const already = melSel.key === key && melSel.layer === L && !!melSel.notes[nKey(c, deg)];
@@ -1668,6 +1675,81 @@ export default function ProgressionWheel() {
       const dc = dr.curC - dr.startC, dd = dr.curDeg - dr.startDeg;
       if (dc || dd) doMelMove(dr.key, dr.layer, dr.base, dc, dd);
     }
+  };
+
+  /* ---- painting cells by dragging ----
+     Both grids are a wall of small targets, and putting a hat on every sixteenth of four bars is
+     sixty-four separate clicks. Holding the button down and dragging paints instead. The cell you
+     press decides the whole stroke — press an empty one and you are drawing, press a full one and
+     you are erasing — and every cell the pointer crosses is set to that. Dragging back over your
+     own line therefore rubs it out rather than flickering it on and off, which is what a stroke
+     that re-toggled would do.
+
+     Touch keeps tap-to-toggle. Dragging a finger across the page is how you scroll it, and taking
+     that away to paint would be a bad trade on the one device where the cells are hardest to hit.
+
+     The stroke accumulates in a ref rather than re-reading state per cell. Several pointermove
+     events land between renders, and each writer here spreads the render's own copy of the
+     document — so cell-by-cell writes would each start from the same stale bars and only the last
+     one would survive. */
+  const paintRef = useRef(null);
+  // a pointerdown that painted has already done the work; the click it is followed by must not
+  // undo it by toggling the same cell straight back
+  const skipClickRef = useRef(false);
+  const [painting, setPainting] = useState(false);
+
+  const paintMelAt = (c, deg) => {
+    const p = paintRef.current; if (!p || p.kind !== "melody") return;
+    const k = c + ":" + deg; if (p.seen.has(k)) return;
+    p.seen.add(k);
+    const cell = p.bars[Math.floor(c / meloBeats)][c % meloBeats];
+    const at = cell.indexOf(deg);
+    if (p.want && at < 0) cell.push(deg);
+    else if (!p.want && at >= 0) cell.splice(at, 1);
+    else return;                                  // already how the stroke wants it
+    putLayer(p.key, p.layer, p.bars);
+  };
+  const paintDrumAt = (bar, step, ch) => {
+    const p = paintRef.current; if (!p || p.kind !== "drums") return;
+    const k = bar + ":" + step + ":" + ch; if (p.seen.has(k)) return;
+    p.seen.add(k);
+    if (p.bars[bar][step].includes(ch) === p.want) return;
+    p.bars[bar] = beatToggle(p.bars[bar], step, ch);
+    putBeat(p.key, p.bars.map(b => [...b]));
+  };
+  /* elementFromPoint rather than an enter handler per cell, because a pointer that has been
+     captured keeps sending its moves to the element it started on — so the cells it crosses would
+     never hear about it. */
+  const paintMove = e => {
+    const p = paintRef.current; if (!p) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const ds = el && el.dataset; if (!ds) return;
+    if (p.kind === "melody") { if (ds.mk === p.key) paintMelAt(+ds.c, +ds.deg); }
+    else if (ds.dk === p.key) paintDrumAt(+ds.bar, +ds.step, ds.ch);
+  };
+  const paintUp = () => {
+    paintRef.current = null;
+    setPainting(false);
+    window.removeEventListener("pointermove", paintMove);
+    window.removeEventListener("pointerup", paintUp);
+    window.removeEventListener("pointercancel", paintUp);
+  };
+  const paintStart = start => {
+    paintRef.current = start;
+    setPainting(true);
+    skipClickRef.current = true;
+    window.addEventListener("pointermove", paintMove);
+    window.addEventListener("pointerup", paintUp);
+    window.addEventListener("pointercancel", paintUp);
+  };
+  // the drum grid's own pointerdown; the melody grid's is folded into melDown, which already owns
+  // that event for the move/marquee mode
+  const beatDown = (e, d, bar, step, ch) => {
+    if (e.pointerType === "touch") return;
+    e.preventDefault();
+    const bars = beatBars(d).map(b => [...b]);
+    paintStart({ kind:"drums", key: d.key, bars, want: !bars[bar][step].includes(ch), seen: new Set() });
+    paintDrumAt(bar, step, ch);
   };
 
   // write a suggested melody pattern onto a section's grid (overwrites what's there)
@@ -3078,13 +3160,18 @@ export default function ProgressionWheel() {
   useEffect(() => {
     if (docJson == null) return;
     if (lastDocRef.current === null) { lastDocRef.current = docJson; return; }   // first render is the baseline
+    /* A paint drag is one edit, not one per cell. While the pointer is down the recorder holds its
+       baseline and writes nothing, so releasing it records the whole stroke as a single step —
+       otherwise dragging across a bar buries everything you did before it under sixty-four
+       snapshots and undo stops being able to reach any of it. */
+    if (painting) return;
     if (docJson === lastDocRef.current) return;
     const prev = lastDocRef.current;
     lastDocRef.current = docJson;
     if (restoringRef.current) { restoringRef.current = false; return; }
     setPast(p => [...p.slice(-(UNDO_DEPTH - 1)), prev]);
     setFuture([]);                                     // a fresh edit ends the redo branch
-  }, [docJson]);
+  }, [docJson, painting]);
   const restoreDoc = json => {
     try {
       const doc = JSON.parse(json);
@@ -3449,7 +3536,7 @@ export default function ProgressionWheel() {
         .mrow.mrowon { background:var(--hover); border-color:${GOLD}; }
         .mline { display:grid; gap:4px; align-items:center; margin-top:4px; }
         .mnote { font-size:var(--fs-sm); color:var(--muted); text-align:right; padding-right:2px; }
-        .mcell { height:22px; background:var(--bg); border:1px solid var(--line); border-radius:var(--r-sm); cursor:pointer; transition:all .08s; }
+        .mcell { height:16px; background:var(--bg); border:1px solid var(--line); border-radius:var(--r-sm); cursor:pointer; transition:all .08s; }
         .mcell:hover { border-color:var(--line-4); }
         /* a filled cell takes its melody part's colour inline (see LAYER_INK); this is the fallback */
         .mcell.on { background:var(--green); border-color:var(--green); }
@@ -3544,7 +3631,7 @@ export default function ProgressionWheel() {
            melody's without losing anything, which keeps a section card readable at nine rows.
            The label's right edge carries the kit-family ink, so the three parts of a kit are
            legible while every cell is still empty. */
-        .mcell.dcell { height:17px; }
+        .mcell.dcell { height:13px; }
         .mnote.dname { border-right:2px solid transparent; padding-right:5px; font-size:var(--fs-xs); }
         /* one header shape for both grids, so they stack rather than sit next to each other */
         .gridhdr { gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0 2px; }
@@ -5121,8 +5208,10 @@ export default function ProgressionWheel() {
                           onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
                       </div>
                       {tab === "write" && <div className="seg">
-                          <button className={!melMove ? "on" : ""} onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
-                          <button className={melMove ? "on" : ""} onClick={() => setMelMove(true)}>✋ Move</button>
+                          <button className={!melMove ? "on" : ""} title="Write notes. Hold the button down and drag to paint a run of them — press an empty cell to draw, a full one to rub out."
+                            onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
+                          <button className={melMove ? "on" : ""} title="Drag a box to select notes, then drag a selected one to move the group"
+                            onClick={() => setMelMove(true)}>✋ Move</button>
                         </div>}
                         {/* Varying the repeats is about the whole melody rather than a selection, so it
                             sits with the mode switch and not among the note tools below. */}
@@ -5248,7 +5337,10 @@ export default function ProgressionWheel() {
                               && melSel.notes[nKey(c - melGhost.dc, deg - melGhost.dd)];
                             return (
                             <div key={c} data-mk={d.key} data-c={c} data-deg={deg}
-                              onClick={() => { if (!melMove) tapMelo(d.key, c, deg, secL); }}
+                              onClick={() => {
+                                if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                if (!melMove) tapMelo(d.key, c, deg, secL);
+                              }}
                               onPointerDown={e => melDown(e, d.key, c, deg, sec, secL)}
                               // the inline colour would beat the .colnow CSS, so the playhead
                               // highlight has to be decided here too
@@ -5314,7 +5406,12 @@ export default function ProgressionWheel() {
                               const bar = Math.floor(c / n), step = c % n;
                               const on = bars[bar][step].includes(ch);
                               return (
-                                <div key={c} onClick={() => tapBeat(d, bar, step, ch)}
+                                <div key={c} data-dk={d.key} data-bar={bar} data-step={step} data-ch={ch}
+                                  onPointerDown={e => beatDown(e, d, bar, step, ch)}
+                                  onClick={() => {
+                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                    tapBeat(d, bar, step, ch);
+                                  }}
                                   style={on ? { background: ink, borderColor: ink } : null}
                                   className={"mcell dcell" + (on ? " on" : "")
                                     + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
@@ -5324,9 +5421,11 @@ export default function ProgressionWheel() {
                         ))}
                       </div>
                       {tips && <p className="keytag" style={{ marginTop:5 }}>
-                        Two pieces on one step play together — that is all layering is here. A crash on
-                        the first step of a section, or a snare through the last bar, is the fill a
-                        transition is waiting for.
+                        Hold the button down and drag to paint a row — press an empty cell and you are
+                        drawing, press a full one and you are rubbing out — so a sixteenth hat across
+                        four bars is one stroke. Two pieces on one step play together, which is all
+                        layering is here: a crash on the first step of a section, or a snare through
+                        the last bar, is the fill a transition is waiting for.
                       </p>}
                     </div>
                   );

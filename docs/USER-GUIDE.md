@@ -359,6 +359,10 @@ ride, open hat, hat, clap, rim, snare, boom, kick — across that section's bars
 - **It belongs to that pass alone.** The second chorus can have the busier hat, and the last verse
   the fill, without touching the others. **copy to every chorus** puts it on the siblings when you
   do want them the same, and **↺ Reset** hands the section back to the menu.
+- **Hold the button down and drag to paint a row.** Press an empty cell and you are drawing, press a
+  full one and you are rubbing out, so a sixteenth hat across four bars is one stroke rather than
+  sixty-four clicks — and one undo step. A drag on a touchscreen still scrolls the page; tap to
+  toggle there.
 - **Two pieces on one step play together** — that is all layering is here. A clap over the snare, an
   open hat on the offbeat, a crash on the first step of a chorus.
 - **A snare through the last bar** is the fill a transition is waiting for: put a roll or a riser on
@@ -528,9 +532,13 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   box** anywhere across the grid to select the notes inside it (or tap a single note to select it);
   the chosen notes turn blue. Then **drag any selected (blue) note** to move the whole group — it
   shifts in time (columns) and pitch (scale degrees) together, with a live preview. The arrow buttons
-  nudge the selection ▲▼ by a scale step or ◀▶ in time, and **🗑** removes it. **✎ Draw** mode keeps
-  the original tap-to-add-or-remove behaviour. The move clamps to the grid, so a selection never
-  falls off the edge.
+  nudge the selection ▲▼ by a scale step or ◀▶ in time, and **🗑** removes it. The move clamps to the
+  grid, so a selection never falls off the edge.
+- **Paint a run of notes** (**✎ Draw** mode) — a tap still adds or removes one note, but **holding
+  the mouse down and dragging paints the cells you cross**. The cell you press decides the stroke:
+  press an empty one and you are drawing, press a full one and you are rubbing out, so dragging back
+  over your own line erases it rather than flickering it on and off. The whole stroke is one undo
+  step. On a touchscreen a drag still scrolls the page, so tap-to-toggle stays as it was there.
 - **✦ Vary repeats** (**Write** tab, beside the Draw / Move switch) — a section is usually one motif
   said three or four times, and said identically it's the part of a sketch that wears out first. This
   finds where the melody you're editing restates itself — a one-bar riff, a two-bar hook, or a
