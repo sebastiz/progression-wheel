@@ -3566,8 +3566,13 @@ export default function ProgressionWheel() {
            say it. It takes the part's own colour as a tint, so which tab you are on is legible from
            the panel and not only from the tab strip. */
         /* a section's own move and melodic shape, sitting under its chords */
-        .secopts { gap:6px; flex-wrap:wrap; align-items:center; margin:5px 0 2px; }
+        .secopts { gap:6px 10px; flex-wrap:wrap; align-items:center; margin:5px 0 2px; }
         .secopt { display:inline-flex; align-items:center; gap:4px; font-size:var(--fs-sm); color:var(--muted); }
+        /* the word that says what a dropdown controls — the values ("Underwater · stays shut",
+           "Chant, then release") name a choice, not the control, so icons alone left the row
+           unreadable anywhere tooltips don't exist (every phone) */
+        .optlbl { font-size:var(--fs-xs); font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+          color:var(--muted); white-space:nowrap; }
         .secopt select { font-size:var(--fs-sm); padding:3px 6px; border-radius:var(--r-sm);
           background:var(--surface-2); color:var(--text); border:1px solid var(--line-2); max-width:220px; }
         @media (max-width: 560px) {
@@ -3726,7 +3731,7 @@ export default function ProgressionWheel() {
         .sgrp .arr:first-of-type { border-top:none; padding-top:2px; }
         .arr.playnow { background:var(--hover); border-radius:var(--r-md); padding:9px 10px 10px; border-top-color:transparent; margin-top:6px; }
         .arr.playnow + .arr { border-top-color:transparent; }
-        .sgrphdr { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; }
+        .sgrphdr { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; flex-wrap:wrap; }
         .sgrplbl { font-size:var(--fs-xs); font-weight:700; letter-spacing:.13em; text-transform:uppercase; }
         .secdrum { display:inline-flex; align-items:center; gap:4px; font-size:var(--fs-sm); }
         .fxsel { font-size:var(--fs-sm); padding:3px 6px; border-radius:var(--r-sm); background:var(--surface-2); color:var(--text);
@@ -4907,7 +4912,7 @@ export default function ProgressionWheel() {
                       : g.word}
                   </div>
                   <label className="secdrum" title="Drum kit for every pass of this section — overrides the global Drums choice, and clears anything set on a single pass below">
-                    <span aria-hidden="true">🥁</span>
+                    <span className="optlbl"><span aria-hidden="true">🥁</span> Drums</span>
                     {/* a pass's own drums win over the type's, so setting the type has to clear them —
                         otherwise this control would appear to do nothing on a section a template
                         (or the strip) has already arranged pass by pass */}
@@ -4915,7 +4920,7 @@ export default function ProgressionWheel() {
                       onChange={e => { const next = { ...secDrum, [g.base]: e.target.value };
                         g.items.forEach(d => { delete next[d.key]; });
                         setSecDrum(next); }}>
-                      <option value="">global drums</option>
+                      <option value="">— the song's drums —</option>
                       {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
                     </select>
                   </label>
@@ -4924,7 +4929,7 @@ export default function ProgressionWheel() {
                       first is the normal case, not the exception. */}
                   <label className="secdrum" title={"Arrangement move for every " + g.word.toLowerCase()
                     + " — a filter sweep, riser or drop, run across the section's whole length. Any single one can override it below."}>
-                    <span aria-hidden="true">🎛</span>
+                    <span className="optlbl"><span aria-hidden="true">🎛</span> Move</span>
                     <select value={secMove[g.base] || ""}
                       onChange={e => setSecMove({ ...secMove, [g.base]: e.target.value })}>
                       {Object.entries(MOVES).map(([id, mv]) => <option key={id} value={id}>{mv.name}</option>)}
@@ -4934,7 +4939,7 @@ export default function ProgressionWheel() {
                       section; this shapes the bar it arrives on. */}
                   <label className="secdrum" title={"Transition into every " + g.word.toLowerCase()
                     + " — a riser, a crash, a bar of silence, a fade. It runs across the boundary rather than the section, so most of it sounds in the section before. Any single one can override it below."}>
-                    <span aria-hidden="true">⇥</span>
+                    <span className="optlbl"><span aria-hidden="true">⇥</span> Way in</span>
                     {transSelect(secTrans[g.base] || "", e => setSecTrans({ ...secTrans, [g.base]: e.target.value }), null)}
                   </label>
                 </div>
@@ -4991,10 +4996,21 @@ export default function ProgressionWheel() {
                     second chorus wanting a different build, or the bridge wanting to fall where
                     everything else rises, is the normal case rather than the exception. */}
                 <div className="row secopts">
+                  <label className="secopt" title={"Drums for this " + d.word.toLowerCase()
+                    + " alone — its own kit, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it."}>
+                    <span className="optlbl"><span aria-hidden="true">🥁</span> Drums</span>
+                    <select value={secDrum[d.key] || ""}
+                      onChange={e => setSecDrum({ ...secDrum, [d.key]: e.target.value })}>
+                      <option value="">{secDrum[d.base] && DRUMS[secDrum[d.base]]
+                        ? "as every " + d.word.toLowerCase() + " — " + DRUMS[secDrum[d.base]].name
+                        : "— the song's drums —"}</option>
+                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                    </select>
+                  </label>
                   <label className="secopt" title={"Arrangement move for this " + d.word.toLowerCase()
                     + " alone — a filter sweep, riser or drop across its bars. Left as it is, it does whatever every "
                     + d.word.toLowerCase() + " does."}>
-                    <span aria-hidden="true">🎛</span>
+                    <span className="optlbl"><span aria-hidden="true">🎛</span> Move</span>
                     <select value={secMove[d.key] || ""}
                       onChange={e => setSecMove({ ...secMove, [d.key]: e.target.value })}>
                       <option value="">{secMove[d.base] && MOVES[secMove[d.base]]
@@ -5007,25 +5023,14 @@ export default function ProgressionWheel() {
                   <label className="secopt" title={"Transition into this " + d.word.toLowerCase()
                     + " alone — what happens on the bar it arrives on. Most of it sounds in the section before, so a lead-in longer than that section shortens to fit. Left as it is, it does whatever every "
                     + d.word.toLowerCase() + " does."}>
-                    <span aria-hidden="true">⇥</span>
+                    <span className="optlbl"><span aria-hidden="true">⇥</span> Way in</span>
                     {transSelect(secTrans[d.key] || "", e => setSecTrans({ ...secTrans, [d.key]: e.target.value }),
                       secTrans[d.base] && TRANS[secTrans[d.base]]
                         ? d.word.toLowerCase() + " — " + TRANS[secTrans[d.base]].name : null)}
                   </label>
-                  <label className="secopt" title={"Drums for this " + d.word.toLowerCase()
-                    + " alone — its own kit, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it."}>
-                    <span aria-hidden="true">🥁</span>
-                    <select value={secDrum[d.key] || ""}
-                      onChange={e => setSecDrum({ ...secDrum, [d.key]: e.target.value })}>
-                      <option value="">{secDrum[d.base] && DRUMS[secDrum[d.base]]
-                        ? "as every " + d.word.toLowerCase() + " — " + DRUMS[secDrum[d.base]].name
-                        : "— the song's drums —"}</option>
-                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
-                    </select>
-                  </label>
                   <label className="secopt" title={"Whether the chords sound in this " + d.word.toLowerCase()
                     + " alone. A drums-only intro and a breakdown with no harmony under it are both this switch."}>
-                    <span aria-hidden="true">🎹</span>
+                    <span className="optlbl"><span aria-hidden="true">🎹</span> Chords</span>
                     <select value={secQuiet[d.key] == null ? "" : (secQuiet[d.key] ? "out" : "in")}
                       onChange={e => { const v = e.target.value, next = { ...secQuiet };
                         if (v === "") delete next[d.key]; else next[d.key] = v === "out";
@@ -5039,7 +5044,7 @@ export default function ProgressionWheel() {
                   </label>
                   <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
                     + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
-                    <span aria-hidden="true">🎵</span>
+                    <span className="optlbl"><span aria-hidden="true">🎵</span> Shape</span>
                     <select value={secNar[d.key] || ""} onChange={e => applySecNarrative(d, e.target.value)}>
                       <option value="">{curNar ? "as the song — " + curNar.name : "— no shape written —"}</option>
                       {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}

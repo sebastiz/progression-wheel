@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **The section dropdowns now say what they are.** A pass's option row read "Underwater · stays
+  shut", "Reverb blooms open", "Funk groove" — each value names a *choice*, none of them names the
+  *control*, and the icons beside them only explained themselves through hover tooltips that don't
+  exist on a phone. Every menu now carries a label: **🥁 Drums**, **🎛 Move** (the sweep across the
+  section), **⇥ Way in** (the transition into it), **🎹 Chords** (in or out), **🎵 Shape** (the
+  melodic shape written onto it). The pass row is also reordered to open with the same three menus
+  as the group header above it, in the same order — so "this pass overrides the row above" is
+  visible in the layout instead of something you had to know.
 - **Paint cells by dragging, on both grids.** A sixteenth hat across four bars was sixty-four
   separate clicks. Hold the button down and drag and it is one stroke: the cell you press decides
   what the stroke does — press an empty one and you are drawing, press a full one and you are
