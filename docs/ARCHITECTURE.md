@@ -124,13 +124,23 @@ exactly that ramp and nothing surprising before or after. An empty lane returns 
 value, which is how the scheduler knows to leave the parameter alone entirely. `autoDraw` fills the
 bars a fast pointer skipped, or a quick drag leaves holes in the line.
 
-`autoFilt` (lowpass) and `autoGain` sit on the **master** path, between `master` and the limiter, so
-a drawn sweep covers the drums as well as the pitched sources — a DJ filter rather than a
-pitched-bus one. Both are linear and both are scheduled identically in a stem render, so the stems
-still sum. The scheduler writes one ramp per bar on the downbeat, guarded by the bar index against
-the lookahead scheduling a bar twice. Cutoff maps **exponentially** (`120 · (FILTER_OPEN/120)^v`)
-because pitch and brightness are heard logarithmically; a linear map would waste the top half of
-the lane.
+`autoFilt` (lowpass), `autoHp` (highpass) and `autoGain` sit on the **master** path, between
+`master` and the limiter, so a drawn sweep covers the drums as well as the pitched sources — a DJ
+filter rather than a pitched-bus one. All are linear and all are scheduled identically in a stem
+render, so the stems still sum. The scheduler writes one ramp per bar on the downbeat, guarded by
+the bar index against the lookahead scheduling a bar twice. Cutoff maps **exponentially**
+(`120 · (FILTER_OPEN/120)^v`) because pitch and brightness are heard logarithmically; a linear map
+would waste the top half of the lane. The hi-pass lane is the mirror — its rest is the bottom
+(20 Hz, off) and it maps `20 · (8000/20)^v` — and the resonance lane rides both nodes' `Q`
+(`0.6 + 9v`: a squelch, deliberately short of the parts' self-oscillating 14, because this filter
+has the whole mix behind it).
+
+Beside the four master lanes, each melody part has a drawn low-pass lane of its own, stored under
+`autoPartId(i)` (`cut0` …). It is not a separate node: `applyMods` — the single writer of a part's
+`partLp` cutoff — reads the lane at the tick's fractional song bar and uses it *in place of* the
+Low-pass knob wherever the lane exists, so knob, lane, wobble and filter envelope all compose
+without two envelopes ever landing on one AudioParam. `fireFenv` reads the same lane for the
+envelope's floor, or a drawn sweep would vanish the moment the envelope was turned up.
 
 ### The arrangement strip
 
@@ -344,8 +354,10 @@ before moves were per-instance sounding the way they were saved: they only carry
 A section's own chooser shows the inherited value as its first option ("as every chorus — Build"),
 so the fallback is visible rather than something you find out by pressing play. `applyMove`
 schedules the whole thing at the section's downbeat: an exponential cutoff envelope on the
-move filter, plus the optional riser (noise through a rising bandpass, cut on the boundary) and
-impact (sub boom + crash). The duration passed in is the section instance's own length, so a sweep
+move filter — and on its paired high-pass for the specs that carry an `hp` half (bass draining
+through a build, a telephone section), which every move resets to 20 Hz so one telephone cannot
+thin the section after it — plus the optional riser (noise through a rising bandpass, cut on the
+boundary) and impact (sub boom + crash). The duration passed in is the section instance's own length, so a sweep
 always lands on the boundary and re-times itself when the structure changes. The scheduler fires it
 once per instance, guarded by the bar index so the lookahead can't restack the automation. Cutoffs
 never reach zero because the ramps are exponential.

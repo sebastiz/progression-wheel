@@ -233,7 +233,14 @@ const autoDraw = (pts, from, to, vFrom, vTo) => {
 
 const AUTO_LANES = [
   { id:"filter", name:"Filter", tip:"Sweep the whole mix's brightness — the DJ filter. Top is fully open." },
+  { id:"hp",     name:"Hi-pass", tip:"Thin the whole mix from below — the other half of the DJ filter. Bottom is off; drag up and the bass drains away." },
+  { id:"res",    name:"Resonance", tip:"How hard the Filter and Hi-pass lanes bite. Bottom is the polite default; the top squelches." },
   { id:"level",  name:"Level",  tip:"Ride the whole mix's level — fades, and the hole before a drop." },
 ];
 
-export { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet };
+/* A melody part's own low-pass lane, stored beside the master lanes under a per-part id. The lane
+   is the part's Low-pass knob written across the song: wherever it is drawn it overrides the knob,
+   and an empty lane leaves the knob in charge. */
+const autoPartId = i => "cut" + i;
+
+export { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet };

@@ -789,8 +789,9 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     nodes.length = 0;
     const dest = baseNode("dest");
     const filt = ctx.createBiquadFilter();
+    const hpf = ctx.createBiquadFilter();
     const before = problems.length;
-    try { M.applyMove(ctx, filt, mv.spec, 3, DUR, noise, dest); }
+    try { M.applyMove(ctx, filt, hpf, mv.spec, 3, DUR, noise, dest); }
     catch (e) { problems.push(`move ${id} threw: ${e.message}`); continue; }
     const evs = filt.frequency._events;
     if (!evs.length) { problems.push(`move ${id}: scheduled nothing on the filter`); continue; }
@@ -801,6 +802,18 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (e.v > 22050) problems.push(`move ${id}: cutoff ${e.v} Hz is above Nyquist`);
       if (e.t < 3 - 1e-9 || e.t > 3 + DUR + 1e-9) problems.push(`move ${id}: event at ${e.t}s is outside the section (3..${3 + DUR})`);
     }
+    /* The paired high-pass: swept when the move asks, and put back to rest (20 Hz) when it
+       doesn't — every move must write it, or a telephone section would thin the section after it. */
+    const hevs = hpf.frequency._events.filter(e => e.kind !== "cancel");
+    if (!hevs.length) problems.push(`move ${id}: never touches the high-pass — the previous move's thinning would leak into this section`);
+    for (const e of hevs) {
+      if (!(e.v > 0)) problems.push(`move ${id}: high-pass ${e.v} Hz is not positive`);
+      if (e.v > 22050) problems.push(`move ${id}: high-pass ${e.v} Hz is above Nyquist`);
+      if (e.t < 3 - 1e-9 || e.t > 3 + DUR + 1e-9) problems.push(`move ${id}: high-pass event at ${e.t}s is outside the section (3..${3 + DUR})`);
+    }
+    const hlast = hevs[hevs.length - 1];
+    const hWant = mv.spec && mv.spec.hp ? mv.spec.hp.to : 20;
+    if (hlast && Math.abs(hlast.v - hWant) > 1) problems.push(`move ${id}: high-pass ends at ${hlast.v} Hz, want ${hWant}`);
     // a move with a sweep must actually end where it says
     const spec = mv.spec;
     if (spec && !spec.peak && spec.to !== spec.from) {
@@ -819,13 +832,13 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (spec && spec.riser && !srcs.length) problems.push(`move ${id}: riser scheduled no sound`);
     if (spec && spec.impact && srcs.length < 2) problems.push(`move ${id}: impact should be a boom plus a crash`);
     if (problems.length === before)
-      console.log(`move ${id.padEnd(7) || "(none)"} → ${evs.filter(e => e.kind !== "cancel").map(e => Math.round(e.v)).join(" → ")} Hz${spec && spec.riser ? " + riser" : ""}${spec && spec.impact ? " + impact" : ""}`);
+      console.log(`move ${id.padEnd(7) || "(none)"} → ${evs.filter(e => e.kind !== "cancel").map(e => Math.round(e.v)).join(" → ")} Hz${spec && spec.hp ? ` · hp ${spec.hp.from} → ${spec.hp.to}` : ""}${spec && spec.riser ? " + riser" : ""}${spec && spec.impact ? " + impact" : ""}`);
   }
   // a very short section must still keep its riser inside the section
   nodes.length = 0;
   const dest = baseNode("dest");
   const filt2 = ctx.createBiquadFilter();
-  M.applyMove(ctx, filt2, M.MOVES.riser.spec, 0, 1.2, noise, dest);
+  M.applyMove(ctx, filt2, ctx.createBiquadFilter(), M.MOVES.riser.spec, 0, 1.2, noise, dest);
   for (const s of nodes.filter(n => n._kind === "buf")) {
     if (s._t0 < -1e-9) problems.push(`short section: riser starts before the section (${s._t0}s)`);
     if (s._t0 > 1.2) problems.push(`short section: riser starts after the section ends`);
@@ -2403,9 +2416,15 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     for (let b = 2; b <= 5; b++)
       if (!back.some(p => p.bar === b)) problems.push(`autoDraw backwards left a hole at bar ${b}`);
     if (M.autoDel(drawn, 3).some(p => p.bar === 3)) problems.push("autoDel did not remove the point");
-    if (M.AUTO_LANES.length < 2) problems.push("expected at least a filter and a level lane");
+    for (const id of ["filter", "hp", "res", "level"])
+      if (!M.AUTO_LANES.some(L => L.id === id)) problems.push(`automation: no ${id} lane`);
     for (const L of M.AUTO_LANES) if (!L.id || !L.name || !L.tip) problems.push(`automation lane ${L.id} is missing a name or tip`);
-    console.log(`automation: ${M.AUTO_LANES.length} lanes, interpolation and drag-fill checked`);
+    // the per-part lanes: the strip writes auto[autoPartId(i)] and playback must read the same key
+    if (M.autoPartId(3) !== "cut" + 3) problems.push("autoPartId does not key a part's lane consistently");
+    if (!/autoPartId\(li\)/.test(code)) problems.push("src: playback never reads a part's drawn filter lane");
+    if (!/m\.autoHp\.frequency/.test(code)) problems.push("src: the hi-pass lane is never scheduled");
+    if (!/m\.autoFilt\.Q/.test(code)) problems.push("src: the resonance lane never reaches the drawn filter's Q");
+    console.log(`automation: ${M.AUTO_LANES.length} master lanes + per-part filter lanes, interpolation and drag-fill checked`);
   }
 }
 
@@ -2544,15 +2563,18 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (a.move && !M.MOVES[a.move]) problems.push(`${where} / ${row.sec}: unknown move "${a.move}"`);
       if (a.trans && !M.TRANS[a.trans]) problems.push(`${where} / ${row.sec}: unknown transition "${a.trans}"`);
       if (a.parts != null && /[^A-F]/.test(a.parts)) problems.push(`${where} / ${row.sec}: parts "${a.parts}" names something that is not a part`);
-      for (const lane of ["filter", "level"]) {
+      for (const lane of ["filter", "level", "hp", "res"]) {
         const v = a[lane];
         if (v == null) continue;
         for (const x of (Array.isArray(v) ? v : [v]))
           if (!(x >= 0 && x <= 1)) problems.push(`${where} / ${row.sec}: ${lane} ${x} is outside 0–1`);
       }
       /* A move sweeps the app's own filter and the lane sweeps a second one in series, so a row
-         asking for both is filtered twice and the "build" arrives quieter than the groove. */
+         asking for both is filtered twice and the "build" arrives quieter than the groove. The
+         same holds for the high-pass pair: an hp move plus an hp lane thins the row twice. */
       if (a.move && a.filter != null) problems.push(`${where} / ${row.sec}: a move and a filter lane on the same row filter it twice`);
+      if (a.move && M.MOVES[a.move] && M.MOVES[a.move].spec && M.MOVES[a.move].spec.hp && a.hp != null)
+        problems.push(`${where} / ${row.sec}: an hp move and an hp lane on the same row thin it twice`);
       if (a.drums === "off" && (a.parts === "" || a.parts == null) && a.chords === 0)
         problems.push(`${where} / ${row.sec}: nothing plays at all`);
       if (a.drums === "off") silences++;
@@ -2581,7 +2603,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // an automation lane that is used has to be written across the whole song, or the bars nobody
     // wrote interpolate into a slow sweep nobody asked for
     const total = insts.reduce((n, d) => n + d.nbars, 0);
-    for (const lane of ["filter", "level"]) {
+    for (const lane of ["filter", "level", "hp", "res"]) {
       const pts = A[lane];
       if (!pts) continue;
       if (!pts.length) { problems.push(`${where}: the ${lane} lane is used but empty`); continue; }
