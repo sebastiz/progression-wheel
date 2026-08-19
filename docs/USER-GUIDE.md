@@ -302,8 +302,8 @@ end, nothing entering, nothing dropping out — and now the quickest way to fix 
 
 ### Builds, drops and risers
 
-Every section group carries a **🎛** menu beside its **🥁** one. That's the arrangement move for
-that section — the thing that makes dance music move without the chords changing:
+Every section group carries a **🎛 Move** menu beside its **🥁 Drums** one. That's the arrangement
+move for that section — the thing that makes dance music move without the chords changing:
 
 - **Build · filter opens** — the mix starts muffled and opens up across the section.
 - **Build + riser** — the same, with a noise sweep rising underneath into the next section.
@@ -316,7 +316,7 @@ that section is four bars or sixteen — change the structure and the move re-ti
 
 ### Transitions — the seam between two sections
 
-A move shapes a section. The **⇥** menu beside it shapes the *join into* one: the bar the section
+A move shapes a section. The **⇥ Way in** menu beside it shapes the *join into* one: the bar the section
 arrives on. It is the half of arranging that usually gets left out, and it is most of what makes a
 finished track sound finished rather than like four loops in a row.
 
