@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+- **The DJ filter grew its other half — and a resonance control.** The arrangement strip had one
+  drawn filter lane, a low-pass: darken the mix or open it. Two new lanes sit beside it. **Hi-pass**
+  thins the mix from below — draw it climbing through a build and snapping back at the drop and the
+  low end arriving *is* the drop, the move most modern builds are made of. **Resonance** sets how
+  hard both drawn filters bite, from polite to acid squelch. Each lane drives its own filter node on
+  the master path, because two envelopes on one Web Audio param silently eat each other; all three
+  are linear, so stems still sum to the mix.
+- **A filter lane per melody part.** Under the master lanes the strip now shows one drawn low-pass
+  lane per part (*A filter*, *B filter*, …): the pad can open across the whole build while the bass
+  stays dark. A part's lane is its Low-pass knob written across the song — wherever it is drawn it
+  overrides the knob, and the wobble, resonance and filter-envelope controls keep working around it.
+- **Section moves can thin as well as darken.** Moves now carry an optional high-pass half, and two
+  new ones use it: **Build · bass drains away** (the top stays, the low end drains out, the next
+  section lands when it returns) and **Telephone · mids only** (the whole section through a mid
+  band). Every move resets the high-pass, so a telephone section cannot thin the section after it.
+  The big-room and house templates' second builds now drain the bass on the way up.
+- **Three new seam transitions** from the same vocabulary: **Bass drains → slam** (an impact whose
+  lead-in is subtraction), **Telephone squeeze** (both filters pinch the seam to a mid band and let
+  go), and **Telephone opens up** (an entry that arrives narrow and opens to full range).
 - **The section dropdowns now say what they are.** A pass's option row read "Underwater · stays
   shut", "Reverb blooms open", "Funk groove" — each value names a *choice*, none of them names the
   *control*, and the icons beside them only explained themselves through hover tooltips that don't

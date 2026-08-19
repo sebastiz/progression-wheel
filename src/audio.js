@@ -148,15 +148,18 @@ function drumSound(ctx, t, ch, noise, dest, kit, vel = 1) {
    crash on the downbeat of the drop. These are the moves that shape dance arrangements, attached
    to a section so they run for exactly that section's length however long it is.
    `lo`/`hi` are filter cutoffs in Hz; every value stays above zero because the sweeps are
-   exponential (an exponential ramp to or from 0 throws). */
+   exponential (an exponential ramp to or from 0 throws). `hp` is the paired high-pass — the moves
+   that thin a mix from below rather than darkening it from above. */
 const MOVES = {};
 [
 ["",       "— no move —",             null],
 ["build",  "Build · filter opens",    { from: 260, to: 16000 }],
 ["riser",  "Build + riser",           { from: 260, to: 16000, riser: true }],
+["hpbuild","Build · bass drains away",{ from: 16000, to: 16000, hp: { from: 30, to: 700 } }],
 ["drop",   "Drop · slam open + crash",{ from: 16000, to: 16000, impact: true }],
 ["fade",   "Fade · filter closes",    { from: 16000, to: 300 }],
 ["under",  "Underwater · stays shut", { from: 600, to: 600 }],
+["phone",  "Telephone · mids only",   { from: 2600, to: 2600, hp: { from: 560, to: 560 } }],
 ["swell",  "Swell · opens then shuts",{ from: 400, to: 400, peak: 14000 }],
 ].forEach(([id, name, spec]) => { MOVES[id] = { name, spec }; });
 const FILTER_OPEN = 18000;                       // "no filtering", still inside Nyquist at 44.1k
@@ -164,7 +167,15 @@ const FILTER_OPEN = 18000;                       // "no filtering", still inside
 // Schedule one section move: the cutoff envelope across the section, plus the riser and impact
 // that go with it. `dur` is the whole section's length in seconds, so the sweep always lands on
 // the section boundary whether it is four bars or sixteen.
-function applyMove(ctx, filt, spec, t, dur, noise, dest) {
+function applyMove(ctx, filt, hpf, spec, t, dur, noise, dest) {
+  /* The paired high-pass first, and unconditionally: a spec without `hp` has to put the bass back,
+     or one telephone section would thin every section after it. */
+  if (hpf) {
+    const h = hpf.frequency, hs = spec && spec.hp;
+    h.cancelScheduledValues(t);
+    h.setValueAtTime(Math.max(20, hs ? hs.from : 20), t);
+    if (hs && hs.to !== hs.from) h.exponentialRampToValueAtTime(Math.max(20, hs.to), t + dur);
+  }
   if (!spec) {                                   // no move → make sure nothing is left filtered
     filt.frequency.cancelScheduledValues(t);
     filt.frequency.setValueAtTime(FILTER_OPEN, t);
@@ -536,6 +547,7 @@ const TRANS = {};
 ["risedrop", "hit", "Riser → drop",               [["rise", { beats: 8 }], ["crash", {}], ["boom", {}]]],
 ["rolldrop", "hit", "Roll → drop",                [["roll", { beats: 4, from: 2, to: 10 }], ["crash", {}], ["boom", {}]]],
 ["revdrop",  "hit", "Reverse cymbal → drop",      [["revcym", { beats: 8 }], ["crash", {}], ["boom", {}]]],
+["hpdrop",   "hit", "Bass drains → slam",         [["hpf", { pre: 8, to: 900 }], ["crash", {}], ["boom", {}]]],
 ["fulldrop", "hit", "The full drop",              [["rise", { beats: 16, vol: 0.18 }], ["hpf", { pre: 8, to: 700 }],
                                                    ["gap", { pre: 1 }], ["crash", {}], ["boom", {}]]],
 
@@ -556,6 +568,10 @@ const TRANS = {};
 ["echogap",  "turn", "Echo throw into silence",   [["echo", { pre: 1.5 }], ["gap", { pre: 1 }]]],
 ["wash",     "turn", "Reverb wash",               [["wash", { pre: 4, post: 4, amt: 0.5 }]]],
 ["hpseam",   "turn", "Highpass pinch",            [["hpf", { pre: 4, to: 1200, post: 4 }]]],
+/* both filters at once: the seam squeezed to a mid band — a telephone — and released. The two
+   primitives own different parameters, so this is a legal pairing, not a collision. */
+["telephone","turn", "Telephone squeeze",         [["lp", { pre: 4, to: 2600, post: 4 }],
+                                                   ["hpf", { pre: 4, to: 560, post: 4 }]]],
 ["duck",     "turn", "Duck through the seam",     [["lvl", { pre: 2, post: 2, to: 0.18 }]]],
 
 /* Falls — the other half of the vocabulary, and the half most tools forget. Getting *out* of a
@@ -574,6 +590,8 @@ const TRANS = {};
 ["openfrom", "entry", "Opens up · 2 bars",        [["lp", { post: 8, to: 380 }]]],
 ["openfrom4","entry", "Opens up · 4 bars",        [["lp", { post: 16, to: 300 }]]],
 ["hpin",     "entry", "Bass arrives late",        [["hpf", { post: 8, to: 800 }]]],
+["phonein",  "entry", "Telephone opens up",       [["lp", { post: 8, to: 2600 }],
+                                                   ["hpf", { post: 8, to: 560 }]]],
 ["bloom",    "entry", "Reverb blooms open",       [["wash", { pre: 0.25, post: 8, amt: 0.5 }]]],
 ["stutin",   "entry", "Stutter in",               [["chop", { post: 2, rate: 6 }]]],
 ["crashin",  "entry", "Crash, then open up",      [["crash", {}], ["lp", { post: 8, to: 380 }]]],

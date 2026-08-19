@@ -18,8 +18,10 @@ import { autoSet } from "./arrange.js";
      move    the filter shape across it — build, fade, underwater, swell
      trans   what happens at the seam *into* it — a riser, a crash, a bar of silence
 
-   …plus the two automation lanes, `filter` and `level`, written as `[from, to]` across the row so a
-   sixteen-bar climb is one line in the table rather than sixteen points to place by hand.
+   …plus the automation lanes — `filter`, `level`, and their rarer siblings `hp` (the mix thinning
+   from below; 0 is off) and `res` (how hard the drawn filters bite; 0 is the polite default) —
+   written as `[from, to]` across the row so a sixteen-bar climb is one line in the table rather
+   than sixteen points to place by hand.
 
    Two properties matter more than they look:
 
@@ -56,8 +58,8 @@ const DEFS = [
   { parts: "A", filter: [0.85, 0.85] }],
  ["Breakdown|LOOP|4|kick and clap out. The largest event in a house record is a subtraction",
   { drums: "off", parts: "A", move: "swell", trans: "closeto" }],
- ["Build|HALF1|4|the tops come back first and the kick is withheld to the very last bar",
-  { drums: "nokick", parts: "A", move: "riser" }],
+ ["Build|HALF1|4|the tops come back first, the bass drains away, and the kick is withheld to the very last bar",
+  { drums: "nokick", parts: "A", move: "riser", hp: [0, 0.5] }],
  ["Drop|LOOP|4|second drop, with the part that has not been heard yet",
   { parts: "AB", trans: "fulldrop" }],
  ["DJ outro|LOOP|4|drums only again, filtering down — the mix-out",
@@ -132,8 +134,8 @@ const DEFS = [
   { chords: 0, parts: "A", trans: "gapslam" }],
  ["Breakdown|LOOP|4|melodic and wide open, no kick",
   { drums: "off", parts: "A", move: "swell", trans: "stop" }],
- ["Build|HALF1|8|sixteen bars, higher than the first and twice as long",
-  { drums: "nokick", parts: "A", move: "riser" }],
+ ["Build|HALF1|8|sixteen bars, higher than the first and twice as long — the bass drains out as it climbs",
+  { drums: "nokick", parts: "A", move: "riser", hp: [0, 0.55] }],
  ["Drop|LOOP|4|second drop, the counter-line added",
   { chords: 0, parts: "AB", trans: "fulldrop" }],
  ["Outro|LOOP|4|beat only — the DJ mixes out",
@@ -294,8 +296,9 @@ const resolveArrangement = (plan, insts) => {
   // a lane is drawn only if some row asks for it — and then every row writes a value, or the gaps
   // between the rows that did would interpolate into a slow sweep nobody asked for
   const uses = lane => Object.keys(rows).some(r => { const a = arrOf(r); return a && a[lane] != null; });
-  const useF = uses("filter"), useL = uses("level");
+  const useF = uses("filter"), useL = uses("level"), useH = uses("hp"), useR = uses("res");
   let filter = useF ? [] : null, level = useL ? [] : null;
+  let hp = useH ? [] : null, res = useR ? [] : null;
   /* One `[from, to]` across a row: a point on its first bar and another on its last. Consecutive
      rows therefore step at the seam rather than ramping through it, which is what a section
      boundary sounds like. */
@@ -319,8 +322,11 @@ const resolveArrangement = (plan, insts) => {
     });
     if (useF) filter = span(filter, list, a.filter != null ? a.filter : 1);
     if (useL) level = span(level, list, a.level != null ? a.level : 1);
+    // the hi-pass and resonance lanes rest at *zero* — off — where filter and level rest at one
+    if (useH) hp = span(hp, list, a.hp != null ? a.hp : 0);
+    if (useR) res = span(res, list, a.res != null ? a.res : 0);
   });
-  return { secDrum, secQuiet, secMove, secTrans, parts, filter, level };
+  return { secDrum, secQuiet, secMove, secTrans, parts, filter, level, hp, res };
 };
 
 /* What a section is worth on the energy staircase, which is the picture the strip draws. The

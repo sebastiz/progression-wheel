@@ -263,15 +263,25 @@ whatever the menus say, "off" included. Its Drums cell therefore reads as in —
 will hear — and the cell is not clickable, because the lane has no way to silence bars you wrote by
 hand. Open **▸ drums** on the section to change them.
 
-### Automation — Filter and Level
+### Automation — Filter, Hi-pass, Resonance and Level
 
-Under the element lanes are two taller lanes: **Filter** and **Level**. Drag across one to draw a
+Under the element lanes are the drawn automation lanes. Drag across one to draw a
 curve — left to right is the song, and how high you drag is the value. The **✕** in the corner
 clears it.
 
 **Filter** sweeps the brightness of the whole mix, drums included. It's the DJ filter: draw it low
-through a breakdown and climbing through the build, and the drop opens up on its own. **Level**
-rides the overall volume — fades, and the moment of near-silence right before a drop.
+through a breakdown and climbing through the build, and the drop opens up on its own. **Hi-pass**
+is the same filter's other half: the bottom of the lane is off, and dragging up drains the bass out
+of the whole mix. Draw it climbing through a build and snapping back to the bottom at the drop, and
+the low end coming back *is* the drop — the more modern build, where Filter is the classic one.
+**Resonance** sets how hard those two bite: at the bottom they are polite, at the top a sweep
+squelches like an acid line. **Level** rides the overall volume — fades, and the moment of
+near-silence right before a drop.
+
+Below those is a **filter lane per melody part** (*A filter*, *B filter*, …): that one part's
+brightness across the song, so the pad can open through a build while the bass stays dark.
+Wherever a part's lane is drawn it overrides that part's **Low-pass** knob; clear the lane and the
+knob is back in charge.
 
 The difference between this and a section's **🎛** move is that a move is a preset applied to one
 section, while a curve is yours and can run across as many bars as you like. They stack, so you can
@@ -307,8 +317,11 @@ move for that section — the thing that makes dance music move without the chor
 
 - **Build · filter opens** — the mix starts muffled and opens up across the section.
 - **Build + riser** — the same, with a noise sweep rising underneath into the next section.
+- **Build · bass drains away** — the top stays; the low end drains out across the section, so the
+  next section lands when the bass comes back.
 - **Drop · slam open + crash** — full brightness plus a crash and a sub boom on the downbeat.
-- **Fade · filter closes**, **Underwater · stays shut**, **Swell · opens then shuts**.
+- **Fade · filter closes**, **Underwater · stays shut**, **Telephone · mids only**,
+  **Swell · opens then shuts**.
 
 The sweep runs across the section's **whole length**, so it lands exactly on the boundary whether
 that section is four bars or sixteen — change the structure and the move re-times itself. Put
@@ -325,11 +338,11 @@ Transitions are grouped by what they do to the seam:
 | Family | What it does | Try |
 | --- | --- | --- |
 | **Lifts** | rise into it | *Riser · 2 bars*, *Reverse cymbal*, *Snare roll + riser*, *Bass falls away* |
-| **Impacts** | land on the downbeat | *Crash + sub · the drop*, *Silence, then the drop*, *The full drop* |
+| **Impacts** | land on the downbeat | *Crash + sub · the drop*, *Silence, then the drop*, *Bass drains → slam*, *The full drop* |
 | **Cuts** | take something away | *A beat of silence*, *A bar of silence*, *Stutter into silence* |
-| **Colour** | bend the seam | *Filter dip*, *Echo throw*, *Reverb wash*, *Duck through the seam* |
+| **Colour** | bend the seam | *Filter dip*, *Telephone squeeze*, *Echo throw*, *Reverb wash*, *Duck through the seam* |
 | **Falls** | let it down | *Downlifter*, *Tape stop*, *Fade into it*, *Spin down* |
-| **Entries** | shape the first bars | *Fade in · 2 bars*, *Opens up · 4 bars*, *Bass arrives late* |
+| **Entries** | shape the first bars | *Fade in · 2 bars*, *Opens up · 4 bars*, *Bass arrives late*, *Telephone opens up* |
 
 Three things worth knowing:
 

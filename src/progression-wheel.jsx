@@ -10,7 +10,7 @@ import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } fr
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyWithin } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
-import { AUTO_LANES, autoAt, autoDel, autoDraw, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
+import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
@@ -1038,7 +1038,7 @@ export default function ProgressionWheel() {
     const A = resolveArrangement(plan, planInsts(plan, barsOfRow, letterFor));
     setSecDrum(A.secDrum); setSecQuiet(A.secQuiet);
     setSecMove(A.secMove); setSecTrans(A.secTrans);
-    setAuto({ key: progId + "|" + sel, filter: A.filter, level: A.level });
+    setAuto({ key: progId + "|" + sel, filter: A.filter, level: A.level, hp: A.hp, res: A.res });
     applyPartMutes(A.parts);
   };
   /* Picking a template is picking a structure *and* an arrangement, so it also sets the tempo, the
@@ -1915,8 +1915,12 @@ export default function ProgressionWheel() {
      the stems still sum to the mix. */
   const autoFilt = ctx.createBiquadFilter();
   autoFilt.type = "lowpass"; autoFilt.frequency.value = FILTER_OPEN; autoFilt.Q.value = 0.6;
+  // the drawn hi-pass — the other half of the DJ filter. Its own node, never the move's or the
+  // transition's: two envelopes on one AudioParam and the second silently eats the first.
+  const autoHp = ctx.createBiquadFilter();
+  autoHp.type = "highpass"; autoHp.frequency.value = 20; autoHp.Q.value = 0.6;
   const autoGain = ctx.createGain(); autoGain.gain.value = 1;
-  autoFilt.connect(autoGain);
+  autoFilt.connect(autoHp); autoHp.connect(autoGain);
   /* The transition stage sits between the master and the automation lanes, with its own filters and
      its own gain. Its own, and not the move filter's, because a move's envelope stops on a boundary
      and a transition's runs across one — two envelopes on one AudioParam and the second silently
@@ -1942,7 +1946,11 @@ export default function ProgressionWheel() {
   // what makes it sound like the room opening up
   const filt = ctx.createBiquadFilter();
   filt.type = "lowpass"; filt.frequency.value = FILTER_OPEN; filt.Q.value = 0.8;
-  filt.connect(master);
+  // …and its high-pass half, for the moves that thin the pitched mix from below (bass draining
+  // through a build, a telephone section) rather than darkening it from above
+  const mhp = ctx.createBiquadFilter();
+  mhp.type = "highpass"; mhp.frequency.value = 20; mhp.Q.value = 0.7;
+  filt.connect(mhp); mhp.connect(master);
   /* Sidechain. This used to be one gain node on the master path, which meant every pitched source
      pumped by exactly the same amount — fine for a demo, useless for writing dance music, where
      the bass ducks hard and the pad barely moves. Each source now ducks on its own node on the way
@@ -1962,7 +1970,7 @@ export default function ProgressionWheel() {
   // a wet-only room the parts send to by amount, separate from the bus reverb everything already
   // sits in — a send has to be silent at zero, and the bus one passes its dry signal through
   const verb = makeVerbSend(ctx, wetDuck, 2.2);
-  const m = { ctx, master, music, cduck, wetDuck, filt, autoFilt, autoGain, verb, tn, stem: stem || null,
+  const m = { ctx, master, music, cduck, wetDuck, filt, mhp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
     lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
     partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
     partDrive: [], partDriveAmt: [], partHp: [], partLp: [], partTrem: [], partPan: [],
@@ -2087,6 +2095,26 @@ export default function ProgressionWheel() {
           m.autoFilt.frequency.setValueAtTime(hz(fNow), t);
           m.autoFilt.frequency.exponentialRampToValueAtTime(hz(fNext == null ? fNow : fNext), t + barDur);
         }
+        // the hi-pass lane is the filter lane mirrored: its rest is the *bottom* (20 Hz, off), and
+        // the top stops at 8 kHz — past that nothing is left but air
+        const hNow = autoAt(A.hp, bar), hNext = autoAt(A.hp, bar + 1);
+        if (hNow != null) {
+          const hz = v => nyq(m, 20 * Math.pow(8000 / 20, v));
+          m.autoHp.frequency.setValueAtTime(hz(hNow), t);
+          m.autoHp.frequency.exponentialRampToValueAtTime(hz(hNext == null ? hNow : hNext), t + barDur);
+        }
+        /* Resonance rides both lane filters at once — one lane, two AudioParams, each written only
+           here, so this is not the two-envelope collision the separate nodes exist to avoid. The
+           top stays a squelch rather than the parts' full self-oscillating 14: this filter carries
+           the whole mix, and a scream here has no other fader to hide behind. */
+        const qNow = autoAt(A.res, bar), qNext = autoAt(A.res, bar + 1);
+        if (qNow != null) {
+          const q = v => 0.6 + v * 9;
+          for (const p of [m.autoFilt.Q, m.autoHp.Q]) {
+            p.setValueAtTime(q(qNow), t);
+            p.linearRampToValueAtTime(q(qNext == null ? qNow : qNext), t + barDur);
+          }
+        }
         const gNow = autoAt(A.level, bar), gNext = autoAt(A.level, bar + 1);
         if (gNow != null) {
           m.autoGain.gain.setValueAtTime(gNow, t);
@@ -2109,7 +2137,7 @@ export default function ProgressionWheel() {
             const spec = (MOVES[sp.id] || {}).spec || null;
             // the riser and the impact are added sources, not processing, so they go to the fx bus:
             // on the master they landed in every stem and four stems summed to four risers
-            applyMove(m.ctx, m.filt, spec, t, sp.bars * (patLen / (subRef.current || 2)) * beat, m.noise, m.tn.fx);
+            applyMove(m.ctx, m.filt, m.mhp, spec, t, sp.bars * (patLen / (subRef.current || 2)) * beat, m.noise, m.tn.fx);
           }
         }
       }
@@ -2220,6 +2248,10 @@ export default function ProgressionWheel() {
             }
             return { gain: dest, gate: m.partGate[li], duck: m.partDuck[li] };
           };
+          /* A part's drawn filter lane, read at this tick's position in the song. It is the
+             Low-pass knob written across the bars, so wherever it exists it takes over from the
+             knob; null (no lane, or a lane for another song) hands the knob back. */
+          const laneCutOf = li => autoAt((autoRef.current || {})[autoPartId(li)], autoBar + i / L);
           /* Push every one of a part's modulations onto its chain for this tick. Read from the
              live layer each tick rather than set once at build, so moving a control while the song
              is playing is heard on the next tick rather than at the next play. */
@@ -2227,9 +2259,11 @@ export default function ProgressionWheel() {
             const C = m.ctx, beatSec = 60 / bpmRef.current;
             const val = k => modOf(ly, k);
             const lp = m.partLp[li], hp = m.partHp[li];
+            const laneCut = laneCutOf(li);
+            const cutPos = laneCut != null ? laneCut * 100 : val("cut");
             // Low-pass: a musical curve, not a linear one — 100% is open, and the bottom of the
             // range is still a note rather than a rumble.
-            const cutHz = nyq(m, 120 * Math.pow(FILTER_OPEN / 120, val("cut") / 100));
+            const cutHz = nyq(m, 120 * Math.pow(FILTER_OPEN / 120, cutPos / 100));
             const w = val("wob") / 100;
             // The wobble is a swing around the cutoff rather than on top of it, so turning it up
             // does not also make the part brighter than it was set to be.
@@ -2430,7 +2464,11 @@ export default function ProgressionWheel() {
           const fireFenv = (ly, li, tp, vel) => {
             const amt = modOf(ly, "fenv") / 100, vf = modOf(ly, "vfilt") / 100;
             if (!amt && !vf) return;
-            const cutHz = nyq(m, 120 * Math.pow(FILTER_OPEN / 120, modOf(ly, "cut") / 100));
+            // the envelope falls back to the drawn lane where one exists, exactly as the steady
+            // cutoff does — or a drawn sweep would vanish the moment the envelope was turned up
+            const laneCut = laneCutOf(li);
+            const cutHz = nyq(m, 120 * Math.pow(FILTER_OPEN / 120,
+              (laneCut != null ? laneCut * 100 : modOf(ly, "cut")) / 100));
             const lift = 1 + vf * Math.max(-0.9, (vel - 1)) * 6;
             const top = nyq(m, cutHz * (1 + amt * 12) * Math.max(0.1, lift));
             const dec = 0.03 + (modOf(ly, "fdec") / 100) * (beat * 1.2);
@@ -4633,6 +4671,13 @@ export default function ProgressionWheel() {
                 // a part with no notes here has nothing to mute — the lane is empty for a reason
                 dead: r => !r.items.some(d => hasNotes(d, i)) })),
             ];
+            /* The drawable lanes: the master four, then one low-pass lane per melody part. A part
+               lane is that part's Low-pass knob written across the song — the pad opens through
+               the build while the bass stays dark — and overrides the knob wherever it is drawn. */
+            const autoLanes = [...AUTO_LANES,
+              ...Array.from({ length: nParts }, (_, i) => ({ id: autoPartId(i),
+                name: LAYER_NAMES[i] + " filter",
+                tip: `Draw part ${LAYER_NAMES[i]}'s own brightness across the song — this part opens or darkens while the rest of the mix stays put. Where it is drawn it overrides the part's Low-pass knob.` }))];
             // One block per *run* of consecutive same-section instances, not per instance. Eight
             // passes of a drop is one 32-bar drop to anybody reading the arrangement, and drawing
             // it as eight slivers turns a 200-bar structure into unreadable confetti.
@@ -4679,7 +4724,7 @@ export default function ProgressionWheel() {
                   <div className="tlglbl tlgsec">{total} bars</div>
                   {lanes.map(l => <div key={l.name} className="tlglbl">{l.name}</div>)}
                   <div className="tlglbl tlgnrg">Energy</div>
-                  {AUTO_LANES.map(L => <div key={L.id} className="tlglbl tlgauto">{L.name}</div>)}
+                  {autoLanes.map(L => <div key={L.id} className="tlglbl tlgauto">{L.name}</div>)}
                 </div>
                 <div className="tltrk">
                   <div className="tlruler">
@@ -4778,7 +4823,7 @@ export default function ProgressionWheel() {
                   {/* Automation lanes. Drag across one to draw a curve; the value is the height
                       you drag at. Drawn in song-bar coordinates so a curve keeps its shape when
                       sections around it move. */}
-                  {AUTO_LANES.map(L => {
+                  {autoLanes.map(L => {
                     const pts = (auto.key === planKey && auto[L.id]) || null;
                     const barAt = (e, el) => {
                       const r = el.getBoundingClientRect();
