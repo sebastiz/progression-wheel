@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **The section controls fold into one bar: “Transitions & presets”.** Each pass's selects now sit
+  behind a collapsible bar, grouped as they are used — *seam* (Way in, Move, Shape) and *plays*
+  (Drums, Chords, Bass, Perc, Pad) — with a dot on the closed bar when anything is set. Choosing a
+  bass, perc or pad from its menu now supersedes a grid written earlier: the grid clears and
+  re-seeds from the new choice.
+- **Two more grids per section: ▸ pad and ▸ chords.** The pad grid writes the pad's rhythm — Holds
+  that ring to the next hit and short Stabs, so one downbeat Hold is the old behaviour and offbeat
+  stabs are house piano. The chords grid writes the chord track's rhythm for that pass alone, on
+  the strum's own vocabulary (Accent, Down, Up), replacing the song's pattern for those bars — and
+  the bassline's “with the chords” mode follows it.
+- **A track's settings sit with its grid.** Opening ▸ drums, ▸ perc, ▸ bass or ▸ pad on any
+  section now shows that track's effect knobs under the grid — the same row the Sound tab's Track
+  effects panels carry, in the same place the melody grid keeps its part mixer.
 - **Every track has an effects panel now.** Under Sound, four collapsible panels — Drums,
   Percussion, Bass, Pad — carry the melody part mixer's audio stage for the whole track: level,
   low-pass and resonance, hi-pass, drive, tempo-synced wobble, tremolo and auto-pan, pan, echo and
