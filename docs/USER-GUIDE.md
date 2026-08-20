@@ -1,15 +1,21 @@
 # User Guide
 
-The app is four tabs of panels. Everything downstream updates live when anything upstream changes.
+The app is five tabs of panels. Everything downstream updates live when anything upstream changes.
 
 ## Finding things
 
-The app is in four tabs, under the transport bar:
+The app is in five tabs, under the transport bar:
 
 - **Write** — key, how many chords, mode, genre, feeling, the wheel, the chord strip, the stave and
   the songs that use this progression.
 - **Sound** — the instruments, the time signature, the strum pattern, the drums and kit, and the
   feel controls (delay, pump, swing, humanise).
+- **Sketch** — the subtractive workflow on one page: build the **full groove** as a single looping
+  section (drum, perc, bass, pad and chord grids, melody parts and every track's settings), then
+  build the arrangement underneath and use the strip's lanes to choose which sections play which of
+  the groove's tracks — drums alone for the intro, bass and pads with no kick for the build. Every
+  section plays the groove until you give it something of its own; edit the groove and every
+  section still following it changes with it.
 - **Arrange** — the song structure, the melodic narrative, the arrangement strip with its automation
   lanes, every section's melodies, and the exports.
 - **Save** — naming a sketch, saving it, sharing a link, and loading one back.

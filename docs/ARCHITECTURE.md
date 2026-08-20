@@ -171,6 +171,46 @@ letters instead of showing its middle. `SEC_COL` needs an entry for every letter
 return — a missing one falls through to grey, and `npm test` checks both coverage and that no two
 non-neutral letters share a colour.
 
+### The groove sketch
+
+Dance music is subtractive — the workflow is a full groove first, then an arrangement that decides
+which sections *lose* which of its tracks. The **Sketch** tab is that workflow top to bottom, and
+the groove itself is a pseudo-section keyed `"*"`: one pass of the chord loop, edited by exactly
+the section machinery (`sectionCard`, extracted from the Arrange tab's write-out, renders it), so
+its grids and melody ride in the same maps as everyone else's (`secBeat["*"]`, `melos.secs["*"]`,
+…) and saving, sharing, undo and the exports need no path of their own. `remapSecs`/`remapKeyed`
+leave single-character keys alone, which is what lets the groove ride through every plan edit.
+
+The fallback chain gains one step. A track resolves: the pass's own written grid → its (or its
+letter's) menu choice → its mute → **the groove's written grid** → the song-level catalogue
+pattern. The mute sits *before* the groove because the mutes are the allocation — the lanes on the
+strip are how a section subtracts a groove track. A groove source is marked `loop: true` and
+indexes by `bar % length` where a section's own bars clamp (`Math.min`): the groove is a loop that
+cycles round a 16-bar section, not a stretched section holding its last bar. The same chain runs
+in `emitTick`, in the UI mirrors (`bassSrcOf` and friends, which the grid seeds and the strip
+read), and in the exports — one order, four readers, or the lanes would say one thing and the
+speakers another.
+
+Melody inherits differently, because parts carry state the other tracks don't. A section whose
+saved layers play nothing (no bars with notes, no arp) takes the groove's layers wholesale in the
+`secMelos` memo — same notes, same instruments, same modulations, adapted to the section's chord
+ids by `adaptBars` like any structure change. The allocation then cannot live on those layers:
+`setLayerProp` materialises through `putSec`, so muting an inherited part the ordinary way would
+freeze a *copy* of the groove into the section and a groove edited afterwards would no longer
+reach it. Per-section subtraction therefore lives in its own map, `secPartOut`
+(`{secKey|letter: {partIdx: bool}}`), applied as an extra mute during inheritance; the strip's
+part lanes write it for inherited sections and the layer mute for owned ones. A template's own
+flag-layers (mutes written with no notes) still count underneath, so a template arrangement
+allocates the groove exactly as it allocated parts. Editing an inherited section's melody grid
+does materialise — deliberately: that is the app's "following X until you touch it" idiom, and it
+is how a section takes a variation of the groove.
+
+Looping the groove is its own playback mode (`loopRef.current = {groove: true}`): the plain chord
+loop plays and every track resolves to `"*"` whatever structure is loaded, so the full stack can
+be auditioned without depending on which section happens to be fullest. Section moves, transitions
+and every drawn automation lane sit out — they describe the song's timeline, and the groove loop
+is outside it.
+
 ## The song document
 
 `src/song.js` holds one serialisable shape used by *both* the sketch and the shareable link, so

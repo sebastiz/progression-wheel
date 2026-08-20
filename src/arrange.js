@@ -95,6 +95,9 @@ const planAdd = (rows, at, sec, nums = "LOOP") => {
 const remapSecs = (secs, oldPlan, newPlan, origin, letterOf, clone) => {
   const oldKeys = instKeysOf(oldPlan, letterOf), newKeys = instKeysOf(newPlan, letterOf);
   const out = {};
+  // the groove sketch ("*") belongs to the song, not to any plan row — it rides through every edit
+  for (const [k, s] of Object.entries(secs || {})) if (k.length === 1 && s)
+    out[k] = { ids: [...(s.ids || [])], layers: (s.layers || []).map(clone) };
   newKeys.forEach((ks, i) => {
     const from = origin[i];
     if (from == null || from < 0) return;                  // a new section starts empty

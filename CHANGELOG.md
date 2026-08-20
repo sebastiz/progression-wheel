@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+- **A Sketch tab: groove first, then subtract.** Dance music is subtractive, and the new tab
+  between Sound and Arrange is that workflow on one page. The top half is **the groove** — a
+  single looping section with every track on it at once: the drum, perc, bass, pad and chord
+  grids, the melody parts with their mixer, and each track's effect knobs — with a ▶ 🔁 loop
+  button that plays the full stack whatever structure is loaded. The bottom half is **the
+  arrangement**: the structure picker, the strip with its lanes, and the arrangement editor, so
+  the running order is built and each section is allocated its share of the groove — drums alone
+  for the intro, bass and pads with no kick for the build — without leaving the page.
+- **Every section inherits the groove until it says otherwise.** A track resolves in order: the
+  pass's own written grid, its (or its letter's) menu choice, its mute, then the **groove
+  sketch's grid**, then the song-level catalogue pattern. The groove is a loop, so it cycles
+  round a longer section rather than holding its last bar. Grids on sections open showing
+  “following the groove”, editing one detaches just that pass, and the exports (MIDI, Live Set,
+  stems, audio) resolve the same chain — the file is what you heard.
+- **The groove's melody parts are allocated, not copied.** Sections with no melody of their own
+  play the groove's parts, and the strip's part lanes subtract them per section through a
+  dedicated allocation map — so muting the lead out of the intro never freezes a copy of the
+  groove there, and a groove edited afterwards is still heard in every section that follows it.
+  Sketches and shared links carry the groove and the allocation with them.
 - **The exports play the per-section chord rhythm.** Where a pass has its own chord grid, the MIDI
   chord track and the Live Set now write that rhythm — each hit held to the next, accented by
   stroke (Accent 96, Down 78, Up 58), upstrokes losing the low root exactly as playback plays
