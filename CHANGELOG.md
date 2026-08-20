@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **A percussion layer and a pad, treated exactly like the drums and the parts.** **Perc** is a
+  second pattern from the same drum table, played on the song's kit under the main groove — shaker
+  sixteenths, offbeat hats, a conga cell — through its own filter, never triggering the pump.
+  **Pad** is a second chord voice (strings, glass, voice, organ, brass, supersaw) holding the
+  chord's upper voicing a bar at a time — reverbed, half-pumped, no low root. Both off by default;
+  both get a lane on the arrangement strip, a per-section in/out switch independent of everything
+  else, `perc:`/`pad:` vocabulary in the templates, their own stems, their own MIDI tracks
+  (Percussion on the drum channel, Pad on channel 12) and their own Live Set tracks.
+- **Every track has its own drawn filter lane.** Beside the master Filter/Hi-pass/Level lanes and
+  the per-part lanes, the strip now shows **Bass filter**, **Perc filter** and **Pad filter**
+  whenever those tracks are on — the same draw-across-the-song control the melody parts have, each
+  driving its own low-pass. The bass darkens into the breakdown while the mix stays put; the pad
+  blooms across a build; the perc opens with it. Undrawn lanes leave the track untouched.
 - **The bassline is a track now.** It used to be the chord voice's lowest note — welded to the strum,
   gone whenever a section dropped its chords, pumped exactly as hard as everything else. It is now
   its own source with its own **bass patterns** (offbeat push, octave bounce, rolling trance

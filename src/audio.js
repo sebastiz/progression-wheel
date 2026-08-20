@@ -1173,6 +1173,10 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
    the bass has to sound identical offline, and these are the sounds the genres are made of anyway. */
 const BASS_VOICES = [["sub", "Sub bass"], ["saw", "Saw bass"], ["square", "Square bass"],
   ["pluck", "Picked bass"], ["acid", "Acid 303"], ["reese", "Reese (DnB)"]];
+/* The pad track's voices — the sustained half of LEAD_SPECS. The pad holds the chord's upper
+   voicing a bar at a time, so everything here has a real sustain and none of it is percussive. */
+const PAD_VOICES = [["strings", "Strings"], ["glass", "Glass pad"], ["voice", "Voice (ah)"],
+  ["organ", "Organ"], ["brass", "Brass"], ["supersaw", "Supersaw"]];
 const BASS_LVL = { sub: 1.05, saw: 1.8, square: 1.8, pluck: 1.35, acid: 1.5, reese: 1.8 };
 function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
   const k = LEAD_SPECS[kind] ? kind : "sub";
@@ -1180,4 +1184,4 @@ function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
   leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 1.4) * vel });
 }
 
-export { BASS_VOICES, playBass, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { BASS_VOICES, PAD_VOICES, playBass, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };

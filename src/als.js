@@ -28,7 +28,7 @@ const alsNum = n => (Math.round(n * 1e6) / 1e6);
 
 /* Live's palette, by index. These are the ones that read as a set on a timeline: the rhythm
    section warm, the harmony green, the melodic parts cool, and anything effects-like grey. */
-const ALS_COLORS = { drums: 3, chords: 17, bass: 24, part: 12, fx: 8, other: 0 };
+const ALS_COLORS = { drums: 3, chords: 17, bass: 24, perc: 6, pad: 33, part: 12, fx: 8, other: 0 };
 
 /* A time signature is one number in Live's XML: the denominator's place in 1, 2, 4, 8, 16, 32,
    times 99, plus the numerator less one. 4/4 is 2 × 99 + 3 = 201 — which is the value a scene in

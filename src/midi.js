@@ -78,24 +78,51 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
       }
     }
   }
-  /* The bass track, when the song has one: `meta.bass` is { notes: [{ t, dur, note, vel }], program }
-     with times in beats — already resolved against the bass pattern and the per-section mutes, so
-     this writer only lays the notes out. Channel 11: clear of the melody parts (1..8) and of
-     percussion (9), so several exported files opened together stay on their own channels. */
-  const bassT = [];
-  const bassHas = !!(meta.bass && meta.bass.notes && meta.bass.notes.length);
-  if (bassHas) {
-    ev(bassT, 0, 0xff, 0x03, 4, 0x42, 0x61, 0x73, 0x73);                       // track name "Bass"
-    if (meta.bass.program != null) ev(bassT, 0, 0xcb, meta.bass.program & 0x7f);
+  /* The bass and pad tracks, when the song has them: each is { notes: [{ t, dur, note, vel }],
+     program } with times in beats — already resolved against patterns and per-section mutes, so
+     this writer only lays the notes out. Channels 11 and 12: clear of the melody parts (1..8)
+     and of percussion (9), so several exported files opened together stay on their own channels. */
+  const noteTrack = (spec, ch, label) => {
+    const arr = [];
+    if (!spec || !spec.notes || !spec.notes.length) return null;
+    ev(arr, 0, 0xff, 0x03, label.length, ...[...label].map(c => c.charCodeAt(0) & 0x7f));
+    if (spec.program != null) ev(arr, 0, 0xc0 | ch, spec.program & 0x7f);
     const evs = [];
-    for (const n of meta.bass.notes) {
+    for (const n of spec.notes) {
       evs.push({ t: Math.round(n.t * T), on: 1, note: n.note & 0x7f,
         vel: Math.max(1, Math.min(127, Math.round(n.vel == null ? 96 : n.vel))) });
       evs.push({ t: Math.round((n.t + n.dur) * T), on: 0, note: n.note & 0x7f, vel: 0 });
     }
     evs.sort((a, b) => a.t - b.t || a.on - b.on);               // note-offs before note-ons at a tick
     let last = 0;
-    for (const e of evs) { ev(bassT, e.t - last, e.on ? 0x9b : 0x8b, e.note, e.vel); last = e.t; }
+    for (const e of evs) { ev(arr, e.t - last, e.on ? 0x90 | ch : 0x80 | ch, e.note, e.vel); last = e.t; }
+    return arr;
+  };
+  const bassT = noteTrack(meta.bass, 11, "Bass");
+  const padT = noteTrack(meta.pad, 12, "Pad");
+  /* The percussion layer: a second channel-10 track from its own bar-by-bar pattern, written
+     exactly the way the drums are so the two layers land on one drum kit in a DAW. */
+  const percFn = typeof meta.perc === "function" ? meta.perc : () => meta.perc || null;
+  const percHas = !!meta.perc && bars.some((_, i) => percFn(i));
+  const percT = [];
+  if (percHas) {
+    let pend = 0;
+    ev(percT, 0, 0xff, 0x03, 10, ...[...("Percussion")].map(c => c.charCodeAt(0)));
+    for (let bar = 0; bar < bars.length; bar++) {
+      const pat = percFn(bar);
+      const steps = (pat && pat.length) || beatsPerBar * 2;
+      const stepT = beatsPerBar * T / steps;
+      const gate = Math.min(60, stepT * 0.5);
+      for (let s = 0; s < steps; s++) {
+        const notes = [...((pat && pat[s]) || "")].map(c => DRUM_MIDI[c] || 42);
+        if (!notes.length) { pend += stepT; continue; }
+        const acc = accentAt(s, steps / beatsPerBar);
+        notes.forEach((n, i) => ev(percT, i ? 0 : pend, 0x99, n,
+          Math.max(1, Math.round(([42,46,51,37].includes(n) ? 52 : 76) * acc))));   // under the kit
+        notes.forEach((n, i) => ev(percT, i ? 0 : gate, 0x89, n, 0));
+        pend = stepT - gate;
+      }
+    }
   }
   // build one melody track from its grid columns; each layer gets its own channel
   const buildMelo = (cols, chOn, chOff, gain = 1) => {
@@ -139,10 +166,12 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
      meant to hold exactly one thing — the tempo map and markers still go in, so dropping the file
      on a timeline still lands it at the right speed and with the sections marked. */
   const withChords = !meta.skipChords;
-  const nTrk = 1 + (withChords ? 1 : 0) + (drumHas ? 1 : 0) + (bassHas ? 1 : 0) + mels.length;
+  const nTrk = 1 + (withChords ? 1 : 0) + (drumHas ? 1 : 0) + (percHas ? 1 : 0)
+    + (bassT ? 1 : 0) + (padT ? 1 : 0) + mels.length;
   const head = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0, nTrk, (T>>8)&255, T&255];
   return new Uint8Array([...head, ...trk(tempo), ...(withChords ? trk(chordsT) : []),
-    ...(drumHas ? trk(drumsT) : []), ...(bassHas ? trk(bassT) : []), ...mels.flatMap(m => trk(m.arr))]);
+    ...(drumHas ? trk(drumsT) : []), ...(percHas ? trk(percT) : []),
+    ...(bassT ? trk(bassT) : []), ...(padT ? trk(padT) : []), ...mels.flatMap(m => trk(m.arr))]);
 }
 
 /* ===== midi import ===== */

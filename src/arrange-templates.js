@@ -311,7 +311,7 @@ const DANCE_TEMPLATES = DEFS.map(([id, name, tip, sound, rows]) => ({
    plays everything still writes "" for its drums and its move, so applying a template *clears* the
    last one instead of leaving half of it behind. */
 const resolveArrangement = (plan, insts) => {
-  const secDrum = {}, secQuiet = {}, secBass = {}, secMove = {}, secTrans = {}, parts = {};
+  const secDrum = {}, secQuiet = {}, secBass = {}, secPerc = {}, secPad = {}, secMove = {}, secTrans = {}, parts = {};
   const rows = {};
   (insts || []).forEach(d => (rows[d.row] = rows[d.row] || []).push(d));
   const arrOf = r => (plan && plan[r] && plan[r].arr) || null;
@@ -338,6 +338,9 @@ const resolveArrangement = (plan, insts) => {
       secQuiet[d.key] = a.chords != null && !a.chords;
       // `bass: 0` takes the bassline out for the row; anything else (or nothing) leaves it playing
       secBass[d.key] = a.bass != null && !a.bass;
+      // the percussion layer and the pad read the same way
+      secPerc[d.key] = a.perc != null && !a.perc;
+      secPad[d.key] = a.pad != null && !a.pad;
       secMove[d.key] = a.move || "";
       /* A transition belongs to the seam it leads *into*, so a row played four times gets one, not
          four — a riser before every pass of a drop is a fire alarm, not an arrangement. */
@@ -350,7 +353,7 @@ const resolveArrangement = (plan, insts) => {
     if (useH) hp = span(hp, list, a.hp != null ? a.hp : 0);
     if (useR) res = span(res, list, a.res != null ? a.res : 0);
   });
-  return { secDrum, secQuiet, secBass, secMove, secTrans, parts, filter, level, hp, res };
+  return { secDrum, secQuiet, secBass, secPerc, secPad, secMove, secTrans, parts, filter, level, hp, res };
 };
 
 /* What a section is worth on the energy staircase, which is the picture the strip draws. The
