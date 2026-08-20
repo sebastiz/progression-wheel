@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+- **The bassline is a track now.** It used to be the chord voice's lowest note — welded to the strum,
+  gone whenever a section dropped its chords, pumped exactly as hard as everything else. It is now
+  its own source with its own **bass patterns** (offbeat push, octave bounce, rolling trance
+  offbeats, disco walk, funk syncopation, held sub and more), six **synth voices** (sub, saw,
+  square, picked, acid 303, reese), the hardest sidechain duck in the mix, and no reverb — low end
+  in a room is mud. While it runs, the chords stop doubling the root an octave down, so the two stop
+  fighting over the register. Off by default: with no bass pattern chosen, every existing song
+  sounds exactly as it did.
+- **Sections treat the bassline as its own layer.** A new Bass lane on the arrangement strip and a
+  per-section Bass in/out control, independent of the chords — so a breakdown can lose the harmony
+  and keep the bassline (the disco filter-edit move), and a drum-and-bass drop can keep its sub with
+  the chords out, which the templates could not previously say at all.
+- **Every dance template now carries a genre bassline** — offbeat saw under house and big room,
+  rolling offbeats under trance, a walking picked line under nu-disco, held reese subs under DnB and
+  dubstep — with the bass written out of DJ intros, outros and breakdowns the way each form actually
+  does it. Trap deliberately has none: its 808 boom already is the bassline.
+- **The bass travels with the song**: saved sketches and share links keep it, the stem bounce adds a
+  bass stem, MIDI export writes a Bass track (channel 11, voiced as a GM bass), the split export
+  gives it its own file, and the Live Set export lays it out as its own coloured track.
 - **The DJ filter grew its other half — and a resonance control.** The arrangement strip had one
   drawn filter lane, a low-pass: darken the mix or open it. Two new lanes sit beside it. **Hi-pass**
   thins the mix from below — draw it climbing through a build and snapping back at the drop and the

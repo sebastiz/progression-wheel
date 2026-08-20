@@ -131,6 +131,29 @@ const BPM_DEFAULT = { axis:96, axisMinor:84, three:140, blues:92, doowop:66, jaz
   montuno:96, rhythm:160, bossa:132, guajira:100, bolero:76, gospel:76, neoSoul:88,
   rockRiff:128, grunge:120, britpop:116, emo:144, country:108, celtic:116, motownTurn:128, rnbSlow:76 };
 
+/* ===== bass patterns =====
+   The bassline used to be the chord voice's lowest note, glued to the strum: it could not have a
+   rhythm of its own, and it vanished whenever a section dropped its chords. These are the track's
+   own bars. Tokens are degrees of the current chord — R the root, F the fifth, O the root an
+   octave up — over sixteen steps of 4/4, and a note holds until the next hit, so a lone R is a
+   held sub. "follow" has no pattern: it plays the root under the strum pattern's hits, which is
+   exactly the note the chords used to carry, made separable. */
+const BASS = {};
+[
+["follow", "With the chords", "", "the root under every chord hit — the note the chords used to carry, on its own track"],
+["eighths", "Root eighths", "R-R-R-R-R-R-R-R-", "the driving pulse — techno, prog house and pop-punk alike"],
+["octaves", "Octave bounce", "R-O-R-O-R-O-R-O-", "low-high alternation — the classic house and italo line"],
+["offbeat", "Offbeat push", "--R---R---R---R-", "the bass answers the kick instead of doubling it — instant house"],
+["rolloff", "Rolling offbeats", "-RRR-RRR-RRR-RRR", "every sixteenth the kick doesn't own — the trance engine"],
+["disco", "Disco walk", "R-O-R-O-R-O-F-O-", "the octave bounce with the fifth walking it round — disco and nu-disco"],
+["funk16", "Funk syncopation", "R--R--O--R-F--R-", "pushed and skipped sixteenths — the holes are the funk"],
+["subhold", "Held sub", "R---------------", "one long note a bar — trap, dubstep and every half-time drop"],
+["walk", "Root–fifth walk", "R---F---O---F---", "sturdy alternation under any chord — reaches from country to hardstyle"],
+].forEach(([id, name, pat, desc]) =>
+  BASS[id] = { name, pattern: pat ? pat.split("") : null, desc });
+// token → semitones above the chord root, in the octave below the chord voicing
+const BASS_IV = { R: 0, F: 7, O: 12 };
+
 const DRUMS = {};
 [
 ["off","No drums",null],
@@ -262,4 +285,4 @@ const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16"
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
+export { BASS, BASS_IV, BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };

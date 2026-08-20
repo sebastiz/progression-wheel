@@ -750,10 +750,12 @@ function voiceChord(chord, prev) {
   }
   return best ? best.notes : pcs.map(pc => VOICE_LO + pc);
 }
-function strumChord(ctx, t, chord, sym, dest, voicing) {
+function strumChord(ctx, t, chord, sym, dest, voicing, noBass) {
   const base = 48 + chord.root;
-  let notes = [base - 12, ...(voicing || voiceChord(chord))];
-  if (sym === "U") notes = notes.slice(2).reverse();
+  const led = voicing || voiceChord(chord);
+  // when the bass track is carrying the root, the chords stop doubling it — same notes, same
+  // times, but the low octave belongs to one source instead of two fighting over it
+  let notes = sym === "U" ? led.slice(1).reverse() : noBass ? led : [base - 12, ...led];
   const vol = sym === ">" ? 0.16 : sym === "U" ? 0.09 : 0.12;
   const dur = sym === ">" ? 1.4 : 0.9;
   const bright = sym === ">" ? 2600 : sym === "U" ? 1400 : 1900;
@@ -779,9 +781,9 @@ function padVoice(ctx, t, mid, sym, slotDur, dest) {
     o.start(t); o.stop(t + dur + 0.1);
   });
 }
-function playHit(ctx, t, chord, sym, instr, slotDur, dest, voicing) {
+function playHit(ctx, t, chord, sym, instr, slotDur, dest, voicing, noBass) {
   const fam = gmFam(instr);
-  if (fam === "pluck") return strumChord(ctx, t, chord, sym, dest, voicing);
+  if (fam === "pluck") return strumChord(ctx, t, chord, sym, dest, voicing, noBass);
   const iv = chordIvs(chord.quality), rootMid = 48 + chord.root;
   if (fam === "bass") {
     const o = ctx.createOscillator();
@@ -794,7 +796,7 @@ function playHit(ctx, t, chord, sym, instr, slotDur, dest, voicing) {
     return;
   }
   const led = voicing || voiceChord(chord);
-  const notes = sym === "U" ? led.slice(1) : [rootMid - 12, ...led];
+  const notes = sym === "U" ? led.slice(1) : noBass ? led : [rootMid - 12, ...led];
   notes.forEach((mid, j) => {
     if (fam === "organ") {
       [1, 2, 3].forEach((h, hi) => {
@@ -973,18 +975,18 @@ function makeSampler(ctx) {
   return { load, ready, play, covers };
 }
 // note voicing for the sampler, mirroring the synth voicings, by instrument family
-function sampleVoicing(chord, sym, fam, voicing) {
+function sampleVoicing(chord, sym, fam, voicing, noBass) {
   const iv = chordIvs(chord.quality), root = chord.root;
   if (fam === "bass") return { notes: [36 + root + (sym === "U" ? 7 : 0)], roll: 0.03 };
   const base = 48 + root;
   const led = voicing || voiceChord(chord);
-  const notes = sym === "U" ? led.slice(1) : [base - 12, ...led];
+  const notes = sym === "U" ? led.slice(1) : noBass ? led : [base - 12, ...led];
   return { notes, roll: fam === "pluck" ? (sym === "U" ? 0.010 : 0.016) : 0.004 };
 }
-function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest, voicing) {
+function playSampled(sampler, instr, ctx, t, chord, sym, slotDur, dest, voicing, noBass) {
   if (!sampler || !sampler.ready(instr)) return false;
   const fam = gmFam(instr);
-  const { notes, roll } = sampleVoicing(chord, sym, fam, voicing);
+  const { notes, roll } = sampleVoicing(chord, sym, fam, voicing, noBass);
   // if any voiced note lacks a nearby loaded anchor (samples still loading), play the whole chord
   // on the synth rather than repitching a distant anchor into a shrill artifact for part of it
   if (!notes.every(mid => sampler.covers(instr, mid))) return false;
@@ -1164,4 +1166,18 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
   });
 }
 
-export { DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+/* ===== the bass track =====
+   Its own source rather than the chord voice's lowest note. The voices are the LEAD_SPECS synths
+   played an octave below the chord voicing — no new synthesis, just the register and a per-voice
+   boost, because one low note has to carry the way a whole chord does. All synth, never sampled:
+   the bass has to sound identical offline, and these are the sounds the genres are made of anyway. */
+const BASS_VOICES = [["sub", "Sub bass"], ["saw", "Saw bass"], ["square", "Square bass"],
+  ["pluck", "Picked bass"], ["acid", "Acid 303"], ["reese", "Reese (DnB)"]];
+const BASS_LVL = { sub: 1.05, saw: 1.8, square: 1.8, pluck: 1.35, acid: 1.5, reese: 1.8 };
+function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
+  const k = LEAD_SPECS[kind] ? kind : "sub";
+  // C2 upward: below the chord window (VOICE_LO 55), above the kick's fundamental
+  leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 1.4) * vel });
+}
+
+export { BASS_VOICES, playBass, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
