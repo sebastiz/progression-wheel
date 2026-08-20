@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **The exports play the per-section chord rhythm.** Where a pass has its own chord grid, the MIDI
+  chord track and the Live Set now write that rhythm — each hit held to the next, accented by
+  stroke (Accent 96, Down 78, Up 58), upstrokes losing the low root exactly as playback plays
+  them, and an emptied bar exporting as deliberate silence. Bars without a grid keep the plain
+  whole-bar chord they always exported.
+- **The track settings are grouped like the melody mixer's.** The Drums/Perc/Bass/Pad panels — in
+  the Sound tab and under each opened grid — now sit behind the same tabs the part mixer uses:
+  **Mix** (level, pan, pump), **Tone** (both filters, resonance, drive), **Movement** (wobble,
+  tremolo, auto-pan and their rates, hidden until the thing they pace is on) and **Space** (echo
+  and reverb), each tab badged with a count of what it carries.
 - **The section controls fold into one bar: “Transitions & presets”.** Each pass's selects now sit
   behind a collapsible bar, grouped as they are used — *seam* (Way in, Move, Shape) and *plays*
   (Drums, Chords, Bass, Perc, Pad) — with a dot on the closed bar when anything is set. Choosing a

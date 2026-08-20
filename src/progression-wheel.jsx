@@ -552,6 +552,7 @@ export default function ProgressionWheel() {
      (only values that differ from their default are stored), one per track. */
   const [trackFx, setTrackFx] = useState({});         // { drums:{...}, perc:{...}, bass:{...}, pad:{...} }
   const [openFx, setOpenFx] = useState({});           // which track effect panels are open
+  const [trackFxTab, setTrackFxTab] = useState({});   // per track, which settings group is showing
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
   // per-section-type chord mute, keyed by base letter. Dropping the chords for a breakdown while
   // the drums carry on is a basic arrangement move that had no way to be expressed before.
@@ -1348,19 +1349,52 @@ export default function ProgressionWheel() {
   const bassAnywhere = sections.insts.some(x => !!bassSrcOf(x));
   const percAnywhere = sections.insts.some(x => !!percSrcOf(x));
   const padAnywhere = sections.insts.some(x => padOnOf(x));
-  /* One row of a track's effect knobs — the Sound tab's panel body, reused under each opened
-     grid so a track's settings sit with its notes the way a part's mixer sits with its grid. */
+  /* A track's settings, grouped behind the same tabs the melody part mixer uses — Mix, Tone,
+     Movement, Space — with a count badge on each tab for what it carries, and rates hidden until
+     the thing they pace is turned up. Reused by the Sound tab's panels and under each opened grid,
+     so a track's settings sit with its notes the way a part's mixer sits with its grid. */
   const trackFxRow = trId => {
     const fx = trackFx[trId] || {};
-    const mods = TRACK_MODS.filter(md => !(trId === "drums" && md.k === "duck"));
+    const ly = { lvl: 100, ...fx };
+    const groups = [
+      { id:"mix", name:"Mix", tip:"Where the track sits — its level, stereo place and how it answers the kick",
+        keys:["lvl", "pan", "duck"] },
+      { id:"tone", name:"Tone", tip:"The filter and the dirt — what turns the track's notes into a sound",
+        keys:["cut", "res", "hp", "drive"] },
+      { id:"movement", name:"Movement", tip:"Things that move on their own, in time with the tempo",
+        keys:["wob", "wobRate", "trem", "tremRate", "apan", "apanRate"] },
+      { id:"space", name:"Space", tip:"How far away the track is — the echo and the room",
+        keys:["send", "verb"] },
+    ].map(g => ({ ...g, mods: g.keys
+      .filter(k => !(trId === "drums" && k === "duck"))
+      .map(k => k === "lvl" ? TRACK_LVL : MOD_BY_KEY[k]) }));
+    const grp = trackFxTab[trId] || "mix";
+    const G = groups.find(g => g.id === grp) || groups[0];
     return (
-      <div className="row" style={{ flexWrap:"wrap", gap:"4px 12px", marginTop:5 }}>
-        {mods.map(md => (
-          <ModCtl key={md.k} mod={md} ly={{ lvl: 100, ...fx }}
-            disabled={(md.needs && modOf({ lvl: 100, ...fx }, md.needs) === (MOD_BY_KEY[md.needs] || {}).dflt)
-              || (md.needsDelay && delayId === "off")}
-            onSet={patch => setTrackFx({ ...trackFx, [trId]: { ...fx, ...patch } })} />
-        ))}
+      <div style={{ marginTop:5 }}>
+        <div className="row" style={{ gap:4, flexWrap:"wrap" }}>
+          {groups.map(g => {
+            const n2 = g.mods.reduce((a2, md) => a2 + ((fx[md.k] != null && fx[md.k] !== md.dflt) ? 1 : 0), 0);
+            return (
+              <button key={g.id} className={"modtab" + (grp === g.id ? " on" : "")} title={g.tip}
+                onClick={() => setTrackFxTab({ ...trackFxTab, [trId]: g.id })}>
+                {g.name}{n2 > 0 && <i className="lydot">{n2}</i>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="modgrid">
+          {G.mods
+            // a rate only means something once the thing it paces is turned up
+            .filter(md => !md.needs || modOf(ly, md.needs) !== MOD_BY_KEY[md.needs].dflt)
+            .map(md => (
+              <ModCtl key={md.k} mod={md} ly={ly}
+                disabled={md.needsDelay && delayId === "off"}
+                onSet={patch => setTrackFx({ ...trackFx, [trId]: { ...fx, ...patch } })} />
+            ))}
+        </div>
+        {tips && grp === "space" && delayId === "off" &&
+          <p className="arrnote" style={{ margin:"4px 0 0" }}>Echo needs a Delay time — pick one on the <b>Sound</b> tab.</p>}
       </div>
     );
   };
@@ -3421,7 +3455,16 @@ export default function ProgressionWheel() {
       // signature actually spells — so a Dorian sketch gets the right accidentals, not the tonic's.
       const rel = (tonic + MODES[effMode].rel) % 12;
       const mtr = METER_BY_ID[curMeter] || METERS[0];
+      /* The chord track's rhythm, bar by bar: a pass's own chord grid where one is written,
+         null (a plain whole-bar chord) elsewhere — the file plays what the song plays. */
+      const chordRhythm = bars.map((b, bi) => {
+        const key = b.inst != null ? b.inst : "L1";
+        const own = secChordBeat[key];
+        if (!own || !own.length) return null;
+        return own[b.inst != null ? Math.min(b.mb, own.length - 1) : bi % own.length] || null;
+      });
       const meta = {
+        chordRhythm: chordRhythm.some(Boolean) ? chordRhythm : null,
         beatUnit: mtr.den, tsNum: mtr.num,
         sharps: MAJOR_SIG[((rel % 12) + 12) % 12],
         minor: MODES[effMode].family === "minor",
@@ -3523,11 +3566,26 @@ export default function ProgressionWheel() {
   const alsSpec = () => {
     const { bars, parts, drumForBar, meta, bassTrack, percForBar, anyPerc, padTrack } = midiParts();
     const B = barBeats, tracks = [];
-    // chords: the same voicing the MIDI writer uses, one bar each
+    // chords: the same voicing and per-pass rhythm the MIDI writer uses
     const chordNotes = [];
+    const CVEL = { ">": 96, "D": 78, "U": 58 };
     bars.forEach((b, bi) => {
       const notes = [36 + b.chord.root - 12, ...chordIvs(b.chord.quality).map(x => 60 + b.chord.root + x)];
-      for (const n of notes) chordNotes.push({ t: bi * B, dur: B, note: n, vel: 78 });
+      const rh = meta.chordRhythm ? meta.chordRhythm[bi] : null;
+      if (!rh || !rh.length) {
+        for (const n of notes) chordNotes.push({ t: bi * B, dur: B, note: n, vel: 78 });
+        return;
+      }
+      const steps = rh.length, stepB = B / steps;
+      for (let s2 = 0; s2 < steps; s2++) {
+        const tok = rh[s2];
+        if (!tok || tok === "-") continue;
+        let gap = 1;
+        while (s2 + gap < steps && (!rh[s2 + gap] || rh[s2 + gap] === "-")) gap++;
+        for (const n of (tok === "U" ? notes.slice(1) : notes))
+          chordNotes.push({ t: bi * B + s2 * stepB, dur: Math.min(gap * stepB * 0.92, B - s2 * stepB),
+            note: n, vel: CVEL[tok] || 78 });
+      }
     });
     if (chordNotes.length) tracks.push({ name: "Chords", color: ALS_COLORS.chords, vol: 0.85,
       notes: chordNotes, end: bars.length * B, note: "was " + instr });

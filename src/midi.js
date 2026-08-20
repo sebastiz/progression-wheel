@@ -44,10 +44,40 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
   const chordsT = [];
   ev(chordsT, 0, 0xff, 0x03, 6, 0x43, 0x68, 0x6f, 0x72, 0x64, 0x73);          // track name "Chords"
   if (chordProgram != null) ev(chordsT, 0, 0xc0, chordProgram & 0x7f);        // voice the chord track
-  bars.forEach(b => {
+  /* `meta.chordRhythm`, when present, is one entry per bar: null for the plain whole-bar chord,
+     or a pass's own written rhythm — step tokens on the strum's vocabulary. A rhythm bar writes
+     each hit held to the next, accented by stroke, with upstrokes losing the low root exactly as
+     playback plays them; a rhythm bar with every step cleared is deliberate silence. */
+  const chordRh = meta.chordRhythm || null;
+  const CVEL = { ">": 96, "D": 78, "U": 58 };
+  let cpend = 0;                                       // delta owed before the next chord event
+  bars.forEach((b, bi) => {
     const notes = [36 + b.chord.root - 12, ...chordIvs(b.chord.quality).map(x => 60 + b.chord.root + x)];
-    notes.forEach((n, i) => ev(chordsT, i ? 0 : 0, 0x90, n, 78));
-    notes.forEach((n, i) => ev(chordsT, i ? 0 : beatsPerBar * T, 0x80, n, 0));
+    const barT = beatsPerBar * T;
+    const rh = chordRh ? chordRh[bi] : null;
+    if (!rh || !rh.length) {
+      notes.forEach((n, i) => ev(chordsT, i ? 0 : cpend, 0x90, n, 78));
+      notes.forEach((n, i) => ev(chordsT, i ? 0 : barT, 0x80, n, 0));
+      cpend = 0;
+      return;
+    }
+    if (!rh.some(x => x && x !== "-")) { cpend += barT; return; }
+    const steps = rh.length, stepT = barT / steps;
+    let cursor = 0;
+    for (let s2 = 0; s2 < steps; s2++) {
+      const tok = rh[s2];
+      if (!tok || tok === "-") continue;
+      let gap = 1;
+      while (s2 + gap < steps && (!rh[s2 + gap] || rh[s2 + gap] === "-")) gap++;
+      const at = Math.round(s2 * stepT);
+      const durT = Math.max(30, Math.round(Math.min(gap * stepT * 0.92, barT - at)));
+      const use = tok === "U" ? notes.slice(1) : notes;
+      use.forEach((n, i) => ev(chordsT, i ? 0 : cpend + (at - cursor), 0x90, n, CVEL[tok] || 78));
+      use.forEach((n, i) => ev(chordsT, i ? 0 : durT, 0x80, n, 0));
+      cursor = at + durT;
+      cpend = 0;
+    }
+    cpend += barT - cursor;
   });
   // drumPat may be one pattern (array) shared by every bar, or a function (barIndex) → pattern|null
   // so each section can carry its own kit (or fall silent) in the exported file
