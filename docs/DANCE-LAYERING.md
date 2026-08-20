@@ -165,6 +165,7 @@ Each idea above has a control that does it.
 
 | Idea | Where |
 | --- | --- |
+| Subtraction as the workflow itself | The **Sketch tab** — build the full groove as one looping section (drums, perc, bass, pad, chords and melody, grids and settings together), then build the running order underneath and use the lanes to decide which sections play which of its tracks. Every section inherits the groove until it is given something of its own |
 | The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — thirteen dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build. The strip's **Energy** lane draws the resulting staircase |
 | The staircase of sections | The **structure** chooser, and the arrangement strip's rows and reps — *make the drop twice as long* is a reps edit |
 | Layer entries and exits | The **arrangement strip's lanes** — one per layer, a block per run of sections, clicked to bring a layer in or drop it out, per pass |
@@ -176,10 +177,11 @@ Each idea above has a control that does it.
 | The Hook across the whole form | **Melodic narratives**, which pick each section's register, density and contour from its role and its place in the running order |
 | Checking the stack | Bounce **stems** and mute roles one at a time; the **Live Set** export carries the arrangement out as named, coloured tracks with the sections as locators |
 
-One seam worth knowing about: **Foundation has no lane of its own.** Bass here is a voice family
-rather than a source, so you get one by pointing a part or the chord instrument at it — which means
-"sub out for the breakdown", the single most important move in the whole framework, has to be said
-as a part mute rather than as its own row on the strip.
+The bass has long since become its own track, with its own lane, grids and drawn filter — so "sub
+out for the breakdown", the single most important move in the whole framework, is one click on the
+strip. And the Sketch tab turns the whole document into a working order: the failure mode this file
+opens with — adding without ever subtracting — is hard to commit when the full stack is built first
+and the arrangement is nothing but the subtractions.
 
 The one thing no export carries is the sound itself — every instrument here is a browser audio
 graph, so a MIDI file or a Live Set arrives with the arrangement intact and the tracks empty. Bounce

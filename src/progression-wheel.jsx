@@ -484,7 +484,7 @@ export default function ProgressionWheel() {
   /* The page used to be one five-screen scroll that mixed choosing a key with drawing automation.
      Four modes instead, each about a screen: what the song is, what it sounds like, how it is laid
      out, and keeping it. The transport and the global actions stay outside them. */
-  const TABS = [["write", "Write"], ["sound", "Sound"], ["arrange", "Arrange"], ["save", "Save"]];
+  const TABS = [["write", "Write"], ["sound", "Sound"], ["sketch", "Sketch"], ["arrange", "Arrange"], ["save", "Save"]];
   const [tab, setTab] = useState("write");
   const [wheelOpen, setWheelOpen] = useState(true);
   const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
@@ -547,6 +547,11 @@ export default function ProgressionWheel() {
      strum pattern for that pass alone. */
   const [secPadBeat, setSecPadBeat] = useState({});
   const [secChordBeat, setSecChordBeat] = useState({});
+  /* Which groove melody parts a section leaves out — { secKey|letter: { partIdx: true } }. The
+     groove's parts are *inherited* by sections with no melody of their own, so their allocation
+     cannot live on the layers (writing a mute there would materialise a copy of the groove into
+     the section, and editing the groove afterwards would no longer reach it). */
+  const [secPartOut, setSecPartOut] = useState({});
   const [percKitSt, setPercKitSt] = useState({ key:"", val:"" });   // hand vs machine percussion voicing
   /* Each track's effect panel: a sparse object of the same modulation keys the melody parts use
      (only values that differ from their default are stored), one per track. */
@@ -1020,6 +1025,21 @@ export default function ProgressionWheel() {
     return { insts, totalBars, bars };
   }, [effPlan, structSel, chords, chords2, contrast.sec, tonic, progId, colour]);
   const structBars = sections.bars;
+  /* ---- the groove sketch ----
+     Dance music is subtractive: the workflow starts with a full groove — drums, perc, bass, pad,
+     chords and melody all playing at once — and the arrangement is then which sections *lose*
+     which of its tracks. The groove is a pseudo-section keyed "*": one pass of the chord loop,
+     edited with exactly the section machinery (its grids and melody ride in the same maps, so
+     saving, sharing, undo and the exports need no path of their own). Every real section falls
+     back to it — after its own grids and menus, before the song-level catalogue pattern — so
+     editing the groove is heard everywhere at once, until a section is given something of its own. */
+  const GROOVE = "*";
+  const grooveInst = useMemo(() => {
+    const cs = padEven(chords);
+    return { key: GROOVE, base: GROOVE, word: "groove", sec: "Groove", cs,
+      str: cs.map(c => c.name).join(cs.length > 6 ? "  |  " : " – "),
+      usedC: false, note: null, nbars: cs.length, startBar: 0, row: -1 };
+  }, [chords]);
 
   /* ---- editing the arrangement ----
      Sections are numbered in playing order (C1, C2 …), and melodies are stored under that number.
@@ -1049,6 +1069,7 @@ export default function ProgressionWheel() {
     setSecBassPat(remapKeyed(secBassPat, cur, next, origin, letterFor));
     setSecPercPat(remapKeyed(secPercPat, cur, next, origin, letterFor));
     setSecPadVoice(remapKeyed(secPadVoice, cur, next, origin, letterFor));
+    setSecPartOut(remapKeyed(secPartOut, cur, next, origin, letterFor, v => ({ ...v })));
     setSecBassBeat(remapKeyed(secBassBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
     setSecPercBeat(remapKeyed(secPercBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
     setSecPadBeat(remapKeyed(secPadBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
@@ -1320,13 +1341,21 @@ export default function ProgressionWheel() {
   /* What a section's bass and perc actually are, resolved the way the drums resolve: the pass's
      own written grid first, then its (or its letter's) menu choice, then whatever the template
      wrote — a mute, or the song-level pattern. Returns { beat } | { pat } | null. */
+  /* The groove's own written bars for a track, offered to every *other* section as the step
+     between "this section said something" and "the song-level catalogue pattern". Marked
+     `loop: true` because a groove shorter than the section cycles round rather than holding its
+     last bar — it is a loop, not a section that got stretched. */
+  const grooveBeatOf = (beats, d) => {
+    const g = d && d.key !== GROOVE && beats[GROOVE];
+    return g && g.length ? { beat: g, loop: true } : null;
+  };
   const bassSrcOf = d => {
     const own = d && secBassBeat[d.key];
     if (own && own.length) return { beat: own };
     const p = d && (secBassPat[d.key] || secBassPat[d.base]);
     if (p) return p === "off" ? null : { pat: p };
     if (effBassOut(d)) return null;
-    return bass ? { pat: bass } : null;
+    return grooveBeatOf(secBassBeat, d) || (bass ? { pat: bass } : null);
   };
   const percSrcOf = d => {
     const own = d && secPercBeat[d.key];
@@ -1334,7 +1363,7 @@ export default function ProgressionWheel() {
     const p = d && (secPercPat[d.key] || secPercPat[d.base]);
     if (p) return p === "off" ? null : { pat: p };
     if (effPercOut(d)) return null;
-    return perc ? { pat: perc } : null;
+    return grooveBeatOf(secPercBeat, d) || (perc ? { pat: perc } : null);
   };
   const padVoiceOf = d => {
     const v = d && (secPadVoice[d.key] || secPadVoice[d.base]);
@@ -1342,9 +1371,18 @@ export default function ProgressionWheel() {
     if (effPadOut(d)) return "";
     return pad;
   };
+  // the pad rhythm a section resolves to: its own written bars, else the groove's (unless the
+  // section's pad is switched off by its menu or its letter's mute)
+  const padBeatOf = d => {
+    const own = d && secPadBeat[d.key];
+    if (own && own.length) return { beat: own };
+    const v = d && (secPadVoice[d.key] || secPadVoice[d.base]);
+    if (v === "off" || effPadOut(d)) return null;
+    return grooveBeatOf(secPadBeat, d);
+  };
   // a pass with a written pad rhythm plays even when no voice is chosen anywhere — it falls back
   // to the song default, or strings
-  const padOnOf = d => !!padVoiceOf(d) || !!(d && secPadBeat[d.key] && secPadBeat[d.key].length);
+  const padOnOf = d => !!padVoiceOf(d) || !!padBeatOf(d);
   // whether a track sounds anywhere in the song — what decides if it earns lanes, stems and files
   const bassAnywhere = sections.insts.some(x => !!bassSrcOf(x));
   const percAnywhere = sections.insts.some(x => !!percSrcOf(x));
@@ -1458,9 +1496,8 @@ export default function ProgressionWheel() {
   const secMelos = useMemo(() => {
     const samePid = melos.progId === progId;
     const out = {};
-    sections.insts.forEach(d => {
+    const build = (d, saved, extraMute) => {
       const ids = d.cs.map(chordId);
-      const saved = melos.secs[d.key];
       const src = (saved && saved.layers && saved.layers.length) ? saved.layers : [{ bars: null, instr: null }];
       const layers = src.map((ly, li) => {
         const bars = adaptBars(saved && saved.ids, ly && ly.bars, ids, samePid);
@@ -1469,13 +1506,38 @@ export default function ProgressionWheel() {
         return { bars, flat: bars.flat(), instr: (ly && ly.instr) || null,
           oct: (ly && ly.oct) != null ? ly.oct : (LAYER_DEFAULT_OCT[li] || 0),
           vol: (ly && ly.vol) != null ? ly.vol : (LAYER_DEFAULT_VOL[li] != null ? LAYER_DEFAULT_VOL[li] : 1),
-          mute: !!(ly && ly.mute), solo: !!(ly && ly.solo), send: (ly && ly.send) || 0,
+          mute: !!(ly && ly.mute) || !!(extraMute && extraMute(li)),
+          solo: !!(ly && ly.solo), send: (ly && ly.send) || 0,
           ...layerFx(ly) };
       });
-      out[d.key] = { ids, layers };
+      return { ids, layers };
+    };
+    // an arped part plays with no written notes, so "does this play?" counts arps as well as bars
+    const plays = saved => !!(saved && saved.layers && saved.layers.some(ly =>
+      (ly.bars && ly.bars.some(b => b && b.some(c => c && c.length))) || layerFx(ly).arp));
+    const gSaved = melos.secs[GROOVE];
+    out[GROOVE] = build(grooveInst, gSaved);
+    const grooveOn = plays(gSaved);
+    sections.insts.forEach(d => {
+      const saved = melos.secs[d.key];
+      if (grooveOn && !plays(saved)) {
+        /* The groove's parts, allocated per section. The allocation lives in `secPartOut`, not on
+           the layers — writing a mute onto the layers would materialise a copy of the groove into
+           the section, and a groove edited afterwards would no longer reach it. A template's own
+           mute flags (layers written with no notes, just to say what sits out) still count
+           underneath, so a template arrangement allocates the groove the way it allocated parts. */
+        const flags = saved && saved.layers;
+        out[d.key] = build(d, gSaved, li => {
+          const o = secPartOut[d.key] && secPartOut[d.key][li] != null ? secPartOut[d.key][li]
+            : secPartOut[d.base] && secPartOut[d.base][li] != null ? secPartOut[d.base][li]
+            : (flags && flags[li] ? !!flags[li].mute : undefined);
+          return !!o;
+        });
+        out[d.key].inherited = true;
+      } else out[d.key] = build(d, saved);
     });
     return out;
-  }, [melos, progId, sections, meloBeats]);
+  }, [melos, progId, sections, meloBeats, grooveInst, secPartOut]);
   /* An arp or a note gate is a rhythm too, and can be finer than anything else in the song: a 1/32
      arp wants eight ticks a beat, a gate four. Folded into the scheduler's resolution here rather
      than in `tickCount` above, because the parts that carry them are only known once `secMelos` has
@@ -1586,6 +1648,15 @@ export default function ProgressionWheel() {
     }
     setMelos({ progId, secs: next });
   };
+  /* Allocate a groove part across sections that *inherit* it. Writing the mute onto the layers
+     (setLayerPropMany) would materialise a copy of the groove into each section, and a groove
+     edited afterwards would no longer reach them — the allocation therefore lives in its own map,
+     and one update covers every section, exactly as setLayerPropMany does for owned parts. */
+  const setPartOutMany = (keys, i, out) => {
+    const next = { ...secPartOut };
+    for (const k of keys) next[k] = { ...(next[k] || {}), [i]: out };
+    setSecPartOut(next);
+  };
   /* ---- the drum grid ----
      The catalogue pattern a section is playing, which is what its grid opens showing: its type's
      override if it has one, else the song's. `beatFrom` lays it onto the sixteenth grid with the
@@ -1595,8 +1666,17 @@ export default function ProgressionWheel() {
     const id = effDrum(d) || drum;
     return DRUMS[id] ? DRUMS[id].pattern : null;
   };
+  // lay a groove-sketch source onto a section's own bars, cycling round — the seed a grid opens
+  // showing when the section is following the groove rather than a catalogue pattern
+  const grooveSeed = (g, d, n, blank) => Array.from({ length: d.nbars }, (_, b) => {
+    const bar = g[b % g.length];
+    return bar && bar.length === n ? [...bar] : blank(n);
+  });
   const beatSeed = d => {
-    const pat = beatCat(d), n = beatSteps(barBeats);
+    const n = beatSteps(barBeats);
+    const g = d.key !== GROOVE && !effDrum(d) ? secBeat[GROOVE] : null;
+    if (g && g.length) return grooveSeed(g, d, n, blankBeat);
+    const pat = beatCat(d);
     return Array.from({ length: d.nbars }, () => pat ? beatFrom(pat, n) : blankBeat(n));
   };
   // the bars on screen for a section: its own if written, else the catalogue laid onto the grid.
@@ -1635,6 +1715,7 @@ export default function ProgressionWheel() {
   ];
   const percSeed = d => {
     const src = percSrcOf(d), n = beatSteps(barBeats);
+    if (src && src.beat) return grooveSeed(src.beat, d, n, blankBeat);   // following the groove sketch
     const pat = src && src.pat ? ((PERCS[src.pat] || DRUMS[src.pat] || {}).pattern) : null;
     return Array.from({ length: d.nbars }, () => pat ? beatFrom(pat, n, PERC_ORDER) : blankBeat(n));
   };
@@ -1659,6 +1740,7 @@ export default function ProgressionWheel() {
   };
   const bassSeed = d => {
     const src = bassSrcOf(d), n = beatSteps(barBeats);
+    if (src && src.beat) return grooveSeed(src.beat, d, n, n2 => Array.from({ length: n2 }, () => ""));
     const pat = src && src.pat ? (BASS[src.pat] || {}).pattern : null;
     return Array.from({ length: d.nbars }, () => Array.from({ length: n }, (_, s) => {
       const tok = pat ? sampleAt(pat, s, n) : null;
@@ -1707,6 +1789,8 @@ export default function ProgressionWheel() {
   };
   const padSeed = d => {
     const n = beatSteps(barBeats);
+    const src = padBeatOf(d);
+    if (src && src.loop) return grooveSeed(src.beat, d, n, n2 => Array.from({ length: n2 }, () => ""));
     // what the pad already does: one hold on each bar's downbeat — or nothing, if no pad plays here
     const on = padOnOf(d);
     return Array.from({ length: d.nbars }, () =>
@@ -1727,6 +1811,8 @@ export default function ProgressionWheel() {
   };
   const chordSeed = d => {
     const n = beatSteps(barBeats);
+    const g = d.key !== GROOVE ? secChordBeat[GROOVE] : null;
+    if (g && g.length) return grooveSeed(g, d, n, n2 => Array.from({ length: n2 }, () => ""));
     return Array.from({ length: d.nbars }, () => Array.from({ length: n }, (_, s2) => {
       const tok = sampleAt(rhythm.pattern, s2, n);
       return tok && tok !== "-" ? tok : "";
@@ -2421,8 +2507,12 @@ export default function ProgressionWheel() {
       const melStep = stepAt(MB, i, L);            // null between melody columns
       const { list, seq, struct } = chordsRef.current;
       const loop = loopRef.current;
+      /* Looping the groove: play the plain chord loop and resolve every track to the groove
+         sketch, whatever structure is loaded — auditioning the full stack is the first half of
+         the subtractive workflow, and it must not depend on which section happens to be biggest. */
+      const gvLoop = !!(loop && loop.groove);
       let chord, pillIdx = -1, label = null, instNow = "L1", structBar = -1;
-      if (struct && struct.length) {
+      if (struct && struct.length && !gvLoop) {
         // confine to the toggled section's bar window when a loop is active
         const useLoop = loop && loop.len > 0 && loop.from + loop.len <= struct.length;
         structBar = useLoop
@@ -2439,6 +2529,7 @@ export default function ProgressionWheel() {
         const bar = seq.length ? Math.floor(m.step / L) % seq.length : 0;
         pillIdx = seq.length ? seq[bar] : 0;
         chord = list[pillIdx];
+        if (gvLoop) { instNow = "*"; label = `groove · bar ${bar + 1} of ${seq.length || 1} · 🔁 loop`; }
       }
       let sym = (patStep == null ? null : patRef.current[patStep]) || "-";
       let t = m.nextTime;
@@ -2477,14 +2568,19 @@ export default function ProgressionWheel() {
          Each track resolves the way the drums do: the pass's own written grid first, then its
          (or its letter's) menu choice, then whatever the template wrote — a mute, or the
          song-level pattern. */
-      const tInst = qb ? qb.inst : (struct && struct.length ? null : "L1");
-      const tBase = qb ? qb.base : (struct && struct.length ? null : "L1");
+      const tInst = qb ? qb.inst : (gvLoop ? GROOVE : (struct && struct.length ? null : "L1"));
+      const tBase = qb ? qb.base : (gvLoop ? GROOVE : (struct && struct.length ? null : "L1"));
       const tMb = qb ? qb.mb : Math.floor(m.step / L);
       /* A pass's own chord rhythm replaces the song's strum for its bars — the same symbols, so
-         the voices, the click and the bass's "follow" mode all read it without knowing. */
-      const cOwn = tInst != null ? secChordBeatRef.current[tInst] : null;
+         the voices, the click and the bass's "follow" mode all read it without knowing. A pass
+         with nothing of its own follows the groove sketch's chord rhythm, cycling round. */
+      let cOwn = tInst != null ? secChordBeatRef.current[tInst] : null, cLoop = false;
+      if (!(cOwn && cOwn.length) && tInst !== GROOVE) {
+        const g = secChordBeatRef.current[GROOVE];
+        if (g && g.length) { cOwn = g; cLoop = true; }
+      }
       if (cOwn && cOwn.length) {
-        const cbar = cOwn[qb ? Math.min(tMb, cOwn.length - 1) : tMb % cOwn.length] || [];
+        const cbar = cOwn[!cLoop && qb ? Math.min(tMb, cOwn.length - 1) : tMb % cOwn.length] || [];
         const cs2 = stepAt(cbar.length, i, L);
         sym = cs2 == null ? "-" : (cbar[cs2] || "-");
       }
@@ -2496,11 +2592,15 @@ export default function ProgressionWheel() {
         const mut = tInst != null && mutes[tInst] != null ? mutes[tInst]
           : (tBase != null ? mutes[tBase] : undefined);
         if (mut) return null;
+        // the groove sketch's written bars, before the song-level catalogue pattern — a loop, so
+        // it cycles round a longer section rather than holding its last bar
+        const g = tInst !== GROOVE ? beats[GROOVE] : null;
+        if (g && g.length) return { beat: g, loop: true };
         return glob ? { pat: glob } : null;
       };
       // a written or picked bar for this tick, sized to the section like the drums' own bars are
       const srcBar = src => src.beat
-        ? (src.beat[qb ? Math.min(tMb, src.beat.length - 1) : tMb % src.beat.length] || null) : null;
+        ? (src.beat[!src.loop && qb ? Math.min(tMb, src.beat.length - 1) : tMb % src.beat.length] || null) : null;
       const bassSrc = chord
         ? srcOf(secBassBeatRef.current, secBassPatRef.current, secBassRef.current, bassRef.current) : null;
       const bassOn = !!bassSrc;
@@ -2538,21 +2638,28 @@ export default function ProgressionWheel() {
       /* The pad track: the chord's upper voicing held a bar at a time, legato, into its own
          filter and the reverb bus. Upper voicing only — the low root belongs to the bass or the
          chords, and a pad that doubles it is the mud the register fences exist to stop. */
-      const padV = (() => {
+      const padPick = (() => {
         const v = (tInst != null && secPadVoiceRef.current[tInst]) || (tBase != null && secPadVoiceRef.current[tBase]) || "";
-        if (v) return v === "off" ? "" : v;
+        if (v) return { off: v === "off", voice: v === "off" ? "" : v };
         const mut = tInst != null && secPadRef.current[tInst] != null ? secPadRef.current[tInst]
           : (tBase != null ? secPadRef.current[tBase] : undefined);
-        if (mut) return "";
-        return padRef.current;
+        if (mut) return { off: true, voice: "" };
+        return { off: false, voice: padRef.current };
       })();
-      const padOwn = tInst != null ? secPadBeatRef.current[tInst] : null;
+      const padV = padPick.voice;
+      // the pass's own pad rhythm, else the groove sketch's — unless this pass's pad is switched
+      // off, which is the allocation saying the pad sits this section out
+      let padOwn = tInst != null ? secPadBeatRef.current[tInst] : null, padLoop = false;
+      if (!(padOwn && padOwn.length) && tInst !== GROOVE && !padPick.off) {
+        const g = secPadBeatRef.current[GROOVE];
+        if (g && g.length) { padOwn = g; padLoop = true; }
+      }
       if (chord && (!m.stem || m.stem.kind === "pad")) {
         if (padOwn && padOwn.length) {
           // the pass's own pad rhythm: H holds to the next hit, S stabs — voice from the section,
           // the song default, or strings, so a written rhythm always sounds
           const pv = padV || padRef.current || "strings";
-          const pbar = padOwn[qb ? Math.min(tMb, padOwn.length - 1) : tMb % padOwn.length] || [];
+          const pbar = padOwn[!padLoop && qb ? Math.min(tMb, padOwn.length - 1) : tMb % padOwn.length] || [];
           const ps2 = stepAt(pbar.length, i, L);
           const tok = ps2 == null ? "" : pbar[ps2];
           if (tok) {
@@ -2586,7 +2693,7 @@ export default function ProgressionWheel() {
           }
       }
       let dpat = drumRef.current;                       // global drum pattern by default
-      if (struct && struct.length && structBar >= 0) {   // a section can override with its own kit
+      if (struct && struct.length && structBar >= 0 && !gvLoop) {   // a section can override with its own kit
         const b = struct[structBar];
         const sd = b ? ((b.inst != null && secDrumRef.current[b.inst])
           || (b.base != null ? secDrumRef.current[b.base] : "")) : "";
@@ -2596,6 +2703,18 @@ export default function ProgressionWheel() {
            its last written bar rather than falling silent — the same rule melodies follow. */
         const own = b && b.inst != null ? secBeatRef.current[b.inst] : null;
         if (own && own.length) dpat = own[Math.min(b.mb, own.length - 1)];
+        /* …and a section that said nothing at all follows the groove sketch's written drums,
+           cycling round its bars — a loop, not a stretched section, so it never holds its last bar. */
+        else if (!sd) {
+          const g = secBeatRef.current[GROOVE];
+          if (g && g.length) dpat = g[b.mb % g.length];
+        }
+      } else {
+        // the plain loop (or the groove looping): the sketch section's own written bars, else the
+        // groove's — the same resolution every other track already makes here
+        const own = tInst != null ? secBeatRef.current[tInst] : null;
+        const g = (own && own.length) ? own : secBeatRef.current[GROOVE];
+        if (g && g.length) dpat = g[Math.floor(m.step / L) % g.length];
       }
       /* Automation lanes: on each bar's downbeat, ramp to the value the curve holds a bar later.
          Per bar rather than per tick because that is already smooth to the ear and keeps the event
@@ -2603,7 +2722,8 @@ export default function ProgressionWheel() {
       // With no structure there is no structBar — it stays -1 for every bar, so guarding on it
       // would let automation fire once and never again on a plain loop. Count bars instead.
       const autoBar = structBar >= 0 ? structBar : Math.floor(m.step / L);
-      if (i === 0 && autoBar !== m.lastAutoBar) {
+      // the lanes describe the song's timeline, and looping the groove is outside it
+      if (!gvLoop && i === 0 && autoBar !== m.lastAutoBar) {
         m.lastAutoBar = autoBar;
         const A = autoRef.current || {};
         const barDur = barBeatsRef.current * beat;
@@ -2659,7 +2779,8 @@ export default function ProgressionWheel() {
           const dvv = val("drive") / 100;
           if (dvv !== tr.driveAmt) { tr.driveAmt = dvv; tr.drive.curve = dvv > 0 ? driveCurve(dvv) : null; }
           tr.hp.frequency.setValueAtTime(nyq(m, 20 * Math.pow(1200 / 20, val("hp") / 100)), t);
-          const lane = laneId ? autoAt(A3[laneId], fxBar) : null;
+          // the drawn lanes live on the song's timeline; looping the groove plays outside it
+          const lane = laneId && !gvLoop ? autoAt(A3[laneId], fxBar) : null;
           const cutPos = lane != null ? lane * 100 : val("cut");
           const cutHz = nyq(m, 120 * Math.pow(FILTER_OPEN / 120, cutPos / 100));
           const w = val("wob") / 100;
@@ -2750,7 +2871,11 @@ export default function ProgressionWheel() {
       const mel = meloRef.current;
       if (mel) {
         let sym = null, mb = 0;
-        if (struct && struct.length) {
+        if (gvLoop && mel.bySym[GROOVE]) {
+          sym = GROOVE;
+          const nb = (mel.bySym[GROOVE].layers[0].bars.length) || 1;
+          mb = Math.floor(m.step / L) % nb;
+        } else if (struct && struct.length) {
           const e = struct[structBar];   // same bar the chord engine chose (honours the loop window)
           sym = e.inst; mb = e.mb;
         } else if (mel.bySym.L1) {
@@ -2825,7 +2950,8 @@ export default function ProgressionWheel() {
           /* A part's drawn filter lane, read at this tick's position in the song. It is the
              Low-pass knob written across the bars, so wherever it exists it takes over from the
              knob; null (no lane, or a lane for another song) hands the knob back. */
-          const laneCutOf = li => autoAt((autoRef.current || {})[autoPartId(li)], autoBar + i / L);
+          // drawn on the song's timeline, so looping the groove leaves the knob in charge
+          const laneCutOf = li => gvLoop ? null : autoAt((autoRef.current || {})[autoPartId(li)], autoBar + i / L);
           /* Push every one of a part's modulations onto its chain for this tick. Read from the
              live layer each tick rather than set once at build, so moving a control while the song
              is playing is heard on the next tick rather than at the next play. */
@@ -3225,9 +3351,13 @@ export default function ProgressionWheel() {
   // Turning it on also starts playback from the section if nothing is playing.
   const toggleLoopSec = d => {
     const on = loopSec !== d.key;
-    loopRef.current = on ? { from: d.startBar, len: d.nbars } : null;  // take effect on the very next tick
+    // the groove sketch is not on the song's timeline, so looping it is its own mode: the plain
+    // chord loop plays and every track resolves to the groove, whatever structure is loaded
+    loopRef.current = !on ? null
+      : d.key === GROOVE ? { groove: true, len: d.nbars }
+      : { from: d.startBar, len: d.nbars };            // take effect on the very next tick
     setLoopSec(on ? d.key : null);
-    if (on && !playing) startMetro(d.startBar);
+    if (on && !playing) startMetro(d.key === GROOVE ? 0 : d.startBar);
   };
 
   /* ---- dice ---- */
@@ -3428,11 +3558,17 @@ export default function ProgressionWheel() {
       // per-bar drum pattern: a section's own kit if it set one, else the global choice
       const drumForBar = bi => {
         const b = bars[bi];
-        // a section's own written bars first, then its type's catalogue choice, then the song's —
-        // the same order playback resolves, so the file is what you heard
+        // a section's own written bars first, then its type's catalogue choice, then the groove
+        // sketch's written drums, then the song's — the same order playback resolves, so the file
+        // is what you heard
         const own = b && b.inst != null ? secBeat[b.inst] : null;
         if (own && own.length) return own[Math.min(b.mb, own.length - 1)];
-        const id = (b && ((b.inst != null && secDrum[b.inst]) || (b.base != null && secDrum[b.base]))) || drum;
+        const sd = b && ((b.inst != null && secDrum[b.inst]) || (b.base != null && secDrum[b.base]));
+        if (!sd) {
+          const g = secBeat[GROOVE];
+          if (g && g.length) return g[(b && b.inst != null ? b.mb : bi) % g.length];
+        }
+        const id = sd || drum;
         return DRUMS[id] ? DRUMS[id].pattern : null;
       };
       const anyDrum = bars.some((_, i) => drumForBar(i));
@@ -3459,9 +3595,13 @@ export default function ProgressionWheel() {
          null (a plain whole-bar chord) elsewhere — the file plays what the song plays. */
       const chordRhythm = bars.map((b, bi) => {
         const key = b.inst != null ? b.inst : "L1";
-        const own = secChordBeat[key];
-        if (!own || !own.length) return null;
-        return own[b.inst != null ? Math.min(b.mb, own.length - 1) : bi % own.length] || null;
+        let own = secChordBeat[key], loop = false;
+        if (!own || !own.length) {                      // a pass with nothing of its own follows the groove sketch
+          const g = secChordBeat[GROOVE];
+          if (g && g.length) { own = g; loop = true; } else return null;
+        }
+        return own[b.inst != null && !loop ? Math.min(b.mb, own.length - 1)
+          : (b.inst != null ? b.mb : bi) % own.length] || null;
       });
       const meta = {
         chordRhythm: chordRhythm.some(Boolean) ? chordRhythm : null,
@@ -3485,8 +3625,9 @@ export default function ProgressionWheel() {
         const dk = b.inst != null ? { key: b.inst, base: b.base } : { key: "L1", base: "L1" };
         const src = srcFn(dk);
         if (!src) return null;
-        if (src.beat) return { bar: src.beat[b.inst != null
-          ? Math.min(b.mb, src.beat.length - 1) : bi % src.beat.length] || null };
+        // a groove-sketch source is a loop: it cycles round a longer section, never holds its last bar
+        if (src.beat) return { bar: src.beat[b.inst != null && !src.loop
+          ? Math.min(b.mb, src.beat.length - 1) : (b.inst != null ? b.mb : bi) % src.beat.length] || null };
         return src;
       };
       const bassNotes = [];
@@ -3533,7 +3674,9 @@ export default function ProgressionWheel() {
       let padVoiceUsed = "";
       bars.forEach((b, bi) => {
         const dk = b.inst != null ? { key: b.inst, base: b.base } : { key: "L1", base: "L1" };
-        const v = padVoiceOf(dk);
+        // a written pad rhythm (the pass's own or the groove's) plays even with no voice picked,
+        // so it has to export too — as the held voicing, with the same fallback voice playback uses
+        const v = padVoiceOf(dk) || (padBeatOf(dk) ? (pad || "strings") : "");
         if (!v) return;
         padVoiceUsed = padVoiceUsed || v;
         for (const x of chordIvs(b.chord.quality))
@@ -3741,7 +3884,8 @@ export default function ProgressionWheel() {
   // degree. targetKey defaults to the import-target picker; verb tunes the status wording.
   const applyImportedMelody = (events, targetKey, verb = "Imported") => {
     const wantKey = targetKey || impSec;
-    const sec = sections.insts.find(s => s.key === wantKey) || sections.insts[0];
+    const sec = wantKey === GROOVE ? grooveInst
+      : (sections.insts.find(s => s.key === wantKey) || sections.insts[0]);
     if (!sec) { setIoNote("Add a progression first, then import a melody."); return; }
     if (!events || !events.length) {
       setIoNote(verb === "Recorded"
@@ -3879,7 +4023,7 @@ export default function ProgressionWheel() {
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
     kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
-    secBassPat, secPercPat, secPadVoice, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit,
+    secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit,
     secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
@@ -3894,7 +4038,7 @@ export default function ProgressionWheel() {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
       kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
-      secBassPat, secPercPat, secPadVoice, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit,
+      secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit,
       secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
@@ -4105,6 +4249,7 @@ export default function ProgressionWheel() {
     setPadSt({ key:s.progId, val:s.pad || "" }); setSecPad(s.secPad || {});
     // the per-section choices and written grids the tracks are authored with now
     setSecBassPat(s.secBassPat || {}); setSecPercPat(s.secPercPat || {}); setSecPadVoice(s.secPadVoice || {});
+    setSecPartOut(s.secPartOut || {});
     setSecBassBeat(unpackBeats(s.secBassBeat)); setSecPercBeat(unpackBeats(s.secPercBeat));
     setSecPadBeat(unpackBeats(s.secPadBeat)); setSecChordBeat(unpackBeats(s.secChordBeat));
     setOpenBass({}); setOpenPercs({}); setOpenPads({}); setOpenChordGrids({});
@@ -4137,6 +4282,1296 @@ export default function ProgressionWheel() {
     return <path key={"seg"+i} d={d} className="progpath" markerEnd="url(#arrCream)" style={{ animationDelay: `${i * 0.12}s` }} />;
   });
   const svgKey = progId + "-" + tonic + "-" + Object.keys(ovMap).length + "-" + insList.length + (showPar?"p":"") + (showSec?"s":"");
+
+  /* ---- one section's whole editing surface ----
+     Extracted from the Arrange tab's write-out so the Sketch tab can point the same card at
+     the groove sketch: the grids, the part mixer and the track effects are the section's
+     machinery, and a second implementation of them would immediately drift. `view.groove`
+     hides what has no meaning off the song's timeline (play-from-here, seams, moves) and
+     swaps the loop button for the groove's own. */
+  const sectionCard = (d, di, view = {}) => {
+            const who = view.groove ? "the groove" : d.key;
+            const sec = secMelos[d.key] || EMPTY_SEC;
+            const cols = d.cs.length * meloBeats;
+            const open = !!openSecs[d.key];
+            const beatOpen = !!openBeats[d.key];
+            const percOpen = !!openPercs[d.key];
+            const bassOpen = !!openBass[d.key];
+            const padGOpen = !!openPads[d.key];
+            const chordGOpen = !!openChordGrids[d.key];
+            const optsOpen = !!openOpts[d.key];
+            const optsSet = [secDrum, secQuiet, secMove, secTrans, secNar, secBassPat, secPercPat, secPadVoice]
+              .some(m2 => m2[d.key]);
+            const has = secHasNotes(sec);
+            const donor = !has && sections.insts.find(o => o.base === d.base && o.key !== d.key
+              && secHasNotes(secMelos[o.key]));
+            const now = playing && curInst === d.key;
+            const acc = SEC_COL[d.base] || "#EDE7DA";
+            return (
+              <div key={di} className={"arr" + (now ? " playnow" : "")}
+                style={now ? { borderLeft: "3px solid " + acc } : null}>
+                <div className="row" style={{ justifyContent:"space-between", alignItems:"baseline" }}>
+                  <div className="arrsec" onClick={() => view.groove ? toggleLoopSec(d) : startMetro(d.startBar)} style={{ cursor:"pointer" }}
+                    title={view.groove ? "Loop the groove — the full stack, whatever the arrangement below subtracts" : "Play from here"}>
+                    <b className="sym" style={{ color: acc }}>{now ? "▶ " : ""}{view.groove ? "The groove" : d.key}</b> {view.groove ? "" : d.word}
+                    <span className="arrreps"> · {d.nbars} bar{d.nbars > 1 ? "s" : ""}{d.usedC ? " · ②" : ""}</span></div>
+                  <div className="row" style={{ gap:5 }}>
+                    {!view.groove && <button className="mini" onClick={() => startMetro(d.startBar)} title="Play from here">▶</button>}
+                    <button className={"mini" + (loopSec === d.key ? " loopon" : "")} onClick={() => toggleLoopSec(d)}
+                      title={loopSec === d.key
+                        ? (view.groove ? "Looping the groove — tap to stop" : "Looping this section — tap to stop")
+                        : (view.groove ? "Play the groove on a loop — every track at once, whatever the arrangement below subtracts"
+                          : "Loop just this section on playback")}>
+                      {view.groove ? "▶ 🔁 loop" : "🔁"}{loopSec === d.key ? " on" : ""}
+                    </button>
+                    {donor && <button className="mini" onClick={() => copyMelody(donor.key, d.key)}>copy {donor.key}</button>}
+                    {recSec === d.key
+                      ? <button className="mini recstop" onClick={stopSecRec} title="Stop & transcribe onto this section">■ Stop</button>
+                      : <button className="mini recbtn" onClick={() => startSecRec(d.key)} disabled={!!recSec}
+                          title={`Record a ${recSource} line straight onto ${d.key}'s melody grid (overwrites it)`}>
+                          {recSource === "guitar" ? "🎸" : "🎤"} Rec</button>}
+                    <button className="mini" onClick={() => setOpenSecs({ ...openSecs, [d.key]: !open })}>
+                      {open ? "▾" : "▸"} melody{has ? " ●" : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenBeats({ ...openBeats, [d.key]: !beatOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own drums — a busier hat in the second chorus, a fill in the last bar. It opens on whatever is playing now."}>
+                      {beatOpen ? "▾" : "▸"} drums{secBeat[d.key] ? " ● " + beatHits(secBeat[d.key]) : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenPercs({ ...openPercs, [d.key]: !percOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own percussion layer — a shaker that only runs through the build, a conga cell on one chorus. It opens on whatever the section's perc menu is playing."}>
+                      {percOpen ? "▾" : "▸"} perc{secPercBeat[d.key] ? " ● " + beatHits(secPercBeat[d.key]) : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenBass({ ...openBass, [d.key]: !bassOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own bassline — root, fifth and octave of whatever chord each bar holds, so the line follows the changes by itself. It opens on whatever the section's bass menu is playing."}>
+                      {bassOpen ? "▾" : "▸"} bass{secBassBeat[d.key] ? " ●" : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenPads({ ...openPads, [d.key]: !padGOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own pad rhythm — holds that ring to the next hit, and short stabs. One hold on the downbeat is the pad's natural state; stabs on the offbeats are house piano."}>
+                      {padGOpen ? "▾" : "▸"} pad{secPadBeat[d.key] ? " ●" : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenChordGrids({ ...openChordGrids, [d.key]: !chordGOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own chord rhythm — accents, downstrokes and upstrokes on the strum's own vocabulary, replacing the song's pattern for these bars alone."}>
+                      {chordGOpen ? "▾" : "▸"} chords{secChordBeat[d.key] ? " ●" : ""}
+                    </button>
+                  </div>
+                </div>
+                {recSec === d.key && (
+                  <div className="recbar">
+                    <div className="recmeter"><div className="recfill" style={{ width: (recLevel * 100) + "%" }} /></div>
+                    <span className="rechz">{recHz ? SEMI_NAME[((Math.round(hzToMidiF(recHz)) % 12) + 12) % 12] + " · " + Math.round(recHz) + " Hz" : "listening…"}</span>
+                    <span className="keytag">Play {recSource === "guitar" ? "a single-note line" : "your tune"}, one note at a time · press ■ Stop when done</span>
+                  </div>
+                )}
+                <div className="arrch">{d.str}</div>
+                {d.note && <div className="arrnote">{d.note}</div>}
+                {/* This one pass's own move and its own melodic shape. Both fall back to what the
+                    section type is set to, so a song stays as simple as you leave it — but the
+                    second chorus wanting a different build, or the bridge wanting to fall where
+                    everything else rises, is the normal case rather than the exception. */}
+                {/* The groove has no seams and no place in the running order, so instead of the
+                    section's transitions-and-presets bar it carries the song-level pattern menus —
+                    what each track starts from before its grid is painted. The sounds (kit, bass
+                    voice, pad voice, perc kit) live on the Sound tab, with each track's knobs. */}
+                {view.groove && <div className="row secopts" style={{ marginTop:5 }}>
+                  <span className="optlbl" style={{ opacity:0.6 }}>starts from</span>
+                  <label className="secopt" title="The drum pattern the groove's grid opens on — paint the grid and the pattern is yours">
+                    <span className="optlbl"><span aria-hidden="true">🥁</span> Drums</span>
+                    <select value={drum} onChange={e => { setDrumSt({ key: progId, val: e.target.value });
+                        if (secBeat[GROOVE]) resetBeat(GROOVE); }}>
+                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}{id === DRUM_DEFAULT[progId] ? " ★" : ""}</option>)}
+                    </select>
+                  </label>
+                  <label className="secopt" title="The bassline pattern the groove starts from — paint the bass grid to make the line your own">
+                    <span className="optlbl"><span aria-hidden="true">🎸</span> Bass</span>
+                    <select value={bass} onChange={e => { setBassSt({ key: progId, val: e.target.value });
+                        if (secBassBeat[GROOVE]) resetBassBeat(GROOVE); }}>
+                      <option value="">No bass</option>
+                      {Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="secopt" title="The percussion pattern the groove starts from — shakers, congas and offbeat hats over the drums">
+                    <span className="optlbl"><span aria-hidden="true">🥁</span> Perc</span>
+                    <select value={perc} onChange={e => { setPercSt({ key: progId, val: e.target.value || "off" });
+                        if (secPercBeat[GROOVE]) resetPercBeat(GROOVE); }}>
+                      <option value="">No percussion</option>
+                      {Object.entries(PERCS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="secopt" title="The pad voice — the chord's upper voicing held a bar at a time. Write its rhythm on the pad grid.">
+                    <span className="optlbl"><span aria-hidden="true">🌫️</span> Pad</span>
+                    <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}>
+                      <option value="">No pad</option>
+                      {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                    </select>
+                  </label>
+                </div>}
+                {!view.groove && <button className="mini" style={{ marginTop:5 }}
+                  onClick={() => setOpenOpts({ ...openOpts, [d.key]: !optsOpen })}
+                  title={"Everything this " + d.word.toLowerCase() + " does besides its notes — how it arrives, what sweeps across it, and which instruments play. The dot means something here is set."}>
+                  {optsOpen ? "\u25be" : "\u25b8"} Transitions & presets{optsSet ? " \u25cf" : ""}
+                </button>}
+                {!view.groove && optsOpen && <>
+                <div className="row secopts">
+                  <span className="optlbl" style={{ opacity:0.6 }}>seam</span>
+                  <label className="secopt" title={"Transition into this " + d.word.toLowerCase()
+                    + " alone — what happens on the bar it arrives on. Most of it sounds in the section before, so a lead-in longer than that section shortens to fit. Left as it is, it does whatever every "
+                    + d.word.toLowerCase() + " does."}>
+                    <span className="optlbl"><span aria-hidden="true">⇥</span> Way in</span>
+                    {transSelect(secTrans[d.key] || "", e => setSecTrans({ ...secTrans, [d.key]: e.target.value }),
+                      secTrans[d.base] && TRANS[secTrans[d.base]]
+                        ? d.word.toLowerCase() + " — " + TRANS[secTrans[d.base]].name : null)}
+                  </label>
+                  <label className="secopt" title={"Arrangement move for this " + d.word.toLowerCase()
+                    + " alone — a filter sweep, riser or drop across its bars. Left as it is, it does whatever every "
+                    + d.word.toLowerCase() + " does."}>
+                    <span className="optlbl"><span aria-hidden="true">🎛</span> Move</span>
+                    <select value={secMove[d.key] || ""}
+                      onChange={e => setSecMove({ ...secMove, [d.key]: e.target.value })}>
+                      <option value="">{secMove[d.base] && MOVES[secMove[d.base]]
+                        ? "as every " + d.word.toLowerCase() + " — " + MOVES[secMove[d.base]].name
+                        : "— no move —"}</option>
+                      {Object.entries(MOVES).map(([id, mv]) => id
+                        ? <option key={id} value={id}>{mv.name}</option> : null)}
+                    </select>
+                  </label>
+                  <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
+                    + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
+                    <span className="optlbl"><span aria-hidden="true">🎵</span> Shape</span>
+                    <select value={secNar[d.key] || ""} onChange={e => applySecNarrative(d, e.target.value)}>
+                      <option value="">{curNar ? "as the song — " + curNar.name : "— no shape written —"}</option>
+                      {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                    </select>
+                  </label>
+                  {secNar[d.key] && <button className="mini"
+                    title="Write this section's shape again — after a key change, or edits you want to throw away"
+                    onClick={() => applySecNarrative(d, secNar[d.key])}>↻</button>}
+                </div>
+                <div className="row secopts">
+                  <span className="optlbl" style={{ opacity:0.6 }}>plays</span>
+                  <label className="secopt" title={"Drums for this " + d.word.toLowerCase()
+                    + " alone — its own kit, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it."}>
+                    <span className="optlbl"><span aria-hidden="true">🥁</span> Drums</span>
+                    <select value={secDrum[d.key] || ""}
+                      onChange={e => setSecDrum({ ...secDrum, [d.key]: e.target.value })}>
+                      <option value="">{secDrum[d.base] && DRUMS[secDrum[d.base]]
+                        ? "as every " + d.word.toLowerCase() + " — " + DRUMS[secDrum[d.base]].name
+                        : "— the song's drums —"}</option>
+                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="secopt" title={"Whether the chords sound in this " + d.word.toLowerCase()
+                    + " alone. A drums-only intro and a breakdown with no harmony under it are both this switch."}>
+                    <span className="optlbl"><span aria-hidden="true">🎹</span> Chords</span>
+                    <select value={secQuiet[d.key] == null ? "" : (secQuiet[d.key] ? "out" : "in")}
+                      onChange={e => { const v = e.target.value, next = { ...secQuiet };
+                        if (v === "") delete next[d.key]; else next[d.key] = v === "out";
+                        setSecQuiet(next); }}>
+                      <option value="">{secQuiet[d.base]
+                        ? "as every " + d.word.toLowerCase() + " — chords out"
+                        : "— chords in —"}</option>
+                      <option value="in">Chords in</option>
+                      <option value="out">Chords out</option>
+                    </select>
+                  </label>
+                  <label className="secopt" title={"The bassline for this " + d.word.toLowerCase()
+                    + " alone — a pattern from the catalogue, or none. Independent of the chords, so a breakdown can lose the harmony and keep the bass running. Open ▸ bass above to write the line note by note."}>
+                    <span className="optlbl"><span aria-hidden="true">🎸</span> Bass</span>
+                    <select value={secBassPat[d.key] || ""}
+                      onChange={e => { const v = e.target.value, next = { ...secBassPat };
+                        if (!v) delete next[d.key]; else next[d.key] = v;
+                        setSecBassPat(next);
+                        // the menu supersedes a written grid — the grid re-seeds from the new choice
+                        if (secBassBeat[d.key]) { const nb = { ...secBassBeat }; delete nb[d.key]; setSecBassBeat(nb); } }}>
+                      <option value="">{(() => {
+                        const p = secBassPat[d.base];
+                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no bass"
+                          : "as every " + d.word.toLowerCase() + " — " + ((BASS[p] || {}).name || p);
+                        return bass && !secBass[d.base] && !secBass[d.key]
+                          ? "as the song — " + ((BASS[bass] || {}).name || bass) : "— no bass —";
+                      })()}</option>
+                      <option value="off">No bass</option>
+                      {Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="secopt" title={"The percussion layer for this " + d.word.toLowerCase()
+                    + " alone — a second pattern from the drum table riding over the groove on the song's kit. The classic move is perc entering a build before the kick returns. Open ▸ perc above to write it step by step."}>
+                    <span className="optlbl"><span aria-hidden="true">🥁</span> Perc</span>
+                    <select value={secPercPat[d.key] || ""}
+                      onChange={e => { const v = e.target.value, next = { ...secPercPat };
+                        if (!v) delete next[d.key]; else next[d.key] = v;
+                        setSecPercPat(next);
+                        if (secPercBeat[d.key]) { const nb = { ...secPercBeat }; delete nb[d.key]; setSecPercBeat(nb); } }}>
+                      <option value="">{(() => {
+                        const p = secPercPat[d.base];
+                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no perc"
+                          : "as every " + d.word.toLowerCase() + " — " + ((PERCS[p] || DRUMS[p] || {}).name || p);
+                        return perc && !secPerc[d.base] && !secPerc[d.key]
+                          ? "as the song — " + ((PERCS[perc] || DRUMS[perc] || {}).name || perc) : "— no percussion —";
+                      })()}</option>
+                      <option value="off">No percussion</option>
+                      {Object.entries(PERCS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="secopt" title={"The pad for this " + d.word.toLowerCase()
+                    + " alone — a second chord voice holding the upper voicing a bar at a time, reverbed and barely pumped. Pads carry breakdowns and sit out of DJ intros."}>
+                    <span className="optlbl"><span aria-hidden="true">🌫️</span> Pad</span>
+                    <select value={secPadVoice[d.key] || ""}
+                      onChange={e => { const v = e.target.value, next = { ...secPadVoice };
+                        if (!v) delete next[d.key]; else next[d.key] = v;
+                        setSecPadVoice(next);
+                        if (secPadBeat[d.key]) { const nb = { ...secPadBeat }; delete nb[d.key]; setSecPadBeat(nb); } }}>
+                      <option value="">{(() => {
+                        const p = secPadVoice[d.base];
+                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no pad"
+                          : "as every " + d.word.toLowerCase() + " — " + ((PAD_VOICES.find(([id]) => id === p) || [])[1] || p);
+                        return pad && !secPad[d.base] && !secPad[d.key]
+                          ? "as the song — " + ((PAD_VOICES.find(([id]) => id === pad) || [])[1] || pad) : "— no pad —";
+                      })()}</option>
+                      <option value="off">No pad</option>
+                      {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                    </select>
+                  </label>
+                </div>
+                </>}
+                {open && (() => {
+                  const tab = melTab[d.key] || "write";
+                  const pick = sugSel[d.key] || { pat: MELODY_PATTERNS[0].id, start: 0 };
+                  const curPat = MELODY_PATTERNS.find(p => p.id === pick.pat) || MELODY_PATTERNS[0];
+                  const rhy = rhySel[d.key] || "straight";
+                  const curRhy = RHYTHMS.find(r => r.id === rhy) || RHYTHMS[0];
+                  const nL = nLayers(sec);
+                  const secL = Math.min(secPart[d.key] || 0, nL - 1);   // which part this section's tabs are showing
+                  // a fresh copy of the melody-voice option list (used by both per-layer instrument menus)
+                  const leadOpts = () => (<>
+                    <option value="">Lead default</option>
+                    <optgroup label="Synth (no download)">
+                      {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                    </optgroup>
+                    {GM_CATS.map(([cat, list]) => (
+                      <optgroup key={cat} label={"◈ " + cat}>
+                        {list.map(([k, label]) => <option key={cat + k} value={k}>{label}</option>)}
+                      </optgroup>
+                    ))}
+                  </>);
+                  return (
+                  <div style={{ marginTop:8 }}>
+                    {/* One tab per instrument in this section, then that instrument's own settings
+                        panel. The panel is tinted and inset because everything in it belongs to
+                        this section alone — the same instrument is a different sound in the chorus,
+                        and nothing else on the page works that way. */}
+                    {(() => {
+                      const ly = layerOf(sec, secL) || {};
+                      const oct = ly.oct || 0, vol = ly.vol == null ? 1 : ly.vol;
+                      const anySolo = sec.layers.some(l => l.solo);
+                      const set = patch => setLayerProp(d.key, secL, patch);
+                      const grp = modTab[d.key] || MOD_GROUPS[0].id;
+                      const ink = LAYER_INK[secL] || "#8B94A3";
+                      // where a copy can go: the other passes of this same section first, since
+                      // that is nearly always what is meant, then anywhere else in the song
+                      const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                      const others = sections.insts.filter(o => o.key !== d.key);
+                      const doCopy = (keys, what) => {
+                        const n = copyPartSettings(d.key, secL, keys);
+                        setIoNote(n ? `${LAYER_NAMES[secL]}'s settings copied to ${what}.` : "Nothing to copy to.");
+                      };
+                      return (<>
+                      <div className="row lytabs" style={{ gap:5, alignItems:"flex-end", flexWrap:"wrap" }}>
+                        {sec.layers.map((l, li) => {
+                          const n = modCount(l);
+                          return (
+                            <button key={li} className={"lytab" + (secL === li ? " on" : "")}
+                              title={"Part " + LAYER_NAMES[li] + (n ? ` — ${n} setting${n > 1 ? "s" : ""} of its own` : "")}
+                              style={{ "--ly": LAYER_INK[li] }}
+                              onClick={() => setSecPart({ ...secPart, [d.key]: li })}>
+                              {LAYER_NAMES[li]}
+                              {l.mute ? <i className="lyflag">m</i> : l.solo ? <i className="lyflag">s</i> : null}
+                              {n > 0 && <i className="lydot">{n}</i>}
+                            </button>
+                          );
+                        })}
+                        {nL < MAX_LAYERS &&
+                          <button className="lytab lyadd" onClick={() => addLayer(d.key)}
+                            title="Add another instrument to this section — a bassline, a pad, an arp. It arrives with its own tab of settings.">＋</button>}
+                      </div>
+
+                      <div className="partpanel" style={{ "--ly": ink }}>
+                        <div className="row parthdr" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                          <span className="partname">{d.key} · part {LAYER_NAMES[secL]}</span>
+                          <select className="fxsel partinstr" value={ly.instr || ""}
+                            title={"The instrument part " + LAYER_NAMES[secL] + " plays in " + d.key + " — each section can give the same part a different voice"}
+                            onChange={e => setSecInstr(d.key, secL, e.target.value)}>
+                            {leadOpts()}
+                          </select>
+                          <select className="fxsel partcopy" value="" title="Copy every setting on this part — instrument, register, level and all its modulation — onto the same part of other sections. Their notes are left alone."
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (v === "role") doCopy(sameRole.map(o => o.key), "every other " + d.word.toLowerCase());
+                              else if (v === "all") doCopy(others.map(o => o.key), "every other section");
+                              else if (v) doCopy([v], v);
+                            }}>
+                            <option value="">⧉ copy settings to…</option>
+                            {sameRole.length > 0 && <option value="role">every other {d.word.toLowerCase()} ({sameRole.length})</option>}
+                            {others.length > 0 && <option value="all">every other section ({others.length})</option>}
+                            {others.length > 0 && <optgroup label="just one">
+                              {others.map(o => <option key={o.key} value={o.key}>{o.key} · {o.word}</option>)}
+                            </optgroup>}
+                          </select>
+                          {modCount(ly) > 0 && <button className="mini" title="Put every modulation on this part back to its default. Its instrument, register and level are left alone."
+                            onClick={() => set(Object.fromEntries(MODS.map(md => [md.k, md.dflt])))}>↺ reset</button>}
+                          {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
+                            title={"Remove part " + LAYER_NAMES[secL] + " from " + d.key}>🗑</button>}
+
+                        {/* register, level and the two mix switches sit on the same row as the part's
+                            name and voice: which part, what it plays and where it sits in the mix are
+                            one thing, and a boxed second row spent a border and two paddings saying
+                            they were two. It wraps on a narrow card, which is where it needs to. */}
+                          <span className="modlbl" style={{ marginLeft:2 }}>Octave</span>
+                          <div className="row" style={{ gap:4, alignItems:"center" }}>
+                            <button className="mini" disabled={oct <= LAYER_OCT_MIN}
+                              onClick={() => set({ oct: Math.max(LAYER_OCT_MIN, oct - 1) })}
+                              title="Drop this part an octave">−</button>
+                            <span className="modval">{oct > 0 ? "+" + oct : oct}</span>
+                            <button className="mini" disabled={oct >= LAYER_OCT_MAX}
+                              onClick={() => set({ oct: Math.min(LAYER_OCT_MAX, oct + 1) })}
+                              title="Lift this part an octave">＋</button>
+                          </div>
+                          <label className="modctl" title={"Level of part " + LAYER_NAMES[secL]}>
+                            <span className="modlbl">Level</span>
+                            <input className="lvl" type="range" min="0" max="100" value={Math.round(vol * 100)}
+                              onChange={e => set({ vol: +e.target.value / 100 })} />
+                            <span className="modval">{Math.round(vol * 100)}%</span>
+                          </label>
+                          <button className={"mini" + (ly.mute ? " mixon" : "")} onClick={() => set({ mute: !ly.mute })}
+                            title="Silence this part">{ly.mute ? "muted" : "mute"}</button>
+                          <button className={"mini" + (ly.solo ? " mixon" : "")} onClick={() => set({ solo: !ly.solo })}
+                            title="Hear this part alone">{ly.solo ? "soloed" : "solo"}</button>
+                          {anySolo && !ly.solo && <span className="keytag" style={{ margin:0, opacity:.75 }}>another part is soloed</span>}
+                        </div>
+
+                        {/* the modulation, one group at a time — 28 controls at once is a mixing
+                            desk, not a sketchpad */}
+                        <div className="row modtabs">
+                          {MOD_GROUPS.map(g => {
+                            const n = g.mods.reduce((a, md) => a + (modOf(ly, md.k) !== md.dflt ? 1 : 0), 0);
+                            return (
+                              <button key={g.id} className={"modtab" + (grp === g.id ? " on" : "")}
+                                title={g.tip} onClick={() => setModTab({ ...modTab, [d.key]: g.id })}>
+                                {g.name}{n > 0 && <i className="lydot">{n}</i>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="modgrid">
+                          {(MOD_GROUPS.find(g => g.id === grp) || MOD_GROUPS[0]).mods
+                            // a rate only means something once the thing it paces is turned up
+                            .filter(md => !md.needs || modOf(ly, md.needs) !== MOD_BY_KEY[md.needs].dflt)
+                            .map(md => (
+                              <ModCtl key={md.k} mod={md} ly={ly} onSet={set}
+                                disabled={md.needsDelay && delayId === "off"} />
+                            ))}
+                        </div>
+                        {tips && grp === "space" && delayId === "off" &&
+                          <p className="arrnote" style={{ margin:"4px 0 0" }}>Echo needs a Delay time — pick one on the <b>Sound</b> tab.</p>}
+                        {tips && modOf(ly, "arp") &&
+                          <p className="arrnote" style={{ margin:"4px 0 0" }}>
+                            Part {LAYER_NAMES[secL]} is arping the chords, so its grid below is not
+                            being played — clear the arp to go back to the written notes.
+                          </p>}
+                      </div>
+                      </>);
+                    })()}
+
+                    {/* Write/Suggest and Draw/Move were two button rows stacked, which is two rows
+                        of chrome above a grid that is the actual work. One row, and the second
+                        switch appears only in the mode that has it. */}
+                    <div className="melmodebar">
+                      <div className="seg">
+                        <button className={tab === "write" ? "on" : ""}
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
+                        <button className={tab === "suggest" ? "on" : ""}
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
+                      </div>
+                      {tab === "write" && <div className="seg">
+                          <button className={!melMove ? "on" : ""} title="Write notes. Hold the button down and drag to paint a run of them — press an empty cell to draw, a full one to rub out."
+                            onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
+                          <button className={melMove ? "on" : ""} title="Drag a box to select notes, then drag a selected one to move the group"
+                            onClick={() => setMelMove(true)}>✋ Move</button>
+                        </div>}
+                        {/* Varying the repeats is about the whole melody rather than a selection, so it
+                            sits with the mode switch and not among the note tools below. */}
+                        {tab === "write" && (() => {
+                          const vst = varyIn[varyKeyOf(d.key, secL)];
+                          const lv = (vst && vst.level) || 0;
+                          return (<>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => varyRepeats(d, secL)}
+                              title={"Vary the repeats inside this section — the motif is found where it restates itself, "
+                                + "the first statement is left alone, and every one after it gets a different landing note, "
+                                + "an extra note, a phrase pushed early. Tap again for more; one past the top puts the "
+                                + "melody back as you wrote it."}>
+                              ✦ Vary repeats{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
+                          </>);
+                        })()}
+                        {tab === "write" && melMove && (() => {
+                          const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
+                          return (<>
+                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
+                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
+                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
+                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
+                            <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
+                          </>);
+                        })()}
+                    </div>
+
+                    {tab === "suggest" && (
+                      <div className="sugmel">
+                        <div className="selrow" style={{ flexWrap:"wrap", gap:8 }}>
+                          <div className="selwrap" style={{ minWidth:170 }}>
+                            <span className="keytag">Melody pattern</span>
+                            <select value={pick.pat}
+                              onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, pat:e.target.value } })}>
+                              {MELODY_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="selwrap" style={{ minWidth:150, flex:"0 0 auto" }}>
+                            <span className="keytag">Rhythm</span>
+                            <select value={rhy}
+                              onChange={e => setRhySel({ ...rhySel, [d.key]: e.target.value })}
+                              title="Where the notes fall in the bar, and how long each lasts — separately from the shape of the tune">
+                              {RHYTHMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="selwrap" style={{ minWidth:120, flex:"0 0 auto" }}>
+                            <span className="keytag">Start note</span>
+                            <select value={pick.start}
+                              onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, start:+e.target.value } })}>
+                              {scaleSemis.map((s, i) => (
+                                <option key={i} value={i}>{spell((tonic + s) % 12, tonic, effMode)} · degree {i + 1}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <p className="arrnote" style={{ marginTop:7 }}>Writing to melody <b>{LAYER_NAMES[secL]}</b>. {curPat.desc}</p>
+                        <p className="arrnote" style={{ marginTop:3 }}><b>{curRhy.name}</b> — {curRhy.desc}</p>
+                        {(() => {
+                          // a counter-melody is written against another part; with nothing to
+                          // answer it would write an empty grid, so say so rather than doing that
+                          const leadL = sec.layers.findIndex((ly, i) => i !== secL && ly.flat.some(c => c.length));
+                          const stuck = curPat.needs === "lead" && leadL < 0;
+                          return (<>
+                            {curPat.needs === "lead" && !stuck &&
+                              <p className="arrnote" style={{ marginTop:3, color:GOLD }}>
+                                Writing against part <b>{LAYER_NAMES[leadL]}</b>.
+                              </p>}
+                            {stuck &&
+                              <p className="arrnote" style={{ marginTop:3, color:"#E9B3AB" }}>
+                                This one is written against another part, and nothing else in this
+                                section has any notes yet. Write a lead first.
+                              </p>}
+                            <div className="row" style={{ gap:6, marginTop:8 }}>
+                              <button className="btn" disabled={stuck}
+                                onClick={() => applyPattern(d, sec, pick.pat, pick.start, secL, rhy)}>
+                                Write to grid</button>
+                              <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {LAYER_NAMES[secL]}</button>
+                            </div>
+                          </>);
+                        })()}
+                      </div>
+                    )}
+
+                    <div className={"mscroll" + (melMove ? " mvmode" : "")}
+                      data-sync={d.key} onScroll={syncScroll}>
+                      <div className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
+                        <span />
+                        {d.cs.map((c, b) => (
+                          <span key={b} className="mbar" style={{ gridColumn:`span ${meloBeats}`,
+                            background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                        ))}
+                      </div>
+                      {[...scaleSemis.keys()].reverse().map(deg => (
+                        <div key={deg} className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
+                          <span className="mnote">{spell((tonic + scaleSemis[deg]) % 12, tonic, effMode)}</span>
+                          {Array.from({ length: cols }, (_, c) => {
+                            // which parts sound this note here; the cell takes the first one's ink,
+                            // and a note shared by two parts is split diagonally between them
+                            const hits = sec.layers.reduce((a, ly, li) =>
+                              ((ly.flat[c] || []).includes(deg) ? [...a, li] : a), []);
+                            const onA = hits.length > 0;
+                            const inkA = onA ? LAYER_INK[hits[0]] : null;
+                            const inkB = hits.length > 1 ? LAYER_INK[hits[1]] : null;
+                            const isSel = melMove && melSel.key === d.key && melSel.layer === secL && melSel.notes[nKey(c, deg)];
+                            const inBox = melBox && melBox.key === d.key && c >= melBox.c0 && c <= melBox.c1 && deg >= melBox.d0 && deg <= melBox.d1;
+                            const isGhost = melGhost && melGhost.key === d.key && melSel.key === d.key && melSel.layer === secL
+                              && melSel.notes[nKey(c - melGhost.dc, deg - melGhost.dd)];
+                            return (
+                            <div key={c} data-mk={d.key} data-c={c} data-deg={deg}
+                              onClick={() => {
+                                if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                if (!melMove) tapMelo(d.key, c, deg, secL);
+                              }}
+                              onPointerDown={e => melDown(e, d.key, c, deg, sec, secL)}
+                              // the inline colour would beat the .colnow CSS, so the playhead
+                              // highlight has to be decided here too
+                              style={!onA ? null : (playing && curQ && curQ.sym === d.key && curQ.col === c)
+                                ? { background: inkB ? "linear-gradient(135deg, #EAE2CC 0 55%, #d9c2ff 55% 100%)" : "#EAE2CC",
+                                    borderColor: "#EAE2CC" }
+                                : { background: inkB ? `linear-gradient(135deg, ${inkA} 0 55%, ${inkB} 55% 100%)` : inkA,
+                                    borderColor: inkB || inkA }}
+                              className={"mcell" + (onA ? " on" : "") + (melMove ? " mv" : "")
+                                + (isSel ? " msel" : "") + (isGhost ? " mghost" : "") + (inBox ? " mbox" : "")
+                                + (playing && curQ && curQ.sym === d.key && curQ.col === c ? " colnow" : "")
+                                + (c % meloBeats === 0 && c > 0 ? " b0" : c % meloSub === 0 && c > 0 ? " bt" : "")} />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  );
+                })()}
+                {/* This section's own drums. Nine rows, one per kit piece, and a cell is a letter
+                    in the step string the catalogue patterns are already made of — so what you
+                    write here is a pattern like any other, and playback, the exported MIDI and the
+                    drum stem all take it without knowing it was edited.
+                    It opens on whatever is *currently* playing rather than on an empty bar, so the
+                    first thing you do is change a groove rather than build one from nothing. */}
+                {beatOpen && (() => {
+                  const bars = beatBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  const cat = DRUMS[effDrum(d) || drum];
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      {/* the same control row shape the melody grid above uses, so the two blocks
+                          read as one stack rather than two features that happen to be adjacent */}
+                      <div className="row gridhdr">
+                        <span className="gridname">🥁 {own ? `${who}'s own drums`
+                          : (!effDrum(d) && d.key !== GROOVE && secBeat[GROOVE] && secBeat[GROOVE].length) ? "following the groove"
+                          : "following " + ((cat && cat.name) || "the song's drums")}</span>
+                        {own && <button className="mini" onClick={() => resetBeat(d.key)}
+                          title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(d, sameRole)}
+                          title={"Put these drums on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        {/* the same chord header the melody grid carries, on the same columns —
+                            which is what makes a kick legible against the note above it */}
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
+                        {DRUM_VOICES.map(([ch, name, tip, ink]) => (
+                          <div key={ch} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            {/* the ink says which of the three parts of a kit a row belongs to —
+                                metal, backbeat, floor — while its cells are still empty */}
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step].includes(ch);
+                              return (
+                                <div key={c} data-dk={d.key} data-bar={bar} data-step={step} data-ch={ch}
+                                  onPointerDown={e => beatDown(e, d, bar, step, ch)}
+                                  onClick={() => {
+                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                    tapBeat(d, bar, step, ch);
+                                  }}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell dcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+{trackFxRow("drums")}
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        Hold the button down and drag to paint a row — press an empty cell and you are
+                        drawing, press a full one and you are rubbing out — so a sixteenth hat across
+                        four bars is one stroke. Two pieces on one step play together, which is all
+                        layering is here: a crash on the first step of a section, or a snare through
+                        the last bar, is the fill a transition is waiting for.
+                      </p>}
+                    </div>
+                  );
+                })()}
+                {percOpen && (() => {
+                  const bars = percGridBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secPercBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  const src = percSrcOf(d);
+                  const cat = src && src.pat ? (PERCS[src.pat] || DRUMS[src.pat]) : null;
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      <div className="row gridhdr">
+                        <span className="gridname">🥁 {own ? `${who}'s own perc layer`
+                          : src ? (src.loop ? "following the groove" : "following " + ((cat && cat.name) || "the section's perc"))
+                          : "no perc here — paint some"}</span>
+                        {own && <button className="mini" onClick={() => resetPercBeat(d.key)}
+                          title="Hand this section back to the perc menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPercBeat(d, sameRole)}
+                          title={"Put this perc on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
+                        {PERC_VOICES.map(([ch, name, tip, ink]) => (
+                          <div key={ch} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step].includes(ch);
+                              return (
+                                <div key={c} data-pk={d.key} data-bar={bar} data-step={step} data-ch={ch}
+                                  onPointerDown={e => percDown(e, d, bar, step, ch)}
+                                  onClick={() => {
+                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                    tapPerc(d, bar, step, ch);
+                                  }}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell dcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+{trackFxRow("perc")}
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        A second layer over the drum grid above, on the same kit — shakers, congas
+                        and offbeat hats live here so the main groove stays untouched. It has its
+                        own lane and its own drawn filter on the strip.
+                      </p>}
+                    </div>
+                  );
+                })()}
+                {bassOpen && (() => {
+                  const bars = bassGridBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secBassBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  const src = bassSrcOf(d);
+                  const cat = src && src.pat ? BASS[src.pat] : null;
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      <div className="row gridhdr">
+                        <span className="gridname">🎸 {own ? `${who}'s own bassline`
+                          : src ? (src.loop ? "following the groove" : "following " + ((cat && cat.name) || "the section's bass"))
+                          : "no bass here — paint a line"}</span>
+                        {own && <button className="mini" onClick={() => resetBassBeat(d.key)}
+                          title="Hand this section back to the bass menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBassBeat(d, sameRole)}
+                          title={"Put this bassline on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
+                        {BASS_ROWS.map(([tok, name, tip, ink]) => (
+                          <div key={tok} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step] === tok;
+                              return (
+                                <div key={c} data-bk={d.key} data-bar={bar} data-step={step} data-tok={tok}
+                                  onPointerDown={e => bassDown(e, d, bar, step, tok)}
+                                  onClick={() => {
+                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                    tapBass(d, bar, step, tok);
+                                  }}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell dcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+{trackFxRow("bass")}
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        One note a step — root, fifth or octave of whatever chord that bar holds, so
+                        the line follows the changes by itself. A note rings until the next one, so a
+                        single Root at the bar start is a held sub and a step on every offbeat is the
+                        house bounce. Tap a different row to move a note; tap it again to clear it.
+                      </p>}
+                    </div>
+                  );
+                })()}
+                {padGOpen && (() => {
+                  const bars = padGridBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secPadBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      <div className="row gridhdr">
+                        <span className="gridname">🌫️ {own ? `${who}'s own pad rhythm`
+                          : (padBeatOf(d) || {}).loop ? "following the groove"
+                          : padOnOf(d) ? "one hold a bar — the pad's natural state"
+                          : "no pad here — paint a rhythm"}</span>
+                        {own && <button className="mini" onClick={() => resetPadBeat(d.key)}
+                          title="Back to the pad's one-hold-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(d, sameRole)}
+                          title={"Put this pad rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
+                        {PAD_ROWS.map(([tok, name, tip, ink]) => (
+                          <div key={tok} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step] === tok;
+                              return (
+                                <div key={c} data-qk={d.key} data-bar={bar} data-step={step} data-tok={tok}
+                                  onPointerDown={e => padDown(e, d, bar, step, tok)}
+                                  onClick={() => {
+                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                    tapPad(d, bar, step, tok);
+                                  }}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell dcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      {trackFxRow("pad")}
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        The pad plays whatever chord each bar holds — this grid says when. A Hold
+                        rings until the next hit; a Stab is short. One Hold on the downbeat is what
+                        the pad does anyway; stabs off the beat turn it into house piano.
+                      </p>}
+                    </div>
+                  );
+                })()}
+                {chordGOpen && (() => {
+                  const bars = chordGridBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secChordBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      <div className="row gridhdr">
+                        <span className="gridname">🎹 {own ? `${who}'s own chord rhythm`
+                          : (d.key !== GROOVE && secChordBeat[GROOVE] && secChordBeat[GROOVE].length) ? "following the groove"
+                          : "following " + rhythm.name}</span>
+                        {own && <button className="mini" onClick={() => resetChordBeat(d.key)}
+                          title="Hand this section back to the song's strum pattern — the grid goes on showing it, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyChordBeat(d, sameRole)}
+                          title={"Put this chord rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
+                        {CHORD_ROWS.map(([tok, name, tip, ink]) => (
+                          <div key={tok} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step] === tok;
+                              return (
+                                <div key={c} data-ck={d.key} data-bar={bar} data-step={step} data-tok={tok}
+                                  onPointerDown={e => chordBeatDown(e, d, bar, step, tok)}
+                                  onClick={() => {
+                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                    tapChordBeat(d, bar, step, tok);
+                                  }}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell dcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        The chord track's rhythm for these bars alone, on the strum's own vocabulary:
+                        Accent is the big hit, Down a full strum, Up the light answer. It replaces the
+                        song's pattern here — the bassline's "with the chords" mode follows it too.
+                      </p>}
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+  };
+
+  /* The structure / arrangement-template chooser — rendered on the Arrange tab where it always
+     lived, and on the Sketch tab where picking a running order is the first step of allocating
+     the groove. One function, or the two menus drift. */
+  const structPicker = () => (
+    <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => pickStruct(e.target.value)}
+      title="A structure is a running order. An arrangement template is a running order plus what plays in each section — which drop the drums, which lose the chords, where the filter opens and what happens at every seam.">
+      <option value="">No structure — just the loop</option>
+      {/* First, because they are the ones that arrive arranged: everything below sets the
+          order of the sections and then plays every element through all of them. */}
+      <optgroup label="Dance arrangement templates — arranged, not just ordered">
+        {DANCE_TEMPLATES.map((t, i) => <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option>)}
+      </optgroup>
+      {(STRUCTURES[progId] || []).length > 0 && (
+        <optgroup label={"Written for " + prog.label}>
+          {(STRUCTURES[progId] || []).map((st, i) => <option key={"p"+i} value={progId + ":p:" + i}>{st.name}</option>)}
+        </optgroup>
+      )}
+      {STRUCT_FAMILIES.map(fam => (
+        <optgroup key={fam} label={fam}>
+          {UNIVERSAL.map((st, i) => st.family === fam
+            ? <option key={"u"+i} value={progId + ":u:" + i}>{st.name}</option> : null)}
+        </optgroup>
+      ))}
+    </select>
+  );
+  /* ---- the arrangement at a glance, and its editor ----
+     One function because it renders in two places: the Arrange tab, where it always
+     lived, and the Sketch tab, where it is the second half of the subtractive workflow —
+     the lanes are how the groove is allocated across the sections. */
+  const arrangeStrip = () => sections.insts.length > 0 && (() => {
+            const total = sections.totalBars || 1;
+            /* What each section actually plays, resolved the same way the scheduler resolves it —
+               including the part that was missed: a section written on its own drum grid plays
+               those bars whatever its pass or its type is set to, "off" included. Read from the
+               menus alone, the lane said a section had no drums while you could hear them. */
+            const ownBeat = d => { const b = secBeat[d.key]; return b && b.length ? b : null; };
+            const grooveDrums = secBeat[GROOVE] && secBeat[GROOVE].length ? secBeat[GROOVE] : null;
+            const drumsIn = d => {
+              if (ownBeat(d)) return true;
+              const sd = effDrum(d);
+              if (!sd && grooveDrums) return true;   // nothing of its own — the groove's drums play
+              const dd = DRUMS[sd || drum];
+              return !!(dd && dd.pattern);
+            };
+            const nParts = Math.max(0, ...Object.values(secMelos).map(s => nLayers(s)));
+            /* `flat` is the part's columns, not its notes — an empty grid still has a column per
+               beat. Testing its length therefore reported any section with a grid as "playing",
+               which was invisible while every section had a narrative written into it and obvious
+               the moment an empty one was added. A part is in only if some column holds a note. */
+            const hasNotes = (d, i) => {
+              const ly = (secMelos[d.key] || {}).layers && secMelos[d.key].layers[i];
+              return !!(ly && ly.flat && ly.flat.some(c => c && c.length));
+            };
+            const partIn = (d, i) => {
+              const sec = secMelos[d.key];
+              const ly = sec && sec.layers[i];
+              if (!ly || !hasNotes(d, i)) return false;
+              return layerGain(ly, sec.layers.some(x => x.solo)) > 0;   // mute and solo both count
+            };
+            /* Each lane knows how to read its own state and how to flip it. `scope` is the honest
+               part: drums and chords are stored per section *letter*, so flipping one moves every
+               section that letters the same way, while a part's mute is per instance and a click
+               on a "×4" run sets all four. The tooltip says which, rather than surprising you. */
+            const runScope = r => (r.items.length > 1 ? `all ${r.items.length} passes` : "this section");
+            const lanes = [
+              { name: "Drums", on: drumsIn, scope: runScope,
+                /* Per pass, not per section letter. Every groove in a dance track letters G, so
+                   letter-keying meant one click silenced all of them and "the drums come out for
+                   *this* breakdown" — the single most useful arrangement edit there is — could not
+                   be said at all. Coming back in clears the pass's own setting so it follows the
+                   section type again, unless the type is itself silent, in which case it takes the
+                   song's kit rather than appearing to do nothing. */
+                toggle: r => {
+                  const anyIn = r.items.some(drumsIn), next = { ...secDrum };
+                  r.items.forEach(d => {
+                    if (anyIn) { next[d.key] = "off"; return; }
+                    const bd = DRUMS[secDrum[d.base] || drum];
+                    const g = !secDrum[d.base] && grooveDrums;   // clearing the pass lets the groove play
+                    if (g || (bd && bd.pattern)) delete next[d.key]; else next[d.key] = drum;
+                  });
+                  setSecDrum(next);
+                },
+                /* A pass with its own written bars plays them regardless, so the lane has nothing
+                   it can do here — better to say that than to accept the click and not move. */
+                dead: r => r.items.every(ownBeat),
+                deadTip: r => `${r.sec} has its own drums written — open ▸ drums on the section to change them` },
+              { name: "Chords", on: d => !effQuiet(d), scope: runScope,
+                toggle: r => {
+                  const anyIn = r.items.some(d => !effQuiet(d)), next = { ...secQuiet };
+                  r.items.forEach(d => { next[d.key] = anyIn; });
+                  setSecQuiet(next);
+                } },
+              /* The bass, perc and pad lanes appear once the track sounds anywhere. A block is on
+                 when that pass resolves to something; clicking off writes "off" on the pass, and
+                 clicking back on clears it — or, where nothing would be inherited, writes a
+                 sensible pattern so the lane always does something audible. */
+              ...(bassAnywhere ? [{ name: "Bass", on: d => !!bassSrcOf(d), scope: runScope,
+                toggle: r => {
+                  const anyIn = r.items.some(x => !!bassSrcOf(x)), next = { ...secBassPat };
+                  r.items.forEach(x => {
+                    if (anyIn) { next[x.key] = "off"; return; }
+                    delete next[x.key];
+                    const lp = next[x.base];
+                    const gv = !!(secBassBeat[GROOVE] && secBassBeat[GROOVE].length);   // the groove's line inherits
+                    const inherited = lp ? lp !== "off" : (!effBassOut(x) && (!!bass || gv));
+                    if (!inherited && !secBassBeat[x.key]) next[x.key] = bass || "offbeat";
+                  });
+                  setSecBassPat(next);
+                } }] : []),
+              ...(percAnywhere ? [{ name: "Perc", on: d => !!percSrcOf(d), scope: runScope,
+                toggle: r => {
+                  const anyIn = r.items.some(x => !!percSrcOf(x)), next = { ...secPercPat };
+                  r.items.forEach(x => {
+                    if (anyIn) { next[x.key] = "off"; return; }
+                    delete next[x.key];
+                    const lp = next[x.base];
+                    const gv = !!(secPercBeat[GROOVE] && secPercBeat[GROOVE].length);   // the groove's layer inherits
+                    const inherited = lp ? lp !== "off" : (!effPercOut(x) && (!!perc || gv));
+                    if (!inherited && !secPercBeat[x.key]) next[x.key] = perc || "shaker8";
+                  });
+                  setSecPercPat(next);
+                } }] : []),
+              ...(padAnywhere ? [{ name: "Pad", on: d => padOnOf(d), scope: runScope,
+                toggle: r => {
+                  const anyIn = r.items.some(x => !!padVoiceOf(x)), next = { ...secPadVoice };
+                  r.items.forEach(x => {
+                    if (anyIn) { next[x.key] = "off"; return; }
+                    delete next[x.key];
+                    const lp = next[x.base];
+                    const gv = !!(secPadBeat[GROOVE] && secPadBeat[GROOVE].length);   // the groove's rhythm inherits
+                    const inherited = lp ? lp !== "off" : (!effPadOut(x) && (!!pad || gv));
+                    if (!inherited) next[x.key] = pad || "strings";
+                  });
+                  setSecPadVoice(next);
+                } }] : []),
+              ...Array.from({ length: nParts }, (_, i) => ({
+                name: LAYER_NAMES[i], on: d => partIn(d, i),
+                scope: runScope,
+                // a run can hold several instances; mute them together so the lane matches the
+                // click. Sections *inheriting* the groove take the allocation map instead of a
+                // layer mute — a copy of the groove written into the section here would stop
+                // following the groove the moment it was next edited.
+                toggle: r => {
+                  const mute = r.items.some(d => partIn(d, i));
+                  const inh = r.items.filter(d => (secMelos[d.key] || {}).inherited);
+                  const own = r.items.filter(d => !(secMelos[d.key] || {}).inherited);
+                  if (inh.length) setPartOutMany(inh.map(d => d.key), i, mute);
+                  if (own.length) setLayerPropMany(own.map(d => d.key), i, { mute });
+                },
+                // a part with no notes here has nothing to mute — the lane is empty for a reason
+                dead: r => !r.items.some(d => hasNotes(d, i)) })),
+            ];
+            /* The drawable lanes: the master four, then one low-pass lane per melody part. A part
+               lane is that part's Low-pass knob written across the song — the pad opens through
+               the build while the bass stays dark — and overrides the knob wherever it is drawn. */
+            const autoLanes = [...AUTO_LANES,
+              /* One drawn low-pass lane per switched-on track, exactly like the parts' lanes:
+                 the bass darkens into the breakdown while the mix stays put, the perc opens
+                 across a build, the pad blooms into a drop. Undrawn, the track plays wide open. */
+              ...(bassAnywhere ? [{ id: "cutbass", name: "Bass filter",
+                tip: "Draw the bass track's own brightness across the song — it darkens or opens while everything else stays put." }] : []),
+              ...(percAnywhere ? [{ id: "cutperc", name: "Perc filter",
+                tip: "Draw the percussion layer's own brightness across the song — open it through a build, shut it for a verse." }] : []),
+              ...(padAnywhere ? [{ id: "cutpad", name: "Pad filter",
+                tip: "Draw the pad's own brightness across the song — the classic move is a slow bloom across the whole build." }] : []),
+              ...Array.from({ length: nParts }, (_, i) => ({ id: autoPartId(i),
+                name: LAYER_NAMES[i] + " filter",
+                tip: `Draw part ${LAYER_NAMES[i]}'s own brightness across the song — this part opens or darkens while the rest of the mix stays put. Where it is drawn it overrides the part's Low-pass knob.` }))];
+            // One block per *run* of consecutive same-section instances, not per instance. Eight
+            // passes of a drop is one 32-bar drop to anybody reading the arrangement, and drawing
+            // it as eight slivers turns a 200-bar structure into unreadable confetti.
+            // Runs are keyed on the plan row an instance came from, so a block on the strip is
+            // exactly one row of the arrangement — which is what makes it editable. (Keying on the
+            // section name instead would merge two adjacent rows that happen to share a name.)
+            const runs = [];
+            sections.insts.forEach(d => {
+              const r = runs[runs.length - 1];
+              if (r && r.row === d.row) { r.items.push(d); r.bars += d.nbars; }
+              else runs.push({ base: d.base, sec: d.sec, word: d.word, row: d.row,
+                items: [d], bars: d.nbars, startBar: d.startBar });
+            });
+            /* ---- the energy staircase ----
+               The lanes say what plays; this says how much, which is the only way to see whether
+               the song has a shape. Weights from docs/DANCE-LAYERING.md — the clock and the hook
+               carry a track, the harmony is worth rather less than people expect, and everything
+               else is a point each. What you are looking for is a staircase with deliberate
+               collapses: a drop lands because the breakdown took the kick and the sub away, not
+               because the drop added anything, and a flat bar across the whole song is exactly the
+               shape of a track where everything plays from the first bar to the last. */
+            const energyAt = d => energyOf({
+              // half a kit, for a pattern with the kick taken out of it: the tops left running
+              // under a build are the dip the build is made of, and scoring them as a whole kit
+              // would draw the one moment the picture exists to show as no change at all
+              drums: drumAmountOf(!effDrum(d) && !ownBeat(d) && grooveDrums
+                ? grooveDrums[0] : (DRUMS[effDrum(d) || drum] || {}).pattern),
+              chords: !effQuiet(d),
+              parts: Array.from({ length: nParts }, (_, i) => partIn(d, i)) });
+            const runEnergy = r => r.items.reduce((n, d) => n + energyAt(d), 0) / r.items.length;
+            // a lane is full, empty, or partly on across the run's instances
+            const laneState = (l, r) => {
+              const n = r.items.filter(l.on).length;
+              return n === 0 ? "off" : n === r.items.length ? "on" : "part";
+            };
+            // a ruler tick roughly every eighth of the song, rounded to a sensible bar count
+            const step = [4, 8, 16, 32, 64].find(s => total / s <= 12) || 128;
+            const ticks = [];
+            for (let bar = 0; bar < total; bar += step) ticks.push(bar);
+            return (
+              <>
+              <div className="tl">
+                <div className="tlgut">
+                  <div className="tlglbl tlgruler" />
+                  <div className="tlglbl tlgsec">{total} bars</div>
+                  {lanes.map(l => <div key={l.name} className="tlglbl">{l.name}</div>)}
+                  <div className="tlglbl tlgnrg">Energy</div>
+                  {autoLanes.map(L => <div key={L.id} className="tlglbl tlgauto">{L.name}</div>)}
+                </div>
+                <div className="tltrk">
+                  <div className="tlruler">
+                    {ticks.map(bar => <span key={bar} className="tltick" style={{ left: (bar / total * 100) + "%" }}>{bar + 1}</span>)}
+                  </div>
+                  <div className="tlrow tlsecs">
+                    {runs.map(r => {
+                      const acc = SEC_COL[r.base] || "#8B94A3";
+                      const now = playing && r.items.some(d => d.key === curInst);
+                      const looped = r.items.some(d => d.key === loopSec);
+                      // the effective values, instance first — the strip used to read the section
+                      // letter alone, so anything set on one pass was invisible here
+                      // both tables have a "none" entry under the empty id, so the id is what
+                      // decides whether there is anything to mark, not the lookup
+                      const mvId = effMove(r.items[0]), trs = r.items.map(effTrans);
+                      const mv = mvId && MOVES[mvId];
+                      const tr = trs[0] && TRANS[trs[0]], trMixed = trs.some(x => x !== trs[0]);
+                      const n = r.items.length;
+                      return (
+                        <button key={r.startBar} className={"tlsec" + (now ? " now" : "") + (looped ? " looped" : "")
+                            + (selRow === r.row ? " picked" : "")}
+                          style={{ flex: r.bars + " 0 0%", background: acc + (now ? "44" : "22"), borderColor: acc + (now ? "" : "77") }}
+                          /* A tap picks the section and writes it out below; playing from here
+                             moved onto the double tap. Picking is the thing you do constantly and
+                             playing is the thing you do deliberately, and a tap that starts the
+                             audio is a poor way to ask "what is in this chorus". */
+                          onClick={() => {
+                            setSelRow(r.row);
+                            // showing one section: swap it. Showing all of them: leave that choice
+                            // alone and go to the one that was tapped, or the tap does nothing at
+                            // all on a page where the section is three screens down.
+                            if (focusRow == null) document.querySelector(`.sgrp[data-rows~="${r.row}"]`)
+                              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            else setFocusRow(r.row);
+                          }}
+                          onDoubleClick={() => startMetro(r.startBar)}
+                          title={`${r.sec}${n > 1 ? ` ×${n}` : ""} · ${r.bars} bar${r.bars > 1 ? "s" : ""} from bar ${r.startBar + 1}`
+                            + (mv ? ` · ${mv.name}` : "")
+                            + (tr ? ` · into it: ${tr.name}${trMixed ? " (first pass)" : ""}` : "")
+                            + (looped ? " · looping" : "")
+                            + " — tap to open it below, double-tap to play from here"}>
+                          {/* the label is left-aligned and clipped rather than centred, so a narrow
+                              block truncates to its first letters instead of showing a word's middle */}
+                          <span className="tlsecl" style={{ color: acc }}>{r.sec}{n > 1 ? " ×" + n : ""}</span>
+                          {/* the transition mark sits at the block's leading edge, because that is
+                              where it happens — the seam, not the section */}
+                          {tr && <span className="tlmv" aria-hidden="true">{TRANS_GLYPH[tr.cat]}</span>}
+                          {mv && <span className="tlmv" aria-hidden="true">🎛</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {lanes.map(l => (
+                    <div key={l.name} className="tlrow">
+                      {runs.map(r => {
+                        const st = laneState(l, r);
+                        const dead = l.dead ? l.dead(r) : false;
+                        return <button key={r.startBar} className={"tlcell " + st + (dead ? " dead" : "")}
+                          style={{ flex: r.bars + " 0 0%",
+                            background: st === "off" ? undefined
+                              : (SEC_COL[r.base] || "#8B94A3") + (st === "on" ? "AA" : "55") }}
+                          disabled={dead}
+                          onClick={() => l.toggle(r)}
+                          title={dead ? (l.deadTip ? l.deadTip(r)
+                              : `${l.name} has nothing written in ${r.sec} — write something there first`)
+                            : `${st === "off" ? "Bring in" : "Drop"} ${l.name} for ${l.scope(r)}`
+                              + (st === "part" ? " (currently in for some passes and out for others)" : "")} />;
+                      })}
+                    </div>
+                  ))}
+                  {/* The staircase. Read-only on purpose: it is the sum of every lane above it,
+                      so it is changed by changing them. */}
+                  {(() => {
+                    const es = runs.map(runEnergy), top = Math.max(1, ...es);
+                    /* Relative scaling has nothing to divide by when every section scores the same,
+                       and drawing them all full height claims everything is maxed when what is true
+                       is that nothing changes across this song. That draws flat instead. */
+                    const flat = Math.max(...es) === Math.min(...es);
+                    return (
+                      <div className="tlrow tlnrg">
+                        {runs.map((r, ri) => (
+                          <div key={r.startBar} className="tlnrgw" style={{ flex: r.bars + " 0 0%" }}
+                            title={`${r.sec} · ${Math.round(es[ri] * 10) / 10} of ${top}`
+                              + (flat ? " — level with every other section: nothing changes across this song"
+                                : ri > 0 ? (es[ri] > es[ri - 1] ? " — a step up from the section before"
+                                : es[ri] < es[ri - 1] ? " — a step down: this is what makes what follows land"
+                                : " — level with the section before") : "")
+                              + ". Drums and the lead count 3, the chords 2, every other part 1. Energy is relative, not absolute: the biggest event in a dance record is usually a subtraction."}>
+                            <div className="tlnrgb" style={{ height: (flat ? 45 : Math.max(7, Math.round(es[ri] / top * 100))) + "%",
+                              background: (SEC_COL[r.base] || "#8B94A3") + "CC" }} />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                  {/* Automation lanes. Drag across one to draw a curve; the value is the height
+                      you drag at. Drawn in song-bar coordinates so a curve keeps its shape when
+                      sections around it move. */}
+                  {autoLanes.map(L => {
+                    const pts = (auto.key === planKey && auto[L.id]) || null;
+                    const barAt = (e, el) => {
+                      const r = el.getBoundingClientRect();
+                      return { bar: Math.max(0, Math.min(total - 1, Math.floor((e.clientX - r.left) / r.width * total))),
+                        v: Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height)) };
+                    };
+                    const write = next => setAuto(a => ({ ...(a.key === planKey ? a : { key: planKey }), key: planKey, [L.id]: next }));
+                    return (
+                      <div key={L.id} className={"tlauto" + (pts && pts.length ? " has" : "")}
+                        title={L.tip + " Drag to draw; the ✕ clears it."}
+                        onPointerDown={e => {
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          const p = barAt(e, e.currentTarget);
+                          drawRef.current = { lane: L.id, bar: p.bar, v: p.v };
+                          write(autoSet(pts, p.bar, p.v));
+                        }}
+                        onPointerMove={e => {
+                          const d = drawRef.current;
+                          if (!d || d.lane !== L.id) return;
+                          const p = barAt(e, e.currentTarget);
+                          // fill the bars the pointer skipped, or a fast drag leaves holes in the line
+                          write(autoDraw(pts, d.bar, p.bar, d.v, p.v));
+                          drawRef.current = { lane: L.id, bar: p.bar, v: p.v };
+                        }}
+                        onPointerUp={() => { drawRef.current = null; }}
+                        onPointerCancel={() => { drawRef.current = null; }}>
+                        {pts && pts.length > 0 && (
+                          <svg viewBox={`0 0 ${total} 100`} preserveAspectRatio="none" className="tlcurve">
+                            <polyline points={Array.from({ length: total + 1 }, (_, b) =>
+                              `${b},${100 - (autoAt(pts, b) || 0) * 100}`).join(" ")} />
+                          </svg>
+                        )}
+                        <span className="tlautol">{L.name}</span>
+                        {pts && pts.length > 0 &&
+                          <button className="tlautox" title={"Clear the " + L.name + " automation"}
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); write(null); }}>✕</button>}
+                      </div>
+                    );
+                  })}
+                  {/* one spacer per run, mirroring the rows' own flex bases — see .tlbounds */}
+                  <div className="tlbounds" aria-hidden="true">
+                    {runs.map(r => <i key={r.startBar} style={{ flex: r.bars + " 0 0%" }} />)}
+                  </div>
+                  {curSongBar >= 0 &&
+                    <div className="tlhead" style={{ left: (curSongBar / total * 100) + "%" }} />}
+                </div>
+              </div>
+              {/* The arrangement editor: a picked structure is a starting point, not a cage. There is
+                  nothing to edit without one — a plain loop has no plan, only the loop — so the
+                  button is not offered rather than opening onto an empty toolbar. */}
+              <div className="row" style={{ gap:"6px 8px", alignItems:"center", flexWrap:"wrap", marginTop:8 }}>
+                {sections.insts.length > 1 &&
+                  <button className="mini" onClick={() => setFocusRow(v => v == null ? selRow : null)}
+                    title={focusRow == null
+                      ? "Write out only the section picked on the strip, rather than all of them"
+                      : "Write out every section at once, not just the one picked on the strip"}>
+                    {focusRow == null ? "▴ One section" : "▾ All sections"}
+                  </button>}
+                {effPlan && effPlan.length
+                  ? <button className={"mini" + (editArr ? " mixon" : "")} onClick={() => setEditArr(v => !v)}
+                      title="Reorder sections, change how many passes each gets, add and remove them">
+                      {editArr ? "✎ Editing" : "✎ Edit arrangement"}
+                    </button>
+                  : tips && <span className="keytag" style={{ margin:0 }}>
+                      Pick a song structure above to build an arrangement you can edit.
+                    </span>}
+                {customPlan && <span className="keytag" style={{ margin:0, color:GOLD }}>edited</span>}
+                {customPlan && <button className="mini" onClick={resetPlan}
+                  title="Throw the edits away and go back to the structure as written">↺ Reset</button>}
+                {editArr && effPlan && effPlan.length > 0 && (() => {
+                  const rows = effPlan;
+                  const cur = rows[selRow] || rows[0] || {};
+                  const at = Math.min(selRow, rows.length - 1);
+                  return (<>
+                    <span className="keytag" style={{ margin:0 }}>
+                      <b style={{ color: SEC_COL[letterFor(cur.sec || "")] || "#EAE2CC" }}>{cur.sec}</b>
+                      {" "}· {cur.reps || 1} pass{(cur.reps || 1) > 1 ? "es" : ""}
+                    </span>
+                    <button className="mini" onClick={() => moveRow(at, -1)} disabled={at <= 0} title="Move this section earlier">◀</button>
+                    <button className="mini" onClick={() => moveRow(at, 1)} disabled={at >= rows.length - 1} title="Move this section later">▶</button>
+                    <button className="mini" onClick={() => bumpReps(at, -1)} disabled={(cur.reps || 1) <= 1}
+                      title="One pass fewer — a shorter section">− pass</button>
+                    <button className="mini" onClick={() => bumpReps(at, 1)} title="One pass more — a longer section">＋ pass</button>
+                    <button className="mini" onClick={() => dupRow(at)} title="Duplicate this section, with its melodies">⧉ Copy</button>
+                    <button className="mini" onClick={() => delRow(at)} disabled={rows.length <= 1}
+                      title="Remove this section from the song">🗑</button>
+                    <select className="fxsel" value="" onChange={e => { if (e.target.value) addRow(e.target.value); }}
+                      title="Add a new section after the selected one">
+                      <option value="">＋ add section…</option>
+                      {ADDABLE.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                    </select>
+                  </>);
+                })()}
+              </div>
+              {editArr && tips && <p className="arrnote" style={{ marginTop:6 }}>
+                Tap a block to pick it, then reorder it, give it more or fewer passes, copy it or
+                remove it. Melodies travel with their section — a copied section arrives with the
+                notes already in it, and moving one does not shuffle anyone else's.
+              </p>}
+            </>
+            );
+  })();
 
   return (
     <div className="pw-root">
@@ -4851,6 +6286,37 @@ export default function ProgressionWheel() {
 
         </div>}
 
+        {/* ---- Sketch: the full groove, then the arrangement that subtracts from it ----
+            Dance music is subtractive, so the workflow runs top to bottom on this one page:
+            build the full groove as a single section — every track playing at once, with its
+            grids and settings — then build the running order underneath and use the lanes to
+            decide which sections play which of the groove's tracks. */}
+        {tab === "sketch" && <div className="panel accent">
+          <div className="progtitle" style={{ fontSize:17 }}>The groove — build the full loop</div>
+          {tips && <p className="arrnote" style={{ marginTop:4 }}>
+            Everything at once: drums, perc, bass, pad, chords and melody, written on one looping
+            section. Every section of the song plays this groove until it is given something of its
+            own — so the loop you perfect here is the material the whole track is cut from.
+          </p>}
+          {sectionCard(grooveInst, "groove", { groove: true })}
+          <div className="row" style={{ marginTop:14, gap:"6px 10px", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap" }}>
+            <div className="progtitle" style={{ fontSize:17 }}>The arrangement — subtract from it</div>
+            {structPicker()}
+          </div>
+          {tips && <p className="arrnote" style={{ marginTop:4 }}>
+            Pick a running order (a dance template arrives already subtractive), or edit one into
+            shape with <b>✎ Edit arrangement</b> — add and remove sections, reorder them, stretch a
+            drop. Then the lanes are the allocation: a cell drops that track out of that section or
+            brings it back — drums alone for the intro, bass and pads with no kick for the build.
+            The energy staircase below the lanes is the shape those choices add up to.
+          </p>}
+          {arrangeStrip()}
+          {!structSel && sections.insts.length <= 1 && <p className="keytag" style={{ marginTop:6 }}>
+            No structure yet — the groove simply loops. Pick one above to lay it across intro,
+            build, drop and breakdown, then subtract.
+          </p>}
+        </div>}
+
         {/* ---- Save: naming, keeping and sharing ---- */}
         {tab === "save" && <div className="panel">
           <div className="row" style={{ marginTop:12, gap:8 }}>
@@ -5176,26 +6642,7 @@ export default function ProgressionWheel() {
         {tab === "arrange" && <div className="panel accent">
           <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
             <div className="progtitle" style={{ fontSize:17 }}>Song & melody</div>
-            <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => pickStruct(e.target.value)}
-              title="A structure is a running order. An arrangement template is a running order plus what plays in each section — which drop the drums, which lose the chords, where the filter opens and what happens at every seam.">
-              <option value="">No structure — just the loop</option>
-              {/* First, because they are the ones that arrive arranged: everything below sets the
-                  order of the sections and then plays every element through all of them. */}
-              <optgroup label="Dance arrangement templates — arranged, not just ordered">
-                {DANCE_TEMPLATES.map((t, i) => <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option>)}
-              </optgroup>
-              {(STRUCTURES[progId] || []).length > 0 && (
-                <optgroup label={"Written for " + prog.label}>
-                  {(STRUCTURES[progId] || []).map((st, i) => <option key={"p"+i} value={progId + ":p:" + i}>{st.name}</option>)}
-                </optgroup>
-              )}
-              {STRUCT_FAMILIES.map(fam => (
-                <optgroup key={fam} label={fam}>
-                  {UNIVERSAL.map((st, i) => st.family === fam
-                    ? <option key={"u"+i} value={progId + ":u:" + i}>{st.name}</option> : null)}
-                </optgroup>
-              ))}
-            </select>
+            {structPicker()}
           </div>
 
           {/* What a template did, and how to put it back. A template writes across five different
@@ -5370,378 +6817,7 @@ export default function ProgressionWheel() {
               the drops, the drum drop-outs and the parts coming in are visible as a picture. */}
           {/* Shown for a plain loop too, not just a multi-section structure: the automation lanes
               live here, and "a four-bar loop with a filter sweep on it" is a perfectly good sketch. */}
-          {sections.insts.length > 0 && (() => {
-            const total = sections.totalBars || 1;
-            /* What each section actually plays, resolved the same way the scheduler resolves it —
-               including the part that was missed: a section written on its own drum grid plays
-               those bars whatever its pass or its type is set to, "off" included. Read from the
-               menus alone, the lane said a section had no drums while you could hear them. */
-            const ownBeat = d => { const b = secBeat[d.key]; return b && b.length ? b : null; };
-            const drumsIn = d => {
-              if (ownBeat(d)) return true;
-              const dd = DRUMS[effDrum(d) || drum];
-              return !!(dd && dd.pattern);
-            };
-            const nParts = Math.max(0, ...Object.values(secMelos).map(s => nLayers(s)));
-            /* `flat` is the part's columns, not its notes — an empty grid still has a column per
-               beat. Testing its length therefore reported any section with a grid as "playing",
-               which was invisible while every section had a narrative written into it and obvious
-               the moment an empty one was added. A part is in only if some column holds a note. */
-            const hasNotes = (d, i) => {
-              const ly = (secMelos[d.key] || {}).layers && secMelos[d.key].layers[i];
-              return !!(ly && ly.flat && ly.flat.some(c => c && c.length));
-            };
-            const partIn = (d, i) => {
-              const sec = secMelos[d.key];
-              const ly = sec && sec.layers[i];
-              if (!ly || !hasNotes(d, i)) return false;
-              return layerGain(ly, sec.layers.some(x => x.solo)) > 0;   // mute and solo both count
-            };
-            /* Each lane knows how to read its own state and how to flip it. `scope` is the honest
-               part: drums and chords are stored per section *letter*, so flipping one moves every
-               section that letters the same way, while a part's mute is per instance and a click
-               on a "×4" run sets all four. The tooltip says which, rather than surprising you. */
-            const runScope = r => (r.items.length > 1 ? `all ${r.items.length} passes` : "this section");
-            const lanes = [
-              { name: "Drums", on: drumsIn, scope: runScope,
-                /* Per pass, not per section letter. Every groove in a dance track letters G, so
-                   letter-keying meant one click silenced all of them and "the drums come out for
-                   *this* breakdown" — the single most useful arrangement edit there is — could not
-                   be said at all. Coming back in clears the pass's own setting so it follows the
-                   section type again, unless the type is itself silent, in which case it takes the
-                   song's kit rather than appearing to do nothing. */
-                toggle: r => {
-                  const anyIn = r.items.some(drumsIn), next = { ...secDrum };
-                  r.items.forEach(d => {
-                    if (anyIn) { next[d.key] = "off"; return; }
-                    const bd = DRUMS[secDrum[d.base] || drum];
-                    if (bd && bd.pattern) delete next[d.key]; else next[d.key] = drum;
-                  });
-                  setSecDrum(next);
-                },
-                /* A pass with its own written bars plays them regardless, so the lane has nothing
-                   it can do here — better to say that than to accept the click and not move. */
-                dead: r => r.items.every(ownBeat),
-                deadTip: r => `${r.sec} has its own drums written — open ▸ drums on the section to change them` },
-              { name: "Chords", on: d => !effQuiet(d), scope: runScope,
-                toggle: r => {
-                  const anyIn = r.items.some(d => !effQuiet(d)), next = { ...secQuiet };
-                  r.items.forEach(d => { next[d.key] = anyIn; });
-                  setSecQuiet(next);
-                } },
-              /* The bass, perc and pad lanes appear once the track sounds anywhere. A block is on
-                 when that pass resolves to something; clicking off writes "off" on the pass, and
-                 clicking back on clears it — or, where nothing would be inherited, writes a
-                 sensible pattern so the lane always does something audible. */
-              ...(bassAnywhere ? [{ name: "Bass", on: d => !!bassSrcOf(d), scope: runScope,
-                toggle: r => {
-                  const anyIn = r.items.some(x => !!bassSrcOf(x)), next = { ...secBassPat };
-                  r.items.forEach(x => {
-                    if (anyIn) { next[x.key] = "off"; return; }
-                    delete next[x.key];
-                    const lp = next[x.base];
-                    const inherited = lp ? lp !== "off" : (!effBassOut(x) && !!bass);
-                    if (!inherited && !secBassBeat[x.key]) next[x.key] = bass || "offbeat";
-                  });
-                  setSecBassPat(next);
-                } }] : []),
-              ...(percAnywhere ? [{ name: "Perc", on: d => !!percSrcOf(d), scope: runScope,
-                toggle: r => {
-                  const anyIn = r.items.some(x => !!percSrcOf(x)), next = { ...secPercPat };
-                  r.items.forEach(x => {
-                    if (anyIn) { next[x.key] = "off"; return; }
-                    delete next[x.key];
-                    const lp = next[x.base];
-                    const inherited = lp ? lp !== "off" : (!effPercOut(x) && !!perc);
-                    if (!inherited && !secPercBeat[x.key]) next[x.key] = perc || "shaker8";
-                  });
-                  setSecPercPat(next);
-                } }] : []),
-              ...(padAnywhere ? [{ name: "Pad", on: d => padOnOf(d), scope: runScope,
-                toggle: r => {
-                  const anyIn = r.items.some(x => !!padVoiceOf(x)), next = { ...secPadVoice };
-                  r.items.forEach(x => {
-                    if (anyIn) { next[x.key] = "off"; return; }
-                    delete next[x.key];
-                    const lp = next[x.base];
-                    const inherited = lp ? lp !== "off" : (!effPadOut(x) && !!pad);
-                    if (!inherited) next[x.key] = pad || "strings";
-                  });
-                  setSecPadVoice(next);
-                } }] : []),
-              ...Array.from({ length: nParts }, (_, i) => ({
-                name: LAYER_NAMES[i], on: d => partIn(d, i),
-                scope: runScope,
-                // a run can hold several instances; mute them together so the lane matches the click
-                toggle: r => setLayerPropMany(r.items.map(d => d.key), i, { mute: r.items.some(d => partIn(d, i)) }),
-                // a part with no notes here has nothing to mute — the lane is empty for a reason
-                dead: r => !r.items.some(d => hasNotes(d, i)) })),
-            ];
-            /* The drawable lanes: the master four, then one low-pass lane per melody part. A part
-               lane is that part's Low-pass knob written across the song — the pad opens through
-               the build while the bass stays dark — and overrides the knob wherever it is drawn. */
-            const autoLanes = [...AUTO_LANES,
-              /* One drawn low-pass lane per switched-on track, exactly like the parts' lanes:
-                 the bass darkens into the breakdown while the mix stays put, the perc opens
-                 across a build, the pad blooms into a drop. Undrawn, the track plays wide open. */
-              ...(bassAnywhere ? [{ id: "cutbass", name: "Bass filter",
-                tip: "Draw the bass track's own brightness across the song — it darkens or opens while everything else stays put." }] : []),
-              ...(percAnywhere ? [{ id: "cutperc", name: "Perc filter",
-                tip: "Draw the percussion layer's own brightness across the song — open it through a build, shut it for a verse." }] : []),
-              ...(padAnywhere ? [{ id: "cutpad", name: "Pad filter",
-                tip: "Draw the pad's own brightness across the song — the classic move is a slow bloom across the whole build." }] : []),
-              ...Array.from({ length: nParts }, (_, i) => ({ id: autoPartId(i),
-                name: LAYER_NAMES[i] + " filter",
-                tip: `Draw part ${LAYER_NAMES[i]}'s own brightness across the song — this part opens or darkens while the rest of the mix stays put. Where it is drawn it overrides the part's Low-pass knob.` }))];
-            // One block per *run* of consecutive same-section instances, not per instance. Eight
-            // passes of a drop is one 32-bar drop to anybody reading the arrangement, and drawing
-            // it as eight slivers turns a 200-bar structure into unreadable confetti.
-            // Runs are keyed on the plan row an instance came from, so a block on the strip is
-            // exactly one row of the arrangement — which is what makes it editable. (Keying on the
-            // section name instead would merge two adjacent rows that happen to share a name.)
-            const runs = [];
-            sections.insts.forEach(d => {
-              const r = runs[runs.length - 1];
-              if (r && r.row === d.row) { r.items.push(d); r.bars += d.nbars; }
-              else runs.push({ base: d.base, sec: d.sec, word: d.word, row: d.row,
-                items: [d], bars: d.nbars, startBar: d.startBar });
-            });
-            /* ---- the energy staircase ----
-               The lanes say what plays; this says how much, which is the only way to see whether
-               the song has a shape. Weights from docs/DANCE-LAYERING.md — the clock and the hook
-               carry a track, the harmony is worth rather less than people expect, and everything
-               else is a point each. What you are looking for is a staircase with deliberate
-               collapses: a drop lands because the breakdown took the kick and the sub away, not
-               because the drop added anything, and a flat bar across the whole song is exactly the
-               shape of a track where everything plays from the first bar to the last. */
-            const energyAt = d => energyOf({
-              // half a kit, for a pattern with the kick taken out of it: the tops left running
-              // under a build are the dip the build is made of, and scoring them as a whole kit
-              // would draw the one moment the picture exists to show as no change at all
-              drums: drumAmountOf((DRUMS[effDrum(d) || drum] || {}).pattern),
-              chords: !effQuiet(d),
-              parts: Array.from({ length: nParts }, (_, i) => partIn(d, i)) });
-            const runEnergy = r => r.items.reduce((n, d) => n + energyAt(d), 0) / r.items.length;
-            // a lane is full, empty, or partly on across the run's instances
-            const laneState = (l, r) => {
-              const n = r.items.filter(l.on).length;
-              return n === 0 ? "off" : n === r.items.length ? "on" : "part";
-            };
-            // a ruler tick roughly every eighth of the song, rounded to a sensible bar count
-            const step = [4, 8, 16, 32, 64].find(s => total / s <= 12) || 128;
-            const ticks = [];
-            for (let bar = 0; bar < total; bar += step) ticks.push(bar);
-            return (
-              <>
-              <div className="tl">
-                <div className="tlgut">
-                  <div className="tlglbl tlgruler" />
-                  <div className="tlglbl tlgsec">{total} bars</div>
-                  {lanes.map(l => <div key={l.name} className="tlglbl">{l.name}</div>)}
-                  <div className="tlglbl tlgnrg">Energy</div>
-                  {autoLanes.map(L => <div key={L.id} className="tlglbl tlgauto">{L.name}</div>)}
-                </div>
-                <div className="tltrk">
-                  <div className="tlruler">
-                    {ticks.map(bar => <span key={bar} className="tltick" style={{ left: (bar / total * 100) + "%" }}>{bar + 1}</span>)}
-                  </div>
-                  <div className="tlrow tlsecs">
-                    {runs.map(r => {
-                      const acc = SEC_COL[r.base] || "#8B94A3";
-                      const now = playing && r.items.some(d => d.key === curInst);
-                      const looped = r.items.some(d => d.key === loopSec);
-                      // the effective values, instance first — the strip used to read the section
-                      // letter alone, so anything set on one pass was invisible here
-                      // both tables have a "none" entry under the empty id, so the id is what
-                      // decides whether there is anything to mark, not the lookup
-                      const mvId = effMove(r.items[0]), trs = r.items.map(effTrans);
-                      const mv = mvId && MOVES[mvId];
-                      const tr = trs[0] && TRANS[trs[0]], trMixed = trs.some(x => x !== trs[0]);
-                      const n = r.items.length;
-                      return (
-                        <button key={r.startBar} className={"tlsec" + (now ? " now" : "") + (looped ? " looped" : "")
-                            + (selRow === r.row ? " picked" : "")}
-                          style={{ flex: r.bars + " 0 0%", background: acc + (now ? "44" : "22"), borderColor: acc + (now ? "" : "77") }}
-                          /* A tap picks the section and writes it out below; playing from here
-                             moved onto the double tap. Picking is the thing you do constantly and
-                             playing is the thing you do deliberately, and a tap that starts the
-                             audio is a poor way to ask "what is in this chorus". */
-                          onClick={() => {
-                            setSelRow(r.row);
-                            // showing one section: swap it. Showing all of them: leave that choice
-                            // alone and go to the one that was tapped, or the tap does nothing at
-                            // all on a page where the section is three screens down.
-                            if (focusRow == null) document.querySelector(`.sgrp[data-rows~="${r.row}"]`)
-                              ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                            else setFocusRow(r.row);
-                          }}
-                          onDoubleClick={() => startMetro(r.startBar)}
-                          title={`${r.sec}${n > 1 ? ` ×${n}` : ""} · ${r.bars} bar${r.bars > 1 ? "s" : ""} from bar ${r.startBar + 1}`
-                            + (mv ? ` · ${mv.name}` : "")
-                            + (tr ? ` · into it: ${tr.name}${trMixed ? " (first pass)" : ""}` : "")
-                            + (looped ? " · looping" : "")
-                            + " — tap to open it below, double-tap to play from here"}>
-                          {/* the label is left-aligned and clipped rather than centred, so a narrow
-                              block truncates to its first letters instead of showing a word's middle */}
-                          <span className="tlsecl" style={{ color: acc }}>{r.sec}{n > 1 ? " ×" + n : ""}</span>
-                          {/* the transition mark sits at the block's leading edge, because that is
-                              where it happens — the seam, not the section */}
-                          {tr && <span className="tlmv" aria-hidden="true">{TRANS_GLYPH[tr.cat]}</span>}
-                          {mv && <span className="tlmv" aria-hidden="true">🎛</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {lanes.map(l => (
-                    <div key={l.name} className="tlrow">
-                      {runs.map(r => {
-                        const st = laneState(l, r);
-                        const dead = l.dead ? l.dead(r) : false;
-                        return <button key={r.startBar} className={"tlcell " + st + (dead ? " dead" : "")}
-                          style={{ flex: r.bars + " 0 0%",
-                            background: st === "off" ? undefined
-                              : (SEC_COL[r.base] || "#8B94A3") + (st === "on" ? "AA" : "55") }}
-                          disabled={dead}
-                          onClick={() => l.toggle(r)}
-                          title={dead ? (l.deadTip ? l.deadTip(r)
-                              : `${l.name} has nothing written in ${r.sec} — write something there first`)
-                            : `${st === "off" ? "Bring in" : "Drop"} ${l.name} for ${l.scope(r)}`
-                              + (st === "part" ? " (currently in for some passes and out for others)" : "")} />;
-                      })}
-                    </div>
-                  ))}
-                  {/* The staircase. Read-only on purpose: it is the sum of every lane above it,
-                      so it is changed by changing them. */}
-                  {(() => {
-                    const es = runs.map(runEnergy), top = Math.max(1, ...es);
-                    /* Relative scaling has nothing to divide by when every section scores the same,
-                       and drawing them all full height claims everything is maxed when what is true
-                       is that nothing changes across this song. That draws flat instead. */
-                    const flat = Math.max(...es) === Math.min(...es);
-                    return (
-                      <div className="tlrow tlnrg">
-                        {runs.map((r, ri) => (
-                          <div key={r.startBar} className="tlnrgw" style={{ flex: r.bars + " 0 0%" }}
-                            title={`${r.sec} · ${Math.round(es[ri] * 10) / 10} of ${top}`
-                              + (flat ? " — level with every other section: nothing changes across this song"
-                                : ri > 0 ? (es[ri] > es[ri - 1] ? " — a step up from the section before"
-                                : es[ri] < es[ri - 1] ? " — a step down: this is what makes what follows land"
-                                : " — level with the section before") : "")
-                              + ". Drums and the lead count 3, the chords 2, every other part 1. Energy is relative, not absolute: the biggest event in a dance record is usually a subtraction."}>
-                            <div className="tlnrgb" style={{ height: (flat ? 45 : Math.max(7, Math.round(es[ri] / top * 100))) + "%",
-                              background: (SEC_COL[r.base] || "#8B94A3") + "CC" }} />
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  {/* Automation lanes. Drag across one to draw a curve; the value is the height
-                      you drag at. Drawn in song-bar coordinates so a curve keeps its shape when
-                      sections around it move. */}
-                  {autoLanes.map(L => {
-                    const pts = (auto.key === planKey && auto[L.id]) || null;
-                    const barAt = (e, el) => {
-                      const r = el.getBoundingClientRect();
-                      return { bar: Math.max(0, Math.min(total - 1, Math.floor((e.clientX - r.left) / r.width * total))),
-                        v: Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height)) };
-                    };
-                    const write = next => setAuto(a => ({ ...(a.key === planKey ? a : { key: planKey }), key: planKey, [L.id]: next }));
-                    return (
-                      <div key={L.id} className={"tlauto" + (pts && pts.length ? " has" : "")}
-                        title={L.tip + " Drag to draw; the ✕ clears it."}
-                        onPointerDown={e => {
-                          e.currentTarget.setPointerCapture(e.pointerId);
-                          const p = barAt(e, e.currentTarget);
-                          drawRef.current = { lane: L.id, bar: p.bar, v: p.v };
-                          write(autoSet(pts, p.bar, p.v));
-                        }}
-                        onPointerMove={e => {
-                          const d = drawRef.current;
-                          if (!d || d.lane !== L.id) return;
-                          const p = barAt(e, e.currentTarget);
-                          // fill the bars the pointer skipped, or a fast drag leaves holes in the line
-                          write(autoDraw(pts, d.bar, p.bar, d.v, p.v));
-                          drawRef.current = { lane: L.id, bar: p.bar, v: p.v };
-                        }}
-                        onPointerUp={() => { drawRef.current = null; }}
-                        onPointerCancel={() => { drawRef.current = null; }}>
-                        {pts && pts.length > 0 && (
-                          <svg viewBox={`0 0 ${total} 100`} preserveAspectRatio="none" className="tlcurve">
-                            <polyline points={Array.from({ length: total + 1 }, (_, b) =>
-                              `${b},${100 - (autoAt(pts, b) || 0) * 100}`).join(" ")} />
-                          </svg>
-                        )}
-                        <span className="tlautol">{L.name}</span>
-                        {pts && pts.length > 0 &&
-                          <button className="tlautox" title={"Clear the " + L.name + " automation"}
-                            onPointerDown={e => e.stopPropagation()}
-                            onClick={e => { e.stopPropagation(); write(null); }}>✕</button>}
-                      </div>
-                    );
-                  })}
-                  {/* one spacer per run, mirroring the rows' own flex bases — see .tlbounds */}
-                  <div className="tlbounds" aria-hidden="true">
-                    {runs.map(r => <i key={r.startBar} style={{ flex: r.bars + " 0 0%" }} />)}
-                  </div>
-                  {curSongBar >= 0 &&
-                    <div className="tlhead" style={{ left: (curSongBar / total * 100) + "%" }} />}
-                </div>
-              </div>
-              {/* The arrangement editor: a picked structure is a starting point, not a cage. There is
-                  nothing to edit without one — a plain loop has no plan, only the loop — so the
-                  button is not offered rather than opening onto an empty toolbar. */}
-              <div className="row" style={{ gap:"6px 8px", alignItems:"center", flexWrap:"wrap", marginTop:8 }}>
-                {sections.insts.length > 1 &&
-                  <button className="mini" onClick={() => setFocusRow(v => v == null ? selRow : null)}
-                    title={focusRow == null
-                      ? "Write out only the section picked on the strip, rather than all of them"
-                      : "Write out every section at once, not just the one picked on the strip"}>
-                    {focusRow == null ? "▴ One section" : "▾ All sections"}
-                  </button>}
-                {effPlan && effPlan.length
-                  ? <button className={"mini" + (editArr ? " mixon" : "")} onClick={() => setEditArr(v => !v)}
-                      title="Reorder sections, change how many passes each gets, add and remove them">
-                      {editArr ? "✎ Editing" : "✎ Edit arrangement"}
-                    </button>
-                  : tips && <span className="keytag" style={{ margin:0 }}>
-                      Pick a song structure above to build an arrangement you can edit.
-                    </span>}
-                {customPlan && <span className="keytag" style={{ margin:0, color:GOLD }}>edited</span>}
-                {customPlan && <button className="mini" onClick={resetPlan}
-                  title="Throw the edits away and go back to the structure as written">↺ Reset</button>}
-                {editArr && effPlan && effPlan.length > 0 && (() => {
-                  const rows = effPlan;
-                  const cur = rows[selRow] || rows[0] || {};
-                  const at = Math.min(selRow, rows.length - 1);
-                  return (<>
-                    <span className="keytag" style={{ margin:0 }}>
-                      <b style={{ color: SEC_COL[letterFor(cur.sec || "")] || "#EAE2CC" }}>{cur.sec}</b>
-                      {" "}· {cur.reps || 1} pass{(cur.reps || 1) > 1 ? "es" : ""}
-                    </span>
-                    <button className="mini" onClick={() => moveRow(at, -1)} disabled={at <= 0} title="Move this section earlier">◀</button>
-                    <button className="mini" onClick={() => moveRow(at, 1)} disabled={at >= rows.length - 1} title="Move this section later">▶</button>
-                    <button className="mini" onClick={() => bumpReps(at, -1)} disabled={(cur.reps || 1) <= 1}
-                      title="One pass fewer — a shorter section">− pass</button>
-                    <button className="mini" onClick={() => bumpReps(at, 1)} title="One pass more — a longer section">＋ pass</button>
-                    <button className="mini" onClick={() => dupRow(at)} title="Duplicate this section, with its melodies">⧉ Copy</button>
-                    <button className="mini" onClick={() => delRow(at)} disabled={rows.length <= 1}
-                      title="Remove this section from the song">🗑</button>
-                    <select className="fxsel" value="" onChange={e => { if (e.target.value) addRow(e.target.value); }}
-                      title="Add a new section after the selected one">
-                      <option value="">＋ add section…</option>
-                      {ADDABLE.map(sc => <option key={sc} value={sc}>{sc}</option>)}
-                    </select>
-                  </>);
-                })()}
-              </div>
-              {editArr && tips && <p className="arrnote" style={{ marginTop:6 }}>
-                Tap a block to pick it, then reorder it, give it more or fewer passes, copy it or
-                remove it. Melodies travel with their section — a copied section arrives with the
-                notes already in it, and moving one does not shuffle anyone else's.
-              </p>}
-            </>
-            );
-          })()}
+          {arrangeStrip()}
           {tips && sections.insts.length > 0 && <p className="keytag" style={{ marginTop:6 }}>
             The strip above is the whole song end to end — each block is a section, as wide as it is
             long, and the lanes under it show what is playing where. Gaps in a lane are a part
@@ -5803,825 +6879,7 @@ export default function ProgressionWheel() {
                     {transSelect(secTrans[g.base] || "", e => setSecTrans({ ...secTrans, [g.base]: e.target.value }), null)}
                   </label>
                 </div>
-                {g.items.map((d, di) => {
-            const sec = secMelos[d.key] || EMPTY_SEC;
-            const cols = d.cs.length * meloBeats;
-            const open = !!openSecs[d.key];
-            const beatOpen = !!openBeats[d.key];
-            const percOpen = !!openPercs[d.key];
-            const bassOpen = !!openBass[d.key];
-            const padGOpen = !!openPads[d.key];
-            const chordGOpen = !!openChordGrids[d.key];
-            const optsOpen = !!openOpts[d.key];
-            const optsSet = [secDrum, secQuiet, secMove, secTrans, secNar, secBassPat, secPercPat, secPadVoice]
-              .some(m2 => m2[d.key]);
-            const has = secHasNotes(sec);
-            const donor = !has && sections.insts.find(o => o.base === d.base && o.key !== d.key
-              && secHasNotes(secMelos[o.key]));
-            const now = playing && curInst === d.key;
-            const acc = SEC_COL[d.base] || "#EDE7DA";
-            return (
-              <div key={di} className={"arr" + (now ? " playnow" : "")}
-                style={now ? { borderLeft: "3px solid " + acc } : null}>
-                <div className="row" style={{ justifyContent:"space-between", alignItems:"baseline" }}>
-                  <div className="arrsec" onClick={() => startMetro(d.startBar)} style={{ cursor:"pointer" }}
-                    title="Play from here">
-                    <b className="sym" style={{ color: acc }}>{now ? "▶ " : ""}{d.key}</b> {d.word}
-                    <span className="arrreps"> · {d.nbars} bar{d.nbars > 1 ? "s" : ""}{d.usedC ? " · ②" : ""}</span></div>
-                  <div className="row" style={{ gap:5 }}>
-                    <button className="mini" onClick={() => startMetro(d.startBar)} title="Play from here">▶</button>
-                    <button className={"mini" + (loopSec === d.key ? " loopon" : "")} onClick={() => toggleLoopSec(d)}
-                      title={loopSec === d.key ? "Looping this section — tap to stop" : "Loop just this section on playback"}>
-                      🔁{loopSec === d.key ? " on" : ""}
-                    </button>
-                    {donor && <button className="mini" onClick={() => copyMelody(donor.key, d.key)}>copy {donor.key}</button>}
-                    {recSec === d.key
-                      ? <button className="mini recstop" onClick={stopSecRec} title="Stop & transcribe onto this section">■ Stop</button>
-                      : <button className="mini recbtn" onClick={() => startSecRec(d.key)} disabled={!!recSec}
-                          title={`Record a ${recSource} line straight onto ${d.key}'s melody grid (overwrites it)`}>
-                          {recSource === "guitar" ? "🎸" : "🎤"} Rec</button>}
-                    <button className="mini" onClick={() => setOpenSecs({ ...openSecs, [d.key]: !open })}>
-                      {open ? "▾" : "▸"} melody{has ? " ●" : ""}
-                    </button>
-                    <button className="mini" onClick={() => setOpenBeats({ ...openBeats, [d.key]: !beatOpen })}
-                      title={"Write this " + d.word.toLowerCase() + "'s own drums — a busier hat in the second chorus, a fill in the last bar. It opens on whatever is playing now."}>
-                      {beatOpen ? "▾" : "▸"} drums{secBeat[d.key] ? " ● " + beatHits(secBeat[d.key]) : ""}
-                    </button>
-                    <button className="mini" onClick={() => setOpenPercs({ ...openPercs, [d.key]: !percOpen })}
-                      title={"Write this " + d.word.toLowerCase() + "'s own percussion layer — a shaker that only runs through the build, a conga cell on one chorus. It opens on whatever the section's perc menu is playing."}>
-                      {percOpen ? "▾" : "▸"} perc{secPercBeat[d.key] ? " ● " + beatHits(secPercBeat[d.key]) : ""}
-                    </button>
-                    <button className="mini" onClick={() => setOpenBass({ ...openBass, [d.key]: !bassOpen })}
-                      title={"Write this " + d.word.toLowerCase() + "'s own bassline — root, fifth and octave of whatever chord each bar holds, so the line follows the changes by itself. It opens on whatever the section's bass menu is playing."}>
-                      {bassOpen ? "▾" : "▸"} bass{secBassBeat[d.key] ? " ●" : ""}
-                    </button>
-                    <button className="mini" onClick={() => setOpenPads({ ...openPads, [d.key]: !padGOpen })}
-                      title={"Write this " + d.word.toLowerCase() + "'s own pad rhythm — holds that ring to the next hit, and short stabs. One hold on the downbeat is the pad's natural state; stabs on the offbeats are house piano."}>
-                      {padGOpen ? "▾" : "▸"} pad{secPadBeat[d.key] ? " ●" : ""}
-                    </button>
-                    <button className="mini" onClick={() => setOpenChordGrids({ ...openChordGrids, [d.key]: !chordGOpen })}
-                      title={"Write this " + d.word.toLowerCase() + "'s own chord rhythm — accents, downstrokes and upstrokes on the strum's own vocabulary, replacing the song's pattern for these bars alone."}>
-                      {chordGOpen ? "▾" : "▸"} chords{secChordBeat[d.key] ? " ●" : ""}
-                    </button>
-                  </div>
-                </div>
-                {recSec === d.key && (
-                  <div className="recbar">
-                    <div className="recmeter"><div className="recfill" style={{ width: (recLevel * 100) + "%" }} /></div>
-                    <span className="rechz">{recHz ? SEMI_NAME[((Math.round(hzToMidiF(recHz)) % 12) + 12) % 12] + " · " + Math.round(recHz) + " Hz" : "listening…"}</span>
-                    <span className="keytag">Play {recSource === "guitar" ? "a single-note line" : "your tune"}, one note at a time · press ■ Stop when done</span>
-                  </div>
-                )}
-                <div className="arrch">{d.str}</div>
-                {d.note && <div className="arrnote">{d.note}</div>}
-                {/* This one pass's own move and its own melodic shape. Both fall back to what the
-                    section type is set to, so a song stays as simple as you leave it — but the
-                    second chorus wanting a different build, or the bridge wanting to fall where
-                    everything else rises, is the normal case rather than the exception. */}
-                <button className="mini" style={{ marginTop:5 }}
-                  onClick={() => setOpenOpts({ ...openOpts, [d.key]: !optsOpen })}
-                  title={"Everything this " + d.word.toLowerCase() + " does besides its notes — how it arrives, what sweeps across it, and which instruments play. The dot means something here is set."}>
-                  {optsOpen ? "\u25be" : "\u25b8"} Transitions & presets{optsSet ? " \u25cf" : ""}
-                </button>
-                {optsOpen && <>
-                <div className="row secopts">
-                  <span className="optlbl" style={{ opacity:0.6 }}>seam</span>
-                  <label className="secopt" title={"Transition into this " + d.word.toLowerCase()
-                    + " alone — what happens on the bar it arrives on. Most of it sounds in the section before, so a lead-in longer than that section shortens to fit. Left as it is, it does whatever every "
-                    + d.word.toLowerCase() + " does."}>
-                    <span className="optlbl"><span aria-hidden="true">⇥</span> Way in</span>
-                    {transSelect(secTrans[d.key] || "", e => setSecTrans({ ...secTrans, [d.key]: e.target.value }),
-                      secTrans[d.base] && TRANS[secTrans[d.base]]
-                        ? d.word.toLowerCase() + " — " + TRANS[secTrans[d.base]].name : null)}
-                  </label>
-                  <label className="secopt" title={"Arrangement move for this " + d.word.toLowerCase()
-                    + " alone — a filter sweep, riser or drop across its bars. Left as it is, it does whatever every "
-                    + d.word.toLowerCase() + " does."}>
-                    <span className="optlbl"><span aria-hidden="true">🎛</span> Move</span>
-                    <select value={secMove[d.key] || ""}
-                      onChange={e => setSecMove({ ...secMove, [d.key]: e.target.value })}>
-                      <option value="">{secMove[d.base] && MOVES[secMove[d.base]]
-                        ? "as every " + d.word.toLowerCase() + " — " + MOVES[secMove[d.base]].name
-                        : "— no move —"}</option>
-                      {Object.entries(MOVES).map(([id, mv]) => id
-                        ? <option key={id} value={id}>{mv.name}</option> : null)}
-                    </select>
-                  </label>
-                  <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
-                    + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
-                    <span className="optlbl"><span aria-hidden="true">🎵</span> Shape</span>
-                    <select value={secNar[d.key] || ""} onChange={e => applySecNarrative(d, e.target.value)}>
-                      <option value="">{curNar ? "as the song — " + curNar.name : "— no shape written —"}</option>
-                      {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
-                    </select>
-                  </label>
-                  {secNar[d.key] && <button className="mini"
-                    title="Write this section's shape again — after a key change, or edits you want to throw away"
-                    onClick={() => applySecNarrative(d, secNar[d.key])}>↻</button>}
-                </div>
-                <div className="row secopts">
-                  <span className="optlbl" style={{ opacity:0.6 }}>plays</span>
-                  <label className="secopt" title={"Drums for this " + d.word.toLowerCase()
-                    + " alone — its own kit, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it."}>
-                    <span className="optlbl"><span aria-hidden="true">🥁</span> Drums</span>
-                    <select value={secDrum[d.key] || ""}
-                      onChange={e => setSecDrum({ ...secDrum, [d.key]: e.target.value })}>
-                      <option value="">{secDrum[d.base] && DRUMS[secDrum[d.base]]
-                        ? "as every " + d.word.toLowerCase() + " — " + DRUMS[secDrum[d.base]].name
-                        : "— the song's drums —"}</option>
-                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="secopt" title={"Whether the chords sound in this " + d.word.toLowerCase()
-                    + " alone. A drums-only intro and a breakdown with no harmony under it are both this switch."}>
-                    <span className="optlbl"><span aria-hidden="true">🎹</span> Chords</span>
-                    <select value={secQuiet[d.key] == null ? "" : (secQuiet[d.key] ? "out" : "in")}
-                      onChange={e => { const v = e.target.value, next = { ...secQuiet };
-                        if (v === "") delete next[d.key]; else next[d.key] = v === "out";
-                        setSecQuiet(next); }}>
-                      <option value="">{secQuiet[d.base]
-                        ? "as every " + d.word.toLowerCase() + " — chords out"
-                        : "— chords in —"}</option>
-                      <option value="in">Chords in</option>
-                      <option value="out">Chords out</option>
-                    </select>
-                  </label>
-                  <label className="secopt" title={"The bassline for this " + d.word.toLowerCase()
-                    + " alone — a pattern from the catalogue, or none. Independent of the chords, so a breakdown can lose the harmony and keep the bass running. Open ▸ bass above to write the line note by note."}>
-                    <span className="optlbl"><span aria-hidden="true">🎸</span> Bass</span>
-                    <select value={secBassPat[d.key] || ""}
-                      onChange={e => { const v = e.target.value, next = { ...secBassPat };
-                        if (!v) delete next[d.key]; else next[d.key] = v;
-                        setSecBassPat(next);
-                        // the menu supersedes a written grid — the grid re-seeds from the new choice
-                        if (secBassBeat[d.key]) { const nb = { ...secBassBeat }; delete nb[d.key]; setSecBassBeat(nb); } }}>
-                      <option value="">{(() => {
-                        const p = secBassPat[d.base];
-                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no bass"
-                          : "as every " + d.word.toLowerCase() + " — " + ((BASS[p] || {}).name || p);
-                        return bass && !secBass[d.base] && !secBass[d.key]
-                          ? "as the song — " + ((BASS[bass] || {}).name || bass) : "— no bass —";
-                      })()}</option>
-                      <option value="off">No bass</option>
-                      {Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="secopt" title={"The percussion layer for this " + d.word.toLowerCase()
-                    + " alone — a second pattern from the drum table riding over the groove on the song's kit. The classic move is perc entering a build before the kick returns. Open ▸ perc above to write it step by step."}>
-                    <span className="optlbl"><span aria-hidden="true">🥁</span> Perc</span>
-                    <select value={secPercPat[d.key] || ""}
-                      onChange={e => { const v = e.target.value, next = { ...secPercPat };
-                        if (!v) delete next[d.key]; else next[d.key] = v;
-                        setSecPercPat(next);
-                        if (secPercBeat[d.key]) { const nb = { ...secPercBeat }; delete nb[d.key]; setSecPercBeat(nb); } }}>
-                      <option value="">{(() => {
-                        const p = secPercPat[d.base];
-                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no perc"
-                          : "as every " + d.word.toLowerCase() + " — " + ((PERCS[p] || DRUMS[p] || {}).name || p);
-                        return perc && !secPerc[d.base] && !secPerc[d.key]
-                          ? "as the song — " + ((PERCS[perc] || DRUMS[perc] || {}).name || perc) : "— no percussion —";
-                      })()}</option>
-                      <option value="off">No percussion</option>
-                      {Object.entries(PERCS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="secopt" title={"The pad for this " + d.word.toLowerCase()
-                    + " alone — a second chord voice holding the upper voicing a bar at a time, reverbed and barely pumped. Pads carry breakdowns and sit out of DJ intros."}>
-                    <span className="optlbl"><span aria-hidden="true">🌫️</span> Pad</span>
-                    <select value={secPadVoice[d.key] || ""}
-                      onChange={e => { const v = e.target.value, next = { ...secPadVoice };
-                        if (!v) delete next[d.key]; else next[d.key] = v;
-                        setSecPadVoice(next);
-                        if (secPadBeat[d.key]) { const nb = { ...secPadBeat }; delete nb[d.key]; setSecPadBeat(nb); } }}>
-                      <option value="">{(() => {
-                        const p = secPadVoice[d.base];
-                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no pad"
-                          : "as every " + d.word.toLowerCase() + " — " + ((PAD_VOICES.find(([id]) => id === p) || [])[1] || p);
-                        return pad && !secPad[d.base] && !secPad[d.key]
-                          ? "as the song — " + ((PAD_VOICES.find(([id]) => id === pad) || [])[1] || pad) : "— no pad —";
-                      })()}</option>
-                      <option value="off">No pad</option>
-                      {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                    </select>
-                  </label>
-                </div>
-                </>}
-                {open && (() => {
-                  const tab = melTab[d.key] || "write";
-                  const pick = sugSel[d.key] || { pat: MELODY_PATTERNS[0].id, start: 0 };
-                  const curPat = MELODY_PATTERNS.find(p => p.id === pick.pat) || MELODY_PATTERNS[0];
-                  const rhy = rhySel[d.key] || "straight";
-                  const curRhy = RHYTHMS.find(r => r.id === rhy) || RHYTHMS[0];
-                  const nL = nLayers(sec);
-                  const secL = Math.min(secPart[d.key] || 0, nL - 1);   // which part this section's tabs are showing
-                  // a fresh copy of the melody-voice option list (used by both per-layer instrument menus)
-                  const leadOpts = () => (<>
-                    <option value="">Lead default</option>
-                    <optgroup label="Synth (no download)">
-                      {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                    </optgroup>
-                    {GM_CATS.map(([cat, list]) => (
-                      <optgroup key={cat} label={"◈ " + cat}>
-                        {list.map(([k, label]) => <option key={cat + k} value={k}>{label}</option>)}
-                      </optgroup>
-                    ))}
-                  </>);
-                  return (
-                  <div style={{ marginTop:8 }}>
-                    {/* One tab per instrument in this section, then that instrument's own settings
-                        panel. The panel is tinted and inset because everything in it belongs to
-                        this section alone — the same instrument is a different sound in the chorus,
-                        and nothing else on the page works that way. */}
-                    {(() => {
-                      const ly = layerOf(sec, secL) || {};
-                      const oct = ly.oct || 0, vol = ly.vol == null ? 1 : ly.vol;
-                      const anySolo = sec.layers.some(l => l.solo);
-                      const set = patch => setLayerProp(d.key, secL, patch);
-                      const grp = modTab[d.key] || MOD_GROUPS[0].id;
-                      const ink = LAYER_INK[secL] || "#8B94A3";
-                      // where a copy can go: the other passes of this same section first, since
-                      // that is nearly always what is meant, then anywhere else in the song
-                      const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                      const others = sections.insts.filter(o => o.key !== d.key);
-                      const doCopy = (keys, what) => {
-                        const n = copyPartSettings(d.key, secL, keys);
-                        setIoNote(n ? `${LAYER_NAMES[secL]}'s settings copied to ${what}.` : "Nothing to copy to.");
-                      };
-                      return (<>
-                      <div className="row lytabs" style={{ gap:5, alignItems:"flex-end", flexWrap:"wrap" }}>
-                        {sec.layers.map((l, li) => {
-                          const n = modCount(l);
-                          return (
-                            <button key={li} className={"lytab" + (secL === li ? " on" : "")}
-                              title={"Part " + LAYER_NAMES[li] + (n ? ` — ${n} setting${n > 1 ? "s" : ""} of its own` : "")}
-                              style={{ "--ly": LAYER_INK[li] }}
-                              onClick={() => setSecPart({ ...secPart, [d.key]: li })}>
-                              {LAYER_NAMES[li]}
-                              {l.mute ? <i className="lyflag">m</i> : l.solo ? <i className="lyflag">s</i> : null}
-                              {n > 0 && <i className="lydot">{n}</i>}
-                            </button>
-                          );
-                        })}
-                        {nL < MAX_LAYERS &&
-                          <button className="lytab lyadd" onClick={() => addLayer(d.key)}
-                            title="Add another instrument to this section — a bassline, a pad, an arp. It arrives with its own tab of settings.">＋</button>}
-                      </div>
-
-                      <div className="partpanel" style={{ "--ly": ink }}>
-                        <div className="row parthdr" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
-                          <span className="partname">{d.key} · part {LAYER_NAMES[secL]}</span>
-                          <select className="fxsel partinstr" value={ly.instr || ""}
-                            title={"The instrument part " + LAYER_NAMES[secL] + " plays in " + d.key + " — each section can give the same part a different voice"}
-                            onChange={e => setSecInstr(d.key, secL, e.target.value)}>
-                            {leadOpts()}
-                          </select>
-                          <select className="fxsel partcopy" value="" title="Copy every setting on this part — instrument, register, level and all its modulation — onto the same part of other sections. Their notes are left alone."
-                            onChange={e => {
-                              const v = e.target.value;
-                              if (v === "role") doCopy(sameRole.map(o => o.key), "every other " + d.word.toLowerCase());
-                              else if (v === "all") doCopy(others.map(o => o.key), "every other section");
-                              else if (v) doCopy([v], v);
-                            }}>
-                            <option value="">⧉ copy settings to…</option>
-                            {sameRole.length > 0 && <option value="role">every other {d.word.toLowerCase()} ({sameRole.length})</option>}
-                            {others.length > 0 && <option value="all">every other section ({others.length})</option>}
-                            {others.length > 0 && <optgroup label="just one">
-                              {others.map(o => <option key={o.key} value={o.key}>{o.key} · {o.word}</option>)}
-                            </optgroup>}
-                          </select>
-                          {modCount(ly) > 0 && <button className="mini" title="Put every modulation on this part back to its default. Its instrument, register and level are left alone."
-                            onClick={() => set(Object.fromEntries(MODS.map(md => [md.k, md.dflt])))}>↺ reset</button>}
-                          {secL > 0 && <button className="mini" onClick={() => removeLayer(d.key, secL)}
-                            title={"Remove part " + LAYER_NAMES[secL] + " from " + d.key}>🗑</button>}
-
-                        {/* register, level and the two mix switches sit on the same row as the part's
-                            name and voice: which part, what it plays and where it sits in the mix are
-                            one thing, and a boxed second row spent a border and two paddings saying
-                            they were two. It wraps on a narrow card, which is where it needs to. */}
-                          <span className="modlbl" style={{ marginLeft:2 }}>Octave</span>
-                          <div className="row" style={{ gap:4, alignItems:"center" }}>
-                            <button className="mini" disabled={oct <= LAYER_OCT_MIN}
-                              onClick={() => set({ oct: Math.max(LAYER_OCT_MIN, oct - 1) })}
-                              title="Drop this part an octave">−</button>
-                            <span className="modval">{oct > 0 ? "+" + oct : oct}</span>
-                            <button className="mini" disabled={oct >= LAYER_OCT_MAX}
-                              onClick={() => set({ oct: Math.min(LAYER_OCT_MAX, oct + 1) })}
-                              title="Lift this part an octave">＋</button>
-                          </div>
-                          <label className="modctl" title={"Level of part " + LAYER_NAMES[secL]}>
-                            <span className="modlbl">Level</span>
-                            <input className="lvl" type="range" min="0" max="100" value={Math.round(vol * 100)}
-                              onChange={e => set({ vol: +e.target.value / 100 })} />
-                            <span className="modval">{Math.round(vol * 100)}%</span>
-                          </label>
-                          <button className={"mini" + (ly.mute ? " mixon" : "")} onClick={() => set({ mute: !ly.mute })}
-                            title="Silence this part">{ly.mute ? "muted" : "mute"}</button>
-                          <button className={"mini" + (ly.solo ? " mixon" : "")} onClick={() => set({ solo: !ly.solo })}
-                            title="Hear this part alone">{ly.solo ? "soloed" : "solo"}</button>
-                          {anySolo && !ly.solo && <span className="keytag" style={{ margin:0, opacity:.75 }}>another part is soloed</span>}
-                        </div>
-
-                        {/* the modulation, one group at a time — 28 controls at once is a mixing
-                            desk, not a sketchpad */}
-                        <div className="row modtabs">
-                          {MOD_GROUPS.map(g => {
-                            const n = g.mods.reduce((a, md) => a + (modOf(ly, md.k) !== md.dflt ? 1 : 0), 0);
-                            return (
-                              <button key={g.id} className={"modtab" + (grp === g.id ? " on" : "")}
-                                title={g.tip} onClick={() => setModTab({ ...modTab, [d.key]: g.id })}>
-                                {g.name}{n > 0 && <i className="lydot">{n}</i>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <div className="modgrid">
-                          {(MOD_GROUPS.find(g => g.id === grp) || MOD_GROUPS[0]).mods
-                            // a rate only means something once the thing it paces is turned up
-                            .filter(md => !md.needs || modOf(ly, md.needs) !== MOD_BY_KEY[md.needs].dflt)
-                            .map(md => (
-                              <ModCtl key={md.k} mod={md} ly={ly} onSet={set}
-                                disabled={md.needsDelay && delayId === "off"} />
-                            ))}
-                        </div>
-                        {tips && grp === "space" && delayId === "off" &&
-                          <p className="arrnote" style={{ margin:"4px 0 0" }}>Echo needs a Delay time — pick one on the <b>Sound</b> tab.</p>}
-                        {tips && modOf(ly, "arp") &&
-                          <p className="arrnote" style={{ margin:"4px 0 0" }}>
-                            Part {LAYER_NAMES[secL]} is arping the chords, so its grid below is not
-                            being played — clear the arp to go back to the written notes.
-                          </p>}
-                      </div>
-                      </>);
-                    })()}
-
-                    {/* Write/Suggest and Draw/Move were two button rows stacked, which is two rows
-                        of chrome above a grid that is the actual work. One row, and the second
-                        switch appears only in the mode that has it. */}
-                    <div className="melmodebar">
-                      <div className="seg">
-                        <button className={tab === "write" ? "on" : ""}
-                          onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
-                        <button className={tab === "suggest" ? "on" : ""}
-                          onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
-                      </div>
-                      {tab === "write" && <div className="seg">
-                          <button className={!melMove ? "on" : ""} title="Write notes. Hold the button down and drag to paint a run of them — press an empty cell to draw, a full one to rub out."
-                            onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
-                          <button className={melMove ? "on" : ""} title="Drag a box to select notes, then drag a selected one to move the group"
-                            onClick={() => setMelMove(true)}>✋ Move</button>
-                        </div>}
-                        {/* Varying the repeats is about the whole melody rather than a selection, so it
-                            sits with the mode switch and not among the note tools below. */}
-                        {tab === "write" && (() => {
-                          const vst = varyIn[varyKeyOf(d.key, secL)];
-                          const lv = (vst && vst.level) || 0;
-                          return (<>
-                            <button className={"mini" + (lv ? " on" : "")} onClick={() => varyRepeats(d, secL)}
-                              title={"Vary the repeats inside this section — the motif is found where it restates itself, "
-                                + "the first statement is left alone, and every one after it gets a different landing note, "
-                                + "an extra note, a phrase pushed early. Tap again for more; one past the top puts the "
-                                + "melody back as you wrote it."}>
-                              ✦ Vary repeats{lv ? " ×" + lv : ""}</button>
-                            {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
-                              title="Put this melody back as it was before the first tap">↺</button>}
-                            {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
-                          </>);
-                        })()}
-                        {tab === "write" && melMove && (() => {
-                          const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
-                          return (<>
-                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
-                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
-                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
-                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
-                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
-                            <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
-                          </>);
-                        })()}
-                    </div>
-
-                    {tab === "suggest" && (
-                      <div className="sugmel">
-                        <div className="selrow" style={{ flexWrap:"wrap", gap:8 }}>
-                          <div className="selwrap" style={{ minWidth:170 }}>
-                            <span className="keytag">Melody pattern</span>
-                            <select value={pick.pat}
-                              onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, pat:e.target.value } })}>
-                              {MELODY_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                          </div>
-                          <div className="selwrap" style={{ minWidth:150, flex:"0 0 auto" }}>
-                            <span className="keytag">Rhythm</span>
-                            <select value={rhy}
-                              onChange={e => setRhySel({ ...rhySel, [d.key]: e.target.value })}
-                              title="Where the notes fall in the bar, and how long each lasts — separately from the shape of the tune">
-                              {RHYTHMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                            </select>
-                          </div>
-                          <div className="selwrap" style={{ minWidth:120, flex:"0 0 auto" }}>
-                            <span className="keytag">Start note</span>
-                            <select value={pick.start}
-                              onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, start:+e.target.value } })}>
-                              {scaleSemis.map((s, i) => (
-                                <option key={i} value={i}>{spell((tonic + s) % 12, tonic, effMode)} · degree {i + 1}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                        <p className="arrnote" style={{ marginTop:7 }}>Writing to melody <b>{LAYER_NAMES[secL]}</b>. {curPat.desc}</p>
-                        <p className="arrnote" style={{ marginTop:3 }}><b>{curRhy.name}</b> — {curRhy.desc}</p>
-                        {(() => {
-                          // a counter-melody is written against another part; with nothing to
-                          // answer it would write an empty grid, so say so rather than doing that
-                          const leadL = sec.layers.findIndex((ly, i) => i !== secL && ly.flat.some(c => c.length));
-                          const stuck = curPat.needs === "lead" && leadL < 0;
-                          return (<>
-                            {curPat.needs === "lead" && !stuck &&
-                              <p className="arrnote" style={{ marginTop:3, color:GOLD }}>
-                                Writing against part <b>{LAYER_NAMES[leadL]}</b>.
-                              </p>}
-                            {stuck &&
-                              <p className="arrnote" style={{ marginTop:3, color:"#E9B3AB" }}>
-                                This one is written against another part, and nothing else in this
-                                section has any notes yet. Write a lead first.
-                              </p>}
-                            <div className="row" style={{ gap:6, marginTop:8 }}>
-                              <button className="btn" disabled={stuck}
-                                onClick={() => applyPattern(d, sec, pick.pat, pick.start, secL, rhy)}>
-                                Write to grid</button>
-                              <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {LAYER_NAMES[secL]}</button>
-                            </div>
-                          </>);
-                        })()}
-                      </div>
-                    )}
-
-                    <div className={"mscroll" + (melMove ? " mvmode" : "")}
-                      data-sync={d.key} onScroll={syncScroll}>
-                      <div className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
-                        <span />
-                        {d.cs.map((c, b) => (
-                          <span key={b} className="mbar" style={{ gridColumn:`span ${meloBeats}`,
-                            background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
-                        ))}
-                      </div>
-                      {[...scaleSemis.keys()].reverse().map(deg => (
-                        <div key={deg} className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
-                          <span className="mnote">{spell((tonic + scaleSemis[deg]) % 12, tonic, effMode)}</span>
-                          {Array.from({ length: cols }, (_, c) => {
-                            // which parts sound this note here; the cell takes the first one's ink,
-                            // and a note shared by two parts is split diagonally between them
-                            const hits = sec.layers.reduce((a, ly, li) =>
-                              ((ly.flat[c] || []).includes(deg) ? [...a, li] : a), []);
-                            const onA = hits.length > 0;
-                            const inkA = onA ? LAYER_INK[hits[0]] : null;
-                            const inkB = hits.length > 1 ? LAYER_INK[hits[1]] : null;
-                            const isSel = melMove && melSel.key === d.key && melSel.layer === secL && melSel.notes[nKey(c, deg)];
-                            const inBox = melBox && melBox.key === d.key && c >= melBox.c0 && c <= melBox.c1 && deg >= melBox.d0 && deg <= melBox.d1;
-                            const isGhost = melGhost && melGhost.key === d.key && melSel.key === d.key && melSel.layer === secL
-                              && melSel.notes[nKey(c - melGhost.dc, deg - melGhost.dd)];
-                            return (
-                            <div key={c} data-mk={d.key} data-c={c} data-deg={deg}
-                              onClick={() => {
-                                if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                if (!melMove) tapMelo(d.key, c, deg, secL);
-                              }}
-                              onPointerDown={e => melDown(e, d.key, c, deg, sec, secL)}
-                              // the inline colour would beat the .colnow CSS, so the playhead
-                              // highlight has to be decided here too
-                              style={!onA ? null : (playing && curQ && curQ.sym === d.key && curQ.col === c)
-                                ? { background: inkB ? "linear-gradient(135deg, #EAE2CC 0 55%, #d9c2ff 55% 100%)" : "#EAE2CC",
-                                    borderColor: "#EAE2CC" }
-                                : { background: inkB ? `linear-gradient(135deg, ${inkA} 0 55%, ${inkB} 55% 100%)` : inkA,
-                                    borderColor: inkB || inkA }}
-                              className={"mcell" + (onA ? " on" : "") + (melMove ? " mv" : "")
-                                + (isSel ? " msel" : "") + (isGhost ? " mghost" : "") + (inBox ? " mbox" : "")
-                                + (playing && curQ && curQ.sym === d.key && curQ.col === c ? " colnow" : "")
-                                + (c % meloBeats === 0 && c > 0 ? " b0" : c % meloSub === 0 && c > 0 ? " bt" : "")} />
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  );
-                })()}
-                {/* This section's own drums. Nine rows, one per kit piece, and a cell is a letter
-                    in the step string the catalogue patterns are already made of — so what you
-                    write here is a pattern like any other, and playback, the exported MIDI and the
-                    drum stem all take it without knowing it was edited.
-                    It opens on whatever is *currently* playing rather than on an empty bar, so the
-                    first thing you do is change a groove rather than build one from nothing. */}
-                {beatOpen && (() => {
-                  const bars = beatBars(d);
-                  const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secBeat[d.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  const cat = DRUMS[effDrum(d) || drum];
-                  return (
-                    <div style={{ marginTop:6 }}>
-                      {/* the same control row shape the melody grid above uses, so the two blocks
-                          read as one stack rather than two features that happen to be adjacent */}
-                      <div className="row gridhdr">
-                        <span className="gridname">🥁 {own ? `${d.key}'s own drums` : "following " + ((cat && cat.name) || "the song's drums")}</span>
-                        {own && <button className="mini" onClick={() => resetBeat(d.key)}
-                          title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(d, sameRole)}
-                          title={"Put these drums on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
-                      </div>
-                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
-                        {/* the same chord header the melody grid carries, on the same columns —
-                            which is what makes a kick legible against the note above it */}
-                        <div className="mline" style={{ gap:beatGap,
-                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                          <span />
-                          {d.cs.map((c, bi) => (
-                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
-                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
-                          ))}
-                        </div>
-                        {DRUM_VOICES.map(([ch, name, tip, ink]) => (
-                          <div key={ch} className="mline" style={{ gap:beatGap,
-                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                            {/* the ink says which of the three parts of a kit a row belongs to —
-                                metal, backbeat, floor — while its cells are still empty */}
-                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
-                            {Array.from({ length: cols }, (_, c) => {
-                              const bar = Math.floor(c / n), step = c % n;
-                              const on = bars[bar][step].includes(ch);
-                              return (
-                                <div key={c} data-dk={d.key} data-bar={bar} data-step={step} data-ch={ch}
-                                  onPointerDown={e => beatDown(e, d, bar, step, ch)}
-                                  onClick={() => {
-                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapBeat(d, bar, step, ch);
-                                  }}
-                                  style={on ? { background: ink, borderColor: ink } : null}
-                                  className={"mcell dcell" + (on ? " on" : "")
-                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-{trackFxRow("drums")}
-                      {tips && <p className="keytag" style={{ marginTop:5 }}>
-                        Hold the button down and drag to paint a row — press an empty cell and you are
-                        drawing, press a full one and you are rubbing out — so a sixteenth hat across
-                        four bars is one stroke. Two pieces on one step play together, which is all
-                        layering is here: a crash on the first step of a section, or a snare through
-                        the last bar, is the fill a transition is waiting for.
-                      </p>}
-                    </div>
-                  );
-                })()}
-                {percOpen && (() => {
-                  const bars = percGridBars(d);
-                  const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secPercBeat[d.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  const src = percSrcOf(d);
-                  const cat = src && src.pat ? (PERCS[src.pat] || DRUMS[src.pat]) : null;
-                  return (
-                    <div style={{ marginTop:6 }}>
-                      <div className="row gridhdr">
-                        <span className="gridname">🥁 {own ? `${d.key}'s own perc layer`
-                          : src ? "following " + ((cat && cat.name) || "the section's perc")
-                          : "no perc here — paint some"}</span>
-                        {own && <button className="mini" onClick={() => resetPercBeat(d.key)}
-                          title="Hand this section back to the perc menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPercBeat(d, sameRole)}
-                          title={"Put this perc on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
-                      </div>
-                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
-                        <div className="mline" style={{ gap:beatGap,
-                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                          <span />
-                          {d.cs.map((c, bi) => (
-                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
-                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
-                          ))}
-                        </div>
-                        {PERC_VOICES.map(([ch, name, tip, ink]) => (
-                          <div key={ch} className="mline" style={{ gap:beatGap,
-                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
-                            {Array.from({ length: cols }, (_, c) => {
-                              const bar = Math.floor(c / n), step = c % n;
-                              const on = bars[bar][step].includes(ch);
-                              return (
-                                <div key={c} data-pk={d.key} data-bar={bar} data-step={step} data-ch={ch}
-                                  onPointerDown={e => percDown(e, d, bar, step, ch)}
-                                  onClick={() => {
-                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapPerc(d, bar, step, ch);
-                                  }}
-                                  style={on ? { background: ink, borderColor: ink } : null}
-                                  className={"mcell dcell" + (on ? " on" : "")
-                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-{trackFxRow("perc")}
-                      {tips && <p className="keytag" style={{ marginTop:5 }}>
-                        A second layer over the drum grid above, on the same kit — shakers, congas
-                        and offbeat hats live here so the main groove stays untouched. It has its
-                        own lane and its own drawn filter on the strip.
-                      </p>}
-                    </div>
-                  );
-                })()}
-                {bassOpen && (() => {
-                  const bars = bassGridBars(d);
-                  const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secBassBeat[d.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  const src = bassSrcOf(d);
-                  const cat = src && src.pat ? BASS[src.pat] : null;
-                  return (
-                    <div style={{ marginTop:6 }}>
-                      <div className="row gridhdr">
-                        <span className="gridname">🎸 {own ? `${d.key}'s own bassline`
-                          : src ? "following " + ((cat && cat.name) || "the section's bass")
-                          : "no bass here — paint a line"}</span>
-                        {own && <button className="mini" onClick={() => resetBassBeat(d.key)}
-                          title="Hand this section back to the bass menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBassBeat(d, sameRole)}
-                          title={"Put this bassline on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
-                      </div>
-                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
-                        <div className="mline" style={{ gap:beatGap,
-                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                          <span />
-                          {d.cs.map((c, bi) => (
-                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
-                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
-                          ))}
-                        </div>
-                        {BASS_ROWS.map(([tok, name, tip, ink]) => (
-                          <div key={tok} className="mline" style={{ gap:beatGap,
-                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
-                            {Array.from({ length: cols }, (_, c) => {
-                              const bar = Math.floor(c / n), step = c % n;
-                              const on = bars[bar][step] === tok;
-                              return (
-                                <div key={c} data-bk={d.key} data-bar={bar} data-step={step} data-tok={tok}
-                                  onPointerDown={e => bassDown(e, d, bar, step, tok)}
-                                  onClick={() => {
-                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapBass(d, bar, step, tok);
-                                  }}
-                                  style={on ? { background: ink, borderColor: ink } : null}
-                                  className={"mcell dcell" + (on ? " on" : "")
-                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-{trackFxRow("bass")}
-                      {tips && <p className="keytag" style={{ marginTop:5 }}>
-                        One note a step — root, fifth or octave of whatever chord that bar holds, so
-                        the line follows the changes by itself. A note rings until the next one, so a
-                        single Root at the bar start is a held sub and a step on every offbeat is the
-                        house bounce. Tap a different row to move a note; tap it again to clear it.
-                      </p>}
-                    </div>
-                  );
-                })()}
-                {padGOpen && (() => {
-                  const bars = padGridBars(d);
-                  const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secPadBeat[d.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  return (
-                    <div style={{ marginTop:6 }}>
-                      <div className="row gridhdr">
-                        <span className="gridname">🌫️ {own ? `${d.key}'s own pad rhythm`
-                          : padOnOf(d) ? "one hold a bar — the pad's natural state"
-                          : "no pad here — paint a rhythm"}</span>
-                        {own && <button className="mini" onClick={() => resetPadBeat(d.key)}
-                          title="Back to the pad's one-hold-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(d, sameRole)}
-                          title={"Put this pad rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
-                      </div>
-                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
-                        <div className="mline" style={{ gap:beatGap,
-                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                          <span />
-                          {d.cs.map((c, bi) => (
-                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
-                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
-                          ))}
-                        </div>
-                        {PAD_ROWS.map(([tok, name, tip, ink]) => (
-                          <div key={tok} className="mline" style={{ gap:beatGap,
-                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
-                            {Array.from({ length: cols }, (_, c) => {
-                              const bar = Math.floor(c / n), step = c % n;
-                              const on = bars[bar][step] === tok;
-                              return (
-                                <div key={c} data-qk={d.key} data-bar={bar} data-step={step} data-tok={tok}
-                                  onPointerDown={e => padDown(e, d, bar, step, tok)}
-                                  onClick={() => {
-                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapPad(d, bar, step, tok);
-                                  }}
-                                  style={on ? { background: ink, borderColor: ink } : null}
-                                  className={"mcell dcell" + (on ? " on" : "")
-                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                      {trackFxRow("pad")}
-                      {tips && <p className="keytag" style={{ marginTop:5 }}>
-                        The pad plays whatever chord each bar holds — this grid says when. A Hold
-                        rings until the next hit; a Stab is short. One Hold on the downbeat is what
-                        the pad does anyway; stabs off the beat turn it into house piano.
-                      </p>}
-                    </div>
-                  );
-                })()}
-                {chordGOpen && (() => {
-                  const bars = chordGridBars(d);
-                  const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secChordBeat[d.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  return (
-                    <div style={{ marginTop:6 }}>
-                      <div className="row gridhdr">
-                        <span className="gridname">🎹 {own ? `${d.key}'s own chord rhythm`
-                          : "following " + rhythm.name}</span>
-                        {own && <button className="mini" onClick={() => resetChordBeat(d.key)}
-                          title="Hand this section back to the song's strum pattern — the grid goes on showing it, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyChordBeat(d, sameRole)}
-                          title={"Put this chord rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
-                      </div>
-                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
-                        <div className="mline" style={{ gap:beatGap,
-                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                          <span />
-                          {d.cs.map((c, bi) => (
-                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
-                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
-                          ))}
-                        </div>
-                        {CHORD_ROWS.map(([tok, name, tip, ink]) => (
-                          <div key={tok} className="mline" style={{ gap:beatGap,
-                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
-                            {Array.from({ length: cols }, (_, c) => {
-                              const bar = Math.floor(c / n), step = c % n;
-                              const on = bars[bar][step] === tok;
-                              return (
-                                <div key={c} data-ck={d.key} data-bar={bar} data-step={step} data-tok={tok}
-                                  onPointerDown={e => chordBeatDown(e, d, bar, step, tok)}
-                                  onClick={() => {
-                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapChordBeat(d, bar, step, tok);
-                                  }}
-                                  style={on ? { background: ink, borderColor: ink } : null}
-                                  className={"mcell dcell" + (on ? " on" : "")
-                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                      {tips && <p className="keytag" style={{ marginTop:5 }}>
-                        The chord track's rhythm for these bars alone, on the strum's own vocabulary:
-                        Accent is the big hit, Down a full strum, Up the light answer. It replaces the
-                        song's pattern here — the bassline's "with the chords" mode follows it too.
-                      </p>}
-                    </div>
-                  );
-                })()}
-              </div>
-            );
-          })}
+                {g.items.map((d, di) => sectionCard(d, di))}
               </div>
             ));
           })()}
