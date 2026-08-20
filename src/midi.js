@@ -1,6 +1,6 @@
 /* midi — Writing a Standard MIDI File by hand, and reading a melody back out of one.
 */
-import { DRUM_MIDI, KIT_PROGRAM, accentAt } from "./patterns.js";
+import { DRUM_MIDI, PERC_MIDI, KIT_PROGRAM, accentAt } from "./patterns.js";
 import { chordIvs } from "./theory.js";
 
 /* ===== midi export ===== */
@@ -114,11 +114,11 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
       const stepT = beatsPerBar * T / steps;
       const gate = Math.min(60, stepT * 0.5);
       for (let s = 0; s < steps; s++) {
-        const notes = [...((pat && pat[s]) || "")].map(c => DRUM_MIDI[c] || 42);
+        const notes = [...((pat && pat[s]) || "")].map(c => PERC_MIDI[c] || DRUM_MIDI[c] || 70);
         if (!notes.length) { pend += stepT; continue; }
         const acc = accentAt(s, steps / beatsPerBar);
         notes.forEach((n, i) => ev(percT, i ? 0 : pend, 0x99, n,
-          Math.max(1, Math.round(([42,46,51,37].includes(n) ? 52 : 76) * acc))));   // under the kit
+          Math.max(1, Math.round(68 * acc))));                                      // under the kit
         notes.forEach((n, i) => ev(percT, i ? 0 : gate, 0x89, n, 0));
         pend = stepT - gate;
       }

@@ -665,6 +665,53 @@ function ksPluck(ctx, t, freq, dur, vol, bright, dest) {
   src.connect(ig); ig.connect(delay);
   src.start(t); src.stop(t + period + 0.02);
 }
+/* ===== the percussion layer's voices =====
+   Hand percussion, not a second drum kit: noise shaped for the shakes and jangles, tuned
+   membranes with a falling pitch for the drums, ringing partials for the metal. `ch` is a
+   channel letter from a PERCS pattern (see PERC_VOICES); unknown letters are silently skipped,
+   so a grid painted against an older row set degrades to silence rather than a wrong sound. */
+function percSound(ctx, t, ch, noise, dest, vel = 1) {
+  const nz = (vol0, atk, dec, type, hz, Q) => {
+    const vol = vol0 * vel;
+    const n = ctx.createBufferSource(); n.buffer = noise;
+    if (dec > 0.25) n.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = hz;
+    if (Q) f.Q.value = Q;
+    n.connect(f); f.connect(env(ctx, t, vol, atk, dec, true, dest));
+    n.start(t); n.stop(t + dec + 0.05);
+  };
+  // a tuned membrane: a sine dropping onto its pitch, with a knuckle of noise at the front
+  const skin = (hz0, hz1, vol, dec) => {
+    const o = ctx.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(hz0, t);
+    o.frequency.exponentialRampToValueAtTime(hz1, t + dec * 0.7);
+    o.connect(env(ctx, t, vol * vel, 0.002, dec, true, dest));
+    o.start(t); o.stop(t + dec + 0.05);
+    nz(vol * 0.25, 0.001, 0.02, "bandpass", 2200, 1);
+  };
+  // ringing metal: a few inharmonic partials, quiet and long
+  const metal = (parts, vol, dec, type = "sine") => {
+    for (const [hz, amp] of parts) {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz;
+      o.connect(env(ctx, t, vol * amp * vel, 0.001, dec, true, dest));
+      o.start(t); o.stop(t + dec + 0.05);
+    }
+  };
+  switch (ch) {
+    case "S": nz(0.11, 0.004, 0.055, "bandpass", 6200, 1.6); break;              // shaker
+    case "M": nz(0.09, 0.001, 0.14, "highpass", 7600, 0.8);                       // tambourine —
+      metal([[7900, 0.4], [9100, 0.3]], 0.05, 0.12); break;                       // noise + jingle ring
+    case "T": metal([[5100, 1], [7635, 0.55], [10250, 0.25]], 0.055, 0.9); break; // triangle
+    case "W": metal([[2100, 1], [3300, 0.25]], 0.3, 0.045); break;                // woodblock / clave
+    case "L": metal([[540, 1], [800, 0.85]], 0.16, 0.22, "square");               // cowbell —
+      nz(0.04, 0.001, 0.03, "bandpass", 900, 2); break;                           // the 808 pair + clank
+    case "C": skin(230, 185, 0.26, 0.16); break;                                  // conga slap (open tone)
+    case "G": skin(165, 130, 0.28, 0.28); break;                                  // conga low
+    case "B": skin(400, 330, 0.22, 0.09); break;                                  // bongo
+    default: break;
+  }
+}
+
 /* ===== General MIDI program numbers =====
    The soundfont folder keys are the GM names, so their position in the standard 128-instrument
    list is the program number. An exported file that names its instruments opens in a DAW already
@@ -1184,4 +1231,4 @@ function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
   leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 1.4) * vel });
 }
 
-export { BASS_VOICES, PAD_VOICES, playBass, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };

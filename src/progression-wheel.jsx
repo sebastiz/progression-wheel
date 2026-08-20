@@ -1,9 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BASS, BASS_IV, BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { BASS, BASS_IV, PERCS, PERC_VOICES, PERC_ORDER, PERC_MIDI, BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
-import { BASS_VOICES, PAD_VOICES, playBass, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
+import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
@@ -1149,7 +1149,8 @@ export default function ProgressionWheel() {
   const bass = bassSt.key === progId && BASS[bassSt.val] ? bassSt.val : "";
   const bassVoice = bassVoiceSt.key === progId && bassVoiceSt.val ? bassVoiceSt.val : "sub";
   // …and the same for the percussion layer and the pad
-  const perc = percSt.key === progId && percSt.val !== "off" && (DRUMS[percSt.val] || {}).pattern ? percSt.val : "";
+  const perc = percSt.key === progId && percSt.val !== "off"
+    && ((PERCS[percSt.val] || DRUMS[percSt.val] || {}).pattern) ? percSt.val : "";
   const pad = padSt.key === progId && PAD_VOICES.some(([id]) => id === padSt.val) ? padSt.val : "";
   // a dotted eighth is the dance default; everything else starts dry
   const delayId = delaySt.key === progId ? delaySt.val : (DRUM_DEFAULT[progId] ? "8d" : "off");
@@ -1251,14 +1252,15 @@ export default function ProgressionWheel() {
     if (bp && bp.pattern && barBeats === 4) lens.push(bp.pattern.length);
     // the percussion layer's pattern too — a sixteenth shaker over an eighth-note kit needs the
     // finer grid or half its hits fall between ticks
-    const pp = DRUMS[perc];
+    const pp = PERCS[perc] || DRUMS[perc];
     if (pp && pp.pattern && drumBeatsOf(pp.pattern) === barBeats) lens.push(pp.pattern.length);
     // …and every per-section choice or written grid for either track
     Object.values(secBassPat).forEach(id => {
       const b = BASS[id]; if (b && b.pattern && barBeats === 4) lens.push(b.pattern.length);
     });
     Object.values(secPercPat).forEach(id => {
-      const d2 = DRUMS[id]; if (d2 && d2.pattern && drumBeatsOf(d2.pattern) === barBeats) lens.push(d2.pattern.length);
+      const d2 = PERCS[id] || DRUMS[id];
+      if (d2 && d2.pattern && drumBeatsOf(d2.pattern) === barBeats) lens.push(d2.pattern.length);
     });
     Object.values(secBassBeat).forEach(bars => { if (bars && bars.length) lens.push(bars[0].length); });
     Object.values(secPercBeat).forEach(bars => { if (bars && bars.length) lens.push(bars[0].length); });
@@ -1547,8 +1549,8 @@ export default function ProgressionWheel() {
   ];
   const percSeed = d => {
     const src = percSrcOf(d), n = beatSteps(barBeats);
-    const pat = src && src.pat ? (DRUMS[src.pat] || {}).pattern : null;
-    return Array.from({ length: d.nbars }, () => pat ? beatFrom(pat, n) : blankBeat(n));
+    const pat = src && src.pat ? ((PERCS[src.pat] || DRUMS[src.pat] || {}).pattern) : null;
+    return Array.from({ length: d.nbars }, () => pat ? beatFrom(pat, n, PERC_ORDER) : blankBeat(n));
   };
   const percGridBars = d => {
     const own = secPercBeat[d.key], n = beatSteps(barBeats);
@@ -1560,7 +1562,7 @@ export default function ProgressionWheel() {
   };
   const tapPerc = (d, bar, step, ch) => {
     const bars = percGridBars(d);
-    setSecPercBeat({ ...secPercBeat, [d.key]: bars.map((b, i) => i === bar ? beatToggle(b, step, ch) : [...b]) });
+    setSecPercBeat({ ...secPercBeat, [d.key]: bars.map((b, i) => i === bar ? beatToggle(b, step, ch, PERC_ORDER) : [...b]) });
   };
   const resetPercBeat = key => { const next = { ...secPercBeat }; delete next[key]; setSecPercBeat(next); };
   const copyPercBeat = (d, to) => {
@@ -1893,7 +1895,7 @@ export default function ProgressionWheel() {
     const k = bar + ":" + step + ":" + ch; if (p.seen.has(k)) return;
     p.seen.add(k);
     if (p.bars[bar][step].includes(ch) === p.want) return;
-    p.bars[bar] = beatToggle(p.bars[bar], step, ch);
+    p.bars[bar] = beatToggle(p.bars[bar], step, ch, PERC_ORDER);
     setSecPercBeat({ ...secPercBeat, [p.key]: p.bars.map(b => [...b]) });
   };
   // the bass grid is monophonic: painting a row writes that token over the step, rubbing out clears it
@@ -2356,11 +2358,16 @@ export default function ProgressionWheel() {
          the pump — that belongs to the song's kick. */
       const percSrc = srcOf(secPercBeatRef.current, secPercPatRef.current, secPercRef.current, percRef.current);
       if (percSrc && (!m.stem || m.stem.kind === "perc")) {
-        const ppat = srcBar(percSrc) || (DRUMS[percSrc.pat] || {}).pattern;
+        // a legacy id from the drum table (saved before the layer had instruments of its own)
+        // still plays on the kit, exactly as saved; everything else is hand percussion
+        const legacy = !percSrc.beat && percSrc.pat && !PERCS[percSrc.pat] && DRUMS[percSrc.pat];
+        const ppat = srcBar(percSrc) || ((PERCS[percSrc.pat] || DRUMS[percSrc.pat] || {}).pattern);
         const pstep = sampleAt(ppat, i, L);
         if (pstep)
-          for (const ch of pstep)
-            drumSound(m.ctx, t, ch, m.noise, m.percLp, kitRef.current, humVel(accentAt(i, ticksPerBeat)) * 0.8);
+          for (const ch of pstep) {
+            if (legacy) drumSound(m.ctx, t, ch, m.noise, m.percLp, kitRef.current, humVel(accentAt(i, ticksPerBeat)) * 0.8);
+            else percSound(m.ctx, t, ch, m.noise, m.percLp, humVel(accentAt(i, ticksPerBeat)));
+          }
       }
       let dpat = drumRef.current;                       // global drum pattern by default
       if (struct && struct.length && structBar >= 0) {   // a section can override with its own kit
@@ -3259,7 +3266,7 @@ export default function ProgressionWheel() {
       const percForBar = bi => {
         const src = exSrc(bars[bi], bi, percSrcOf);
         if (!src) return null;
-        return src.bar || (DRUMS[src.pat] || {}).pattern || null;
+        return src.bar || ((PERCS[src.pat] || DRUMS[src.pat] || {}).pattern) || null;
       };
       const anyPerc = bars.some((_, bi) => percForBar(bi));
       // the pad: the chord's upper voicing held a bar at a time, an octave up, no low root
@@ -3333,8 +3340,8 @@ export default function ProgressionWheel() {
         for (let s = 0; s < steps; s++) {
           const acc = accentAt(s, steps / B);
           for (const ch of (pat[s] || "")) percNotes.push({ t: bi * B + s * stepB,
-            dur: Math.min(0.25, stepB * 0.5), note: DRUM_MIDI[ch] || 42,
-            vel: ([42, 46, 51, 37].includes(DRUM_MIDI[ch]) ? 52 : 76) * acc });
+            dur: Math.min(0.25, stepB * 0.5), note: PERC_MIDI[ch] || DRUM_MIDI[ch] || 70,
+            vel: 68 * acc });
         }
       });
       if (percNotes.length) tracks.push({ name: "Percussion", color: ALS_COLORS.perc, vol: 0.8,
@@ -5125,7 +5132,7 @@ export default function ProgressionWheel() {
                     delete next[x.key];
                     const lp = next[x.base];
                     const inherited = lp ? lp !== "off" : (!effPercOut(x) && !!perc);
-                    if (!inherited && !secPercBeat[x.key]) next[x.key] = perc || "ohats";
+                    if (!inherited && !secPercBeat[x.key]) next[x.key] = perc || "shaker8";
                   });
                   setSecPercPat(next);
                 } }] : []),
@@ -5618,13 +5625,12 @@ export default function ProgressionWheel() {
                       <option value="">{(() => {
                         const p = secPercPat[d.base];
                         if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no perc"
-                          : "as every " + d.word.toLowerCase() + " — " + ((DRUMS[p] || {}).name || p);
+                          : "as every " + d.word.toLowerCase() + " — " + ((PERCS[p] || DRUMS[p] || {}).name || p);
                         return perc && !secPerc[d.base] && !secPerc[d.key]
-                          ? "as the song — " + ((DRUMS[perc] || {}).name || perc) : "— no percussion —";
+                          ? "as the song — " + ((PERCS[perc] || DRUMS[perc] || {}).name || perc) : "— no percussion —";
                       })()}</option>
                       <option value="off">No percussion</option>
-                      {metricDrums.map(([id, dd]) => id !== "off"
-                        ? <option key={id} value={id}>{dd.name}</option> : null)}
+                      {Object.entries(PERCS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
                     </select>
                   </label>
                   <label className="secopt" title={"The pad for this " + d.word.toLowerCase()
@@ -6044,7 +6050,7 @@ export default function ProgressionWheel() {
                   const own = !!secPercBeat[d.key];
                   const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
                   const src = percSrcOf(d);
-                  const cat = src && src.pat ? DRUMS[src.pat] : null;
+                  const cat = src && src.pat ? (PERCS[src.pat] || DRUMS[src.pat]) : null;
                   return (
                     <div style={{ marginTop:6 }}>
                       <div className="row gridhdr">
@@ -6066,7 +6072,7 @@ export default function ProgressionWheel() {
                               background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
                           ))}
                         </div>
-                        {DRUM_VOICES.map(([ch, name, tip, ink]) => (
+                        {PERC_VOICES.map(([ch, name, tip, ink]) => (
                           <div key={ch} className="mline" style={{ gap:beatGap,
                               gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
                             <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>

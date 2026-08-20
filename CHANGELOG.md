@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- **The perc layer has real percussion now.** It used to borrow the drum kit's voices, which made
+  it a second drum pattern; it now has eight hand-percussion instruments of its own — shaker,
+  tambourine, triangle, cowbell, woodblock, bongo and two congas — each synthesized in kind
+  (shaped noise for the shakes and jangles, tuned falling-pitch membranes for the drums, ringing
+  inharmonic partials for the metal). The section perc menu offers a percussion catalogue —
+  shaker sixteenths, tambourine offbeats, both son claves, a conga tumbao, a bongo ride, cowbell
+  quarters and more — the ▸ perc grid's rows are these instruments, and the exported Percussion
+  track lands on the right GM notes (maracas, tambourine, congas…) instead of hats and claps.
+  Perc chosen from the drum table in older saves still plays on the kit, exactly as saved.
 - **Bass, perc and pad are authored on the sections now, like drums and melodies.** The Sound-tab
   dropdowns are gone. Each section row carries its own **Bass**, **Perc** and **Pad** menus — a
   pattern (or pad voice) for that pass alone, "as the song" to inherit what a template wrote, or

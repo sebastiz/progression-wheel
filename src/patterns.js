@@ -233,6 +233,42 @@ const DRUMS = {};
 ].forEach(([id, name, pat]) =>
   DRUMS[id] = { name, pattern: pat ? pat.split(" ").map(s => s === "." ? "" : s) : null });
 
+/* ===== the percussion layer's own instruments =====
+   The perc track used to borrow the drum kit's voices, which made it a second drum pattern rather
+   than percussion. These are the hand-percussion instruments — their own channel letters, their
+   own catalogue, their own synthesis (see percSound) and their own GM notes on export. Letters
+   overlap the kit's on purpose-free separate tables: a perc pattern is never played by the kit
+   or vice versa, except legacy drum ids kept sounding as saved. */
+const PERC_VOICES = [
+  ["T", "Triangle",   "a long silver ring over everything — one a bar is plenty", "#7FB4D8"],
+  ["M", "Tambourine", "the jangle on the offbeats — gospel choruses and disco alike", "#7FB4D8"],
+  ["S", "Shaker",     "the sixteenth engine — the groove's hi-hat that never was", "#7FB4D8"],
+  ["L", "Cowbell",    "the fearless quarter-note — more is famously an option", "#E0B85A"],
+  ["W", "Woodblock",  "the clave's voice — dry, high and instantly Latin", "#E0B85A"],
+  ["B", "Bongo",      "the high pop that answers the congas", "#E8794F"],
+  ["C", "Conga slap", "the sharp open tone that carries the tumbao", "#E8794F"],
+  ["G", "Conga low",  "the deep open tone — the floor of the hand-drum pair", "#E8794F"],
+];
+const PERC_ORDER = PERC_VOICES.map(([ch]) => ch);
+// letter → GM percussion note for the exported channel-10 Percussion track
+const PERC_MIDI = { S:70, M:54, T:81, W:76, L:56, C:63, G:64, B:60 };
+const PERCS = {};
+[
+["shaker16", "Shaker sixteenths", "S S S S S S S S S S S S S S S S"],
+["shaker8", "Shaker eighths", "S . S . S . S . S . S . S . S ."],
+["tamb", "Tambourine offbeats", ". . M . . . M . . . M . . . M ."],
+["tamb8", "Tambourine eighths", "M . M . M . M . M . M . M . M ."],
+["clave32", "Son clave 3–2", "W . . W . . W . . . W . W . . ."],
+["clave23", "Son clave 2–3", ". . W . W . . . W . . W . . W ."],
+["tumbao", "Conga tumbao", ". . C . . . C G . . C . G G . ."],
+["bongos", "Bongo ride", "B . B B . B B . B . B B . B B ."],
+["congaride", "Conga & shaker", "S . C S S . C S S . G S S C C S"],
+["cowbell", "Cowbell quarters", "L . . . L . . . L . . . L . . ."],
+["triangle", "Triangle on the twos", ". . . . T . . . . . . . T . . ."],
+["fiesta", "Full fiesta", "S . SW S SM . S C S . SW S GM . S C"],
+].forEach(([id, name, pat]) =>
+  PERCS[id] = { name, pattern: pat.split(" ").map(s => s === "." ? "" : s) });
+
 // Kit voicings for the drum channels above (see drumSound).
 const DRUM_KITS = [["acoustic","Acoustic kit"], ["909","TR-909 · house & techno"], ["808","TR-808 · trap & hip-hop"]];
 // How hard the kick ducks everything pitched. "classic" is the familiar house pump.
@@ -267,15 +303,16 @@ const DRUM_ORDER = DRUM_VOICES.map(([ch]) => ch);
 // which is exactly what `drumBeatsOf` reads back, so an edited bar is a pattern like any other
 const beatSteps = beats => beats * 4;
 const blankBeat = n => Array.from({ length: n }, () => "");
-// a step's pieces, always in kit order, so two identical bars are identical strings
-const beatSort = s => DRUM_ORDER.filter(ch => s.includes(ch)).join("");
-const beatToggle = (bar, step, ch) => bar.map((s, i) =>
-  i === step ? beatSort(s.includes(ch) ? s.split("").filter(c => c !== ch).join("") : s + ch) : s);
+// a step's pieces, always in row order, so two identical bars are identical strings. The order
+// defaults to the kit's; the perc grid passes its own, or its letters would be filtered away.
+const beatSort = (s, order = DRUM_ORDER) => order.filter(ch => s.includes(ch)).join("");
+const beatToggle = (bar, step, ch, order) => bar.map((s, i) =>
+  i === step ? beatSort(s.includes(ch) ? s.split("").filter(c => c !== ch).join("") : s + ch, order) : s);
 const beatHits = bars => (bars || []).reduce((n, b) => n + b.reduce((m, s) => m + s.length, 0), 0);
 /* A catalogue pattern laid onto an n-step bar, so opening the grid shows what is already playing
    rather than an empty one. `sampleAt` is the same resampler playback uses, so an eighth-note
    pattern lands on every other step exactly as it sounds. */
-const beatFrom = (pat, n) => Array.from({ length: n }, (_, i) => beatSort(sampleAt(pat, i, n) || ""));
+const beatFrom = (pat, n, order) => Array.from({ length: n }, (_, i) => beatSort(sampleAt(pat, i, n) || "", order));
 // GM percussion-set program numbers (0-indexed) so an exported file opens with a kit that
 // matches what you heard. GM has no 909, so it borrows the Electronic set.
 const KIT_PROGRAM = { "909":24, "808":25 };
@@ -285,4 +322,4 @@ const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16"
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { BASS, BASS_IV, BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
+export { BASS, BASS_IV, PERCS, PERC_VOICES, PERC_ORDER, PERC_MIDI, BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
