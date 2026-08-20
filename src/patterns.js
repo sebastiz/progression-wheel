@@ -252,6 +252,8 @@ const PERC_VOICES = [
 const PERC_ORDER = PERC_VOICES.map(([ch]) => ch);
 // letter → GM percussion note for the exported channel-10 Percussion track
 const PERC_MIDI = { S:70, M:54, T:81, W:76, L:56, C:63, G:64, B:60 };
+// how the eight instruments are voiced: played by hand, or the drum machine's idea of them
+const PERC_KITS = [["hand", "Hand percussion"], ["machine", "Machine perc (808-ish)"]];
 const PERCS = {};
 [
 ["shaker16", "Shaker sixteenths", "S S S S S S S S S S S S S S S S"],
@@ -322,4 +324,4 @@ const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16"
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { BASS, BASS_IV, PERCS, PERC_VOICES, PERC_ORDER, PERC_MIDI, BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
+export { BASS, BASS_IV, PERCS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };

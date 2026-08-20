@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BASS, BASS_IV, PERCS, PERC_VOICES, PERC_ORDER, PERC_MIDI, BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { BASS, BASS_IV, PERCS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
@@ -434,6 +434,17 @@ function ModCtl({ mod, ly, onSet, disabled }) {
     </label>
   );
 }
+/* ---- the per-track effect panels ----
+   The melody part mixer's audio stage, pointed at a whole track. The controls are the same rows
+   of MOD_GROUPS the parts use, drawn by the same ModCtl — note effects (arps, gates, echoes)
+   stay with the parts, because they rewrite notes and a track is audio by the time it gets here. */
+const TRACK_LVL = { k:"lvl", name:"Level", kind:"amt", dflt:100, max:100, unit:"%",
+  tip:"This track's level in the mix." };
+const TRACK_MODS = [TRACK_LVL, ...["cut","res","hp","drive","wob","wobRate","trem","tremRate",
+  "pan","apan","apanRate","send","verb","duck"].map(k => MOD_BY_KEY[k])];
+const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
+  ["bass", "Bass", "🎸"], ["pad", "Pad", "🌫️"]];
+
 // section-type accent colours for the song write-out grouping
 /* One colour per section letter. Chosen by function rather than prettiness, so the arrangement
    strip reads as a shape: statements green, hooks gold, lifts blue/pink, the drop hot, the quiet
@@ -528,6 +539,11 @@ export default function ProgressionWheel() {
   const [secPadVoice, setSecPadVoice] = useState({}); // per-section pad voice ("" inherit | "off" | id)
   const [openBass, setOpenBass] = useState({});       // which section bass grids are open
   const [openPercs, setOpenPercs] = useState({});     // which section perc grids are open
+  const [percKitSt, setPercKitSt] = useState({ key:"", val:"" });   // hand vs machine percussion voicing
+  /* Each track's effect panel: a sparse object of the same modulation keys the melody parts use
+     (only values that differ from their default are stored), one per track. */
+  const [trackFx, setTrackFx] = useState({});         // { drums:{...}, perc:{...}, bass:{...}, pad:{...} }
+  const [openFx, setOpenFx] = useState({});           // which track effect panels are open
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
   // per-section-type chord mute, keyed by base letter. Dropping the chords for a breakdown while
   // the drums carry on is a basic arrangement move that had no way to be expressed before.
@@ -627,6 +643,7 @@ export default function ProgressionWheel() {
   const secBassPatRef = useRef({}), secBassBeatRef = useRef({});
   const secPercPatRef = useRef({}), secPercBeatRef = useRef({});
   const secPadVoiceRef = useRef({});
+  const trackFxRef = useRef({}), percKitRef = useRef("hand");
   const subRef = useRef(2), melRef = useRef(8);
   const moveRef = useRef({ moves:{}, span:{} });
   const delayRef = useRef("off");
@@ -1151,6 +1168,7 @@ export default function ProgressionWheel() {
   // …and the same for the percussion layer and the pad
   const perc = percSt.key === progId && percSt.val !== "off"
     && ((PERCS[percSt.val] || DRUMS[percSt.val] || {}).pattern) ? percSt.val : "";
+  const percKit = percKitSt.key === progId && percKitSt.val ? percKitSt.val : "hand";
   const pad = padSt.key === progId && PAD_VOICES.some(([id]) => id === padSt.val) ? padSt.val : "";
   // a dotted eighth is the dance default; everything else starts dry
   const delayId = delaySt.key === progId ? delaySt.val : (DRUM_DEFAULT[progId] ? "8d" : "off");
@@ -1170,6 +1188,7 @@ export default function ProgressionWheel() {
   secBassPatRef.current = secBassPat; secBassBeatRef.current = secBassBeat;
   secPercPatRef.current = secPercPat; secPercBeatRef.current = secPercBeat;
   secPadVoiceRef.current = secPadVoice;
+  trackFxRef.current = trackFx; percKitRef.current = percKit;
   clickRef.current = clickOn;
   /* Time signature. The chosen strum pattern is the single source of truth for the bar — the meter
      is read off it rather than stored separately, so the two can never disagree. Picking a meter
@@ -2171,21 +2190,9 @@ export default function ProgressionWheel() {
   // the bass track's own duck: straight into the move filter, not the reverb bus — low end in a
   // room is mud — and pumped harder than the chords when the kick lands
   const bduck = ctx.createGain(); bduck.gain.value = 1; bduck.connect(filt);
-  /* Each track's own drawn filter: one low-pass per track, driven by its lane on the strip the
-     way each melody part's `cut` lane drives its own node. Open (transparent) until the lane is
-     drawn, so a song without the lanes is bit-for-bit what it was. The perc filter feeds the
-     master directly — percussion is a drum layer, and drums never pass through the pitched bus. */
-  const trackLp = out => {
-    const f = ctx.createBiquadFilter();
-    f.type = "lowpass"; f.frequency.value = FILTER_OPEN; f.Q.value = 0.7;
-    f.connect(out); return f;
-  };
-  const bassLp = trackLp(bduck);
-  const percLp = trackLp(master);
-  // the pad: gently ducked (half the pump — pads barely move) and into the reverb bus, because a
-  // pad is the one track that wants the room
+  // the pad's duck: gently pumped (half the global amount by default) and into the reverb bus,
+  // because a pad is the one track that wants the room
   const padDuck = ctx.createGain(); padDuck.gain.value = 1; padDuck.connect(music);
-  const padLp = trackLp(padDuck);
   // tempo-synced delay, fed by whichever parts have a send. It returns into the move filter, so
   // a build sweeps the echoes along with everything else.
   const delay = makeDelay(ctx, filt, 60 / (bpmRef.current || 120), delayRef.current);
@@ -2195,7 +2202,43 @@ export default function ProgressionWheel() {
   // a wet-only room the parts send to by amount, separate from the bus reverb everything already
   // sits in — a send has to be silent at zero, and the bus one passes its dry signal through
   const verb = makeVerbSend(ctx, wetDuck, 2.2);
-  const m = { ctx, master, music, cduck, bduck, bassLp, percLp, padLp, padDuck, wetDuck, filt, mhp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
+  /* One effects chain per track — the melody parts' audio stage pointed at a whole track:
+     level → drive → hi-pass → low-pass (the same node the track's drawn filter lane writes) →
+     tremolo → pan, with echo and reverb sends and a duck of its own, plus the three tempo-synced
+     LFOs (wobble, tremolo, auto-pan) running from t0 so stems line up with the mix. Every default
+     is transparent: a song that never opens the panels is what it always was. */
+  const t0v = ctx.currentTime;
+  const mkChain = out => {
+    const inG = ctx.createGain(); inG.gain.value = 1;
+    const drive = ctx.createWaveShaper(); drive.oversample = "2x";
+    const chp = ctx.createBiquadFilter(); chp.type = "highpass"; chp.frequency.value = 20; chp.Q.value = 0.7;
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = FILTER_OPEN; lp.Q.value = 0.7;
+    const trem = ctx.createGain(); trem.gain.value = 1;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    const duck = ctx.createGain(); duck.gain.value = 1;
+    inG.connect(drive); drive.connect(chp); chp.connect(lp); lp.connect(trem);
+    const tail = pan ? (trem.connect(pan), pan) : trem;
+    tail.connect(duck); duck.connect(out);
+    let send = null;
+    if (delay) { send = ctx.createGain(); send.gain.value = 0; tail.connect(send); send.connect(delay.send); }
+    const verbS = ctx.createGain(); verbS.gain.value = 0; tail.connect(verbS); verbS.connect(verb);
+    const lfo = target => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sine"; o.frequency.value = 1; g.gain.value = 0;
+      o.connect(g); if (target) g.connect(target);
+      o.start(t0v); o.stop(t0v + 3600);
+      return { osc: o, depth: g };
+    };
+    return { in: inG, drive, hp: chp, lp, trem, pan, duck, send, verbS,
+      wob: lfo(lp.frequency), tremLfo: lfo(trem.gain), panLfo: pan ? lfo(pan.pan) : null, driveAmt: 0 };
+  };
+  const trDrums = mkChain(master);
+  const trPerc = mkChain(master);
+  const trBass = mkChain(bduck);
+  const trPad = mkChain(padDuck);
+  const m = { ctx, master, music, cduck, bduck, padDuck, wetDuck, filt, mhp,
+    trDrums, trPerc, trBass, trPad,
+    bassLp: trBass.lp, percLp: trPerc.lp, padLp: trPad.lp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
     lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
     partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
     partDrive: [], partDriveAmt: [], partHp: [], partLp: [], partTrem: [], partPan: [],
@@ -2324,7 +2367,7 @@ export default function ProgressionWheel() {
         const bpat = bbar || (BASS[bassSrc.pat] || {}).pattern;
         if (!bbar && bassSrc.pat && !(BASS[bassSrc.pat] || {}).pattern) {
           if (sym !== "-" && sym !== "U")   // an upstroke never reaches the low string
-            playBass(m.ctx, t, chord.root, 0, eighth * 1.8, bassVoiceRef.current, m.bassLp, humVel(accentAt(i, ticksPerBeat)));
+            playBass(m.ctx, t, chord.root, 0, eighth * 1.8, bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
         } else if (bpat && bpat.length) {
           const bs = stepAt(bpat.length, i, L);
           const tok = bs == null ? "" : bpat[bs];
@@ -2333,7 +2376,7 @@ export default function ProgressionWheel() {
             while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
             const stepDur = tick * (L / bpat.length);
             playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
-              bassVoiceRef.current, m.bassLp, humVel(accentAt(i, ticksPerBeat)));
+              bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
           }
         }
       }
@@ -2351,7 +2394,7 @@ export default function ProgressionWheel() {
       if (padV && chord && i === 0 && (!m.stem || m.stem.kind === "pad")) {
         const barDur = barBeatsRef.current * beat;
         for (const mid of (m.voicing || voiceChord(chord)))
-          leadNote(m.ctx, t, mid, barDur * 0.98, padV, true, m.padLp, { lvl: 0.8 });
+          leadNote(m.ctx, t, mid, barDur * 0.98, padV, true, m.trPad.in, { lvl: 0.8 });
       }
       /* The percussion layer: a second pattern from the drum table riding over the main groove on
          the same kit, slightly under it in level, through its own drawn filter. It never triggers
@@ -2365,8 +2408,8 @@ export default function ProgressionWheel() {
         const pstep = sampleAt(ppat, i, L);
         if (pstep)
           for (const ch of pstep) {
-            if (legacy) drumSound(m.ctx, t, ch, m.noise, m.percLp, kitRef.current, humVel(accentAt(i, ticksPerBeat)) * 0.8);
-            else percSound(m.ctx, t, ch, m.noise, m.percLp, humVel(accentAt(i, ticksPerBeat)));
+            if (legacy) drumSound(m.ctx, t, ch, m.noise, m.trPerc.in, kitRef.current, humVel(accentAt(i, ticksPerBeat)) * 0.8);
+            else percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
           }
       }
       let dpat = drumRef.current;                       // global drum pattern by default
@@ -2425,20 +2468,51 @@ export default function ProgressionWheel() {
           m.autoGain.gain.setValueAtTime(gNow, t);
           m.autoGain.gain.linearRampToValueAtTime(gNext == null ? gNow : gNext, t + barDur);
         }
-        /* The per-track filter lanes — bass, percussion, pad — each ramped across the bar onto
-           its own node, exactly as the master filter lane is. An undrawn lane leaves its node
-           wide open, so a song without them is untouched. */
-        const laneCut = (pts, node) => {
-          const vNow = autoAt(pts, bar);
-          if (vNow == null) return;
-          const vNext = autoAt(pts, bar + 1);
-          const hz = v => nyq(m, Math.max(60, 120 * Math.pow(FILTER_OPEN / 120, v)));
-          node.frequency.setValueAtTime(hz(vNow), t);
-          node.frequency.exponentialRampToValueAtTime(hz(vNext == null ? vNow : vNext), t + barDur);
+      }
+      /* The track effect panels, applied once a beat from the live state — a knob moved while
+         the song plays is heard on the next beat. The track's drawn filter lane, where one is
+         drawn, takes the low-pass over from the panel's knob, exactly as a part's lane does. */
+      if (i % ticksPerBeat === 0) {
+        const A3 = autoRef.current || {};
+        const fxBar = (structBar >= 0 ? structBar : Math.floor(m.step / L)) + i / L;
+        const applyFx = (tr, fx, laneId) => {
+          const val = k => {
+            const v = fx ? fx[k] : undefined;
+            if (v != null) return v;
+            const md = MOD_BY_KEY[k];
+            return md ? md.dflt : (k === "lvl" ? 100 : 0);
+          };
+          tr.in.gain.setValueAtTime(val("lvl") / 100, t);
+          const dvv = val("drive") / 100;
+          if (dvv !== tr.driveAmt) { tr.driveAmt = dvv; tr.drive.curve = dvv > 0 ? driveCurve(dvv) : null; }
+          tr.hp.frequency.setValueAtTime(nyq(m, 20 * Math.pow(1200 / 20, val("hp") / 100)), t);
+          const lane = laneId ? autoAt(A3[laneId], fxBar) : null;
+          const cutPos = lane != null ? lane * 100 : val("cut");
+          const cutHz = nyq(m, 120 * Math.pow(FILTER_OPEN / 120, cutPos / 100));
+          const w = val("wob") / 100;
+          tr.lp.Q.value = 0.7 + (val("res") / 100) * 14;
+          tr.lp.frequency.setValueAtTime(Math.max(30, cutHz * (1 - 0.45 * w)), t);
+          tr.wob.depth.gain.setValueAtTime(cutHz * 0.45 * w, t);
+          tr.wob.osc.frequency.setValueAtTime(1 / (beat * val("wobRate")), t);
+          const td = (val("trem") / 100) * 0.5;
+          tr.trem.gain.setValueAtTime(1 - td, t);
+          tr.tremLfo.depth.gain.setValueAtTime(td, t);
+          tr.tremLfo.osc.frequency.setValueAtTime(1 / (beat * val("tremRate")), t);
+          if (tr.pan) {
+            const ap = val("apan") / 100;
+            const base = Math.max(-1 + ap, Math.min(1 - ap, val("pan") / 100));
+            tr.pan.pan.setValueAtTime(base, t);
+            tr.panLfo.depth.gain.setValueAtTime(ap, t);
+            tr.panLfo.osc.frequency.setValueAtTime(1 / (beat * val("apanRate")), t);
+          }
+          if (tr.send) tr.send.gain.setValueAtTime(val("send") || 0, t);   // stored 0..1 like a part's
+          tr.verbS.gain.setValueAtTime(val("verb") / 100, t);
         };
-        laneCut(A.cutbass, m.bassLp);
-        laneCut(A.cutperc, m.percLp);
-        laneCut(A.cutpad, m.padLp);
+        const F3 = trackFxRef.current || {};
+        applyFx(m.trDrums, F3.drums, null);
+        applyFx(m.trPerc, F3.perc, "cutperc");
+        applyFx(m.trBass, F3.bass, "cutbass");
+        applyFx(m.trPad, F3.pad, "cutpad");
       }
       // section moves: fire once, on the downbeat of each section instance, scheduling the whole
       // sweep across that instance's length. Guarded by the bar index so a re-entered bar (or the
@@ -2481,7 +2555,7 @@ export default function ProgressionWheel() {
       const kickNow = !!dstep && /[KB]/.test(dstep);
       if (dstep) {
         if (!m.stem || m.stem.kind === "drums")
-          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.master, kitRef.current, humVel(accent));
+          for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
         // Pump the pitched sources under every kick. Recovery stops just short of the next beat, so
         // four-on-the-floor breathes fully back in right as the next kick hits. The pump belongs to
         // the pitched sources, so it stays in every pitched stem even though the kick that triggers
@@ -2490,11 +2564,14 @@ export default function ProgressionWheel() {
         if (pumpRef.current && kickNow) {
           duckAt(m.cduck, t, pumpRef.current, beat * 0.8);
           duckAt(m.wetDuck, t, pumpRef.current, beat * 0.8);
-          // the bass ducks hardest — the kick and the bassline share a register, and the pump
-          // trading them off is what makes an offbeat bass lock instead of fight
-          duckAt(m.bduck, t, Math.min(1, pumpRef.current * 1.3), beat * 0.8);
-          // …and the pad barely moves: half the pump, just enough to breathe with the kick
-          duckAt(m.padDuck, t, pumpRef.current * 0.5, beat * 0.8);
+          /* Per-track pump. The panel's Pump knob overrides the genre defaults — the bass ducks
+             hardest (the kick and the bassline share a register), the pad barely moves, and the
+             perc doesn't duck at all unless its knob says so. */
+          const F2 = trackFxRef.current || {};
+          const dk = k => (F2[k] && F2[k].duck != null) ? F2[k].duck : null;
+          duckAt(m.bduck, t, dk("bass") != null ? dk("bass") : Math.min(1, pumpRef.current * 1.3), beat * 0.8);
+          duckAt(m.padDuck, t, dk("pad") != null ? dk("pad") : pumpRef.current * 0.5, beat * 0.8);
+          if (dk("perc")) duckAt(m.trPerc.duck, t, dk("perc"), beat * 0.8);
         }
       }
       const mel = meloRef.current;
@@ -3605,7 +3682,7 @@ export default function ProgressionWheel() {
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
     kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
-    secBassPat, secPercPat, secPadVoice, secBassBeat, secPercBeat,
+    secBassPat, secPercPat, secPadVoice, secBassBeat, secPercBeat, trackFx, percKit,
     secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
@@ -3620,7 +3697,7 @@ export default function ProgressionWheel() {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
       kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
-      secBassPat, secPercPat, secPadVoice, secBassBeat, secPercBeat,
+      secBassPat, secPercPat, secPadVoice, secBassBeat, secPercBeat, trackFx, percKit,
       secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
@@ -3833,6 +3910,8 @@ export default function ProgressionWheel() {
     setSecBassPat(s.secBassPat || {}); setSecPercPat(s.secPercPat || {}); setSecPadVoice(s.secPadVoice || {});
     setSecBassBeat(unpackBeats(s.secBassBeat)); setSecPercBeat(unpackBeats(s.secPercBeat));
     setOpenBass({}); setOpenPercs({});
+    setTrackFx(s.trackFx || {});
+    setPercKitSt({ key:s.progId, val:s.percKit || "" });
     setSelStruct(s.selStruct || ""); setContrast(s.contrast || { id:"", sec:"C" });
     const eKey = s.progId + ":" + s.tonic;
     setEdits({ key:eKey, map:s.edits || {} }); setInserts({ key:eKey, list:s.inserts || [] });
@@ -4481,11 +4560,34 @@ export default function ProgressionWheel() {
                 {DRUM_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
             </label>
+            {/* the tracks' sounds live here with the kit; their patterns live on the sections */}
+            <label className="selwrap" style={{ minWidth:150 }}>
+              <span className="lbl" style={{ margin:0 }}>Perc kit</span>
+              <select value={percKit} onChange={e => setPercKitSt({ key: progId, val: e.target.value })}
+                title="How the percussion layer is voiced — struck by hand, or the drum machine's fixed-pitch idea of the same instruments">
+                {PERC_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+            <label className="selwrap" style={{ minWidth:140 }}>
+              <span className="lbl" style={{ margin:0 }}>Bass sound</span>
+              <select value={bassVoice} onChange={e => setBassVoiceSt({ key: progId, val: e.target.value })}
+                title="What the bassline is played on — all synth, so it sounds the same offline and in a render. The line itself is written on the sections.">
+                {BASS_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+            <label className="selwrap" style={{ minWidth:140 }}>
+              <span className="lbl" style={{ margin:0 }}>Pad sound</span>
+              <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}
+                title="The song's default pad voice — what a section's '— as the song —' plays. Each section can still pick its own, or none.">
+                <option value="">No pad — sections choose</option>
+                {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
           </div>
           {tips && <p className="keytag" style={{ marginTop:4 }}>
-            The bassline, percussion layer and pad live on the sections in the Arrange tab —
-            each pass picks its pattern or voice there, and bass and perc open on their own grids
-            beside the drum grid.
+            The sounds live here; the patterns live on the sections in the Arrange tab — each pass
+            picks its bass, perc and pad there, and bass and perc open on their own grids beside
+            the drum grid.
           </p>}
 
           <div className="grouphdr">Feel &amp; space</div>
@@ -4527,6 +4629,34 @@ export default function ProgressionWheel() {
               <div className="sw" /> Click
             </div>
           </div>
+
+          {/* ---- per-track effects ----
+              The part mixer's audio stage, one collapsible panel per track. Same controls, same
+              renderer; a badge counts what a closed panel is doing so nothing hides. */}
+          <div className="grouphdr">Track effects</div>
+          {TRACKS_FX.map(([trId, trName, icon]) => {
+            const fx = trackFx[trId] || {};
+            const openP = !!openFx[trId];
+            const mods = TRACK_MODS.filter(md => !(trId === "drums" && md.k === "duck"));
+            const nOn = mods.reduce((n2, md) =>
+              n2 + ((fx[md.k] != null && fx[md.k] !== md.dflt) ? 1 : 0), 0);
+            return (
+              <div key={trId} style={{ marginTop:6 }}>
+                <button className="mini" onClick={() => setOpenFx({ ...openFx, [trId]: !openP })}
+                  title={"Effects on the whole " + trName.toLowerCase() + " track — filter, drive, wobble, tremolo, pan, echo and reverb sends, and its own pump."}>
+                  {openP ? "▾" : "▸"} {icon} {trName}{nOn ? " ● " + nOn : ""}
+                </button>
+                {openP && <div className="row" style={{ flexWrap:"wrap", gap:"4px 12px", marginTop:5 }}>
+                  {mods.map(md => (
+                    <ModCtl key={md.k} mod={md} ly={{ lvl: 100, ...fx }}
+                      disabled={(md.needs && modOf({ lvl: 100, ...fx }, md.needs) === (MOD_BY_KEY[md.needs] || {}).dflt)
+                        || (md.needsDelay && delayId === "off")}
+                      onSet={patch => setTrackFx({ ...trackFx, [trId]: { ...fx, ...patch } })} />
+                  ))}
+                </div>}
+              </div>
+            );
+          })}
 
         </div>}
 
@@ -5609,12 +5739,6 @@ export default function ProgressionWheel() {
                       {Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>)}
                     </select>
                   </label>
-                  {bassSrcOf(d) && <label className="secopt" title="What the whole song's bassline is played on — all synth, so it sounds the same offline and in a render.">
-                    <span className="optlbl">voiced as</span>
-                    <select value={bassVoice} onChange={e => setBassVoiceSt({ key: progId, val: e.target.value })}>
-                      {BASS_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                    </select>
-                  </label>}
                   <label className="secopt" title={"The percussion layer for this " + d.word.toLowerCase()
                     + " alone — a second pattern from the drum table riding over the groove on the song's kit. The classic move is perc entering a build before the kick returns. Open ▸ perc above to write it step by step."}>
                     <span className="optlbl"><span aria-hidden="true">🥁</span> Perc</span>

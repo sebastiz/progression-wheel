@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **Every track has an effects panel now.** Under Sound, four collapsible panels — Drums,
+  Percussion, Bass, Pad — carry the melody part mixer's audio stage for the whole track: level,
+  low-pass and resonance, hi-pass, drive, tempo-synced wobble, tremolo and auto-pan, pan, echo and
+  reverb sends, and the track's own pump depth (the knob overrides the genre defaults — a bass
+  that ducks hard under a pad that barely moves). Same controls, same renderer, same defaults-are-
+  transparent rule as the parts; a closed panel shows a badge counting what it is doing. The
+  track's drawn filter lane still takes the low-pass over from the knob wherever it is drawn.
+- **The tracks' sounds live in Groove now.** Beside Kit: a **Perc kit** (hand percussion, or the
+  drum machine's fixed-pitch 808-ish idea of the same eight instruments), the **Bass sound**
+  (moved from the section rows), and the song's default **Pad sound** — patterns stay on the
+  sections, sounds live with the kit.
 - **The perc layer has real percussion now.** It used to borrow the drum kit's voices, which made
   it a second drum pattern; it now has eight hand-percussion instruments of its own — shaker,
   tambourine, triangle, cowbell, woodblock, bongo and two congas — each synthesized in kind

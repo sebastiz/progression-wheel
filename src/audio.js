@@ -670,7 +670,8 @@ function ksPluck(ctx, t, freq, dur, vol, bright, dest) {
    membranes with a falling pitch for the drums, ringing partials for the metal. `ch` is a
    channel letter from a PERCS pattern (see PERC_VOICES); unknown letters are silently skipped,
    so a grid painted against an older row set degrades to silence rather than a wrong sound. */
-function percSound(ctx, t, ch, noise, dest, vel = 1) {
+function percSound(ctx, t, ch, noise, dest, vel = 1, kit = "hand") {
+  const mach = kit === "machine";   // the drum machine's idea of each instrument: fixed pitch, tighter, brighter
   const nz = (vol0, atk, dec, type, hz, Q) => {
     const vol = vol0 * vel;
     const n = ctx.createBufferSource(); n.buffer = noise;
@@ -698,16 +699,17 @@ function percSound(ctx, t, ch, noise, dest, vel = 1) {
     }
   };
   switch (ch) {
-    case "S": nz(0.11, 0.004, 0.055, "bandpass", 6200, 1.6); break;              // shaker
-    case "M": nz(0.09, 0.001, 0.14, "highpass", 7600, 0.8);                       // tambourine —
-      metal([[7900, 0.4], [9100, 0.3]], 0.05, 0.12); break;                       // noise + jingle ring
-    case "T": metal([[5100, 1], [7635, 0.55], [10250, 0.25]], 0.055, 0.9); break; // triangle
-    case "W": metal([[2100, 1], [3300, 0.25]], 0.3, 0.045); break;                // woodblock / clave
-    case "L": metal([[540, 1], [800, 0.85]], 0.16, 0.22, "square");               // cowbell —
-      nz(0.04, 0.001, 0.03, "bandpass", 900, 2); break;                           // the 808 pair + clank
-    case "C": skin(230, 185, 0.26, 0.16); break;                                  // conga slap (open tone)
-    case "G": skin(165, 130, 0.28, 0.28); break;                                  // conga low
-    case "B": skin(400, 330, 0.22, 0.09); break;                                  // bongo
+    case "S": nz(0.11, mach ? 0.001 : 0.004, mach ? 0.035 : 0.055, "bandpass", mach ? 7800 : 6200, mach ? 3 : 1.6); break;
+    case "M": nz(0.09, 0.001, mach ? 0.08 : 0.14, "highpass", mach ? 8800 : 7600, 0.8);          // tambourine —
+      metal([[7900, 0.4], [9100, 0.3]], mach ? 0.03 : 0.05, mach ? 0.06 : 0.12); break;          // noise + jingle ring
+    case "T": metal([[5100, 1], [7635, 0.55], [10250, 0.25]], 0.055, mach ? 0.3 : 0.9); break;   // triangle
+    case "W": metal(mach ? [[2500, 1]] : [[2100, 1], [3300, 0.25]], 0.3, mach ? 0.03 : 0.045); break;   // woodblock → 808 clave
+    case "L": metal([[540, 1], [800, 0.85]], 0.16, mach ? 0.14 : 0.22, "square");                // cowbell —
+      if (!mach) nz(0.04, 0.001, 0.03, "bandpass", 900, 2); break;                               // the 808 pair (+ clank by hand)
+    // the machine's "congas" are the 808's: a fixed-pitch tuned blip rather than a struck skin
+    case "C": mach ? skin(310, 305, 0.24, 0.09) : skin(230, 185, 0.26, 0.16); break;
+    case "G": mach ? skin(220, 216, 0.26, 0.14) : skin(165, 130, 0.28, 0.28); break;
+    case "B": mach ? skin(470, 462, 0.2, 0.06) : skin(400, 330, 0.22, 0.09); break;
     default: break;
   }
 }
