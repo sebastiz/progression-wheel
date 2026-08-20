@@ -66,6 +66,28 @@ const DEFS = [
   { chords: 0, parts: "", filter: [1, 0.3] }],
 ]],
 
+["nudisco", "Nu-disco", "Filter-disco groove: a chugging offbeat guitar and a house pump under a genuinely funky bassline. The filter does the arranging — sweeping open into the drop and shut into the breakdown — more than layers being added or removed.",
+ { bpm: 120, drum: "disco909", kit: "909", pump: "classic", pat: "disco16" }, [
+ ["DJ intro|LOOP|4|drums and the chug, filtered right down — the mix-in",
+  { chords: 0, parts: "", filter: [0.3, 0.5] }],
+ ["Groove|LOOP|4|the bassline and chords arrive, filter still climbing",
+  { parts: "", filter: [0.5, 0.75] }],
+ ["Build|HALF1|4|eight bars: the filter finishes opening, a riser under it",
+  { parts: "", move: "riser" }],
+ ["Drop|LOOP|4|wide open — the full chug, bass and hook together",
+  { parts: "A", trans: "slam" }],
+ ["Groove|LOOP|4|step back down — the second drop cannot be bigger unless this is smaller",
+  { parts: "A", filter: [0.85, 0.85] }],
+ ["Breakdown|LOOP|4|kick and clap out, the chug alone with the bass — the disco filter-edit move",
+  { drums: "nokick", parts: "A", move: "under", trans: "closeto" }],
+ ["Build|HALF1|4|the kick returns tops-first, filter climbing back open",
+  { drums: "nokick", parts: "A", move: "riser" }],
+ ["Drop|LOOP|4|second drop, the counter-line added",
+  { parts: "AB", trans: "fulldrop" }],
+ ["DJ outro|LOOP|4|drums and chug only, filtering down for the mix-out",
+  { chords: 0, parts: "", filter: [1, 0.3] }],
+]],
+
 ["techhouse", "Tech house", "Minimal and relentless: two very long grooves, and the interest is in what drops out rather than what gets added. A tool for a set more than a song.",
  { bpm: 126, drum: "techhouse", kit: "909", pump: "classic", pat: "stab16" }, [
  ["DJ intro|LOOP|4|drums and a rim — sixteen bars of nothing but groove",
