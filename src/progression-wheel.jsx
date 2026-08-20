@@ -7,7 +7,7 @@ import { BASS_VOICES, PAD_VOICES, playBass, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, 
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
-import { decodeSong, encodeSong, makeSong, songBeats, songMelos } from "./song.js";
+import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyWithin } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
@@ -517,6 +517,17 @@ export default function ProgressionWheel() {
   const [secPerc, setSecPerc] = useState({});
   const [padSt, setPadSt] = useState({ key:"", val:"" });
   const [secPad, setSecPad] = useState({});
+  /* The bass, perc and pad are authored on the sections, the way drums and melodies are: each
+     section picks its pattern (or voice) from a menu, and bass and perc can be written on their
+     own grids per pass. The global states above survive as what a template writes and what a
+     section's "as the song" option inherits — they no longer have controls of their own. */
+  const [secBassPat, setSecBassPat] = useState({});   // per-section bass pattern ("" inherit | "off" | id), instance-then-letter
+  const [secBassBeat, setSecBassBeat] = useState({}); // a pass's own written bassline: bars of steps, each "" | R | F | O
+  const [secPercPat, setSecPercPat] = useState({});   // per-section perc pattern, same shape as secDrum
+  const [secPercBeat, setSecPercBeat] = useState({}); // a pass's own written perc bars, same shape as secBeat
+  const [secPadVoice, setSecPadVoice] = useState({}); // per-section pad voice ("" inherit | "off" | id)
+  const [openBass, setOpenBass] = useState({});       // which section bass grids are open
+  const [openPercs, setOpenPercs] = useState({});     // which section perc grids are open
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
   // per-section-type chord mute, keyed by base letter. Dropping the chords for a breakdown while
   // the drums carry on is a basic arrangement move that had no way to be expressed before.
@@ -613,6 +624,9 @@ export default function ProgressionWheel() {
   const bassRef = useRef(""), bassVoiceRef = useRef("sub"), secBassRef = useRef({});
   const percRef = useRef(""), secPercRef = useRef({});
   const padRef = useRef(""), secPadRef = useRef({});
+  const secBassPatRef = useRef({}), secBassBeatRef = useRef({});
+  const secPercPatRef = useRef({}), secPercBeatRef = useRef({});
+  const secPadVoiceRef = useRef({});
   const subRef = useRef(2), melRef = useRef(8);
   const moveRef = useRef({ moves:{}, span:{} });
   const delayRef = useRef("off");
@@ -1005,6 +1019,11 @@ export default function ProgressionWheel() {
     setSecBass(remapKeyed(secBass, cur, next, origin, letterFor));
     setSecPerc(remapKeyed(secPerc, cur, next, origin, letterFor));
     setSecPad(remapKeyed(secPad, cur, next, origin, letterFor));
+    setSecBassPat(remapKeyed(secBassPat, cur, next, origin, letterFor));
+    setSecPercPat(remapKeyed(secPercPat, cur, next, origin, letterFor));
+    setSecPadVoice(remapKeyed(secPadVoice, cur, next, origin, letterFor));
+    setSecBassBeat(remapKeyed(secBassBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
+    setSecPercBeat(remapKeyed(secPercBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
     // deep-copied, or duplicating a section would give the copy the original's own array to edit
     setSecBeat(remapKeyed(secBeat, cur, next, origin, letterFor, bars => bars.map(b => [...b])));
     if (sel != null) setSelRow(sel);
@@ -1057,6 +1076,9 @@ export default function ProgressionWheel() {
     const A = resolveArrangement(plan, planInsts(plan, barsOfRow, letterFor));
     setSecDrum(A.secDrum); setSecQuiet(A.secQuiet); setSecBass(A.secBass);
     setSecPerc(A.secPerc); setSecPad(A.secPad);
+    // the template takes over the section menus (written grids survive, exactly as the drum
+    // grids do) — half an old arrangement under a new one is what "apply" exists to prevent
+    setSecBassPat({}); setSecPercPat({}); setSecPadVoice({});
     setSecMove(A.secMove); setSecTrans(A.secTrans);
     setAuto({ key: progId + "|" + sel, filter: A.filter, level: A.level, hp: A.hp, res: A.res });
     applyPartMutes(A.parts);
@@ -1144,6 +1166,9 @@ export default function ProgressionWheel() {
   bassRef.current = bass; bassVoiceRef.current = bassVoice; secBassRef.current = secBass;
   percRef.current = perc; secPercRef.current = secPerc;
   padRef.current = pad; secPadRef.current = secPad;
+  secBassPatRef.current = secBassPat; secBassBeatRef.current = secBassBeat;
+  secPercPatRef.current = secPercPat; secPercBeatRef.current = secPercBeat;
+  secPadVoiceRef.current = secPadVoice;
   clickRef.current = clickOn;
   /* Time signature. The chosen strum pattern is the single source of truth for the bar — the meter
      is read off it rather than stored separately, so the two can never disagree. Picking a meter
@@ -1228,8 +1253,17 @@ export default function ProgressionWheel() {
     // finer grid or half its hits fall between ticks
     const pp = DRUMS[perc];
     if (pp && pp.pattern && drumBeatsOf(pp.pattern) === barBeats) lens.push(pp.pattern.length);
+    // …and every per-section choice or written grid for either track
+    Object.values(secBassPat).forEach(id => {
+      const b = BASS[id]; if (b && b.pattern && barBeats === 4) lens.push(b.pattern.length);
+    });
+    Object.values(secPercPat).forEach(id => {
+      const d2 = DRUMS[id]; if (d2 && d2.pattern && drumBeatsOf(d2.pattern) === barBeats) lens.push(d2.pattern.length);
+    });
+    Object.values(secBassBeat).forEach(bars => { if (bars && bars.length) lens.push(bars[0].length); });
+    Object.values(secPercBeat).forEach(bars => { if (bars && bars.length) lens.push(bars[0].length); });
     return lens.reduce((a, b) => lcm(a, b), meloBeats);
-  }, [drum, secDrum, secBeat, meloBeats, barBeats, bass, perc]);
+  }, [drum, secDrum, secBeat, meloBeats, barBeats, bass, perc, secBassPat, secPercPat, secBassBeat, secPercBeat]);
   subRef.current = meloSub; melRef.current = meloBeats;
   /* A move or a transition is the instance's own if it has one, and the section letter's otherwise.
      Playback, the strip and the pickers all have to agree about that, and they did not: the strip
@@ -1247,6 +1281,35 @@ export default function ProgressionWheel() {
   const effBassOut = d => !!(d && (secBass[d.key] != null ? secBass[d.key] : secBass[d.base]));
   const effPercOut = d => !!(d && (secPerc[d.key] != null ? secPerc[d.key] : secPerc[d.base]));
   const effPadOut = d => !!(d && (secPad[d.key] != null ? secPad[d.key] : secPad[d.base]));
+  /* What a section's bass and perc actually are, resolved the way the drums resolve: the pass's
+     own written grid first, then its (or its letter's) menu choice, then whatever the template
+     wrote — a mute, or the song-level pattern. Returns { beat } | { pat } | null. */
+  const bassSrcOf = d => {
+    const own = d && secBassBeat[d.key];
+    if (own && own.length) return { beat: own };
+    const p = d && (secBassPat[d.key] || secBassPat[d.base]);
+    if (p) return p === "off" ? null : { pat: p };
+    if (effBassOut(d)) return null;
+    return bass ? { pat: bass } : null;
+  };
+  const percSrcOf = d => {
+    const own = d && secPercBeat[d.key];
+    if (own && own.length) return { beat: own };
+    const p = d && (secPercPat[d.key] || secPercPat[d.base]);
+    if (p) return p === "off" ? null : { pat: p };
+    if (effPercOut(d)) return null;
+    return perc ? { pat: perc } : null;
+  };
+  const padVoiceOf = d => {
+    const v = d && (secPadVoice[d.key] || secPadVoice[d.base]);
+    if (v) return v === "off" ? "" : v;
+    if (effPadOut(d)) return "";
+    return pad;
+  };
+  // whether a track sounds anywhere in the song — what decides if it earns lanes, stems and files
+  const bassAnywhere = sections.insts.some(x => !!bassSrcOf(x));
+  const percAnywhere = sections.insts.some(x => !!percSrcOf(x));
+  const padAnywhere = sections.insts.some(x => !!padVoiceOf(x));
   /* Forty-nine transitions only work as a menu if they arrive grouped, so the six families are
      optgroups; and the inherited value is the first option rather than something you find out by
      pressing play, exactly as a move's is. */
@@ -1470,6 +1533,69 @@ export default function ProgressionWheel() {
     for (const o of to) next[o.key] = Array.from({ length: o.nbars },
       (_, b) => [...bars[Math.min(b, bars.length - 1)]]);
     setSecBeat(next);
+  };
+  /* ---- the perc and bass grids — the drum grid's machinery pointed at the new tracks ----
+     Perc bars are the same array-of-step-strings the drum grid edits, painted with the same kit
+     rows. Bass bars hold one token a step — R root, F fifth, O octave — because a bassline is a
+     line: tapping a different row moves the note rather than stacking one on top. Each grid opens
+     showing what the section is already playing (its menu choice laid onto the sixteenth grid),
+     so you edit what you hear, not a blank bar beside it. */
+  const BASS_ROWS = [
+    ["O", "Octave", "the line jumping up — the top of an octave bounce", "#7FB4D8"],
+    ["F", "Fifth", "the passing note that walks the line round", "#E0B85A"],
+    ["R", "Root", "the floor — the note the chord stands on", "#E8794F"],
+  ];
+  const percSeed = d => {
+    const src = percSrcOf(d), n = beatSteps(barBeats);
+    const pat = src && src.pat ? (DRUMS[src.pat] || {}).pattern : null;
+    return Array.from({ length: d.nbars }, () => pat ? beatFrom(pat, n) : blankBeat(n));
+  };
+  const percGridBars = d => {
+    const own = secPercBeat[d.key], n = beatSteps(barBeats);
+    if (!own || !own.length) return percSeed(d);
+    return Array.from({ length: d.nbars }, (_, b) => {
+      const bar = own[Math.min(b, own.length - 1)];
+      return bar && bar.length === n ? bar : blankBeat(n);
+    });
+  };
+  const tapPerc = (d, bar, step, ch) => {
+    const bars = percGridBars(d);
+    setSecPercBeat({ ...secPercBeat, [d.key]: bars.map((b, i) => i === bar ? beatToggle(b, step, ch) : [...b]) });
+  };
+  const resetPercBeat = key => { const next = { ...secPercBeat }; delete next[key]; setSecPercBeat(next); };
+  const copyPercBeat = (d, to) => {
+    const bars = percGridBars(d), next = { ...secPercBeat };
+    for (const o of to) next[o.key] = Array.from({ length: o.nbars },
+      (_, b) => [...bars[Math.min(b, bars.length - 1)]]);
+    setSecPercBeat(next);
+  };
+  const bassSeed = d => {
+    const src = bassSrcOf(d), n = beatSteps(barBeats);
+    const pat = src && src.pat ? (BASS[src.pat] || {}).pattern : null;
+    return Array.from({ length: d.nbars }, () => Array.from({ length: n }, (_, s) => {
+      const tok = pat ? sampleAt(pat, s, n) : null;
+      return tok && tok !== "-" ? tok : "";
+    }));
+  };
+  const bassGridBars = d => {
+    const own = secBassBeat[d.key], n = beatSteps(barBeats);
+    if (!own || !own.length) return bassSeed(d);
+    return Array.from({ length: d.nbars }, (_, b) => {
+      const bar = own[Math.min(b, own.length - 1)];
+      return bar && bar.length === n ? bar : Array.from({ length: n }, () => "");
+    });
+  };
+  const tapBass = (d, bar, step, tok) => {
+    const bars = bassGridBars(d);
+    setSecBassBeat({ ...secBassBeat, [d.key]: bars.map((b, i) =>
+      i === bar ? b.map((s, j) => j === step ? (s === tok ? "" : tok) : s) : [...b]) });
+  };
+  const resetBassBeat = key => { const next = { ...secBassBeat }; delete next[key]; setSecBassBeat(next); };
+  const copyBassBeat = (d, to) => {
+    const bars = bassGridBars(d), next = { ...secBassBeat };
+    for (const o of to) next[o.key] = Array.from({ length: o.nbars },
+      (_, b) => [...bars[Math.min(b, bars.length - 1)]]);
+    setSecBassBeat(next);
   };
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
@@ -1761,6 +1887,25 @@ export default function ProgressionWheel() {
     p.bars[bar] = beatToggle(p.bars[bar], step, ch);
     putBeat(p.key, p.bars.map(b => [...b]));
   };
+  // the perc grid paints exactly as the drum grid does, into its own store
+  const paintPercAt = (bar, step, ch) => {
+    const p = paintRef.current; if (!p || p.kind !== "perc") return;
+    const k = bar + ":" + step + ":" + ch; if (p.seen.has(k)) return;
+    p.seen.add(k);
+    if (p.bars[bar][step].includes(ch) === p.want) return;
+    p.bars[bar] = beatToggle(p.bars[bar], step, ch);
+    setSecPercBeat({ ...secPercBeat, [p.key]: p.bars.map(b => [...b]) });
+  };
+  // the bass grid is monophonic: painting a row writes that token over the step, rubbing out clears it
+  const paintBassAt = (bar, step, tok) => {
+    const p = paintRef.current; if (!p || p.kind !== "bass") return;
+    const k = bar + ":" + step; if (p.seen.has(k)) return;
+    p.seen.add(k);
+    const cur = p.bars[bar][step];
+    if (p.want ? cur === tok : cur !== tok) return;
+    p.bars[bar] = p.bars[bar].map((s, j) => j === step ? (p.want ? tok : "") : s);
+    setSecBassBeat({ ...secBassBeat, [p.key]: p.bars.map(b => [...b]) });
+  };
   /* elementFromPoint rather than an enter handler per cell, because a pointer that has been
      captured keeps sending its moves to the element it started on — so the cells it crosses would
      never hear about it. */
@@ -1769,6 +1914,8 @@ export default function ProgressionWheel() {
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const ds = el && el.dataset; if (!ds) return;
     if (p.kind === "melody") { if (ds.mk === p.key) paintMelAt(+ds.c, +ds.deg); }
+    else if (p.kind === "perc") { if (ds.pk === p.key) paintPercAt(+ds.bar, +ds.step, ds.ch); }
+    else if (p.kind === "bass") { if (ds.bk === p.key) paintBassAt(+ds.bar, +ds.step, ds.tok); }
     else if (ds.dk === p.key) paintDrumAt(+ds.bar, +ds.step, ds.ch);
   };
   const paintUp = () => {
@@ -1794,6 +1941,20 @@ export default function ProgressionWheel() {
     const bars = beatBars(d).map(b => [...b]);
     paintStart({ kind:"drums", key: d.key, bars, want: !bars[bar][step].includes(ch), seen: new Set() });
     paintDrumAt(bar, step, ch);
+  };
+  const percDown = (e, d, bar, step, ch) => {
+    if (e.pointerType === "touch") return;
+    e.preventDefault();
+    const bars = percGridBars(d).map(b => [...b]);
+    paintStart({ kind:"perc", key: d.key, bars, want: !bars[bar][step].includes(ch), seen: new Set() });
+    paintPercAt(bar, step, ch);
+  };
+  const bassDown = (e, d, bar, step, tok) => {
+    if (e.pointerType === "touch") return;
+    e.preventDefault();
+    const bars = bassGridBars(d).map(b => [...b]);
+    paintStart({ kind:"bass", key: d.key, bars, want: bars[bar][step] !== tok, seen: new Set() });
+    paintBassAt(bar, step, tok);
   };
 
   // write a suggested melody pattern onto a section's grid (overwrites what's there)
@@ -2119,12 +2280,30 @@ export default function ProgressionWheel() {
       const qb = struct && struct.length && structBar >= 0 ? struct[structBar] : null;
       const qv = qb && qb.inst != null ? secQuietRef.current[qb.inst] : undefined;
       const quiet = !!(qb && qb.base != null && (qv != null ? qv : secQuietRef.current[qb.base]));
-      // the bass track's section mute, resolved instance-then-letter exactly as the chords' is —
-      // independent of `quiet`, which is the whole point: a breakdown can lose the chords and keep
-      // the bassline, or the other way round
-      const bv = qb && qb.inst != null ? secBassRef.current[qb.inst] : undefined;
-      const bassOn = !!bassRef.current
-        && !(qb && qb.base != null && (bv != null ? bv : secBassRef.current[qb.base]));
+      /* Where this tick sits for the per-section tracks: the current bar's instance and letter,
+         or the loop sketch's L1 when no structure is chosen — the same name the melody uses.
+         Each track resolves the way the drums do: the pass's own written grid first, then its
+         (or its letter's) menu choice, then whatever the template wrote — a mute, or the
+         song-level pattern. */
+      const tInst = qb ? qb.inst : (struct && struct.length ? null : "L1");
+      const tBase = qb ? qb.base : (struct && struct.length ? null : "L1");
+      const tMb = qb ? qb.mb : Math.floor(m.step / L);
+      const srcOf = (beats, pats, mutes, glob) => {
+        const own = tInst != null ? beats[tInst] : null;
+        if (own && own.length) return { beat: own };
+        const p = (tInst != null && pats[tInst]) || (tBase != null && pats[tBase]) || "";
+        if (p) return p === "off" ? null : { pat: p };
+        const mut = tInst != null && mutes[tInst] != null ? mutes[tInst]
+          : (tBase != null ? mutes[tBase] : undefined);
+        if (mut) return null;
+        return glob ? { pat: glob } : null;
+      };
+      // a written or picked bar for this tick, sized to the section like the drums' own bars are
+      const srcBar = src => src.beat
+        ? (src.beat[qb ? Math.min(tMb, src.beat.length - 1) : tMb % src.beat.length] || null) : null;
+      const bassSrc = chord
+        ? srcOf(secBassBeatRef.current, secBassPatRef.current, secBassRef.current, bassRef.current) : null;
+      const bassOn = !!bassSrc;
       if (sym !== "-") {
         if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
         if (chord && !quiet && (!m.stem || m.stem.kind === "chords")) {
@@ -2133,22 +2312,24 @@ export default function ProgressionWheel() {
           if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.cduck, m.voicing, bassOn);
         }
       }
-      /* The bass track. "follow" plays the root under the strum pattern's hits — the note the
-         chords used to carry, made separable; a pattern plays its own sixteenths, each note held
-         until the next hit so a lone hit is a whole-bar sub. It sounds through `quiet`: chords out
-         with the bassline running is the disco filter-edit move the track exists for. */
-      if (bassOn && chord && (!m.stem || m.stem.kind === "bass")) {
-        const bp = BASS[bassRef.current];
-        if (!bp.pattern) {
+      /* The bass track. A written grid plays bar by bar exactly as the drums' own bars do; a
+         "follow" pattern plays the root under the strum's hits — the note the chords used to
+         carry, made separable; a catalogue pattern plays its own sixteenths. Every note is held
+         until the next hit, so a lone hit is a whole-bar sub. It sounds through `quiet`: chords
+         out with the bassline running is the disco filter-edit move the track exists for. */
+      if (bassSrc && chord && (!m.stem || m.stem.kind === "bass")) {
+        const bbar = srcBar(bassSrc);
+        const bpat = bbar || (BASS[bassSrc.pat] || {}).pattern;
+        if (!bbar && bassSrc.pat && !(BASS[bassSrc.pat] || {}).pattern) {
           if (sym !== "-" && sym !== "U")   // an upstroke never reaches the low string
             playBass(m.ctx, t, chord.root, 0, eighth * 1.8, bassVoiceRef.current, m.bassLp, humVel(accentAt(i, ticksPerBeat)));
-        } else {
-          const bs = stepAt(bp.pattern.length, i, L);
-          const tok = bs == null ? "-" : bp.pattern[bs];
-          if (tok !== "-") {
+        } else if (bpat && bpat.length) {
+          const bs = stepAt(bpat.length, i, L);
+          const tok = bs == null ? "" : bpat[bs];
+          if (tok && tok !== "-") {
             let gap = 1;                     // steps until the next hit — the room this note has
-            while (gap < bp.pattern.length && bp.pattern[(bs + gap) % bp.pattern.length] === "-") gap++;
-            const stepDur = tick * (L / bp.pattern.length);
+            while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
+            const stepDur = tick * (L / bpat.length);
             playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
               bassVoiceRef.current, m.bassLp, humVel(accentAt(i, ticksPerBeat)));
           }
@@ -2157,20 +2338,25 @@ export default function ProgressionWheel() {
       /* The pad track: the chord's upper voicing held a bar at a time, legato, into its own
          filter and the reverb bus. Upper voicing only — the low root belongs to the bass or the
          chords, and a pad that doubles it is the mud the register fences exist to stop. */
-      const padOut = !!(qb && qb.base != null &&
-        ((qb.inst != null && secPadRef.current[qb.inst] != null) ? secPadRef.current[qb.inst] : secPadRef.current[qb.base]));
-      if (padRef.current && chord && !padOut && i === 0 && (!m.stem || m.stem.kind === "pad")) {
+      const padV = (() => {
+        const v = (tInst != null && secPadVoiceRef.current[tInst]) || (tBase != null && secPadVoiceRef.current[tBase]) || "";
+        if (v) return v === "off" ? "" : v;
+        const mut = tInst != null && secPadRef.current[tInst] != null ? secPadRef.current[tInst]
+          : (tBase != null ? secPadRef.current[tBase] : undefined);
+        if (mut) return "";
+        return padRef.current;
+      })();
+      if (padV && chord && i === 0 && (!m.stem || m.stem.kind === "pad")) {
         const barDur = barBeatsRef.current * beat;
         for (const mid of (m.voicing || voiceChord(chord)))
-          leadNote(m.ctx, t, mid, barDur * 0.98, padRef.current, true, m.padLp, { lvl: 0.8 });
+          leadNote(m.ctx, t, mid, barDur * 0.98, padV, true, m.padLp, { lvl: 0.8 });
       }
       /* The percussion layer: a second pattern from the drum table riding over the main groove on
          the same kit, slightly under it in level, through its own drawn filter. It never triggers
          the pump — that belongs to the song's kick. */
-      const percOut = !!(qb && qb.base != null &&
-        ((qb.inst != null && secPercRef.current[qb.inst] != null) ? secPercRef.current[qb.inst] : secPercRef.current[qb.base]));
-      if (percRef.current && !percOut && (!m.stem || m.stem.kind === "perc")) {
-        const ppat = (DRUMS[percRef.current] || {}).pattern;
+      const percSrc = srcOf(secPercBeatRef.current, secPercPatRef.current, secPercRef.current, percRef.current);
+      if (percSrc && (!m.stem || m.stem.kind === "perc")) {
+        const ppat = srcBar(percSrc) || (DRUMS[percSrc.pat] || {}).pattern;
         const pstep = sampleAt(ppat, i, L);
         if (pstep)
           for (const ch of pstep)
@@ -2881,9 +3067,9 @@ export default function ProgressionWheel() {
     const out = [];
     if (drumRef.current && drumRef.current.length) out.push({ kind:"drums", name:"drums" });
     if (chords.length) out.push({ kind:"chords", name:"chords-" + instr });
-    if (bass && chords.length) out.push({ kind:"bass", name:"bass-" + bassVoice });
-    if (perc) out.push({ kind:"perc", name:"perc-" + perc });
-    if (pad && chords.length) out.push({ kind:"pad", name:"pad-" + pad });
+    if (bassAnywhere && chords.length) out.push({ kind:"bass", name:"bass-" + bassVoice });
+    if (percAnywhere) out.push({ kind:"perc", name:"perc" });
+    if (padAnywhere && chords.length) out.push({ kind:"pad", name:"pad" });
     // parts are per-section, so a part index counts if any section has notes on it
     const nParts = Math.max(0, ...Object.values(secMelos).map(s => nLayers(s)));
     for (let i = 0; i < nParts; i++) {
@@ -3025,52 +3211,69 @@ export default function ProgressionWheel() {
           return out;
         }, []),
       };
-      /* The bass track, resolved to plain notes (times in beats) shared by the MIDI writer and the
-         Live Set: the pattern's tokens against each bar's chord root, per-section mutes honoured,
-         each note held to the next hit exactly as playback holds it. "follow" reads the strum
-         pattern instead, skipping upstrokes the way the voice does. */
-      const bassOutOf = b => !!(b && b.base != null &&
-        ((b.inst != null && secBass[b.inst] != null) ? secBass[b.inst] : secBass[b.base]));
+      /* The three tracks, resolved to plain notes (times in beats) shared by the MIDI writer and
+         the Live Set. Each bar resolves exactly as playback resolves it — the pass's own grid,
+         then the section menus, then the template/global state — with the loop sketch reading as
+         L1, so the exported file falls silent and moves precisely where the song does. */
+      const exSrc = (b, bi, srcFn) => {
+        const dk = b.inst != null ? { key: b.inst, base: b.base } : { key: "L1", base: "L1" };
+        const src = srcFn(dk);
+        if (!src) return null;
+        if (src.beat) return { bar: src.beat[b.inst != null
+          ? Math.min(b.mb, src.beat.length - 1) : bi % src.beat.length] || null };
+        return src;
+      };
       const bassNotes = [];
-      if (bass) {
-        const bp = BASS[bass];
-        bars.forEach((b, bi) => {
-          if (bassOutOf(b)) return;
-          const root = 36 + b.chord.root;
-          const pat = bp.pattern || rhythm.pattern;
-          const hit = s => bp.pattern ? pat[s] !== "-" : (pat[s] !== "-" && pat[s] !== "U");
-          const steps = pat.length, stepB = barBeats / steps;
-          for (let s = 0; s < steps; s++) {
-            if (!hit(s)) continue;
+      bars.forEach((b, bi) => {
+        const src = exSrc(b, bi, bassSrcOf);
+        if (!src) return;
+        const root = 36 + b.chord.root;
+        if (src.pat && !(BASS[src.pat] || {}).pattern) {
+          // "follow": the strum pattern's hits, skipping upstrokes the way the voice does
+          const pat = rhythm.pattern, steps = pat.length, stepB = barBeats / steps;
+          const hit = s2 => pat[s2] !== "-" && pat[s2] !== "U";
+          for (let s2 = 0; s2 < steps; s2++) {
+            if (!hit(s2)) continue;
             let gap = 1;
-            while (gap < steps && !hit((s + gap) % steps)) gap++;
-            bassNotes.push({ t: bi * barBeats + s * stepB, dur: gap * stepB * 0.92,
-              note: root + (bp.pattern ? (BASS_IV[pat[s]] || 0) : 0),
-              vel: 96 * accentAt(s, steps / barBeats) });
+            while (gap < steps && !hit((s2 + gap) % steps)) gap++;
+            bassNotes.push({ t: bi * barBeats + s2 * stepB, dur: gap * stepB * 0.92,
+              note: root, vel: 96 * accentAt(s2, steps / barBeats) });
           }
-        });
-      }
+        } else {
+          const pat = src.bar || (BASS[src.pat] || {}).pattern;
+          if (!pat || !pat.length) return;
+          const steps = pat.length, stepB = barBeats / steps;
+          for (let s2 = 0; s2 < steps; s2++) {
+            const tok = pat[s2];
+            if (!tok || tok === "-") continue;
+            let gap = 1;
+            while (gap < steps && (!pat[(s2 + gap) % steps] || pat[(s2 + gap) % steps] === "-")) gap++;
+            bassNotes.push({ t: bi * barBeats + s2 * stepB, dur: gap * stepB * 0.92,
+              note: root + (BASS_IV[tok] || 0), vel: 96 * accentAt(s2, steps / barBeats) });
+          }
+        }
+      });
       // nearest GM bass program to each synth voice, so a DAW opens the track already low
       const bassProgram = { sub: 38, saw: 38, square: 38, pluck: 34, acid: 38, reese: 39 }[bassVoice] || 38;
       const bassTrack = bassNotes.length ? { notes: bassNotes, program: bassProgram } : null;
-      /* The percussion layer, bar by bar like the drums — null where the layer is off or the
-         section mutes it, so the exported file falls silent exactly where playback does. */
-      const percOutOf = b => !!(b && b.base != null &&
-        ((b.inst != null && secPerc[b.inst] != null) ? secPerc[b.inst] : secPerc[b.base]));
-      const percPat = perc ? (DRUMS[perc] || {}).pattern : null;
-      const percForBar = bi => (percPat && !percOutOf(bars[bi])) ? percPat : null;
-      const anyPerc = !!percPat && bars.some((_, bi) => percForBar(bi));
-      /* The pad: the chord's upper voicing held a bar at a time, muted sections skipped. The MIDI
-         voicing mirrors the chord track's spelling an octave up, minus the low root. */
-      const padOutOf = b => !!(b && b.base != null &&
-        ((b.inst != null && secPad[b.inst] != null) ? secPad[b.inst] : secPad[b.base]));
+      const percForBar = bi => {
+        const src = exSrc(bars[bi], bi, percSrcOf);
+        if (!src) return null;
+        return src.bar || (DRUMS[src.pat] || {}).pattern || null;
+      };
+      const anyPerc = bars.some((_, bi) => percForBar(bi));
+      // the pad: the chord's upper voicing held a bar at a time, an octave up, no low root
       const padNotes = [];
-      if (pad) bars.forEach((b, bi) => {
-        if (padOutOf(b)) return;
+      let padVoiceUsed = "";
+      bars.forEach((b, bi) => {
+        const dk = b.inst != null ? { key: b.inst, base: b.base } : { key: "L1", base: "L1" };
+        const v = padVoiceOf(dk);
+        if (!v) return;
+        padVoiceUsed = padVoiceUsed || v;
         for (const x of chordIvs(b.chord.quality))
           padNotes.push({ t: bi * barBeats, dur: barBeats * 0.98, note: 60 + b.chord.root + x, vel: 66 });
       });
-      const padTrack = padNotes.length ? { notes: padNotes, program: programOf(pad, 89) } : null;
+      const padTrack = padNotes.length ? { notes: padNotes, program: programOf(padVoiceUsed || "strings", 89) } : null;
       return { bars, parts, drumForBar, meta, anyDrum, nUsed, partOf, bassTrack, percForBar, anyPerc, padTrack };
   };
   const exportMidi = () => {
@@ -3135,14 +3338,14 @@ export default function ProgressionWheel() {
         }
       });
       if (percNotes.length) tracks.push({ name: "Percussion", color: ALS_COLORS.perc, vol: 0.8,
-        notes: percNotes, end: bars.length * B, note: perc + " layer — same Drum Rack as the drums" });
+        notes: percNotes, end: bars.length * B, note: "perc layer — same Drum Rack as the drums" });
     }
     // the bass track: the same resolved notes the MIDI writer gets, already in beats
     if (bassTrack) tracks.push({ name: "Bass", color: ALS_COLORS.bass, vol: 0.85,
       notes: bassTrack.notes, end: bars.length * B, note: "was " + bassVoice + " — drop a bass synth on this" });
     // the pad: the held upper voicings
     if (padTrack) tracks.push({ name: "Pad", color: ALS_COLORS.pad, vol: 0.8,
-      notes: padTrack.notes, end: bars.length * B, note: "was " + pad + " — drop a pad synth on this" });
+      notes: padTrack.notes, end: bars.length * B, note: "drop a pad synth on this" });
     // melody parts: grid columns merged into held notes, the same way the MIDI writer merges them
     (parts || []).forEach((part, p) => {
       if (!part || !part.cols) return;
@@ -3228,13 +3431,13 @@ export default function ProgressionWheel() {
         add("drums-" + kit,
           midiBytes(effBpm, barBeats, bars, drumForBar, [], kit, meloSub, null, { ...meta, skipChords: true }));
       if (anyPerc)
-        add("perc-" + perc,
+        add("perc",
           midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null, { ...meta, skipChords: true, perc: percForBar }));
       if (bassTrack)
         add("bass-" + bassVoice,
           midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null, { ...meta, skipChords: true, bass: bassTrack }));
       if (padTrack)
-        add("pad-" + pad,
+        add("pad",
           midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null, { ...meta, skipChords: true, pad: padTrack }));
       parts.forEach((part, p) => {
         if (!part) return;
@@ -3394,7 +3597,9 @@ export default function ProgressionWheel() {
   // survives a link, and neither can silently drop a field the other keeps
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-    kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad, secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
+    kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
+    secBassPat, secPercPat, secPadVoice, secBassBeat, secPercBeat,
+    secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
@@ -3407,7 +3612,9 @@ export default function ProgressionWheel() {
   const docJson = useMemo(() => {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
-      kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad, secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
+      kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
+      secBassPat, secPercPat, secPadVoice, secBassBeat, secPercBeat,
+      secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -3615,6 +3822,10 @@ export default function ProgressionWheel() {
     // …and likewise the percussion layer and the pad, absent in older sketches
     setPercSt({ key:s.progId, val:s.perc || "" }); setSecPerc(s.secPerc || {});
     setPadSt({ key:s.progId, val:s.pad || "" }); setSecPad(s.secPad || {});
+    // the per-section choices and written grids the tracks are authored with now
+    setSecBassPat(s.secBassPat || {}); setSecPercPat(s.secPercPat || {}); setSecPadVoice(s.secPadVoice || {});
+    setSecBassBeat(unpackBeats(s.secBassBeat)); setSecPercBeat(unpackBeats(s.secPercBeat));
+    setOpenBass({}); setOpenPercs({});
     setSelStruct(s.selStruct || ""); setContrast(s.contrast || { id:"", sec:"C" });
     const eKey = s.progId + ":" + s.tonic;
     setEdits({ key:eKey, map:s.edits || {} }); setInserts({ key:eKey, list:s.inserts || [] });
@@ -4263,39 +4474,12 @@ export default function ProgressionWheel() {
                 {DRUM_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
             </label>
-            <label className="selwrap" style={{ minWidth:150 }}>
-              <span className="lbl" style={{ margin:0 }}>Bass</span>
-              <select value={bass} onChange={e => setBassSt({ key: progId, val: e.target.value })}
-                title="A bassline of its own — the root of each chord on its own rhythm, pumped harder than anything else. Off leaves the low root inside the chords, exactly as before.">
-                <option value="">No bass — in the chords</option>
-                {Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>)}
-              </select>
-            </label>
-            {bass && <label className="selwrap" style={{ minWidth:130 }}>
-              <span className="lbl" style={{ margin:0 }}>Bass voice</span>
-              <select value={bassVoice} onChange={e => setBassVoiceSt({ key: progId, val: e.target.value })}
-                title="What the bassline is played on — all synth, so it sounds the same offline and in a render">
-                {BASS_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            </label>}
-            <label className="selwrap" style={{ minWidth:150 }}>
-              <span className="lbl" style={{ margin:0 }}>Perc</span>
-              <select value={perc} onChange={e => setPercSt({ key: progId, val: e.target.value })}
-                title="A second drum pattern layered over the groove on the same kit — shaker loops, offbeat hats, a conga cell. It rides under the main drums and has its own filter lane and section switches.">
-                <option value="">No percussion layer</option>
-                {metricDrums.map(([id, d]) => id !== "off"
-                  ? <option key={id} value={id}>{d.name}</option> : null)}
-              </select>
-            </label>
-            <label className="selwrap" style={{ minWidth:150 }}>
-              <span className="lbl" style={{ margin:0 }}>Pad</span>
-              <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}
-                title="A second chord voice holding the upper voicing a bar at a time — the sustained bed under a stabbed or strummed chord track. Reverbed, barely pumped, with its own filter lane and section switches.">
-                <option value="">No pad</option>
-                {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            </label>
           </div>
+          {tips && <p className="keytag" style={{ marginTop:4 }}>
+            The bassline, percussion layer and pad live on the sections in the Arrange tab —
+            each pass picks its pattern or voice there, and bass and perc open on their own grids
+            beside the drum grid.
+          </p>}
 
           <div className="grouphdr">Feel &amp; space</div>
           <div className="selrow" style={{ alignItems:"flex-end", flexWrap:"wrap" }}>
@@ -4917,24 +5101,45 @@ export default function ProgressionWheel() {
                   r.items.forEach(d => { next[d.key] = anyIn; });
                   setSecQuiet(next);
                 } },
-              // the bass, perc and pad tracks each earn a lane only while switched on
-              ...(bass ? [{ name: "Bass", on: d => !effBassOut(d), scope: runScope,
+              /* The bass, perc and pad lanes appear once the track sounds anywhere. A block is on
+                 when that pass resolves to something; clicking off writes "off" on the pass, and
+                 clicking back on clears it — or, where nothing would be inherited, writes a
+                 sensible pattern so the lane always does something audible. */
+              ...(bassAnywhere ? [{ name: "Bass", on: d => !!bassSrcOf(d), scope: runScope,
                 toggle: r => {
-                  const anyIn = r.items.some(d => !effBassOut(d)), next = { ...secBass };
-                  r.items.forEach(d => { next[d.key] = anyIn; });
-                  setSecBass(next);
+                  const anyIn = r.items.some(x => !!bassSrcOf(x)), next = { ...secBassPat };
+                  r.items.forEach(x => {
+                    if (anyIn) { next[x.key] = "off"; return; }
+                    delete next[x.key];
+                    const lp = next[x.base];
+                    const inherited = lp ? lp !== "off" : (!effBassOut(x) && !!bass);
+                    if (!inherited && !secBassBeat[x.key]) next[x.key] = bass || "offbeat";
+                  });
+                  setSecBassPat(next);
                 } }] : []),
-              ...(perc ? [{ name: "Perc", on: d => !effPercOut(d), scope: runScope,
+              ...(percAnywhere ? [{ name: "Perc", on: d => !!percSrcOf(d), scope: runScope,
                 toggle: r => {
-                  const anyIn = r.items.some(d => !effPercOut(d)), next = { ...secPerc };
-                  r.items.forEach(d => { next[d.key] = anyIn; });
-                  setSecPerc(next);
+                  const anyIn = r.items.some(x => !!percSrcOf(x)), next = { ...secPercPat };
+                  r.items.forEach(x => {
+                    if (anyIn) { next[x.key] = "off"; return; }
+                    delete next[x.key];
+                    const lp = next[x.base];
+                    const inherited = lp ? lp !== "off" : (!effPercOut(x) && !!perc);
+                    if (!inherited && !secPercBeat[x.key]) next[x.key] = perc || "ohats";
+                  });
+                  setSecPercPat(next);
                 } }] : []),
-              ...(pad ? [{ name: "Pad", on: d => !effPadOut(d), scope: runScope,
+              ...(padAnywhere ? [{ name: "Pad", on: d => !!padVoiceOf(d), scope: runScope,
                 toggle: r => {
-                  const anyIn = r.items.some(d => !effPadOut(d)), next = { ...secPad };
-                  r.items.forEach(d => { next[d.key] = anyIn; });
-                  setSecPad(next);
+                  const anyIn = r.items.some(x => !!padVoiceOf(x)), next = { ...secPadVoice };
+                  r.items.forEach(x => {
+                    if (anyIn) { next[x.key] = "off"; return; }
+                    delete next[x.key];
+                    const lp = next[x.base];
+                    const inherited = lp ? lp !== "off" : (!effPadOut(x) && !!pad);
+                    if (!inherited) next[x.key] = pad || "strings";
+                  });
+                  setSecPadVoice(next);
                 } }] : []),
               ...Array.from({ length: nParts }, (_, i) => ({
                 name: LAYER_NAMES[i], on: d => partIn(d, i),
@@ -4951,11 +5156,11 @@ export default function ProgressionWheel() {
               /* One drawn low-pass lane per switched-on track, exactly like the parts' lanes:
                  the bass darkens into the breakdown while the mix stays put, the perc opens
                  across a build, the pad blooms into a drop. Undrawn, the track plays wide open. */
-              ...(bass ? [{ id: "cutbass", name: "Bass filter",
+              ...(bassAnywhere ? [{ id: "cutbass", name: "Bass filter",
                 tip: "Draw the bass track's own brightness across the song — it darkens or opens while everything else stays put." }] : []),
-              ...(perc ? [{ id: "cutperc", name: "Perc filter",
+              ...(percAnywhere ? [{ id: "cutperc", name: "Perc filter",
                 tip: "Draw the percussion layer's own brightness across the song — open it through a build, shut it for a verse." }] : []),
-              ...(pad ? [{ id: "cutpad", name: "Pad filter",
+              ...(padAnywhere ? [{ id: "cutpad", name: "Pad filter",
                 tip: "Draw the pad's own brightness across the song — the classic move is a slow bloom across the whole build." }] : []),
               ...Array.from({ length: nParts }, (_, i) => ({ id: autoPartId(i),
                 name: LAYER_NAMES[i] + " filter",
@@ -5275,6 +5480,8 @@ export default function ProgressionWheel() {
             const cols = d.cs.length * meloBeats;
             const open = !!openSecs[d.key];
             const beatOpen = !!openBeats[d.key];
+            const percOpen = !!openPercs[d.key];
+            const bassOpen = !!openBass[d.key];
             const has = secHasNotes(sec);
             const donor = !has && sections.insts.find(o => o.base === d.base && o.key !== d.key
               && secHasNotes(secMelos[o.key]));
@@ -5306,6 +5513,14 @@ export default function ProgressionWheel() {
                     <button className="mini" onClick={() => setOpenBeats({ ...openBeats, [d.key]: !beatOpen })}
                       title={"Write this " + d.word.toLowerCase() + "'s own drums — a busier hat in the second chorus, a fill in the last bar. It opens on whatever is playing now."}>
                       {beatOpen ? "▾" : "▸"} drums{secBeat[d.key] ? " ● " + beatHits(secBeat[d.key]) : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenPercs({ ...openPercs, [d.key]: !percOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own percussion layer — a shaker that only runs through the build, a conga cell on one chorus. It opens on whatever the section's perc menu is playing."}>
+                      {percOpen ? "▾" : "▸"} perc{secPercBeat[d.key] ? " ● " + beatHits(secPercBeat[d.key]) : ""}
+                    </button>
+                    <button className="mini" onClick={() => setOpenBass({ ...openBass, [d.key]: !bassOpen })}
+                      title={"Write this " + d.word.toLowerCase() + "'s own bassline — root, fifth and octave of whatever chord each bar holds, so the line follows the changes by itself. It opens on whatever the section's bass menu is playing."}>
+                      {bassOpen ? "▾" : "▸"} bass{secBassBeat[d.key] ? " ●" : ""}
                     </button>
                   </div>
                 </div>
@@ -5369,48 +5584,67 @@ export default function ProgressionWheel() {
                       <option value="out">Chords out</option>
                     </select>
                   </label>
-                  {bass && <label className="secopt" title={"Whether the bassline sounds in this " + d.word.toLowerCase()
-                    + " alone. Independent of the chords — a breakdown can lose the harmony and keep the bass running, or the other way round."}>
+                  <label className="secopt" title={"The bassline for this " + d.word.toLowerCase()
+                    + " alone — a pattern from the catalogue, or none. Independent of the chords, so a breakdown can lose the harmony and keep the bass running. Open ▸ bass above to write the line note by note."}>
                     <span className="optlbl"><span aria-hidden="true">🎸</span> Bass</span>
-                    <select value={secBass[d.key] == null ? "" : (secBass[d.key] ? "out" : "in")}
-                      onChange={e => { const v = e.target.value, next = { ...secBass };
-                        if (v === "") delete next[d.key]; else next[d.key] = v === "out";
-                        setSecBass(next); }}>
-                      <option value="">{secBass[d.base]
-                        ? "as every " + d.word.toLowerCase() + " — bass out"
-                        : "— bass in —"}</option>
-                      <option value="in">Bass in</option>
-                      <option value="out">Bass out</option>
+                    <select value={secBassPat[d.key] || ""}
+                      onChange={e => { const v = e.target.value, next = { ...secBassPat };
+                        if (!v) delete next[d.key]; else next[d.key] = v;
+                        setSecBassPat(next); }}>
+                      <option value="">{(() => {
+                        const p = secBassPat[d.base];
+                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no bass"
+                          : "as every " + d.word.toLowerCase() + " — " + ((BASS[p] || {}).name || p);
+                        return bass && !secBass[d.base] && !secBass[d.key]
+                          ? "as the song — " + ((BASS[bass] || {}).name || bass) : "— no bass —";
+                      })()}</option>
+                      <option value="off">No bass</option>
+                      {Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>)}
+                    </select>
+                  </label>
+                  {bassSrcOf(d) && <label className="secopt" title="What the whole song's bassline is played on — all synth, so it sounds the same offline and in a render.">
+                    <span className="optlbl">voiced as</span>
+                    <select value={bassVoice} onChange={e => setBassVoiceSt({ key: progId, val: e.target.value })}>
+                      {BASS_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                     </select>
                   </label>}
-                  {perc && <label className="secopt" title={"Whether the percussion layer sounds in this " + d.word.toLowerCase()
-                    + " alone — the classic move is perc entering a build before the kick returns."}>
+                  <label className="secopt" title={"The percussion layer for this " + d.word.toLowerCase()
+                    + " alone — a second pattern from the drum table riding over the groove on the song's kit. The classic move is perc entering a build before the kick returns. Open ▸ perc above to write it step by step."}>
                     <span className="optlbl"><span aria-hidden="true">🥁</span> Perc</span>
-                    <select value={secPerc[d.key] == null ? "" : (secPerc[d.key] ? "out" : "in")}
-                      onChange={e => { const v = e.target.value, next = { ...secPerc };
-                        if (v === "") delete next[d.key]; else next[d.key] = v === "out";
-                        setSecPerc(next); }}>
-                      <option value="">{secPerc[d.base]
-                        ? "as every " + d.word.toLowerCase() + " — perc out"
-                        : "— perc in —"}</option>
-                      <option value="in">Perc in</option>
-                      <option value="out">Perc out</option>
+                    <select value={secPercPat[d.key] || ""}
+                      onChange={e => { const v = e.target.value, next = { ...secPercPat };
+                        if (!v) delete next[d.key]; else next[d.key] = v;
+                        setSecPercPat(next); }}>
+                      <option value="">{(() => {
+                        const p = secPercPat[d.base];
+                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no perc"
+                          : "as every " + d.word.toLowerCase() + " — " + ((DRUMS[p] || {}).name || p);
+                        return perc && !secPerc[d.base] && !secPerc[d.key]
+                          ? "as the song — " + ((DRUMS[perc] || {}).name || perc) : "— no percussion —";
+                      })()}</option>
+                      <option value="off">No percussion</option>
+                      {metricDrums.map(([id, dd]) => id !== "off"
+                        ? <option key={id} value={id}>{dd.name}</option> : null)}
                     </select>
-                  </label>}
-                  {pad && <label className="secopt" title={"Whether the pad sounds in this " + d.word.toLowerCase()
-                    + " alone — pads carry breakdowns and sit out of DJ intros."}>
+                  </label>
+                  <label className="secopt" title={"The pad for this " + d.word.toLowerCase()
+                    + " alone — a second chord voice holding the upper voicing a bar at a time, reverbed and barely pumped. Pads carry breakdowns and sit out of DJ intros."}>
                     <span className="optlbl"><span aria-hidden="true">🌫️</span> Pad</span>
-                    <select value={secPad[d.key] == null ? "" : (secPad[d.key] ? "out" : "in")}
-                      onChange={e => { const v = e.target.value, next = { ...secPad };
-                        if (v === "") delete next[d.key]; else next[d.key] = v === "out";
-                        setSecPad(next); }}>
-                      <option value="">{secPad[d.base]
-                        ? "as every " + d.word.toLowerCase() + " — pad out"
-                        : "— pad in —"}</option>
-                      <option value="in">Pad in</option>
-                      <option value="out">Pad out</option>
+                    <select value={secPadVoice[d.key] || ""}
+                      onChange={e => { const v = e.target.value, next = { ...secPadVoice };
+                        if (!v) delete next[d.key]; else next[d.key] = v;
+                        setSecPadVoice(next); }}>
+                      <option value="">{(() => {
+                        const p = secPadVoice[d.base];
+                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no pad"
+                          : "as every " + d.word.toLowerCase() + " — " + ((PAD_VOICES.find(([id]) => id === p) || [])[1] || p);
+                        return pad && !secPad[d.base] && !secPad[d.key]
+                          ? "as the song — " + ((PAD_VOICES.find(([id]) => id === pad) || [])[1] || pad) : "— no pad —";
+                      })()}</option>
+                      <option value="off">No pad</option>
+                      {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                     </select>
-                  </label>}
+                  </label>
                   <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
                     + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
                     <span className="optlbl"><span aria-hidden="true">🎵</span> Shape</span>
@@ -5800,6 +6034,123 @@ export default function ProgressionWheel() {
                         four bars is one stroke. Two pieces on one step play together, which is all
                         layering is here: a crash on the first step of a section, or a snare through
                         the last bar, is the fill a transition is waiting for.
+                      </p>}
+                    </div>
+                  );
+                })()}
+                {percOpen && (() => {
+                  const bars = percGridBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secPercBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  const src = percSrcOf(d);
+                  const cat = src && src.pat ? DRUMS[src.pat] : null;
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      <div className="row gridhdr">
+                        <span className="gridname">🥁 {own ? `${d.key}'s own perc layer`
+                          : src ? "following " + ((cat && cat.name) || "the section's perc")
+                          : "no perc here — paint some"}</span>
+                        {own && <button className="mini" onClick={() => resetPercBeat(d.key)}
+                          title="Hand this section back to the perc menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPercBeat(d, sameRole)}
+                          title={"Put this perc on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
+                        {DRUM_VOICES.map(([ch, name, tip, ink]) => (
+                          <div key={ch} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step].includes(ch);
+                              return (
+                                <div key={c} data-pk={d.key} data-bar={bar} data-step={step} data-ch={ch}
+                                  onPointerDown={e => percDown(e, d, bar, step, ch)}
+                                  onClick={() => {
+                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                    tapPerc(d, bar, step, ch);
+                                  }}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell dcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        A second layer over the drum grid above, on the same kit — shakers, congas
+                        and offbeat hats live here so the main groove stays untouched. It has its
+                        own lane and its own drawn filter on the strip.
+                      </p>}
+                    </div>
+                  );
+                })()}
+                {bassOpen && (() => {
+                  const bars = bassGridBars(d);
+                  const n = bars[0].length, cols = n * d.nbars;
+                  const own = !!secBassBeat[d.key];
+                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+                  const src = bassSrcOf(d);
+                  const cat = src && src.pat ? BASS[src.pat] : null;
+                  return (
+                    <div style={{ marginTop:6 }}>
+                      <div className="row gridhdr">
+                        <span className="gridname">🎸 {own ? `${d.key}'s own bassline`
+                          : src ? "following " + ((cat && cat.name) || "the section's bass")
+                          : "no bass here — paint a line"}</span>
+                        {own && <button className="mini" onClick={() => resetBassBeat(d.key)}
+                          title="Hand this section back to the bass menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBassBeat(d, sameRole)}
+                          title={"Put this bassline on the other " + sameRole.length + " " + d.word.toLowerCase()
+                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                      </div>
+                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                        <div className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span />
+                          {d.cs.map((c, bi) => (
+                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                          ))}
+                        </div>
+                        {BASS_ROWS.map(([tok, name, tip, ink]) => (
+                          <div key={tok} className="mline" style={{ gap:beatGap,
+                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                            {Array.from({ length: cols }, (_, c) => {
+                              const bar = Math.floor(c / n), step = c % n;
+                              const on = bars[bar][step] === tok;
+                              return (
+                                <div key={c} data-bk={d.key} data-bar={bar} data-step={step} data-tok={tok}
+                                  onPointerDown={e => bassDown(e, d, bar, step, tok)}
+                                  onClick={() => {
+                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                    tapBass(d, bar, step, tok);
+                                  }}
+                                  style={on ? { background: ink, borderColor: ink } : null}
+                                  className={"mcell dcell" + (on ? " on" : "")
+                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      {tips && <p className="keytag" style={{ marginTop:5 }}>
+                        One note a step — root, fifth or octave of whatever chord that bar holds, so
+                        the line follows the changes by itself. A note rings until the next one, so a
+                        single Root at the bar start is a held sub and a step on every offbeat is the
+                        house bounce. Tap a different row to move a note; tap it again to clear it.
                       </p>}
                     </div>
                   );

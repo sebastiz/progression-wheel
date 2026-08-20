@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **Bass, perc and pad are authored on the sections now, like drums and melodies.** The Sound-tab
+  dropdowns are gone. Each section row carries its own **Bass**, **Perc** and **Pad** menus — a
+  pattern (or pad voice) for that pass alone, "as the song" to inherit what a template wrote, or
+  none — and two new grid buttons sit beside ▸ drums: **▸ perc** opens the same step grid the drum
+  editor uses, layered over the kit, and **▸ bass** opens a three-row grid — Root, Fifth, Octave of
+  whatever chord each bar holds, so a painted line follows the changes by itself. One note a step,
+  held until the next hit: a single Root at a bar start is a held sub, offbeat steps are the house
+  bounce. Grids seed from what the section is already playing, reset hands back to the menu, and
+  "copy to every chorus" works as it does for drums. Everything still resolves pass → section
+  letter → template, exports (stems, MIDI, Live Set) follow the per-section state bar for bar, and
+  the loop sketch (no structure picked) authors the same way on its single section.
 - **A percussion layer and a pad, treated exactly like the drums and the parts.** **Perc** is a
   second pattern from the same drum table, played on the song's kit under the main groove — shaker
   sixteenths, offbeat hats, a conga cell — through its own filter, never triggering the pump.
