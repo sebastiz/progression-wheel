@@ -1,14 +1,19 @@
 # Changelog
 
 ## Unreleased
-- **A Sketch tab: groove first, then subtract.** Dance music is subtractive, and the new tab
-  between Sound and Arrange is that workflow on one page. The top half is **the groove** — a
-  single looping section with every track on it at once: the drum, perc, bass, pad and chord
+- **A Sketch tab: groove first, then subtract, then commit.** Dance music is subtractive, and the
+  new tab between Sound and Arrange is that workflow on one page. The top half is **the groove** —
+  a single looping section with every track on it at once: the drum, perc, bass, pad and chord
   grids, the melody parts with their mixer, and each track's effect knobs — with a ▶ 🔁 loop
-  button that plays the full stack whatever structure is loaded. The bottom half is **the
-  arrangement**: the structure picker, the strip with its lanes, and the arrangement editor, so
-  the running order is built and each section is allocated its share of the groove — drums alone
-  for the intro, bass and pads with no kick for the build — without leaving the page.
+  button that plays the full stack whatever the song is doing. The bottom half is **the
+  arrangement draft**: its own running order, deliberately separate from the song's — add intro,
+  build, drop and breakdown, reorder and stretch them, and untick which of the groove's tracks
+  each section loses (drums alone for the intro, bass and pads with no kick for the build).
+  Nothing in the draft is heard until **✍ Write to Arrange** commits it: the draft becomes the
+  song's arrangement — every section playing the groove minus its unticks — and each pass is then
+  refined on the Arrange tab with its own grids, melodies, transitions and sweeps. The draft is
+  saved with the sketch, and a running order written this way plays, exports and edits exactly as
+  one picked from the catalogue.
 - **Every section inherits the groove until it says otherwise.** A track resolves in order: the
   pass's own written grid, its (or its letter's) menu choice, its mute, then the **groove
   sketch's grid**, then the song-level catalogue pattern. The groove is a loop, so it cycles

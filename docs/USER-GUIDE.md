@@ -10,12 +10,15 @@ The app is in five tabs, under the transport bar:
   the songs that use this progression.
 - **Sound** — the instruments, the time signature, the strum pattern, the drums and kit, and the
   feel controls (delay, pump, swing, humanise).
-- **Sketch** — the subtractive workflow on one page: build the **full groove** as a single looping
-  section (drum, perc, bass, pad and chord grids, melody parts and every track's settings), then
-  build the arrangement underneath and use the strip's lanes to choose which sections play which of
-  the groove's tracks — drums alone for the intro, bass and pads with no kick for the build. Every
-  section plays the groove until you give it something of its own; edit the groove and every
-  section still following it changes with it.
+- **Sketch** — the subtractive workflow on one page, kept apart from the song until you commit it.
+  Build the **full groove** as a single looping section (drum, perc, bass, pad and chord grids,
+  melody parts and every track's settings; ▶ 🔁 loops the full stack, whatever the song is doing).
+  Underneath, draft the **arrangement**: add intro, build, drop and breakdown, then untick which of
+  the groove's tracks each section loses — drums alone for the intro, bass and pads with no kick
+  for the build. Nothing is heard until **✍ Write to Arrange**: the draft becomes the song's
+  arrangement, every section playing the groove minus its unticks, ready to refine pass by pass on
+  the Arrange tab. Sections keep following the groove until you give them something of their own,
+  so a groove edited later is still heard everywhere it hasn't been overridden.
 - **Arrange** — the song structure, the melodic narrative, the arrangement strip with its automation
   lanes, every section's melodies, and the exports.
 - **Save** — naming a sketch, saving it, sharing a link, and loading one back.
