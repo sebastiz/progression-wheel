@@ -211,6 +211,21 @@ be auditioned without depending on which section happens to be fullest. Section 
 and every drawn automation lane sit out — they describe the song's timeline, and the groove loop
 is outside it.
 
+The tab's second half is a **draft arrangement** (`sketchArr`), deliberately not the song's plan:
+rows the writer adds (`{sec, reps, off}`), where `off` is that row's subtractions — which of the
+groove's tracks and melody parts the section loses. The draft's matrix is sections × tracks, its
+row operations are plain array transforms (no remapping, because nothing is an instance yet — a
+row carries its ticks with it), and nothing in it is heard until **✍ Write to Arrange** commits
+it. The commit turns rows into a custom plan of `LOOP` sections, resolves it with `planInsts`
+(the click runs before React has re-rendered `sections`), and writes the allocation as ordinary
+per-instance state — `secDrum: "off"`, `secQuiet`, `secBassPat/secPercPat/secPadVoice: "off"`,
+`secPartOut` — replacing those maps wholesale, exactly as applying a template does. Grids,
+melodies and track effects are left alone: they are material, not arrangement. A custom plan now
+counts as a song even with no catalogue structure picked (`sections` builds its bar list off
+`effPlan`, not `structSel`), which is what lets a committed draft play, export and be edited like
+any picked structure. The draft itself is saved in the song document, so the sketch can keep
+being reshaped and re-committed.
+
 ## The song document
 
 `src/song.js` holds one serialisable shape used by *both* the sketch and the shareable link, so

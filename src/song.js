@@ -92,7 +92,7 @@ function makeSong(s) {
     trackFx: s.trackFx, percKit: s.percKit,
     secBassBeat: packBeats(s.secBassBeat), secPercBeat: packBeats(s.secPercBeat),
     secPadBeat: packBeats(s.secPadBeat), secChordBeat: packBeats(s.secChordBeat), secMove: s.secMove, secTrans: s.secTrans, secBeat: packBeats(s.secBeat), secNar: s.secNar, delayId: s.delayId, grid: s.grid,
-    bpm: s.bpm, selStruct: s.selStruct, contrast: s.contrast,
+    bpm: s.bpm, selStruct: s.selStruct, contrast: s.contrast, sketchArr: s.sketchArr,
     edits: s.edits, inserts: s.inserts, quals: s.quals, removed: s.removed, order: s.order,
     melos: packMelos(s.melos),
   };

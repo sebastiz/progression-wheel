@@ -552,6 +552,13 @@ export default function ProgressionWheel() {
      cannot live on the layers (writing a mute there would materialise a copy of the groove into
      the section, and editing the groove afterwards would no longer reach it). */
   const [secPartOut, setSecPartOut] = useState({});
+  /* The Sketch tab's draft arrangement — its own document, deliberately NOT the song's plan.
+     Rows are sections the writer adds ({ sec, reps, off }), and `off` is that row's subtractions:
+     which of the groove's tracks and melody parts sit the section out ({ drums:true, p0:true }).
+     Nothing here is heard until ✍ Write to Arrange commits it, which is the point: the groove
+     loops while the shape is drafted, and the arrangement only changes when it is asked to. */
+  const [sketchArr, setSketchArr] = useState([]);
+  const [sketchSel, setSketchSel] = useState(0);      // which draft row the toolbar edits (UI-only)
   const [percKitSt, setPercKitSt] = useState({ key:"", val:"" });   // hand vs machine percussion voicing
   /* Each track's effect panel: a sparse object of the same modulation keys the melody parts use
      (only values that differ from their default are stored), one per track. */
@@ -1002,7 +1009,9 @@ export default function ProgressionWheel() {
     const plan = effPlan || [{ sec: "Loop", nums: "LOOP", reps: 1, note: null }];
     const insts = [], counts = {};
     let totalBars = 0;
-    const bars = structSel ? [] : null;
+    // a song's bar list exists whenever there is a plan to play — a structure from the catalogue,
+    // or a custom plan written without one (which is what the Sketch tab's draft commits)
+    const bars = effPlan ? [] : null;
     plan.forEach((row, rowIdx) => {
       const L = letterFor(row.sec);
       const usedC = structSel && chords2 && contrast.sec === L;
@@ -4025,6 +4034,7 @@ export default function ProgressionWheel() {
     kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
     secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit,
     secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
+    sketchArr,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
@@ -4039,7 +4049,7 @@ export default function ProgressionWheel() {
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
       kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
       secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit,
-      secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, ovMap, insList, qmap, remList, order, melos]);
+      secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, sketchArr, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -4250,6 +4260,7 @@ export default function ProgressionWheel() {
     // the per-section choices and written grids the tracks are authored with now
     setSecBassPat(s.secBassPat || {}); setSecPercPat(s.secPercPat || {}); setSecPadVoice(s.secPadVoice || {});
     setSecPartOut(s.secPartOut || {});
+    setSketchArr(Array.isArray(s.sketchArr) ? s.sketchArr : []); setSketchSel(0);
     setSecBassBeat(unpackBeats(s.secBassBeat)); setSecPercBeat(unpackBeats(s.secPercBeat));
     setSecPadBeat(unpackBeats(s.secPadBeat)); setSecChordBeat(unpackBeats(s.secChordBeat));
     setOpenBass({}); setOpenPercs({}); setOpenPads({}); setOpenChordGrids({});
@@ -5154,9 +5165,169 @@ export default function ProgressionWheel() {
             );
   };
 
-  /* The structure / arrangement-template chooser — rendered on the Arrange tab where it always
-     lived, and on the Sketch tab where picking a running order is the first step of allocating
-     the groove. One function, or the two menus drift. */
+  /* ---- the Sketch tab's draft arrangement ----
+     A running order drafted against the groove, kept apart from the song's plan on purpose: the
+     Sketch tab is where the full stack loops while the shape is only being thought about, and
+     nothing it holds is heard in the song until ✍ Write to Arrange commits it. Each draft row
+     carries its own subtractions (`off`), so moving or copying a section carries its ticks with
+     it — no instance keys, no remapping, because nothing here is an instance yet. */
+  // the rows of the matrix: every track the groove actually carries, plus its playing melody parts
+  const sketchTracks = () => {
+    const rows = [];
+    if ((secBeat[GROOVE] && secBeat[GROOVE].length) || (DRUMS[drum] || {}).pattern) rows.push({ id: "drums", name: "Drums" });
+    rows.push({ id: "chords", name: "Chords" });
+    if (bassSrcOf(grooveInst)) rows.push({ id: "bass", name: "Bass" });
+    if (percSrcOf(grooveInst)) rows.push({ id: "perc", name: "Perc" });
+    if (padOnOf(grooveInst)) rows.push({ id: "pad", name: "Pad" });
+    ((secMelos[GROOVE] || {}).layers || []).forEach((ly, i) => {
+      if ((ly.flat && ly.flat.some(c => c && c.length)) || ly.arp) rows.push({ id: "p" + i, name: LAYER_NAMES[i] });
+    });
+    return rows;
+  };
+  const skPatch = (i, patch) => setSketchArr(sketchArr.map((r, k) => k === i ? { ...r, ...patch } : r));
+  const skAdd = sec => {
+    const at = sketchArr.length ? Math.min(sketchSel + 1, sketchArr.length) : 0;
+    setSketchArr([...sketchArr.slice(0, at), { sec, reps: 1, off: {} }, ...sketchArr.slice(at)]);
+    setSketchSel(at);
+  };
+  const skMove = (i, d2) => {
+    const j = i + d2;
+    if (i < 0 || i >= sketchArr.length || j < 0 || j >= sketchArr.length) return;
+    const next = [...sketchArr];
+    [next[i], next[j]] = [next[j], next[i]];
+    setSketchArr(next); setSketchSel(j);
+  };
+  const skReps = (i, d2) => skPatch(i, { reps: Math.max(1, Math.min(32, ((sketchArr[i] || {}).reps || 1) + d2)) });
+  const skDup = i => {
+    setSketchArr([...sketchArr.slice(0, i + 1), { ...sketchArr[i], off: { ...(sketchArr[i].off || {}) } }, ...sketchArr.slice(i + 1)]);
+    setSketchSel(i + 1);
+  };
+  const skDel = i => {
+    const next = sketchArr.filter((_, k) => k !== i);
+    setSketchArr(next); setSketchSel(Math.max(0, Math.min(i, next.length - 1)));
+  };
+  const skToggle = (i, id) => skPatch(i, { off: { ...(sketchArr[i].off || {}), [id]: !(sketchArr[i].off || {})[id] } });
+  /* Commit the draft: its rows become the song's plan (every section a pass of the full loop) and
+     its ticks become the allocation — a mute per instance on each track a section unticked, and
+     the part allocation map for the groove's melody parts. The maps are replaced rather than
+     merged, exactly as applying a template replaces them: half an old arrangement under a new one
+     is what a commit exists to prevent. The grids, the melodies and the track effects are left
+     alone — they are material, not arrangement. `planInsts` rather than `sections.insts` because
+     this runs inside the click that changes the plan, before React has re-rendered it. */
+  const writeSketchToArrange = () => {
+    if (!sketchArr.length) return;
+    const plan = sketchArr.map(r => ({ sec: r.sec, nums: "LOOP", reps: r.reps || 1, note: null }));
+    const insts = planInsts(plan, barsOfRow, letterFor);
+    const nDrum = {}, nQuiet = {}, nBass = {}, nPerc = {}, nPad = {}, nOut = {};
+    insts.forEach(x => {
+      const off = (sketchArr[x.row] || {}).off || {};
+      if (off.drums) nDrum[x.key] = "off";
+      if (off.chords) nQuiet[x.key] = true;
+      if (off.bass) nBass[x.key] = "off";
+      if (off.perc) nPerc[x.key] = "off";
+      if (off.pad) nPad[x.key] = "off";
+      const parts = {};
+      for (const k of Object.keys(off)) if (off[k] && /^p\d+$/.test(k)) parts[+k.slice(1)] = true;
+      if (Object.keys(parts).length) nOut[x.key] = parts;
+    });
+    setSelStruct("");                                  // the draft is its own running order, not a catalogue one
+    setCustom({ key: progId + "|", plan });
+    setSecDrum(nDrum); setSecQuiet(nQuiet);
+    setSecBassPat(nBass); setSecPercPat(nPerc); setSecPadVoice(nPad);
+    setSecPartOut(nOut);
+    setSecBass({}); setSecPerc({}); setSecPad({});     // template-written letter mutes would shadow the groove
+    setSelRow(0); setFocusRow(0);
+    if (loopSec) { loopRef.current = null; setLoopSec(null); }   // leave the groove loop — there is a song to hear now
+    setTab("arrange");
+    setIoNote(`Wrote the sketch to the arrangement — ${plan.length} section${plan.length > 1 ? "s" : ""}, every one playing the groove minus what you unticked. Refine each pass here.`);
+  };
+  // the draft on screen: section blocks over one row per groove track, a cell per (track, section)
+  const sketchDraft = () => {
+    const rows = sketchTracks();
+    const total = sketchArr.reduce((n, r) => n + (r.reps || 1), 0);
+    if (!sketchArr.length) return (
+      <div className="row" style={{ gap:"6px 8px", alignItems:"center", flexWrap:"wrap", marginTop:8 }}>
+        <span className="keytag" style={{ margin:0 }}>An empty running order — add the first section:</span>
+        {["Intro", "Build", "Drop", "Breakdown", "Outro"].map(sc =>
+          <button key={sc} className="mini" onClick={() => skAdd(sc)}>＋ {sc}</button>)}
+        <select className="fxsel" value="" onChange={e => { if (e.target.value) skAdd(e.target.value); }}
+          title="Add a section the quick buttons don't offer">
+          <option value="">＋ other…</option>
+          {ADDABLE.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+        </select>
+        {/* the commit button shows from the start, disabled, so the destination of the workflow
+            is visible before the draft exists — a button that only appears later reads as absent */}
+        <button className="btn" disabled style={{ marginLeft:"auto", padding:"5px 12px", opacity:0.5 }}
+          title="Add at least one section above — then this writes the whole draft to the Arrange tab">
+          ✍ Write to Arrange
+        </button>
+      </div>
+    );
+    const at = Math.min(sketchSel, sketchArr.length - 1);
+    const cur = sketchArr[at];
+    return (
+      <>
+        <div className="tl">
+          <div className="tlgut">
+            <div className="tlglbl tlgsec">{total * grooveInst.nbars} bars</div>
+            {rows.map(rw => <div key={rw.id} className="tlglbl">{rw.name}</div>)}
+          </div>
+          <div className="tltrk">
+            <div className="tlrow tlsecs">
+              {sketchArr.map((r, i) => {
+                const accS = SEC_COL[letterFor(r.sec)] || "#8B94A3";
+                const n = r.reps || 1;
+                return (
+                  <button key={i} className={"tlsec" + (at === i ? " picked" : "")}
+                    style={{ flex: n + " 0 0%", background: accS + "22", borderColor: accS + "77" }}
+                    onClick={() => setSketchSel(i)}
+                    title={`${r.sec}${n > 1 ? ` ×${n}` : ""} · ${n * grooveInst.nbars} bars — tap to pick it, then the tools below move, stretch, copy or remove it`}>
+                    <span className="tlsecl" style={{ color: accS }}>{r.sec}{n > 1 ? " ×" + n : ""}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {rows.map(rw => (
+              <div key={rw.id} className="tlrow">
+                {sketchArr.map((r, i) => {
+                  const on = !(r.off || {})[rw.id];
+                  const accS = SEC_COL[letterFor(r.sec)] || "#8B94A3";
+                  return <button key={i} className={"tlcell " + (on ? "on" : "off")}
+                    style={{ flex: (r.reps || 1) + " 0 0%", background: on ? accS + "AA" : undefined }}
+                    onClick={() => skToggle(i, rw.id)}
+                    title={`${on ? "Drop" : "Bring in"} ${rw.name} for ${r.sec}`} />;
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="row" style={{ gap:"6px 8px", alignItems:"center", flexWrap:"wrap", marginTop:8 }}>
+          <span className="keytag" style={{ margin:0 }}>
+            <b style={{ color: SEC_COL[letterFor(cur.sec)] || "#EAE2CC" }}>{cur.sec}</b>
+            {" "}· {cur.reps || 1} pass{(cur.reps || 1) > 1 ? "es" : ""}
+          </span>
+          <button className="mini" onClick={() => skMove(at, -1)} disabled={at <= 0} title="Move this section earlier">◀</button>
+          <button className="mini" onClick={() => skMove(at, 1)} disabled={at >= sketchArr.length - 1} title="Move this section later">▶</button>
+          <button className="mini" onClick={() => skReps(at, -1)} disabled={(cur.reps || 1) <= 1}
+            title="One pass fewer — a shorter section">− pass</button>
+          <button className="mini" onClick={() => skReps(at, 1)} title="One pass more — a longer section">＋ pass</button>
+          <button className="mini" onClick={() => skDup(at)} title="Duplicate this section, ticks and all">⧉ Copy</button>
+          <button className="mini" onClick={() => skDel(at)} title="Remove this section from the draft">🗑</button>
+          <select className="fxsel" value="" onChange={e => { if (e.target.value) skAdd(e.target.value); }}
+            title="Add a new section after the picked one">
+            <option value="">＋ add section…</option>
+            {ADDABLE.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+          </select>
+          <button className="btn" style={{ marginLeft:"auto", padding:"5px 12px", borderColor: GOLD, color: GOLD }}
+            onClick={writeSketchToArrange}
+            title="Commit the draft: this running order becomes the song's arrangement, every section playing the groove minus what you unticked — then each pass is refined on the Arrange tab.">
+            ✍ Write to Arrange
+          </button>
+        </div>
+      </>
+    );
+  };
+  // the structure / arrangement-template chooser, at the top of the Arrange tab
   const structPicker = () => (
     <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => pickStruct(e.target.value)}
       title="A structure is a running order. An arrangement template is a running order plus what plays in each section — which drop the drums, which lose the chords, where the filter opens and what happens at every seam.">
@@ -6299,22 +6470,16 @@ export default function ProgressionWheel() {
             own — so the loop you perfect here is the material the whole track is cut from.
           </p>}
           {sectionCard(grooveInst, "groove", { groove: true })}
-          <div className="row" style={{ marginTop:14, gap:"6px 10px", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap" }}>
-            <div className="progtitle" style={{ fontSize:17 }}>The arrangement — subtract from it</div>
-            {structPicker()}
-          </div>
+          <div className="progtitle" style={{ fontSize:17, marginTop:14 }}>The arrangement draft — subtract from it</div>
           {tips && <p className="arrnote" style={{ marginTop:4 }}>
-            Pick a running order (a dance template arrives already subtractive), or edit one into
-            shape with <b>✎ Edit arrangement</b> — add and remove sections, reorder them, stretch a
-            drop. Then the lanes are the allocation: a cell drops that track out of that section or
-            brings it back — drums alone for the intro, bass and pads with no kick for the build.
-            The energy staircase below the lanes is the shape those choices add up to.
+            A draft, on purpose: nothing here touches the song until you write it. Add intro, build,
+            drop and breakdown, then untick what each section should <i>lose</i> — drums alone for
+            the intro, bass and pads with no kick for the build. When the shape is right, press
+            <b> ✍ Write to Arrange</b>: the draft becomes the song's arrangement, every section
+            playing the groove minus its unticks, and each pass can then be refined on the Arrange
+            tab — its own grids, melodies, transitions and sweeps.
           </p>}
-          {arrangeStrip()}
-          {!structSel && sections.insts.length <= 1 && <p className="keytag" style={{ marginTop:6 }}>
-            No structure yet — the groove simply loops. Pick one above to lay it across intro,
-            build, drop and breakdown, then subtract.
-          </p>}
+          {sketchDraft()}
         </div>}
 
         {/* ---- Save: naming, keeping and sharing ---- */}
