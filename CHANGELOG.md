@@ -1,6 +1,23 @@
 # Changelog
 
 ## Unreleased
+- **The Sketch tab tidied into collapsible bars.** Every grid on the groove card — melody, drums,
+  percussion, bass, pad and chords — now sits under its own full-width collapsible bar named for
+  what it holds, with a ● when something is written there. The row of grid-opening buttons and the
+  "starts from" dropdown row are gone from the card: each track's pattern menu now waits inside
+  its own bar, beside the grid it seeds.
+- **Style presets, per track and overall.** Each track's pattern menu opens with a *Style presets*
+  group — House, Deep house, Techno, Trance, UK garage, Drum & bass, Trap, Hip-hop and more, each
+  naming the pattern that style starts from — and an optional **Overall style** menu above the
+  groove sets drums, bass, perc and pad to one style's row in a single pick. It is genuinely
+  optional: blank until chosen, blank again the moment any track is changed by hand, and every
+  menu and grid stays editable afterwards.
+- **A melodic narrative touches only the melody.** The groove's parts are now inherited by a
+  section part by part rather than all or nothing, and both narrative writers (the song-wide
+  *Melodic narrative* menu and a section's own *Shape*) write part A alone, unmuted. Before,
+  writing a narrative onto a section that followed the groove froze the groove's other parts into
+  copies (or silenced them) — now bass-and-pad parts, and every other track, keep following the
+  groove exactly as the sketch allocated them.
 - **Audio renders show their progress.** A long arrangement takes real time to bounce — the
   offline render is nearly all of the wait — and the button used to sit frozen on "Rendering…"
   the whole while. Every render (↓ Export audio, ↓ Export stems, ↓ Export for Claude) now shows a

@@ -318,10 +318,31 @@ const beatFrom = (pat, n, order) => Array.from({ length: n }, (_, i) => beatSort
 // GM percussion-set program numbers (0-indexed) so an exported file opens with a kit that
 // matches what you heard. GM has no 909, so it borrows the Electronic set.
 const KIT_PROGRAM = { "909":24, "808":25 };
+/* ===== musical-style presets =====
+   One row per style: the pattern each track starts from when the style is chosen. The Sketch
+   tab uses these two ways — the optional overall-style menu applies a whole row at once, and
+   each track's own "starts from" menu offers its column as style-named presets. An empty id
+   means the style plays without that track. */
+const STYLE_PRESETS = [
+  ["house",     "House",        { drums:"house909",  bass:"offbeat", perc:"shaker16",  pad:"glass" }],
+  ["deephouse", "Deep house",   { drums:"deep",      bass:"octaves", perc:"congaride", pad:"strings" }],
+  ["techhouse", "Tech house",   { drums:"techhouse", bass:"eighths", perc:"cowbell",   pad:"glass" }],
+  ["techno",    "Techno",       { drums:"techno16",  bass:"rolloff", perc:"",          pad:"supersaw" }],
+  ["trance",    "Trance",       { drums:"trance",    bass:"rolloff", perc:"tamb",      pad:"supersaw" }],
+  ["bigroom",   "Big room",     { drums:"bigroom",   bass:"offbeat", perc:"",          pad:"supersaw" }],
+  ["nudisco",   "Nu-disco",     { drums:"disco909",  bass:"disco",   perc:"tamb",      pad:"strings" }],
+  ["garage",    "UK garage",    { drums:"garage16d", bass:"funk16",  perc:"shaker8",   pad:"voice" }],
+  ["dnb",       "Drum & bass",  { drums:"dnb",       bass:"subhold", perc:"",          pad:"strings" }],
+  ["dubstep",   "Dubstep",      { drums:"dubstep16", bass:"subhold", perc:"",          pad:"voice" }],
+  ["trap",      "Trap",         { drums:"trap16d",   bass:"subhold", perc:"",          pad:"glass" }],
+  ["hiphop",    "Hip-hop",      { drums:"hiphop16",  bass:"funk16",  perc:"bongos",    pad:"organ" }],
+  ["latin",     "Latin house",  { drums:"house909",  bass:"octaves", perc:"tumbao",    pad:"organ" }],
+  ["funk",      "Funk",         { drums:"funk",      bass:"funk16",  perc:"bongos",    pad:"organ" }],
+];
 // The dance progressions come up already grooving — pick Deep House and press play.
 // Everything else keeps the acoustic kit and no pump, exactly as before.
 const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16", futureBass:"trap16d" };
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { BASS, BASS_IV, PERCS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
+export { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
