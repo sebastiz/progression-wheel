@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **Audio renders show their progress.** A long arrangement takes real time to bounce — the
+  offline render is nearly all of the wait — and the button used to sit frozen on "Rendering…"
+  the whole while. Every render (↓ Export audio, ↓ Export stems, ↓ Export for Claude) now shows a
+  live percentage on its button, using the render's own suspend/resume checkpoints, so a long
+  export reads as working rather than hung.
 - **↓ Export for Claude.** One button beside the other exports produces the two files an AI
   analysis needs, meant to be uploaded together in one message: the **full arrangement rendered to
   a wav** (every section in order — the same offline render as ↓ Export audio, so it is exactly
