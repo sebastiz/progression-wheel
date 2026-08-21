@@ -2772,6 +2772,16 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     problems.push("progression-wheel.jsx: the two Export for Claude filenames are missing");
   if (!code.includes("Export for Claude"))
     problems.push("progression-wheel.jsx: no Export for Claude button");
+  /* A long render is startRendering() doing nearly all the waiting (measured ~98% of it), and its
+     only window for feedback is suspend() checkpoints. Losing them turns a two-minute export back
+     into a frozen label, which reads as a hang — so their presence is held here. */
+  if (!/renderOffline = async \(stem, onProgress\)/.test(code) || !/ctx\.suspend\(/.test(code))
+    problems.push("progression-wheel.jsx: renderOffline has no suspend() progress checkpoints");
+  for (const use of ['pctLabel("Rendering")', 'pctLabel("Bouncing")'])
+    if (!code.includes(use))
+      problems.push(`progression-wheel.jsx: a busy export button lost its percent label (${use})`);
+  if (!/renderOffline\(null, setRenderPct\)/.test(code) || !/renderOffline\(stems\[n\], setRenderPct\)/.test(code))
+    problems.push("progression-wheel.jsx: an export path renders without reporting progress");
   console.log(`export for Claude: ${ref.length} modulations referenced, ${state.arrangement.sections.length} sections described, round-trips clean`);
 }
 

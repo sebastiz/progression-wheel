@@ -3436,14 +3436,26 @@ export default function ProgressionWheel() {
     while (Date.now() < until && ![...wanted].every(k => sampler.ready(k)))
       await new Promise(r => setTimeout(r, 100));
   };
-  const renderOffline = async stem => {
+  const renderOffline = async (stem, onProgress) => {
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     const nBars = (structBars && structBars.length) ? structBars.length : Math.max(1, chords.length);
     const ticksPerBar = tickRef.current || 8;
     const secsPerBar = barBeats * 60 / effBpm;
     const TAIL = 3.5;                                  // let the reverb and delay ring out
     const rate = 44100;
-    const ctx = new OAC(2, Math.ceil((nBars * secsPerBar + TAIL) * rate), rate);
+    const total = nBars * secsPerBar + TAIL;
+    const ctx = new OAC(2, Math.ceil(total * rate), rate);
+    /* Rendering is the whole wait — the graph is scheduled in a second or two, then
+       startRendering() crunches minutes of audio with no events of its own. suspend() checkpoints
+       are the one window it offers: pause at every percent of the timeline, report, resume. They
+       only pause an idle graph for a microtask, so the audio is untouched — but a long render now
+       shows a moving number instead of a frozen label. */
+    if (onProgress && typeof ctx.suspend === "function") {
+      const step = total / 100;
+      for (let s = step; s < total; s += step)
+        ctx.suspend(s).then(() => { onProgress(Math.round(100 * s / total)); ctx.resume(); })
+          .catch(() => {});                            // a rejected checkpoint costs a tick of feedback, not the render
+    }
     const m = buildGraph(ctx, 0, stem || null);
     m.nextTime = 0;                                    // offline starts at zero, no lookahead
     // give the sampler the same chance it gets live; if the samples aren't ready in time the
@@ -3452,6 +3464,9 @@ export default function ProgressionWheel() {
     for (let n = 0; n < nBars * ticksPerBar; n++) emitTick(m, false);
     return ctx.startRendering();
   };
+  // one shared "how far through the render" number, shown on whichever export button is busy
+  const [renderPct, setRenderPct] = useState(null);
+  const pctLabel = word => renderPct == null ? `${word}…` : `${word}… ${renderPct}%`;
   const renderAudio = async () => {
     if (rendering || claudeExporting) return;
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
@@ -3459,7 +3474,7 @@ export default function ProgressionWheel() {
     setRendering(true);
     setIoNote("Rendering…");
     try {
-      const buf = await renderOffline(null);
+      const buf = await renderOffline(null, setRenderPct);
       const peak = peakOf(buf);
       if (peak < 1e-4) { setIoNote("Rendered silence — add a drum pattern or a melody first."); return; }
       const bytes = audioBufferToWav(buf);
@@ -3471,7 +3486,7 @@ export default function ProgressionWheel() {
       setIoNote(`Rendered ${buf.duration.toFixed(1)}s · ${(bytes.length / 1048576).toFixed(1)} MB · peak ${(20 * Math.log10(peak)).toFixed(1)} dB.`);
     } catch (e) {
       setIoNote("Render failed in this browser — MIDI export still works.");
-    } finally { setRendering(false); }
+    } finally { setRendering(false); setRenderPct(null); }
   };
 
   /* ---- stem export ----
@@ -3523,10 +3538,11 @@ export default function ProgressionWheel() {
       const files = [];
       let silent = 0;
       for (let n = 0; n < stems.length; n++) {
+        setRenderPct(null);
         setIoNote(`Bouncing stem ${n + 1} of ${stems.length} — ${stems[n].name}…`);
         // sequential, not parallel: several full-length OfflineAudioContexts at once is how a
         // phone runs out of memory mid-export
-        const buf = await renderOffline(stems[n]);
+        const buf = await renderOffline(stems[n], setRenderPct);
         if (peakOf(buf) < 1e-4) { silent++; continue; }   // a muted or empty source is not worth a file
         files.push({ name: String(n + 1).padStart(2, "0") + "-" + safeName(stems[n].name) + ".wav",
           bytes: audioBufferToWav(buf) });
@@ -3542,7 +3558,7 @@ export default function ProgressionWheel() {
         + (silent ? ` · ${silent} silent, skipped` : "") + " — unzip and drop the lot onto a DAW timeline.");
     } catch (e) {
       setIoNote("Stem export failed in this browser — the single-file audio export still works.");
-    } finally { setStemming(false); }
+    } finally { setStemming(false); setRenderPct(null); }
   };
 
   /* ---- Export for Claude ----
@@ -3623,7 +3639,7 @@ export default function ProgressionWheel() {
     setClaudeExporting(true);
     setIoNote("Rendering the arrangement for Claude…");
     try {
-      const buf = await renderOffline(null);
+      const buf = await renderOffline(null, setRenderPct);
       const bytes = audioBufferToWav(buf);
       const state = getExportState();
       const json = new TextEncoder().encode(JSON.stringify(state, null, 2));
@@ -3645,7 +3661,7 @@ export default function ProgressionWheel() {
     } catch (e) {
       setIoNote("Export for Claude failed" + (e && e.message ? `: ${e.message}` : "")
         + " — the MIDI and settings-free audio exports still work.");
-    } finally { setClaudeExporting(false); }
+    } finally { setClaudeExporting(false); setRenderPct(null); }
   };
 
   /* ---- exports ----
@@ -7049,13 +7065,13 @@ export default function ProgressionWheel() {
             <button className="mini" onClick={copyChart} title="Copy the chord chart to the clipboard">⧉ Copy chart</button>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming || claudeExporting}
               title="Render the whole song to a .wav you can send or post — the same sound you hear on Play">
-              {rendering ? "Rendering…" : "↓ Export audio"}</button>
+              {rendering ? pctLabel("Rendering") : "↓ Export audio"}</button>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportStems} disabled={rendering || stemming || claudeExporting}
               title="Bounce drums, chords and each melody part to separate .wav files, zipped — drop them straight onto a DAW timeline">
-              {stemming ? "Bouncing…" : "↓ Export stems"}</button>
+              {stemming ? pctLabel("Bouncing") : "↓ Export stems"}</button>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportForClaude} disabled={rendering || stemming || claudeExporting}
               title="Two files to hand to Claude for analysis: the full arrangement rendered to a .wav, and a JSON snapshot of every setting that shaped it — key, arrangement, every part's synth settings, effects and automation. Upload both together in one message.">
-              {claudeExporting ? "Rendering…" : "↓ Export for Claude"}</button>
+              {claudeExporting ? pctLabel("Rendering") : "↓ Export for Claude"}</button>
           </div>
           {openMel && (
             <div className="sugmel" style={{ marginTop:8 }}>
