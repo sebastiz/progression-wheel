@@ -10,6 +10,7 @@ import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } fr
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyWithin } from "./melody.js";
 import { makeZip, safeName } from "./zip.js";
+import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 // The Progression Wheel — v3 (slim)
@@ -3452,7 +3453,7 @@ export default function ProgressionWheel() {
     return ctx.startRendering();
   };
   const renderAudio = async () => {
-    if (rendering) return;
+    if (rendering || claudeExporting) return;
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OAC) { setIoNote("This browser cannot render audio."); return; }
     setRendering(true);
@@ -3503,7 +3504,7 @@ export default function ProgressionWheel() {
     return out;
   };
   const exportStems = async () => {
-    if (stemming || rendering) return;
+    if (stemming || rendering || claudeExporting) return;
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OAC) { setIoNote("This browser cannot render audio."); return; }
     const stems = stemList();
@@ -3542,6 +3543,109 @@ export default function ProgressionWheel() {
     } catch (e) {
       setIoNote("Stem export failed in this browser — the single-file audio export still works.");
     } finally { setStemming(false); }
+  };
+
+  /* ---- Export for Claude ----
+     Two files meant to be uploaded together in one message: the full arrangement rendered to a wav
+     (the same offline render as Export audio — same graph, same tick emitter, so it is what you
+     heard), and a JSON snapshot of every setting that shaped it. The snapshot is the point:
+     audio alone says what it sounds like; the settings say why. */
+  const [claudeExporting, setClaudeExporting] = useState(false);
+  /* The drum and chord-rhythm chains, mirrored from emitTick the way bassSrcOf mirrors the bass:
+     the pass's own written grid → its (or its letter's) menu choice → the groove's written grid →
+     the song-level pattern. One order, and now five readers — the export must agree with the
+     speakers or the file lies about the wav beside it. */
+  const drumSrcOf = d => {
+    const own = d && secBeat[d.key];
+    if (own && own.length) return { beat: own };
+    const sd = effDrum(d);
+    if (sd) return DRUMS[sd] && DRUMS[sd].pattern ? { pat: sd } : null;
+    const g = d && d.key !== GROOVE && secBeat[GROOVE];
+    if (g && g.length) return { beat: g, loop: true };
+    return DRUMS[drum] && DRUMS[drum].pattern ? { pat: drum } : null;
+  };
+  const chordSrcOf = d => {
+    const own = d && secChordBeat[d.key];
+    if (own && own.length) return { beat: own };
+    const g = d && d.key !== GROOVE && secChordBeat[GROOVE];
+    if (g && g.length) return { beat: g, loop: true };
+    return { pat: patId };
+  };
+  /* The single source of truth for the settings export: everything the snapshot says is gathered
+     here, resolved with the same helpers playback uses, and shaped by export-state.js. New export
+     surfaces read this rather than the state directly, so they cannot drift from each other. */
+  const getExportState = () => {
+    const secOf = d => ({
+      key: d.key, name: d.sec, word: d.word, letter: d.base, bars: d.nbars, startBar: d.startBar,
+      chords: d.cs.map(c => ({ name: c.name, numeral: c.numeral || null })),
+      drums: drumSrcOf(d),
+      chordsQuiet: effQuiet(d), chordsSrc: chordSrcOf(d),
+      bass: bassSrcOf(d), perc: percSrcOf(d),
+      padVoiceId: padVoiceOf(d), padBeat: padBeatOf(d),
+      move: effMove(d), trans: effTrans(d),
+      inherited: !!(secMelos[d.key] && secMelos[d.key].inherited),
+      layers: (secMelos[d.key] && secMelos[d.key].layers) || [],
+    });
+    const grooveUsed = !!((secBeat[GROOVE] && secBeat[GROOVE].length)
+      || (secBassBeat[GROOVE] && secBassBeat[GROOVE].length)
+      || (secPercBeat[GROOVE] && secPercBeat[GROOVE].length)
+      || (secPadBeat[GROOVE] && secPadBeat[GROOVE].length)
+      || (secChordBeat[GROOVE] && secChordBeat[GROOVE].length)
+      || secHasNotes(secMelos[GROOVE]));
+    return buildExportState({
+      exportedAt: new Date().toISOString(),
+      songName: sketchName.trim() || "progression-wheel",
+      tonic, mode: effMode, bpm: effBpm, meterId: curMeter, barBeats,
+      meloSub, swingAmt, humanise,
+      progName: prog.label,
+      chords: chords.map(c => ({ name: c.name, numeral: c.numeral || null })),
+      contrast: structSel && chords2 ? {
+        name: (PROGRESSIONS[contrast.id] || {}).name || contrast.id,
+        applies_to_section_letter: contrast.sec,
+        chords: chords2.map(c => ({ name: c.name, roman_numeral: c.numeral || null })),
+      } : null,
+      structureName: structSel ? structSel.st.name : null,
+      isCustomPlan: !!customPlan,
+      planRows: effPlan || [],
+      // the same bar count the render uses, so the stated duration is the wav's (minus its tail)
+      totalBars: (structBars && structBars.length) ? structBars.length : Math.max(1, chords.length),
+      sections: sections.insts.map(secOf),
+      groove: grooveUsed ? secOf(grooveInst) : null,
+      instr, melInstr, kit, percKit, pump, bassVoice, padId: pad,
+      drum, patId, delayId, trackFx, realSounds, legato, clickOn,
+      auto: auto.key === planKey ? auto : {},
+    });
+  };
+  const exportForClaude = async () => {
+    if (claudeExporting || rendering || stemming) return;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) { setIoNote("This browser cannot render audio — Export for Claude needs it."); return; }
+    setClaudeExporting(true);
+    setIoNote("Rendering the arrangement for Claude…");
+    try {
+      const buf = await renderOffline(null);
+      const bytes = audioBufferToWav(buf);
+      const state = getExportState();
+      const json = new TextEncoder().encode(JSON.stringify(state, null, 2));
+      const name = safeName(sketchName.trim() || "progression-wheel");
+      const save = (data, type, fname) => {
+        const url = URL.createObjectURL(new Blob([data], { type }));
+        const a = document.createElement("a");
+        a.href = url; a.download = fname;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      };
+      save(bytes, "audio/wav", `${name}-arrangement.wav`);
+      // a beat between the two clicks, or some browsers quietly drop the second download
+      setTimeout(() => save(json, "application/json", `${name}-settings.json`), 400);
+      const silent = peakOf(buf) < 1e-4;
+      setIoNote(`Two files for Claude: ${name}-arrangement.wav (${buf.duration.toFixed(1)}s) and `
+        + `${name}-settings.json — upload both together in one message.`
+        + (silent ? " Note: the audio rendered silent — add a drum pattern or a melody first." : ""));
+    } catch (e) {
+      setIoNote("Export for Claude failed" + (e && e.message ? `: ${e.message}` : "")
+        + " — the MIDI and settings-free audio exports still work.");
+    } finally { setClaudeExporting(false); }
   };
 
   /* ---- exports ----
@@ -6943,12 +7047,15 @@ export default function ProgressionWheel() {
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportChart}
               title="A plain-text chord chart — the form, the chords and the bar counts, for a player rather than a DAW">↓ Chart</button>
             <button className="mini" onClick={copyChart} title="Copy the chord chart to the clipboard">⧉ Copy chart</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming}
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming || claudeExporting}
               title="Render the whole song to a .wav you can send or post — the same sound you hear on Play">
               {rendering ? "Rendering…" : "↓ Export audio"}</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportStems} disabled={rendering || stemming}
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportStems} disabled={rendering || stemming || claudeExporting}
               title="Bounce drums, chords and each melody part to separate .wav files, zipped — drop them straight onto a DAW timeline">
               {stemming ? "Bouncing…" : "↓ Export stems"}</button>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportForClaude} disabled={rendering || stemming || claudeExporting}
+              title="Two files to hand to Claude for analysis: the full arrangement rendered to a .wav, and a JSON snapshot of every setting that shaped it — key, arrangement, every part's synth settings, effects and automation. Upload both together in one message.">
+              {claudeExporting ? "Rendering…" : "↓ Export for Claude"}</button>
           </div>
           {openMel && (
             <div className="sugmel" style={{ marginTop:8 }}>

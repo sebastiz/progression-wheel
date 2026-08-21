@@ -22,6 +22,7 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/song.js` | the serialisable song document, melody and drum-bar packing, link encoding | melody |
 | `src/wav.js` | 16-bit PCM wav writing | — |
 | `src/zip.js` | a store-only ZIP writer, for the stem archive | — |
+| `src/export-state.js` | the "Export for Claude" settings snapshot — shaping, naming, sanitising | theory, patterns, melody, audio |
 | `src/arrange.js` | editing a song's arrangement, carrying melodies through it, automation lanes | — |
 | `src/progression-wheel.jsx` | the component, the fingering diagrams and the score | all of the above |
 
@@ -881,6 +882,27 @@ written, since a header that over-counts makes a reader run off the end of the f
 
 `chartText()` renders a plain-text chord chart, grouping sections into runs the way the arrangement
 strip does.
+
+### Export for Claude
+
+Two files from one button, meant to be uploaded together: the full arrangement rendered to a wav
+(`renderOffline(null)` — the same graph and tick emitter as playback, nothing new to drift) and a
+JSON snapshot of every setting that shaped it. The component's `getExportState()` is the single
+source of truth for the snapshot: it resolves each section's sources with the same helpers playback
+reads (`bassSrcOf` and friends, plus `drumSrcOf`/`chordSrcOf`, mirrors of `emitTick`'s chains) and
+hands one plain bag to `src/export-state.js`, which does all shaping and naming.
+
+The snapshot is written for a reader with neither the app nor the source: field names come from the
+tables' own display names with units folded in (`low_pass_percent`), select values are labels
+rather than ids, knob percentages are also stated in real Hz using the scheduler's own mapping, and
+a `modulation_reference` section states every control's default and meaning — so a part need only
+list what it moved and nothing is lost. Because reference and part descriptions are both generated
+from `MOD_GROUPS`, a new modulation appears in the export with no edit to it. `sanitizeJson` walks
+the result first: React state can carry cycles, `NaN` and framework internals, and
+`JSON.stringify` would throw on the first and quietly mislead on the rest. `npm test` holds the
+properties that matter: round-trips clean, no undefined/NaN, every modulation referenced under a
+unique name, the arpeggiator/filter-envelope blocks present, and the component wired through
+`getExportState()`.
 
 ## Workflow
 

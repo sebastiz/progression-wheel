@@ -16,8 +16,9 @@ import * as zip from "../src/zip.js";
 import * as arrange from "../src/arrange.js";
 import * as arrTpl from "../src/arrange-templates.js";
 import * as als from "../src/als.js";
+import * as exportState from "../src/export-state.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...als };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...als, ...exportState };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -2660,12 +2661,126 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     + `${silences} of them with the drums out; every one rises, collapses and rises again (${subtractions})`);
 }
 
+/* ---- the settings export reads clean without the source beside it ----
+   "Export for Claude" hands two files to an analysis that has neither the app nor its code: the
+   arrangement wav and this JSON. So the snapshot has to hold three properties whatever the song:
+   it survives JSON round-tripping with no undefined, NaN or cycle leaking out of React state; it
+   covers every modulation the tables define (a control added to MOD_GROUPS must appear in the
+   reference without an edit to the exporter — that is the whole anti-drift design); and the
+   spec-critical blocks — envelope, filter in real Hz, arpeggiator — are written out even at their
+   defaults, because they are what an analysis reaches for first. */
+{
+  // a deliberately nasty part: arp + filter envelope + gate + a cycle where React fiber would sit
+  const arped = { instr: "synth", oct: -1, vol: 0.8, mute: false, solo: false, send: 40,
+    flat: [["0"], [], ["2"], []],
+    arp: "updown", arpRate: 4, arpOct: 2, gate: "tri", gateLen: 12,
+    cut: 35, res: 60, fenv: 70, fdec: 45, detune: -7, pan: -30, verb: 25 };
+  arped.self = arped;                                      // the cycle sanitise has to survive
+  const plain = { instr: null, oct: 0, vol: 1, flat: [] }; // a part with everything at default
+  const src = { key: "C1", name: "Chorus", word: "chorus", letter: "C", bars: 4, startBar: 8,
+    chords: [{ name: "C", numeral: "I" }, { name: "Am", numeral: "vi" }],
+    drums: { pat: "four" }, chordsQuiet: false, chordsSrc: { pat: "pop" },
+    bass: { beat: [["R", "", "O", ""]] }, perc: null, padVoiceId: "strings", padBeat: null,
+    move: "build", trans: "rise2", inherited: false, layers: [arped, plain] };
+  const state = M.buildExportState({
+    exportedAt: "2026-01-01T00:00:00.000Z", songName: "test", tonic: 9, mode: "aeolian",
+    bpm: 120, meterId: "4/4", barBeats: 4, meloSub: 4, swingAmt: 0.2, humanise: 0.1,
+    progName: "Test loop", chords: [{ name: "Am", numeral: "i" }, { name: "F", numeral: "VI" }],
+    contrast: null, structureName: "Test form", isCustomPlan: false,
+    planRows: [{ sec: "Verse", reps: 2 }, { sec: "Chorus", reps: 2 }],
+    totalBars: 16, sections: [src, { ...src, key: "C2", startBar: 12 }], groove: null,
+    instr: "acoustic_guitar_steel", melInstr: "flute", kit: "909", percKit: "hand",
+    pump: "classic", bassVoice: "saw", padId: "strings", drum: "four", patId: "pop",
+    delayId: "8d", trackFx: { bass: { lvl: 80, drive: 30, wobRate: 2 } },
+    realSounds: true, legato: true, clickOn: false,
+    auto: { key: "x", filter: [{ bar: 0, v: 0.2 }, { bar: 8, v: 1 }], cut0: [{ bar: 4, v: 0.5 }] },
+  });
+  // 1. it round-trips: parse(stringify) deep-equals, and nothing non-JSON survived the sanitise
+  let round = null;
+  try { round = JSON.parse(JSON.stringify(state)); } catch (e) { problems.push("export state: JSON.stringify threw — " + e.message); }
+  const walk = (v, path) => {
+    if (v === undefined) problems.push(`export state: undefined at ${path}`);
+    else if (typeof v === "number" && !Number.isFinite(v)) problems.push(`export state: non-finite number at ${path}`);
+    else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}[${i}]`));
+    else if (v && typeof v === "object") {
+      if (Object.getPrototypeOf(v) !== Object.prototype) problems.push(`export state: non-plain object at ${path}`);
+      else for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`);
+    }
+  };
+  walk(state, "state");
+  if (round && JSON.stringify(round) !== JSON.stringify(state))
+    problems.push("export state: does not round-trip through JSON.parse");
+  // 2. the sanitiser handles what React state can contain
+  const dirty = { a: NaN, b: Infinity, c: undefined, d: () => {}, e: new Map(), f: [NaN, 1] };
+  dirty.loop = dirty;
+  const clean = M.sanitizeJson(dirty);
+  if (clean.a !== null || clean.b !== null || clean.d !== null || clean.e !== null
+      || clean.loop !== null || clean.f[0] !== null || clean.f[1] !== 1 || "c" in clean)
+    problems.push("export state: sanitizeJson leaks NaN, Infinity, undefined, functions or cycles");
+  // 3. the reference covers every modulation in the tables, under a unique readable name
+  const ref = state.modulation_reference.flatMap(g => g.controls);
+  if (ref.length !== M.MODS.length)
+    problems.push(`export state: modulation_reference lists ${ref.length} controls, MOD_GROUPS defines ${M.MODS.length}`);
+  const names = ref.map(c => c.setting);
+  if (new Set(names).size !== names.length) problems.push("export state: two modulations share a field name");
+  for (const c of ref) if (!c.meaning) problems.push(`export state: ${c.setting} has no meaning text`);
+  // 4. the arped part reads as the spec asks: arp by name, filter in Hz, envelope always present
+  const part = state.arrangement.sections[0].melody_parts[0];
+  if (!part.arpeggiator || part.arpeggiator.pattern !== "Up & down" || part.arpeggiator.rate !== "1/16"
+      || part.arpeggiator.octave_range !== 2)
+    problems.push("export state: the arpeggiator block does not name its pattern, rate and range");
+  if (part.filter.envelope_amount_percent !== 70 || part.filter.envelope_decay_percent !== 45)
+    problems.push("export state: the filter envelope did not reach the export");
+  if (part.filter.low_pass_cutoff_hz !== M.lowPassHz(35) || M.lowPassHz(100) !== M.FILTER_OPEN || M.lowPassHz(0) !== 120)
+    problems.push("export state: the low-pass percent→Hz mapping does not match the scheduler's");
+  if (!part.gate || part.gate.pattern !== "Trance gate" || part.gate.length_steps_before_repeat !== 12)
+    problems.push("export state: the note gate did not reach the export");
+  if (part.effect_sends.delay_send_percent !== 40 || part.effect_sends.reverb_send_percent !== 25)
+    problems.push("export state: the effect sends did not reach the export");
+  // …and a default part still writes the blocks out, with nothing spurious besides
+  const dflt = state.arrangement.sections[0].melody_parts[1];
+  if (dflt.arpeggiator !== null || dflt.gate !== null || Object.keys(dflt.other_settings).length)
+    problems.push("export state: a default part claims settings it does not have");
+  if (!dflt.envelope || dflt.envelope.attack_percent !== 0 || dflt.filter.low_pass_percent !== 100)
+    problems.push("export state: a default part is missing its envelope/filter blocks");
+  // 5. arrangement arithmetic and grids
+  if (state.global.chord_progression.name !== "Test loop")
+    problems.push("export state: the progression's name is missing");
+  // …and the component hands the field the catalogue actually has (label, not name)
+  if (!/progName: prog\.label/.test(code))
+    problems.push("progression-wheel.jsx: getExportState reads prog.name — the catalogue field is `label`");
+  if (state.arrangement.duration_seconds !== 16 * 4 * 60 / 120)
+    problems.push("export state: duration_seconds does not match bars × beats ÷ bpm");
+  if (state.arrangement.sections[0].starts_at_seconds !== 8 * 4 * 60 / 120)
+    problems.push("export state: a section's start time does not match its start bar");
+  const bassGrid = state.arrangement.sections[0].bass.grid_bars[0];
+  if (bassGrid !== "R-O-") problems.push(`export state: a written grid came out unreadable: ${bassGrid}`);
+  if (state.arrangement.sections[0].drums.pattern !== "Four-on-the-floor")
+    problems.push("export state: a catalogue drum pattern is not named");
+  if (!state.arrangement.sections[0].section_move || state.arrangement.sections[0].section_move.name !== M.MOVES.build.name)
+    problems.push("export state: the section move is not named");
+  // 6. automation lanes carry their own meaning, and the stray `key` field is not a lane
+  const lanes = state.master_effects.automation_lanes;
+  if (lanes.length !== 2 || !lanes.every(l => l.meaning && l.points.length))
+    problems.push("export state: automation lanes missing points or meaning");
+  // 7. the component wires it: one state function, both files, a guarded button
+  if (!/const getExportState = /.test(code) || !/buildExportState\(\{/.test(code))
+    problems.push("progression-wheel.jsx: getExportState() does not feed buildExportState");
+  if (!/getExportState\(\)/.test(code.split("const exportForClaude")[1] || ""))
+    problems.push("progression-wheel.jsx: exportForClaude does not read getExportState()");
+  if (!code.includes("-arrangement.wav") || !code.includes("-settings.json"))
+    problems.push("progression-wheel.jsx: the two Export for Claude filenames are missing");
+  if (!code.includes("Export for Claude"))
+    problems.push("progression-wheel.jsx: no Export for Claude button");
+  console.log(`export for Claude: ${ref.length} modulations referenced, ${state.arrangement.sections.length} sections described, round-trips clean`);
+}
+
 /* ---- the module seams hold ----
    Bundling hides two mistakes that only surface at runtime, as a blank screen: a module that
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "als.js", "als-template.js", "progressions.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "als.js", "als-template.js", "progressions.js", "export-state.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")

@@ -531,6 +531,15 @@ you put something across the master bus.
 The MIDI file carries the **arrangement**, not just the notes: a marker at every section boundary so
 *Intro / Build / Drop* land on your DAW's timeline, plus the time signature and key signature. Open
 it and the session is already laid out.
+
+**↓ Export for Claude** produces two files meant to be uploaded together in one message when you
+want an AI to analyse the song: `<name>-arrangement.wav` — the full arrangement, every section in
+order, rendered exactly as Play sounds — and `<name>-settings.json`, a complete snapshot of every
+setting that shaped it: key and scale, tempo and meter, the running order with each section's
+chords and resolved drum/bass/pad sources, every melody part's instrument, envelope, filter,
+arpeggiator and sends, the effects, the sidechain and every drawn automation lane. The JSON is
+written in plain words (with a built-in reference explaining each control), so the analysis can
+read *why* the wav sounds the way it does, not just *that* it does.
 **Sound** (the chord instrument) and **Lead** (the melody voice) are chosen above the wheel, next to
 the chord-colour menus. Both offer the full **General MIDI palette — about 90 instruments grouped by
 category** (pianos, mallets, organs, guitars, basses, strings, ensemble & choir, brass, reeds, pipes,
