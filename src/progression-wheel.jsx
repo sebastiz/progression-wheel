@@ -5255,6 +5255,12 @@ export default function ProgressionWheel() {
           <option value="">＋ other…</option>
           {ADDABLE.map(sc => <option key={sc} value={sc}>{sc}</option>)}
         </select>
+        {/* the commit button shows from the start, disabled, so the destination of the workflow
+            is visible before the draft exists — a button that only appears later reads as absent */}
+        <button className="btn" disabled style={{ marginLeft:"auto", padding:"5px 12px", opacity:0.5 }}
+          title="Add at least one section above — then this writes the whole draft to the Arrange tab">
+          ✍ Write to Arrange
+        </button>
       </div>
     );
     const at = Math.min(sketchSel, sketchArr.length - 1);
