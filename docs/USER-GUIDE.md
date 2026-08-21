@@ -13,11 +13,11 @@ The app is in five tabs, under the transport bar:
 - **Sketch** — the subtractive workflow on one page, kept apart from the song until you commit it.
   Build the **full groove** as a single looping section (drum, perc, bass, pad and chord grids,
   melody parts and every track's settings; ▶ 🔁 loops the full stack, whatever the song is doing).
-  Underneath, draft the **arrangement**: add intro, build, drop and breakdown, then untick which of
-  the groove's tracks each section loses — drums alone for the intro, bass and pads with no kick
-  for the build. Nothing is heard until **✍ Write to Arrange**: the draft becomes the song's
-  arrangement, every section playing the groove minus its unticks, ready to refine pass by pass on
-  the Arrange tab. Sections keep following the groove until you give them something of their own,
+  Underneath, draft the **arrangement**: add intro, build, drop and breakdown — each section
+  arrives silent — then click the cells to fill it with the groove's instruments: drums alone for
+  the intro, bass and pads with no kick for the build, everything for the drop. Nothing is heard
+  until **✍ Write to Arrange**: the draft becomes the song's arrangement, every section playing
+  exactly what you filled in, ready to refine pass by pass on the Arrange tab. Sections keep following the groove until you give them something of their own,
   so a groove edited later is still heard everywhere it hasn't been overridden.
 - **Arrange** — the song structure, the melodic narrative, the arrangement strip with its automation
   lanes, every section's melodies, and the exports.
