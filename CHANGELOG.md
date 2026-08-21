@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **↓ Export for Claude.** One button beside the other exports produces the two files an AI
+  analysis needs, meant to be uploaded together in one message: the **full arrangement rendered to
+  a wav** (every section in order — the same offline render as ↓ Export audio, so it is exactly
+  what Play sounds like) and a **JSON snapshot of every setting that shaped it**. The snapshot is
+  written to be read without the app beside it: the key, mode and scale by name; the tempo, meter,
+  swing and grid; the whole running order with each section's chords, start time and resolved
+  drum/bass/perc/pad/chord sources (grids written out, catalogue patterns named); every melody
+  part's instrument, envelope, filter (in real Hz as well as knob percent), arpeggiator, gate,
+  sends and any other modulation it carries; the track and master effects, the sidechain, the
+  limiter and every drawn automation lane — plus a reference section stating each control's
+  default and meaning, so an unlisted value is still known. All of it is generated from the same
+  tables playback reads, so the export cannot drift as controls are added, and `npm test` holds it
+  to JSON that round-trips with no undefined, NaN or React internals leaking through.
 - **Play is tab-aware on Sketch.** The transport's Play (and the space bar) on the Sketch tab
   plays the groove on a loop — it reads **▶ Groove** there — and never starts the song the
   Arrange tab holds. On every other tab it plays the song from the top, clearing a groove loop
