@@ -2360,9 +2360,12 @@ export default function ProgressionWheel() {
   {
     const idx = chords.map((_, i) => i);
     chordsRef.current = { list: chords, seq: idx.length % 2 ? [...idx, idx.length - 1] : idx, struct: structBars };
-    // the loop window follows the toggled section's current position (it moves as the structure is edited)
-    const ld = loopSec ? sections.insts.find(s => s.key === loopSec) : null;
-    loopRef.current = ld ? { from: ld.startBar, len: ld.nbars } : null;
+    // the loop window follows the toggled section's current position (it moves as the structure
+    // is edited). The groove sketch is not one of the song's sections — its loop is the mode
+    // flag, kept here or the very next render would silently hand playback back to the song.
+    const ld = loopSec && loopSec !== GROOVE ? sections.insts.find(s => s.key === loopSec) : null;
+    loopRef.current = loopSec === GROOVE ? { groove: true, len: grooveInst.nbars }
+      : ld ? { from: ld.startBar, len: ld.nbars } : null;
   }
   const nudgeBpm = d => setBpmSt({ key: progId, val: Math.max(40, Math.min(220, effBpm + d)) });
 
@@ -3370,6 +3373,21 @@ export default function ProgressionWheel() {
     setLoopSec(on ? d.key : null);
     if (on && !playing) startMetro(d.key === GROOVE ? 0 : d.startBar);
   };
+  /* The transport's Play, tab-aware. The Sketch tab is its own room: Play there loops the groove
+     and must never start the song the Arrange tab holds — that is what ✍ Write to Arrange is for.
+     On every other tab Play starts the song from the top, first clearing a groove loop the sketch
+     may have left armed (or the song could not be played at all). Space bar goes through here too. */
+  const playTransport = () => {
+    if (playing) { stopMetro(); return; }
+    if (tab === "sketch") {
+      loopRef.current = { groove: true, len: grooveInst.nbars };
+      setLoopSec(GROOVE);
+      startMetro(0);
+      return;
+    }
+    if (loopRef.current && loopRef.current.groove) { loopRef.current = null; setLoopSec(null); }
+    startMetro(0);
+  };
 
   /* ---- dice ---- */
   const rollDice = () => {
@@ -4109,7 +4127,7 @@ export default function ProgressionWheel() {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.code === "Space" || e.key === " ") { e.preventDefault(); playing ? stopMetro() : startMetro(0); return; }
+      if (e.code === "Space" || e.key === " ") { e.preventDefault(); playTransport(); return; }
       if (e.key === "Escape") { if (playing) { e.preventDefault(); stopMetro(); } return; }
       if (e.key === "[" || e.key === "{") { e.preventDefault(); nudgeBpm(e.shiftKey ? -5 : -1); return; }
       if (e.key === "]" || e.key === "}") { e.preventDefault(); nudgeBpm(e.shiftKey ? 5 : 1); return; }
@@ -6144,9 +6162,11 @@ export default function ProgressionWheel() {
 
         {/* top transport — always-reachable Play */}
         <div className="toptransport">
-          <button className={"playbtn" + (playing ? " on" : "")} title="Play or stop (space bar)"
-            onClick={() => (playing ? stopMetro() : startMetro(0))}>
-            {playing ? "■ Stop" : "▶ Play"}
+          <button className={"playbtn" + (playing ? " on" : "")}
+            title={tab === "sketch" ? "Play or stop the groove loop (space bar) — the Sketch tab plays its groove, not the song"
+              : "Play or stop (space bar)"}
+            onClick={playTransport}>
+            {playing ? "■ Stop" : tab === "sketch" ? "▶ Groove" : "▶ Play"}
           </button>
           <div className="row" style={{ gap:7, alignItems:"center" }}>
             <button className="mini" onClick={() => nudgeBpm(-5)} title="Slower (⇧[)">−5</button>

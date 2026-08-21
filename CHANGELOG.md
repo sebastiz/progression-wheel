@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Play is tab-aware on Sketch.** The transport's Play (and the space bar) on the Sketch tab
+  plays the groove on a loop — it reads **▶ Groove** there — and never starts the song the
+  Arrange tab holds. On every other tab it plays the song from the top, clearing a groove loop
+  the sketch may have left armed.
 - **A Sketch tab: groove first, then subtract, then commit.** Dance music is subtractive, and the
   new tab between Sound and Arrange is that workflow on one page. The top half is **the groove** —
   a single looping section with every track on it at once: the drum, perc, bass, pad and chord
