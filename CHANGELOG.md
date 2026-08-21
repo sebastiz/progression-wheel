@@ -1,16 +1,22 @@
 # Changelog
 
 ## Unreleased
+- **Play is tab-aware on Sketch.** The transport's Play (and the space bar) on the Sketch tab
+  plays the groove on a loop — it reads **▶ Groove** there — and never starts the song the
+  Arrange tab holds. On every other tab it plays the song from the top, clearing a groove loop
+  the sketch may have left armed.
 - **A Sketch tab: groove first, then subtract, then commit.** Dance music is subtractive, and the
   new tab between Sound and Arrange is that workflow on one page. The top half is **the groove** —
   a single looping section with every track on it at once: the drum, perc, bass, pad and chord
   grids, the melody parts with their mixer, and each track's effect knobs — with a ▶ 🔁 loop
   button that plays the full stack whatever the song is doing. The bottom half is **the
   arrangement draft**: its own running order, deliberately separate from the song's — add intro,
-  build, drop and breakdown, reorder and stretch them, and untick which of the groove's tracks
-  each section loses (drums alone for the intro, bass and pads with no kick for the build).
+  build, drop and breakdown, reorder and stretch them. Each section arrives silent, and the cells
+  are clicked to fill it with the groove's instruments (drums alone for the intro, bass and pads
+  with no kick for the build). The matrix reads like a mixer, melody parts at the top and drums as
+  the floor, and the Arrange strip's lanes sort the same way.
   Nothing in the draft is heard until **✍ Write to Arrange** commits it: the draft becomes the
-  song's arrangement — every section playing the groove minus its unticks — and each pass is then
+  song's arrangement — every section playing exactly what was filled in — and each pass is then
   refined on the Arrange tab with its own grids, melodies, transitions and sweeps. The draft is
   saved with the sketch, and a running order written this way plays, exports and edits exactly as
   one picked from the catalogue.

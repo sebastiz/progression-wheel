@@ -165,7 +165,7 @@ Each idea above has a control that does it.
 
 | Idea | Where |
 | --- | --- |
-| Subtraction as the workflow itself | The **Sketch tab** — build the full groove as one looping section (drums, perc, bass, pad, chords and melody, grids and settings together), draft the running order underneath and untick which of the groove's tracks each section loses, then **✍ Write to Arrange** commits the lot as the song's arrangement. Every section inherits the groove until it is given something of its own |
+| Subtraction as the workflow itself | The **Sketch tab** — build the full groove as one looping section (drums, perc, bass, pad, chords and melody, grids and settings together), draft the running order underneath (each section arrives silent; click the cells to fill it with the groove's instruments), then **✍ Write to Arrange** commits the lot as the song's arrangement. Every section inherits the groove until it is given something of its own |
 | The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — thirteen dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build. The strip's **Energy** lane draws the resulting staircase |
 | The staircase of sections | The **structure** chooser, and the arrangement strip's rows and reps — *make the drop twice as long* is a reps edit |
 | Layer entries and exits | The **arrangement strip's lanes** — one per layer, a block per run of sections, clicked to bring a layer in or drop it out, per pass |

@@ -553,8 +553,10 @@ export default function ProgressionWheel() {
      the section, and editing the groove afterwards would no longer reach it). */
   const [secPartOut, setSecPartOut] = useState({});
   /* The Sketch tab's draft arrangement — its own document, deliberately NOT the song's plan.
-     Rows are sections the writer adds ({ sec, reps, off }), and `off` is that row's subtractions:
-     which of the groove's tracks and melody parts sit the section out ({ drums:true, p0:true }).
+     Rows are sections the writer adds ({ sec, reps, on }), and `on` is that row's fills: which of
+     the groove's tracks and melody parts the section plays ({ drums:true, p0:true }). A new
+     section arrives EMPTY — silence is the starting point, and every instrument is clicked in —
+     so the matrix is read the way the record is heard: what did this section earn?
      Nothing here is heard until ✍ Write to Arrange commits it, which is the point: the groove
      loops while the shape is drafted, and the arrangement only changes when it is asked to. */
   const [sketchArr, setSketchArr] = useState([]);
@@ -2358,9 +2360,12 @@ export default function ProgressionWheel() {
   {
     const idx = chords.map((_, i) => i);
     chordsRef.current = { list: chords, seq: idx.length % 2 ? [...idx, idx.length - 1] : idx, struct: structBars };
-    // the loop window follows the toggled section's current position (it moves as the structure is edited)
-    const ld = loopSec ? sections.insts.find(s => s.key === loopSec) : null;
-    loopRef.current = ld ? { from: ld.startBar, len: ld.nbars } : null;
+    // the loop window follows the toggled section's current position (it moves as the structure
+    // is edited). The groove sketch is not one of the song's sections — its loop is the mode
+    // flag, kept here or the very next render would silently hand playback back to the song.
+    const ld = loopSec && loopSec !== GROOVE ? sections.insts.find(s => s.key === loopSec) : null;
+    loopRef.current = loopSec === GROOVE ? { groove: true, len: grooveInst.nbars }
+      : ld ? { from: ld.startBar, len: ld.nbars } : null;
   }
   const nudgeBpm = d => setBpmSt({ key: progId, val: Math.max(40, Math.min(220, effBpm + d)) });
 
@@ -3368,6 +3373,21 @@ export default function ProgressionWheel() {
     setLoopSec(on ? d.key : null);
     if (on && !playing) startMetro(d.key === GROOVE ? 0 : d.startBar);
   };
+  /* The transport's Play, tab-aware. The Sketch tab is its own room: Play there loops the groove
+     and must never start the song the Arrange tab holds — that is what ✍ Write to Arrange is for.
+     On every other tab Play starts the song from the top, first clearing a groove loop the sketch
+     may have left armed (or the song could not be played at all). Space bar goes through here too. */
+  const playTransport = () => {
+    if (playing) { stopMetro(); return; }
+    if (tab === "sketch") {
+      loopRef.current = { groove: true, len: grooveInst.nbars };
+      setLoopSec(GROOVE);
+      startMetro(0);
+      return;
+    }
+    if (loopRef.current && loopRef.current.groove) { loopRef.current = null; setLoopSec(null); }
+    startMetro(0);
+  };
 
   /* ---- dice ---- */
   const rollDice = () => {
@@ -4107,7 +4127,7 @@ export default function ProgressionWheel() {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.code === "Space" || e.key === " ") { e.preventDefault(); playing ? stopMetro() : startMetro(0); return; }
+      if (e.code === "Space" || e.key === " ") { e.preventDefault(); playTransport(); return; }
       if (e.key === "Escape") { if (playing) { e.preventDefault(); stopMetro(); } return; }
       if (e.key === "[" || e.key === "{") { e.preventDefault(); nudgeBpm(e.shiftKey ? -5 : -1); return; }
       if (e.key === "]" || e.key === "}") { e.preventDefault(); nudgeBpm(e.shiftKey ? 5 : 1); return; }
@@ -5171,23 +5191,25 @@ export default function ProgressionWheel() {
      nothing it holds is heard in the song until ✍ Write to Arrange commits it. Each draft row
      carries its own subtractions (`off`), so moving or copying a section carries its ticks with
      it — no instance keys, no remapping, because nothing here is an instance yet. */
-  // the rows of the matrix: every track the groove actually carries, plus its playing melody parts
+  /* The rows of the matrix: every track the groove actually carries, plus its playing melody
+     parts. Ordered top to bottom as the writer reads a mixer — melody parts, then bass, chords,
+     pad, perc, with the drums as the floor of the stack. */
   const sketchTracks = () => {
     const rows = [];
-    if ((secBeat[GROOVE] && secBeat[GROOVE].length) || (DRUMS[drum] || {}).pattern) rows.push({ id: "drums", name: "Drums" });
-    rows.push({ id: "chords", name: "Chords" });
-    if (bassSrcOf(grooveInst)) rows.push({ id: "bass", name: "Bass" });
-    if (percSrcOf(grooveInst)) rows.push({ id: "perc", name: "Perc" });
-    if (padOnOf(grooveInst)) rows.push({ id: "pad", name: "Pad" });
     ((secMelos[GROOVE] || {}).layers || []).forEach((ly, i) => {
       if ((ly.flat && ly.flat.some(c => c && c.length)) || ly.arp) rows.push({ id: "p" + i, name: LAYER_NAMES[i] });
     });
+    if (bassSrcOf(grooveInst)) rows.push({ id: "bass", name: "Bass" });
+    rows.push({ id: "chords", name: "Chords" });
+    if (padOnOf(grooveInst)) rows.push({ id: "pad", name: "Pad" });
+    if (percSrcOf(grooveInst)) rows.push({ id: "perc", name: "Perc" });
+    if ((secBeat[GROOVE] && secBeat[GROOVE].length) || (DRUMS[drum] || {}).pattern) rows.push({ id: "drums", name: "Drums" });
     return rows;
   };
   const skPatch = (i, patch) => setSketchArr(sketchArr.map((r, k) => k === i ? { ...r, ...patch } : r));
   const skAdd = sec => {
     const at = sketchArr.length ? Math.min(sketchSel + 1, sketchArr.length) : 0;
-    setSketchArr([...sketchArr.slice(0, at), { sec, reps: 1, off: {} }, ...sketchArr.slice(at)]);
+    setSketchArr([...sketchArr.slice(0, at), { sec, reps: 1, on: {} }, ...sketchArr.slice(at)]);
     setSketchSel(at);
   };
   const skMove = (i, d2) => {
@@ -5199,14 +5221,14 @@ export default function ProgressionWheel() {
   };
   const skReps = (i, d2) => skPatch(i, { reps: Math.max(1, Math.min(32, ((sketchArr[i] || {}).reps || 1) + d2)) });
   const skDup = i => {
-    setSketchArr([...sketchArr.slice(0, i + 1), { ...sketchArr[i], off: { ...(sketchArr[i].off || {}) } }, ...sketchArr.slice(i + 1)]);
+    setSketchArr([...sketchArr.slice(0, i + 1), { ...sketchArr[i], on: { ...(sketchArr[i].on || {}) } }, ...sketchArr.slice(i + 1)]);
     setSketchSel(i + 1);
   };
   const skDel = i => {
     const next = sketchArr.filter((_, k) => k !== i);
     setSketchArr(next); setSketchSel(Math.max(0, Math.min(i, next.length - 1)));
   };
-  const skToggle = (i, id) => skPatch(i, { off: { ...(sketchArr[i].off || {}), [id]: !(sketchArr[i].off || {})[id] } });
+  const skToggle = (i, id) => skPatch(i, { on: { ...(sketchArr[i].on || {}), [id]: !(sketchArr[i].on || {})[id] } });
   /* Commit the draft: its rows become the song's plan (every section a pass of the full loop) and
      its ticks become the allocation — a mute per instance on each track a section unticked, and
      the part allocation map for the groove's melody parts. The maps are replaced rather than
@@ -5218,16 +5240,22 @@ export default function ProgressionWheel() {
     if (!sketchArr.length) return;
     const plan = sketchArr.map(r => ({ sec: r.sec, nums: "LOOP", reps: r.reps || 1, note: null }));
     const insts = planInsts(plan, barsOfRow, letterFor);
+    // the matrix is additive — a cell is clicked IN — so everything the groove carries that a
+    // section did NOT fill in is written as that instance's mute
+    const rows = sketchTracks();
     const nDrum = {}, nQuiet = {}, nBass = {}, nPerc = {}, nPad = {}, nOut = {};
     insts.forEach(x => {
-      const off = (sketchArr[x.row] || {}).off || {};
-      if (off.drums) nDrum[x.key] = "off";
-      if (off.chords) nQuiet[x.key] = true;
-      if (off.bass) nBass[x.key] = "off";
-      if (off.perc) nPerc[x.key] = "off";
-      if (off.pad) nPad[x.key] = "off";
+      const on = (sketchArr[x.row] || {}).on || {};
       const parts = {};
-      for (const k of Object.keys(off)) if (off[k] && /^p\d+$/.test(k)) parts[+k.slice(1)] = true;
+      for (const rw of rows) {
+        if (on[rw.id]) continue;
+        if (rw.id === "drums") nDrum[x.key] = "off";
+        else if (rw.id === "chords") nQuiet[x.key] = true;
+        else if (rw.id === "bass") nBass[x.key] = "off";
+        else if (rw.id === "perc") nPerc[x.key] = "off";
+        else if (rw.id === "pad") nPad[x.key] = "off";
+        else parts[+rw.id.slice(1)] = true;
+      }
       if (Object.keys(parts).length) nOut[x.key] = parts;
     });
     setSelStruct("");                                  // the draft is its own running order, not a catalogue one
@@ -5239,7 +5267,7 @@ export default function ProgressionWheel() {
     setSelRow(0); setFocusRow(0);
     if (loopSec) { loopRef.current = null; setLoopSec(null); }   // leave the groove loop — there is a song to hear now
     setTab("arrange");
-    setIoNote(`Wrote the sketch to the arrangement — ${plan.length} section${plan.length > 1 ? "s" : ""}, every one playing the groove minus what you unticked. Refine each pass here.`);
+    setIoNote(`Wrote the sketch to the arrangement — ${plan.length} section${plan.length > 1 ? "s" : ""}, every one playing exactly what you filled in. Refine each pass here.`);
   };
   // the draft on screen: section blocks over one row per groove track, a cell per (track, section)
   const sketchDraft = () => {
@@ -5290,12 +5318,12 @@ export default function ProgressionWheel() {
             {rows.map(rw => (
               <div key={rw.id} className="tlrow">
                 {sketchArr.map((r, i) => {
-                  const on = !(r.off || {})[rw.id];
+                  const filled = !!(r.on || {})[rw.id];
                   const accS = SEC_COL[letterFor(r.sec)] || "#8B94A3";
-                  return <button key={i} className={"tlcell " + (on ? "on" : "off")}
-                    style={{ flex: (r.reps || 1) + " 0 0%", background: on ? accS + "AA" : undefined }}
+                  return <button key={i} className={"tlcell " + (filled ? "on" : "off")}
+                    style={{ flex: (r.reps || 1) + " 0 0%", background: filled ? accS + "AA" : undefined }}
                     onClick={() => skToggle(i, rw.id)}
-                    title={`${on ? "Drop" : "Bring in"} ${rw.name} for ${r.sec}`} />;
+                    title={filled ? `Take ${rw.name} back out of ${r.sec}` : `Fill ${r.sec} with the groove's ${rw.name}`} />;
                 })}
               </div>
             ))}
@@ -5311,7 +5339,7 @@ export default function ProgressionWheel() {
           <button className="mini" onClick={() => skReps(at, -1)} disabled={(cur.reps || 1) <= 1}
             title="One pass fewer — a shorter section">− pass</button>
           <button className="mini" onClick={() => skReps(at, 1)} title="One pass more — a longer section">＋ pass</button>
-          <button className="mini" onClick={() => skDup(at)} title="Duplicate this section, ticks and all">⧉ Copy</button>
+          <button className="mini" onClick={() => skDup(at)} title="Duplicate this section, fills and all">⧉ Copy</button>
           <button className="mini" onClick={() => skDel(at)} title="Remove this section from the draft">🗑</button>
           <select className="fxsel" value="" onChange={e => { if (e.target.value) skAdd(e.target.value); }}
             title="Add a new section after the picked one">
@@ -5320,7 +5348,7 @@ export default function ProgressionWheel() {
           </select>
           <button className="btn" style={{ marginLeft:"auto", padding:"5px 12px", borderColor: GOLD, color: GOLD }}
             onClick={writeSketchToArrange}
-            title="Commit the draft: this running order becomes the song's arrangement, every section playing the groove minus what you unticked — then each pass is refined on the Arrange tab.">
+            title="Commit the draft: this running order becomes the song's arrangement, every section playing exactly the instruments you filled in — then each pass is refined on the Arrange tab.">
             ✍ Write to Arrange
           </button>
         </div>
@@ -5477,6 +5505,12 @@ export default function ProgressionWheel() {
                 // a part with no notes here has nothing to mute — the lane is empty for a reason
                 dead: r => !r.items.some(d => hasNotes(d, i)) })),
             ];
+            /* Top to bottom as a mixer reads — melody parts, then bass, chords, pad, perc, and the
+               drums as the floor of the stack — the same order the Sketch tab's draft matrix uses.
+               A stable sort, so the parts keep their A, B, C order. */
+            const laneRank = l => l.name === "Drums" ? 5 : l.name === "Perc" ? 4 : l.name === "Pad" ? 3
+              : l.name === "Chords" ? 2 : l.name === "Bass" ? 1 : 0;
+            lanes.sort((la, lb) => laneRank(la) - laneRank(lb));
             /* The drawable lanes: the master four, then one low-pass lane per melody part. A part
                lane is that part's Low-pass knob written across the song — the pad opens through
                the build while the bass stays dark — and overrides the knob wherever it is drawn. */
@@ -6128,9 +6162,11 @@ export default function ProgressionWheel() {
 
         {/* top transport — always-reachable Play */}
         <div className="toptransport">
-          <button className={"playbtn" + (playing ? " on" : "")} title="Play or stop (space bar)"
-            onClick={() => (playing ? stopMetro() : startMetro(0))}>
-            {playing ? "■ Stop" : "▶ Play"}
+          <button className={"playbtn" + (playing ? " on" : "")}
+            title={tab === "sketch" ? "Play or stop the groove loop (space bar) — the Sketch tab plays its groove, not the song"
+              : "Play or stop (space bar)"}
+            onClick={playTransport}>
+            {playing ? "■ Stop" : tab === "sketch" ? "▶ Groove" : "▶ Play"}
           </button>
           <div className="row" style={{ gap:7, alignItems:"center" }}>
             <button className="mini" onClick={() => nudgeBpm(-5)} title="Slower (⇧[)">−5</button>
@@ -6470,13 +6506,14 @@ export default function ProgressionWheel() {
             own — so the loop you perfect here is the material the whole track is cut from.
           </p>}
           {sectionCard(grooveInst, "groove", { groove: true })}
-          <div className="progtitle" style={{ fontSize:17, marginTop:14 }}>The arrangement draft — subtract from it</div>
+          <div className="progtitle" style={{ fontSize:17, marginTop:14 }}>The arrangement draft — what plays where</div>
           {tips && <p className="arrnote" style={{ marginTop:4 }}>
             A draft, on purpose: nothing here touches the song until you write it. Add intro, build,
-            drop and breakdown, then untick what each section should <i>lose</i> — drums alone for
-            the intro, bass and pads with no kick for the build. When the shape is right, press
+            drop and breakdown — each section arrives <i>silent</i> — then click the cells to fill
+            it with the groove's instruments: drums alone for the intro, bass and pads with no kick
+            for the build, everything for the drop. When the shape is right, press
             <b> ✍ Write to Arrange</b>: the draft becomes the song's arrangement, every section
-            playing the groove minus its unticks, and each pass can then be refined on the Arrange
+            playing exactly what you filled in, and each pass can then be refined on the Arrange
             tab — its own grids, melodies, transitions and sweeps.
           </p>}
           {sketchDraft()}

@@ -212,14 +212,17 @@ and every drawn automation lane sit out — they describe the song's timeline, a
 is outside it.
 
 The tab's second half is a **draft arrangement** (`sketchArr`), deliberately not the song's plan:
-rows the writer adds (`{sec, reps, off}`), where `off` is that row's subtractions — which of the
-groove's tracks and melody parts the section loses. The draft's matrix is sections × tracks, its
-row operations are plain array transforms (no remapping, because nothing is an instance yet — a
-row carries its ticks with it), and nothing in it is heard until **✍ Write to Arrange** commits
-it. The commit turns rows into a custom plan of `LOOP` sections, resolves it with `planInsts`
-(the click runs before React has re-rendered `sections`), and writes the allocation as ordinary
-per-instance state — `secDrum: "off"`, `secQuiet`, `secBassPat/secPercPat/secPadVoice: "off"`,
-`secPartOut` — replacing those maps wholesale, exactly as applying a template does. Grids,
+rows the writer adds (`{sec, reps, on}`), where `on` is that row's fills — which of the groove's
+tracks and melody parts the section plays. A new section arrives empty and every instrument is
+clicked in, so the matrix is read the way the record is heard. Its rows run top to bottom as a
+mixer reads — melody parts, bass, chords, pad, perc, drums at the floor — and the Arrange strip's
+lanes sort the same way. The draft's row operations are plain array transforms (no remapping,
+because nothing is an instance yet — a row carries its fills with it), and nothing in it is heard
+until **✍ Write to Arrange** commits it. The commit turns rows into a custom plan of `LOOP`
+sections, resolves it with `planInsts` (the click runs before React has re-rendered `sections`),
+and writes everything a section did *not* fill in as ordinary per-instance state —
+`secDrum: "off"`, `secQuiet`, `secBassPat/secPercPat/secPadVoice: "off"`, `secPartOut` — replacing
+those maps wholesale, exactly as applying a template does. Grids,
 melodies and track effects are left alone: they are material, not arrangement. A custom plan now
 counts as a song even with no catalogue structure picked (`sections` builds its bar list off
 `effPlan`, not `structSel`), which is what lets a committed draft play, export and be edited like
