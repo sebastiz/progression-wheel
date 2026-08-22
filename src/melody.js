@@ -29,9 +29,10 @@ const LAYER_DEFAULT_INSTR = ["", "ep", "synth_bass_1", "pad_2_warm", "lead_2_saw
 // bassline drops two octaves, the pad sits under the lead, the saw lead sits above it.
 const LAYER_DEFAULT_OCT = [0, 0, -2, -1, 1, 1];
 const LAYER_OCT_MIN = -3, LAYER_OCT_MAX = 2;
-// Level per part, 0..1. Defaults duck the accompaniment under the lead so a six-part arrangement
-// is roughly balanced before you touch anything.
-const LAYER_DEFAULT_VOL = [1, 0.8, 0.9, 0.6, 0.7, 0.7];
+// Level per part, 0..1. Every part starts at full: the voices themselves are loudness-normalized
+// (see LEAD_SPECS in audio.js), so a flat 100% is a genuinely equal starting mix, and any ducking
+// of the accompaniment under the lead is a choice made on the sliders rather than baked in here.
+const LAYER_DEFAULT_VOL = [1, 1, 1, 1, 1, 1];
 // one part's gain, folding in mute and any soloing elsewhere in the section
 const layerGain = (ly, anySolo) =>
   (ly.mute || (anySolo && !ly.solo)) ? 0 : (ly.vol == null ? 1 : ly.vol);

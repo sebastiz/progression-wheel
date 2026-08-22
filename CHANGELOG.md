@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **Every instrument now starts at the same audible level.** The synth voices are
+  loudness-normalized — each one rendered offline and matched to the default synth lead by
+  K-weighted loudness (the new `scripts/measure-loudness.mjs` prints the numbers) — so before,
+  the same Level slider could mean a booming sub bass on one part and a whisper of a saw on the
+  next (a ~17 dB spread across the voices); now 100% is the same loudness on every voice, and
+  swapping a part's instrument no longer moves its level. The six parts also all start at
+  100% instead of the old staggered 100/80/90/60/70/70 defaults: the mix begins flat and equal,
+  and any ducking of the accompaniment under the lead is yours to set on the sliders. The bass
+  track's per-voice boosts were re-measured the same way at C2, so its six voices land on one
+  level too, anchored to where the sub bass has always sat.
 - **The Sketch tab tidied into collapsible bars.** Every grid on the groove card — melody, drums,
   percussion, bass, pad and chords — now sits under its own full-width collapsible bar named for
   what it holds, with a ● when something is written there. The row of grid-opening buttons and the
