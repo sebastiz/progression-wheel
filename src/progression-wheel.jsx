@@ -4536,17 +4536,86 @@ export default function ProgressionWheel() {
     setAbSlot(x => (x === "A" ? "B" : "A"));
   };
 
+  const storeSketches = async list => {
+    if (hasStore) { await window.storage.set("pw-sketches", JSON.stringify(list)); return true; }
+    if (hasLocal) { window.localStorage.setItem("pw-sketches", JSON.stringify(list)); return true; }
+    return false;
+  };
   const saveSketch = async () => {
     const name = sketchName.trim() || keyLabel + " · " + prog.label;
     const s = songDoc(name);
     const list = [...(sketches || []).filter(x => x.name !== name), s];
     setSketches(list); setSketchName("");
     try {
-      if (hasStore) await window.storage.set("pw-sketches", JSON.stringify(list));
-      else if (hasLocal) window.localStorage.setItem("pw-sketches", JSON.stringify(list));
-      setIoNote((hasStore || hasLocal) ? "Saved “" + name + "”." : "Saved for this session only.");
+      setIoNote((await storeSketches(list)) ? "Saved “" + name + "”." : "Saved for this session only.");
     } catch (e) { setIoNote("Saved for this session only."); }
   };
+
+  /* ---- the morning review ----
+     Catchiness is judged cold, not in the session where the tune was written — everything sounds
+     like a hook at midnight. The review plays the saved sketches back one by one, coldest first
+     (never-reviewed sketches, then the ones judged longest ago), with a verdict on each: keep,
+     rework, kill, or no verdict at all. The song you were working on is stashed first and put back
+     exactly when the review ends, so the queue costs nothing to open. Verdicts and their timestamps
+     ride on the saved sketches; a kill deletes, with one step of undo while the review is open. */
+  const [review, setReview] = useState(null);   // { stash, order:[names], idx, lastKill }
+  const startReview = () => {
+    const list = sketches || [];
+    if (!list.length) return;
+    const order = [...list.keys()].sort((a, b) =>
+      ((list[a].review || {}).at || 0) - ((list[b].review || {}).at || 0) || a - b);
+    setReview({ stash: docJson, order: order.map(i => list[i].name), idx: 0, lastKill: null });
+    loadSketch(list[order[0]]);
+  };
+  const reviewNext = verdict => {
+    if (!review) return;
+    const name = review.order[review.idx];
+    let list = sketches || [], lastKill = review.lastKill;
+    const cur = list.find(x => x.name === name);
+    if (cur && verdict === "keep") {
+      list = list.map(x => (x === cur ? { ...x, review: { v: "keep", at: Date.now() } } : x));
+      setSketches(list); storeSketches(list).catch(() => {});
+    }
+    if (cur && verdict === "kill") {
+      lastKill = { sketch: cur };
+      list = list.filter(x => x !== cur);
+      setSketches(list); storeSketches(list).catch(() => {});
+    }
+    let idx = review.idx + 1;
+    while (idx < review.order.length && !list.some(x => x.name === review.order[idx])) idx++;
+    if (idx >= review.order.length) { endReview(true); return; }
+    setReview({ ...review, idx, lastKill });
+    const s = list.find(x => x.name === review.order[idx]);
+    if (s) loadSketch(s);
+  };
+  // this one earned another session — leave it loaded and end the review here
+  const reviewRework = () => {
+    if (!review) return;
+    const name = review.order[review.idx];
+    setSketchName(name);
+    setReview(null);
+    setIoNote(`Reworking “${name}” — it stays loaded, the rest of the queue can wait.`);
+  };
+  const undoKill = () => {
+    if (!review || !review.lastKill) return;
+    const list = [...(sketches || []), review.lastKill.sketch];
+    setSketches(list); storeSketches(list).catch(() => {});
+    setReview({ ...review, lastKill: null });
+  };
+  const endReview = finished => {
+    stopMetro();
+    if (review && review.stash) restoreDoc(review.stash);
+    setIoNote(finished ? "Review done — every sketch heard cold, and your song is back."
+      : "Review closed — back to what you were doing.");
+    setReview(null);
+  };
+  // each sketch in the queue starts playing by itself — the review is for ears, not eyes
+  useEffect(() => {
+    if (!review) return;
+    stopMetro();
+    const t = setTimeout(() => startMetro(0), 350);
+    return () => clearTimeout(t);
+  }, [review ? review.idx : -1]);   // eslint-disable-line react-hooks/exhaustive-deps
   /* ---- shareable link ----
      The same document, deflated into the URL hash. Opening the link rebuilds the song exactly,
      including every melody part — which is what makes "here, listen to this" possible at all. */
@@ -7072,7 +7141,7 @@ export default function ProgressionWheel() {
           {sketchDraft()}
         </div>}
 
-        {/* ---- Save: naming, keeping and sharing ---- */}
+        {/* ---- Save: naming, keeping, sharing — and judging cold ---- */}
         {tab === "save" && <div className="panel">
           <div className="row" style={{ marginTop:12, gap:8 }}>
             <input className="txt" placeholder="Sketch name…" value={sketchName}
@@ -7083,10 +7152,37 @@ export default function ProgressionWheel() {
             {(sketches || []).length > 0 && (
               <select value="" onChange={e => { const s = (sketches || [])[+e.target.value]; if (s) loadSketch(s); }}>
                 <option value="">Load sketch…</option>
-                {(sketches || []).map((s, i) => <option key={i} value={i}>{s.name}</option>)}
+                {(sketches || []).map((s, i) => (
+                  <option key={i} value={i}>{(s.review && s.review.v === "keep" ? "😍 " : "") + s.name}</option>
+                ))}
               </select>
             )}
             {ioNote && <span className="keytag">{ioNote}</span>}
+          </div>
+          {/* The morning review: the saved sketches heard back to back, cold, with a verdict tap on
+              each. The test that actually matters for a hook is the one taken days later. */}
+          <div className="row" style={{ marginTop:10, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
+            {!review ? (<>
+              <button className="btn" style={{ padding:"5px 11px" }} disabled={!(sketches || []).length}
+                onClick={startReview}
+                title={"Play every saved sketch back to back, cold — never-reviewed ones first — with a keep / rework / kill "
+                  + "verdict on each. Your current song is stashed and comes back exactly as it was when the review ends."}>
+                ☕ Morning review{(sketches || []).length ? ` · ${(sketches || []).length}` : ""}</button>
+              {tips && <span className="keytag">Catchiness is judged cold, not in the session it was written — everything sounds like a hook at midnight.</span>}
+            </>) : (<>
+              <span className="keytag">☕ {review.idx + 1} / {review.order.length} · <b>{review.order[review.idx]}</b> — playing</span>
+              <button className="mini" onClick={() => reviewNext("keep")}
+                title="Still good cold — mark it a keeper and hear the next">😍 Keep</button>
+              <button className="mini" onClick={reviewRework}
+                title="It earned another session — leave it loaded and end the review here">🔧 Rework</button>
+              <button className="mini" onClick={() => reviewNext("kill")}
+                title="It did not survive the night — delete it (one step of undo while the review is open)">🗑 Kill</button>
+              <button className="mini" onClick={() => reviewNext(null)} title="No verdict today — next">▸ Skip</button>
+              {review.lastKill && <button className="mini" onClick={undoKill}
+                title="Put the last killed sketch back">↩ un-kill “{review.lastKill.sketch.name}”</button>}
+              <button className="mini" onClick={() => endReview(false)}
+                title="Close the review and put your song back as it was">✕ Close</button>
+            </>)}
           </div>
         </div>}
 
