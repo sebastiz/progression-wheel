@@ -353,6 +353,50 @@ for (const kit of ["acoustic", "909", "808"]) {
     problems.push("als: the clip did not get the song's meter");
   if (!/<Manual Value="128" \/>/.test(xml)) problems.push("als: the tempo did not reach the main track");
   if ((xml.match(/<Locator Id=/g) || []).length !== 2) problems.push("als: the section locators are missing");
+  /* The template ships MainTrack envelopes for tempo and time signature holding the reference
+     set's values (100 bpm, 4/4). Live reads the envelope when one exists, so both must follow the
+     song or every export opens at 100 whatever the Manual says. */
+  {
+    const main = xml.slice(xml.indexOf("<MainTrack"), xml.indexOf("</MainTrack>"));
+    const tempoTgt = (main.match(/<Tempo>[\s\S]*?AutomationTarget Id="(\d+)"/) || [])[1];
+    const tsTgt = (main.match(/<TimeSignature>[\s\S]*?AutomationTarget Id="(\d+)"/) || [])[1];
+    const envOf = tgt => (main.match(new RegExp(
+      `<PointeeId Value="${tgt}" /></EnvelopeTarget><Automation><Events><(?:Float|Enum)Event Id="\\d+" Time="-63072000" Value="([-\\d.]+)"`)) || [])[1];
+    if (envOf(tempoTgt) !== "128") problems.push(`als: the tempo envelope still says ${envOf(tempoTgt)} — Live will open at the reference set's tempo`);
+    if (envOf(tsTgt) !== "201") problems.push(`als: the meter envelope still says ${envOf(tsTgt)} — Live will open in the reference set's meter`);
+    const m68 = M.alsXml({ ...spec, tsNum: 6, tsDen: 8 });
+    const main68 = m68.slice(m68.indexOf("<MainTrack"), m68.indexOf("</MainTrack>"));
+    if (!main68.includes(`<PointeeId Value="${tsTgt}" /></EnvelopeTarget><Automation><Events><EnumEvent Id="0" Time="-63072000" Value="302"`))
+      problems.push("als: 6/8 did not reach the meter envelope");
+  }
+  /* A drawn Level lane arrives as master-volume automation: an envelope on the MainTrack's own
+     Volume target, opening with Live's initial-value sentinel at the first point's level, then one
+     event per breakpoint at its bar's beat. Without a lane no envelope is added at all. */
+  {
+    const withAuto = M.alsXml({ ...spec, mainAuto: { level: [{ beat: 0, v: 1 }, { beat: 16, v: 0.35 }, { beat: 24, v: 1 }] } });
+    const main = withAuto.slice(withAuto.indexOf("<MainTrack"), withAuto.indexOf("</MainTrack>"));
+    const volTgt = (main.match(/<Volume>[\s\S]*?AutomationTarget Id="(\d+)"/) || [])[1];
+    const env = main.match(new RegExp(`<AutomationEnvelope Id="\\d+"><EnvelopeTarget><PointeeId Value="${volTgt}" /></EnvelopeTarget><Automation><Events>((?:<FloatEvent [^>]*/>)+)</Events>`));
+    if (!env) problems.push("als: a drawn Level lane wrote no volume envelope on the main track");
+    else {
+      const evs = [...env[1].matchAll(/Time="([-\d.]+)" Value="([\d.]+)"/g)].map(m => [Number(m[1]), Number(m[2])]);
+      if (evs.length !== 4) problems.push(`als: the volume envelope has ${evs.length} events for 3 lane points + the sentinel`);
+      if (evs[0][0] !== -63072000 || evs[0][1] !== 1) problems.push("als: the volume envelope's sentinel is not the first point's level");
+      if (evs[2] && (evs[2][0] !== 16 || evs[2][1] !== 0.35)) problems.push("als: a lane point did not land at its beat and level");
+    }
+    // well-formed with the envelope in — the insertion must not tear the document
+    const stack = [];
+    for (const m of withAuto.matchAll(/<(\/?)([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?)(\/?)>/g)) {
+      const [, close, tag, , self] = m;
+      if (close) { if (stack.pop() !== tag) { problems.push(`als: automation broke nesting at </${tag}>`); break; } }
+      else if (!self) stack.push(tag);
+    }
+    const plain = xml.slice(xml.indexOf("<MainTrack"), xml.indexOf("</MainTrack>"));
+    if ((plain.match(/<AutomationEnvelope /g) || []).length !== 2)
+      problems.push("als: a set with no lane grew or lost a main-track envelope");
+    if ((main.match(/<AutomationEnvelope /g) || []).length !== 3)
+      problems.push("als: the lane did not join the main track's envelope list");
+  }
   // names arrive from the user: every & in the document has to be part of an entity, since one bare
   // ampersand from a section name is a file Live refuses to parse at all
   if (/&(?!(amp|lt|gt|quot|apos);)/.test(xml)) problems.push("als: a bare & reached the document");

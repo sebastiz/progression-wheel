@@ -3696,6 +3696,7 @@ export default function ProgressionWheel() {
      lands on its own track, already aligned, instead of one flattened mix you can't unpick.
      Each stem is rendered by muting the others, so they sum back to the mix bar for bar. */
   const [stemming, setStemming] = useState(false);
+  const [projExporting, setProjExporting] = useState(false);
   const stemList = () => {
     const out = [];
     if (drumRef.current && drumRef.current.length) out.push({ kind:"drums", name:"drums" });
@@ -3719,35 +3720,39 @@ export default function ProgressionWheel() {
       out.push({ kind:"fx", name:"fx" });
     return out;
   };
+  /* The render loop itself, shared by ↓ Export stems and the Live project: warm the sample cache
+     once up front (each render waits on its own, but a timeout on the first stem and a success on
+     the second would leave the stems disagreeing about whether a part is real or synth, and they'd
+     no longer sum to the mix), then bounce sequentially — several full-length OfflineAudioContexts
+     at once is how a phone runs out of memory mid-export. */
+  const renderStemFiles = async stems => {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (realRef.current) {
+      setIoNote("Loading instruments…");
+      const warm = new OAC(1, 512, 44100);
+      await waitSamples(makeSampler(warm));
+    }
+    const files = [];
+    let silent = 0;
+    for (let n = 0; n < stems.length; n++) {
+      setRenderPct(null);
+      setIoNote(`Bouncing stem ${n + 1} of ${stems.length} — ${stems[n].name}…`);
+      const buf = await renderOffline(stems[n], setRenderPct);
+      if (peakOf(buf) < 1e-4) { silent++; continue; }   // a muted or empty source is not worth a file
+      files.push({ name: String(n + 1).padStart(2, "0") + "-" + safeName(stems[n].name) + ".wav",
+        bytes: audioBufferToWav(buf) });
+    }
+    return { files, silent };
+  };
   const exportStems = async () => {
-    if (stemming || rendering || claudeExporting) return;
+    if (stemming || rendering || claudeExporting || projExporting) return;
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OAC) { setIoNote("This browser cannot render audio."); return; }
     const stems = stemList();
     if (!stems.length) { setIoNote("Nothing to bounce — add a drum pattern, chords or a melody first."); return; }
     setStemming(true);
     try {
-      // Warm the sample cache once up front. Each render waits for samples on its own, but that
-      // wait can time out on the first stem and succeed on the second — which would leave the
-      // stems disagreeing about whether a part is a real instrument or its synth stand-in, and
-      // they would no longer sum to the mix. One warm-up first, and they all see the same thing.
-      if (realRef.current) {
-        setIoNote("Loading instruments…");
-        const warm = new OAC(1, 512, 44100);
-        await waitSamples(makeSampler(warm));
-      }
-      const files = [];
-      let silent = 0;
-      for (let n = 0; n < stems.length; n++) {
-        setRenderPct(null);
-        setIoNote(`Bouncing stem ${n + 1} of ${stems.length} — ${stems[n].name}…`);
-        // sequential, not parallel: several full-length OfflineAudioContexts at once is how a
-        // phone runs out of memory mid-export
-        const buf = await renderOffline(stems[n], setRenderPct);
-        if (peakOf(buf) < 1e-4) { silent++; continue; }   // a muted or empty source is not worth a file
-        files.push({ name: String(n + 1).padStart(2, "0") + "-" + safeName(stems[n].name) + ".wav",
-          bytes: audioBufferToWav(buf) });
-      }
+      const { files, silent } = await renderStemFiles(stems);
       if (!files.length) { setIoNote("Every stem rendered silent — check mutes and levels."); return; }
       const zip = makeZip(files);
       const url = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
@@ -3834,7 +3839,7 @@ export default function ProgressionWheel() {
     });
   };
   const exportForClaude = async () => {
-    if (claudeExporting || rendering || stemming) return;
+    if (claudeExporting || rendering || stemming || projExporting) return;
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OAC) { setIoNote("This browser cannot render audio — Export for Claude needs it."); return; }
     setClaudeExporting(true);
@@ -4057,8 +4062,37 @@ export default function ProgressionWheel() {
      is a limit of what the two programs share, not of the file format: the MIDI export has exactly
      the same one. The stem bounce remains the reference for what it should sound like. */
   const alsSpec = () => {
-    const { bars, parts, drumForBar, meta, bassTrack, percForBar, anyPerc, padTrack } = midiParts();
+    const { bars, parts, drumForBar, meta, bassTrack, percForBar, anyPerc, padTrack, partOf } = midiParts();
     const B = barBeats, tracks = [];
+    /* Each track's info text (Live's Annotation, shown in its info pane): the settings that shaped
+       the sound here, in plain words, so recreating a part on a real instrument is reading the
+       track's own tooltip in Live rather than cross-referencing a JSON file. Generated from the
+       same MOD_GROUPS table the controls and the scheduler read, so a new modulation appears in
+       the info text with no edit here. Newlines don't survive an XML attribute, so it is one line
+       of ·-separated clauses. */
+    const modLabel = md => {
+      const opts = typeof md.opts === "string"
+        ? ({ ARPS: ARPS.map(a => [a.id, a.name]), GATES: GATES.map(g => [g.id, g.name]),
+             ARP_RATES, LFO_RATES, ECHO_TIMES })[md.opts]
+        : md.opts;
+      return v => {
+        if (md.kind !== "sel") return v + (md.unit || "");
+        const hit = (opts || []).find(o => String(o[0]) === String(v));
+        return hit ? hit[1] : String(v);
+      };
+    };
+    const partInfo = ly => {
+      if (!ly) return "";
+      const bits = ["was " + (ly.instr || melInstr)];
+      if (ly.oct) bits.push("register " + (ly.oct > 0 ? "+" : "") + ly.oct + " oct");
+      if (ly.vol != null && Math.round(ly.vol * 100) !== 100) bits.push("level " + Math.round(ly.vol * 100) + "%");
+      for (const g of MOD_GROUPS) for (const md of g.mods) {
+        const v = modOf(ly, md.k);
+        if (v == null || v === md.dflt) continue;
+        bits.push(md.name + " " + modLabel(md)(v));
+      }
+      return bits.join(" · ");
+    };
     // chords: the same voicing and per-pass rhythm the MIDI writer uses
     const chordNotes = [];
     const CVEL = { ">": 96, "D": 78, "U": 58 };
@@ -4081,7 +4115,8 @@ export default function ProgressionWheel() {
       }
     });
     if (chordNotes.length) tracks.push({ name: "Chords", color: ALS_COLORS.chords, vol: 0.85,
-      notes: chordNotes, end: bars.length * B, note: "was " + instr });
+      notes: chordNotes, end: bars.length * B,
+      note: "was " + instr + " · " + colour + " voicings · strum: " + (rhythm.name || patId) });
     // drums: each bar's own pattern, at whatever step count that pattern has
     const drumNotes = [];
     bars.forEach((_, bi) => {
@@ -4116,7 +4151,9 @@ export default function ProgressionWheel() {
     }
     // the bass track: the same resolved notes the MIDI writer gets, already in beats
     if (bassTrack) tracks.push({ name: "Bass", color: ALS_COLORS.bass, vol: 0.85,
-      notes: bassTrack.notes, end: bars.length * B, note: "was " + bassVoice + " — drop a bass synth on this" });
+      notes: bassTrack.notes, end: bars.length * B,
+      note: "was " + bassVoice + (bass && BASS[bass] ? " · pattern: " + BASS[bass].name : "")
+        + " — drop a bass synth on this" });
     // the pad: the held upper voicings
     if (padTrack) tracks.push({ name: "Pad", color: ALS_COLORS.pad, vol: 0.8,
       notes: padTrack.notes, end: bars.length * B, note: "drop a pad synth on this" });
@@ -4134,11 +4171,17 @@ export default function ProgressionWheel() {
       }
       if (notes.length) tracks.push({ name: "Part " + (LAYER_NAMES[p] || p + 1),
         color: ALS_COLORS.part, vol: 0.8, notes, end: bars.length * B,
-        note: "was " + (part.voice || melInstr) });
+        note: partInfo(partOf(p)) || ("was " + (part.voice || melInstr)) });
     });
     const M = METER_BY_ID[curMeter] || METERS[0];
+    /* The drawn Level lane rides out as master-volume automation — the one master lane Live can
+       take without a device to point at. The filter lanes describe a device the empty tracks don't
+       have; they reach the DAW through the settings snapshot instead. */
+    const lvl = auto.key === planKey && auto.level && auto.level.length
+      ? auto.level.map(p2 => ({ beat: p2.bar * B, v: p2.v })) : null;
     return { bpm: effBpm, tsNum: M.num, tsDen: M.den, tracks,
       locators: (meta.markers || []).map(mk => ({ beat: mk.bar * B, name: mk.name })),
+      mainAuto: lvl ? { level: lvl } : null,
       name: sketchName.trim() || "Progression Wheel" };
   };
   const exportAls = async () => {
@@ -4150,6 +4193,63 @@ export default function ProgressionWheel() {
       setIoNote(`Live Set exported — ${n} track${n === 1 ? "" : "s"} at ${effBpm} bpm, sections as locators. `
         + "The tracks arrive without instruments: drop your own on each, and use the stems as the reference.");
     } catch (e) { setIoNote("Live Set export failed in this viewer — try on desktop."); }
+  };
+
+  /* ---- the Live project ----
+     The .als alone arrives silent — the arrangement without the sound. This export is the whole
+     handoff in one zip, laid out the way a Live project is on disk: the set at the top, the stems
+     in Samples/Imported beside it, and the settings snapshot for the knobs no file format can
+     carry. Unzip, open the set, select everything in Samples/Imported and drag it onto the
+     arrangement at 1.1.1 — Live lands each wav on its own audio track, aligned, and the project
+     plays the sketch while the MIDI tracks wait for real instruments. The stems are pre-master
+     and sum to the mix, which is exactly what a producer wants under their own chain.
+
+     What is deliberately NOT here: audio tracks written into the .als itself. A Live Set is not a
+     format to infer from the outside — the app's own exporter history proves it (see als.js) — and
+     the template this one is built from carries no audio track to clone. The drag is one gesture;
+     a set that crashes Live is a lost user. */
+  const exportLiveProject = async () => {
+    if (stemming || rendering || claudeExporting || projExporting) return;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) { setIoNote("This browser cannot render audio — ↓ Live Set still works."); return; }
+    setProjExporting(true);
+    try {
+      const bytes = await alsBytes(alsSpec());
+      if (!bytes) { setIoNote("This browser cannot gzip — use Export MIDI instead."); return; }
+      const stems = stemList();
+      const { files } = stems.length ? await renderStemFiles(stems) : { files: [] };
+      const base = safeName(sketchName.trim() || "progression-wheel");
+      const dir = base + " Project";
+      const entries = [{ name: `${dir}/${base}.als`, bytes }];
+      for (const f of files) entries.push({ name: `${dir}/Samples/Imported/${f.name}`, bytes: f.bytes });
+      try {
+        entries.push({ name: `${dir}/settings.json`,
+          bytes: new TextEncoder().encode(JSON.stringify(getExportState(), null, 2)) });
+      } catch (e) {}   // the project is still a project without the snapshot
+      entries.push({ name: `${dir}/README.txt`, bytes: new TextEncoder().encode(
+        `${base} — a Live project from the Progression Wheel\n\n`
+        + `${base}.als — the arrangement: tempo, meter, named MIDI tracks with their settings in\n`
+        + `  each track's info text, every section a locator, and the drawn Level lane as\n`
+        + `  master-volume automation. The tracks arrive without instruments: the app's sounds\n`
+        + `  are Web Audio graphs, which no file format can hand to Live.\n\n`
+        + `Samples/Imported/ — the stems, pre-master, so they sum to the mix. Open the set,\n`
+        + `  select all of them in this folder and drag onto the arrangement at 1.1.1: Live puts\n`
+        + `  each on its own audio track and the project plays the sketch immediately. Rebuild\n`
+        + `  each sound on its MIDI track, muting its stem as you go.\n\n`
+        + `settings.json — every setting that shaped the render, in plain words, with each\n`
+        + `  control's default and meaning.\n`) });
+      const zip = makeZip(entries);
+      const url = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = songFile("project.zip");
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setIoNote(`Live project exported — the set plus ${files.length} stem${files.length === 1 ? "" : "s"} in `
+        + `Samples/Imported (${(zip.length / 1048576).toFixed(1)} MB). Unzip, open the .als, then drag the `
+        + `Samples/Imported folder's files onto the arrangement at 1.1.1 and it plays the sketch.`);
+    } catch (e) {
+      setIoNote("Live project export failed in this browser — ↓ Live Set and ↓ Export stems still work separately.");
+    } finally { setProjExporting(false); setRenderPct(null); }
   };
 
   /* A chord chart, as plain text. MIDI is for a DAW and a wav is for listening; this is for handing
@@ -7588,17 +7688,21 @@ export default function ProgressionWheel() {
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidiSplit}
               title="One MIDI file per track, zipped — for a DAW that imports multi-track files badly, or when you want to drag one part onto one track">↓ MIDI ×tracks</button>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportAls}
-              title="Export as an Ableton Live Set — named, coloured tracks laid out as an arrangement, at this tempo, with every section a locator on the ruler. The tracks arrive without instruments (a Web Audio synth is not something Live can be handed), so drop your own on each and use the stems as the reference for how it should sound.">↓ Live Set</button>
+              title="Export as an Ableton Live Set — named, coloured tracks laid out as an arrangement, at this tempo, with every section a locator on the ruler and the drawn Level lane as master-volume automation. Each track's info text carries its settings. The tracks arrive without instruments (a Web Audio synth is not something Live can be handed), so drop your own on each and use the stems as the reference for how it should sound.">↓ Live Set</button>
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportLiveProject}
+              disabled={rendering || stemming || claudeExporting || projExporting}
+              title="The whole handoff in one zip, laid out like a Live project: the .als, the stems in Samples/Imported beside it, and the settings snapshot. Open the set, drag the stems onto the arrangement at 1.1.1, and the project plays the sketch while you rebuild each sound on its MIDI track.">
+              {projExporting ? pctLabel("Bouncing") : "↓ Live project"}</button>
             <button className="btn" style={{ padding:"5px 11px" }} onClick={exportChart}
               title="A plain-text chord chart — the form, the chords and the bar counts, for a player rather than a DAW">↓ Chart</button>
             <button className="mini" onClick={copyChart} title="Copy the chord chart to the clipboard">⧉ Copy chart</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming || claudeExporting}
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming || claudeExporting || projExporting}
               title="Render the whole song to a .wav you can send or post — the same sound you hear on Play">
               {rendering ? pctLabel("Rendering") : "↓ Export audio"}</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportStems} disabled={rendering || stemming || claudeExporting}
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportStems} disabled={rendering || stemming || claudeExporting || projExporting}
               title="Bounce drums, chords and each melody part to separate .wav files, zipped — drop them straight onto a DAW timeline">
               {stemming ? pctLabel("Bouncing") : "↓ Export stems"}</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportForClaude} disabled={rendering || stemming || claudeExporting}
+            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportForClaude} disabled={rendering || stemming || claudeExporting || projExporting}
               title="Two files to hand to Claude for analysis: the full arrangement rendered to a .wav, and a JSON snapshot of every setting that shaped it — key, arrangement, every part's synth settings, effects and automation. Upload both together in one message.">
               {claudeExporting ? pctLabel("Rendering") : "↓ Export for Claude"}</button>
           </div>
