@@ -21,7 +21,10 @@ The app is in five tabs, under the transport bar:
   so a groove edited later is still heard everywhere it hasn't been overridden.
 - **Arrange** — the song structure, the melodic narrative, the arrangement strip with its automation
   lanes, every section's melodies, and the exports.
-- **Save** — naming a sketch, saving it, sharing a link, and loading one back.
+- **Save** — naming a sketch, saving it, sharing a link, loading one back, and the **☕ Morning
+  review**: every saved sketch played back to back, cold, with a keep / rework / kill verdict tap
+  on each. Your current song is stashed first and restored when the queue ends — the test that
+  matters for a hook is the one taken days after it was written.
 
 **Play, the tempo, tap tempo, A/B, undo and redo stay visible on every tab** — they act on the whole
 song, not on whichever page you happen to be looking at. So do the keyboard shortcuts.
@@ -192,6 +195,15 @@ that way. *Driving eighths* and *rolling sixteenths* want a sixteenth **Pattern*
 on an eighth grid there is no room between the notes, so *driving eighths* writes quarters instead
 rather than pretending.
 
+**✦ Riff the holes** (on the bass *grid*, groove and per-section alike) goes one further: it reads
+the section's own resolved drums and writes a riff — offbeat pump, tresillo, two-step, funk holes,
+rolling sixteenths — into the sixteenths the kick *doesn't* own, dropping any onset that would
+coincide with a kick or an 808 boom. In house and garage the hook is as often the bassline as the
+topline, and what makes it groove is answering the kick rather than doubling it — which is also
+all a sidechain fakes. Odd bars answer even ones with a small change. Every press writes a
+different riff; the result is an ordinary painted bass grid, so it saves, exports and **↺ Reset**s
+like one.
+
 ### Arp, Gate and Pump — per part
 
 Under each part's Octave/Level/Echo row are the three controls that turn a tune played on a synth
@@ -336,6 +348,16 @@ The sweep runs across the section's **whole length**, so it lands exactly on the
 that section is four bars or sixteen — change the structure and the move re-times itself. Put
 *Build + riser* on a pre-chorus and *Drop* on the chorus to hear the point of it.
 
+Beside these, the same panel carries the **⤴ lift** row — the standard kit for making one section
+land bigger, which is a different job from a move: a move is processing, the lift is arrangement
+and writing. **⤴ Lift this chorus** applies the lot at once — melody up a third in key, the lead
+doubled an octave up, the accents leant on, every subtraction on the section removed (drums,
+chords, bass, pad and muted parts back in), and the hook made a little busier with two additive
+edits. Each ingredient is also its own chip: tap one to apply just that ingredient, tap an *on*
+chip to take exactly that ingredient back off, restoring the value it replaced. The kit is meant
+to be learnable — after a few uses you'll reach for the two ingredients this particular chorus
+actually needs.
+
 ### Transitions — the seam between two sections
 
 A move shapes a section. The **⇥ Way in** menu beside it shapes the *join into* one: the bar the section
@@ -397,8 +419,21 @@ pattern like any other.
 ### Opening the song in Ableton
 
 **↓ Live Set** on the Arrange tab writes a `.als`. Where a MIDI file gives Live bare clips, this
-arrives as the arrangement: named and coloured tracks (Chords, Drums, Part A…), the right tempo, and
-**every section as a locator** on the ruler.
+arrives as the arrangement: named and coloured tracks (Chords, Drums, Part A…), the right tempo,
+**every section as a locator** on the ruler, and a drawn **Level** lane as real master-volume
+automation — the energy curve of the arrangement survives the trip. Select a track and open Live's
+info pane (**?** at the bottom left): each track's **info text states the settings that shaped
+it** — a part's instrument, register, level and every modulation it carried, the chords' voicing
+colour and strum, the bass's voice and pattern — so recreating a sound is reading the track's own
+notes rather than cross-referencing a file. (The filter lanes describe a device the empty tracks
+don't have; they travel in the settings snapshot below instead.)
+
+**↓ Live project** beside it is the whole handoff in one zip, laid out the way a Live project sits
+on disk: the `.als` at the top, the **stems in `Samples/Imported`** beside it, a `settings.json`
+and a README. Unzip it, open the set, select everything in Samples/Imported and drag it onto the
+arrangement at **1.1.1** — Live lands each wav on its own audio track, aligned — and the project
+**plays the sketch immediately** while you rebuild each sound on its MIDI track, muting its stem
+as you go. The stems are pre-master, so they sum to the mix under your own chain.
 
 **It is a Live 12 set.** The file is written to the schema Live 12 saves, so Live 12 opens it
 directly and Live 11 and earlier will not — a set can be opened by its own version or a newer one,
@@ -591,6 +626,32 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   follow each bar's chord), scale runs, waves, neighbour tones, a repeated pedal tone, call &
   response, question & answer (resolving to the tonic), the AA / AB / AABA motif forms, ascending and
   descending sequences, and wide leaping figures.
+
+- **⇢ Syncopate** (**Write** tab, beside ✦ Vary repeats) — anticipation as one tap: the part's
+  on-beat notes pushed half a beat early and held through the beat they left, the lean that
+  carries most pop and house toplines. One tap pushes the backbeats, two pushes every beat but
+  the bar's downbeat, three puts the melody back. Like Vary repeats it always re-derives from the
+  melody as it stood before the first press, so two taps push harder rather than pushing the
+  pushed — and a push never swallows a note: an onset already sitting in its way keeps the note
+  where it was.
+
+- **🩺 Check** (its own mode beside Write and Suggest) — the hook report card. The part's melody
+  is scored against the shapes the earworm studies keep finding: mostly stepwise motion with one
+  distinctive leap, the leap answered by steps back the other way, a motif that restates itself
+  and drifts when it does, two to six notes a bar, three to five different pitches doing all the
+  work, some notes anchored on beats, a peak that lands past the opening, an ending that comes
+  home to the harmony. One line per property, in plain words, and each failing line carries a
+  **one-tap fix** — a single deterministic edit that improves exactly that line (⌘Z if it loses
+  the point). The number at the top is a shape check, not taste — but a 45 and an 85 are
+  different phrases in ways the lines can name.
+
+- **⚔ Duel** (beside Check) — hooks get good by volume and selection, not by keeping the first
+  plausible line. Start it and eight rivals are bred from the melody on the grid — same tune,
+  small mutations from the same engine Vary repeats uses. **▶ A** and **▶ B** each put a
+  contender on the grid and loop the section; tap **A wins** or **B wins** and the loser's slot
+  goes to the next rival. When the pool runs out, the champion breeds fresh challengers, so the
+  family keeps converging on what your ear keeps choosing. **✓ Keep champion** ends it with the
+  winner on the grid; **✕ Cancel** puts back exactly what you started with.
 
 ## Song & melody
 

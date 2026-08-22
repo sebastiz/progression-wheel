@@ -175,6 +175,9 @@ Each idea above has a control that does it.
 | The last bar before a boundary | **Transitions**, which belong to the section they lead *into* and schedule their riser, roll or silence ahead of its downbeat |
 | The energy curve, drawn rather than stepped | The **automation lanes** — Filter is the DJ filter across the whole mix, Level is the fade and the hole before a drop |
 | The Hook across the whole form | **Melodic narratives**, which pick each section's register, density and contour from its role and its place in the running order |
+| The Hook itself, made sticky | The melody grid's **🩺 Check** (the earworm properties as a report card, each failing line with a one-tap fix), **⚔ Duel** (rivals bred from the hook, auditioned pairwise on the looping section) and **⇢ Syncopate** (the anticipation push, one tap) |
+| Foundation as Hook | **✦ Riff the holes** on the bass grid — a riff written into the sixteenths the section's own kick leaves free, so bass and Clock interlock by construction |
+| The drop landing bigger | **⤴ Chorus lift** on the section — subtractions removed, melody up a third, the lead doubled, accents leant on, each ingredient reversible |
 | Checking the stack | Bounce **stems** and mute roles one at a time; the **Live Set** export carries the arrangement out as named, coloured tracks with the sections as locators |
 
 The bass has long since become its own track, with its own lane, grids and drawn filter — so "sub
@@ -183,6 +186,9 @@ strip. And the Sketch tab turns the whole document into a working order: the fai
 opens with — adding without ever subtracting — is hard to commit when the full stack is built first
 and the arrangement is nothing but the subtractions.
 
-The one thing no export carries is the sound itself — every instrument here is a browser audio
-graph, so a MIDI file or a Live Set arrives with the arrangement intact and the tracks empty. Bounce
-the stems alongside as the reference for what it is supposed to sound like.
+The one thing no export format carries is the sound itself — every instrument here is a browser
+audio graph, so a MIDI file or a Live Set arrives with the arrangement intact and the MIDI tracks
+empty. The **↓ Live project** export closes most of that gap in one zip: the set, with each
+track's settings written into its info text and the drawn Level lane as master-volume automation,
+plus the stems laid out in `Samples/Imported` beside it — drag them onto the arrangement and the
+project plays the sketch while each sound is rebuilt on its MIDI track.
