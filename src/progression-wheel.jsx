@@ -9,6 +9,7 @@ import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
 import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyWithin } from "./melody.js";
+import { bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
@@ -623,6 +624,13 @@ export default function ProgressionWheel() {
      is gone. It is deliberately not part of the song document: the notes are the song, this is just
      where the writer had got to with the control. */
   const [varyIn, setVaryIn] = useState({});
+  /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
+     early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
+  const [syncIn, setSyncIn] = useState({});
+  /* The hook duel: one section+part's tournament in progress — the melody as it was (restored on
+     cancel), the pool of rivals, the reigning champion and which round this is. UI state: what gets
+     saved is whatever melody the duel leaves on the grid. */
+  const [duel, setDuel] = useState(null);
   const [secNar, setSecNar] = useState({});                 // section key → its own melodic narrative
   const [showLand, setShowLand] = useState(false);          // landing-notes collapse
   const [curQ, setCurQ] = useState(null);                   // {sym, col} playhead in melody grids
@@ -2304,6 +2312,76 @@ export default function ProgressionWheel() {
     if (!st || !st.level) return;
     putLayer(d.key, L, dupBars(st.base));
     const next = { ...varyIn }; delete next[k]; setVaryIn(next);
+  };
+
+  /* ---- syncopate: anticipation as a one-tap edit ----
+     The single most reliable catchiness trick there is — a note arriving half a beat before the
+     beat it was written on, held through it. Same baseline discipline as ✦ Vary repeats: each press
+     re-derives from the melody as it stood before the first one, so press two pushes harder rather
+     than pushing the pushed, and the third press is the way back. */
+  const syncopateMel = (d, L) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = syncIn[k];
+    const fresh = !st || melKey(cur) !== st.grid;
+    const base = fresh ? cur : st.base;
+    const level = ((fresh ? 0 : st.level) + 1) % 3;
+    const bars = level ? syncopateBars(base, meloSub, level) : dupBars(base);
+    const moved = melKey(bars) !== melKey(base);
+    putLayer(d.key, L, bars);
+    setSyncIn({ ...syncIn, [k]: { base, grid: melKey(bars), level,
+      note: level === 0 ? "back as written"
+        : !moved ? "nothing square on the beat to push"
+        : level === 1 ? "backbeats pushed early" : "every beat pushed early" } });
+  };
+
+  /* ---- the hook duel ----
+     Catchy hooks come from volume and selection, not from taking the first plausible line. The duel
+     breeds a pool of rivals from the melody on the grid and plays them pairwise: hear A, hear B,
+     tap the winner, and the loser's place is taken by the next rival — or, once the pool is spent,
+     by a fresh mutation of the reigning champion. Whatever you keep is just notes on the grid;
+     cancel puts back exactly what was there. The section loops while the duel runs, because five
+     seconds of A against five of B is the whole method. */
+  const duelSeedOf = (key, L) => [...key].reduce((a, c) => a + c.charCodeAt(0), 0) * 233 + L * 41;
+  const startDuel = (d, sec, L) => {
+    const base = dupBars(barsOf(sec, L) || []);
+    if (!base.some(b => b.some(c => c.length))) return;
+    const seed = duelSeedOf(d.key, L);
+    const pool = hookPool(base, { n: 8, seed, nd: scaleSemis.length });
+    if (!pool.length) { setIoNote("This melody resists variation — nothing to duel against."); return; }
+    setDuel({ key: d.key, L, seed, base, pool, champ: base, champLbl: "the original",
+      chalIdx: 0, round: 0, side: null, loopWas: loopSec });
+    if (loopSec !== d.key) toggleLoopSec(d);
+  };
+  const duelHear = (d, side) => {
+    if (!duel) return;
+    const bars = side === "A" ? duel.champ : duel.pool[duel.chalIdx];
+    putLayer(d.key, duel.L, dupBars(bars));
+    setDuel({ ...duel, side });
+    if (loopSec !== d.key) toggleLoopSec(d);
+    else if (!playing) startMetro(d.key === GROOVE ? 0 : d.startBar);
+  };
+  const duelPick = (d, side) => {
+    if (!duel) return;
+    const champ = side === "A" ? duel.champ : duel.pool[duel.chalIdx];
+    const champLbl = side === "A" ? duel.champLbl : "rival " + (duel.chalIdx + 1);
+    const pool = [...duel.pool];
+    // the pool spent, the champion breeds the next challenger — the family keeps converging
+    if (duel.chalIdx + 1 >= pool.length)
+      pool.push(mutateHook(champ, { seed: duel.seed + (duel.round + 1) * 977,
+        pass: duel.round + 2, nd: scaleSemis.length, amount: 2 }));
+    putLayer(d.key, duel.L, dupBars(champ));               // the grid always holds the champion
+    setDuel({ ...duel, champ, champLbl, pool, chalIdx: duel.chalIdx + 1,
+      round: duel.round + 1, side: "A" });
+  };
+  const endDuel = (d, keepChamp) => {
+    if (!duel) return;
+    putLayer(d.key, duel.L, dupBars(keepChamp ? duel.champ : duel.base));
+    if (loopSec === d.key && duel.loopWas !== d.key) toggleLoopSec(d);   // hand the loop back
+    setIoNote(keepChamp
+      ? (duel.round ? `Kept ${duel.champLbl} after ${duel.round} duel${duel.round > 1 ? "s" : ""}.` : "Kept the original.")
+      : "Duel cancelled — the melody is back as it was.");
+    setDuel(null);
   };
 
   /* ---- melodic narrative: one shape written across every section at once ---- */
@@ -4847,6 +4925,12 @@ export default function ProgressionWheel() {
                           onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
                         <button className={tab === "suggest" ? "on" : ""}
                           onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
+                        <button className={tab === "check" ? "on" : ""}
+                          title="The hook report card — this part's melody scored against the shapes that make tunes stick, each line with a one-tap fix"
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "check" })}>🩺 Check</button>
+                        <button className={tab === "duel" ? "on" : ""}
+                          title="The hook duel — breed rivals of this melody and audition them pairwise; the winner takes the grid"
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "duel" })}>⚔ Duel</button>
                       </div>
                       {tab === "write" && <div className="seg">
                           <button className={!melMove ? "on" : ""} title="Write notes. Hold the button down and drag to paint a run of them — press an empty cell to draw, a full one to rub out."
@@ -4869,6 +4953,18 @@ export default function ProgressionWheel() {
                             {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
+                          </>);
+                        })()}
+                        {tab === "write" && (() => {
+                          const sst = syncIn[varyKeyOf(d.key, secL)];
+                          const lv = (sst && sst.level) || 0;
+                          return (<>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => syncopateMel(d, secL)}
+                              title={"Syncopate — push this part's on-beat notes half a beat early, held through the beat they "
+                                + "left. The anticipation that makes a line lean forward. One tap pushes the backbeats, two "
+                                + "pushes every beat, three puts it back."}>
+                              ⇢ Syncopate{lv === 2 ? " ××" : lv ? " ×" : ""}</button>
+                            {sst && sst.note && lv > 0 && <span className="rlbl" style={{ opacity:.75 }}>{sst.note}</span>}
                           </>);
                         })()}
                         {tab === "write" && melMove && (() => {
@@ -4951,6 +5047,92 @@ export default function ProgressionWheel() {
                         })()}
                       </div>
                     )}
+
+                    {/* The hook report card: this part's melody scored against the shapes that make
+                        tunes stick, one line per property, each failing line with a one-tap fix. The
+                        number is a shape check, not taste — but a 45 and an 85 differ in ways the
+                        lines can name, which is what makes it worth printing. */}
+                    {tab === "check" && (() => {
+                      const bars = barsOf(sec, secL);
+                      const any = bars && bars.some(b => b.some(c => c.length));
+                      if (!any) return (
+                        <div className="sugmel"><p className="arrnote">
+                          Nothing on part <b>{LAYER_NAMES[secL]}</b>'s grid yet — write or suggest a
+                          melody first, then check it here.</p></div>);
+                      const u = { bars, nd: scaleSemis.length, sub: meloSub, chordDegs: chordDegsOf(d.cs) };
+                      const rep = hookReport(u);
+                      const inkOf = s => s >= 0.99 ? "#54B79D" : s >= 0.6 ? "#E8A33D" : "#E0687F";
+                      return (
+                        <div className="sugmel">
+                          <div className="row" style={{ gap:10, alignItems:"baseline" }}>
+                            <span style={{ fontSize:26, fontWeight:700, color: inkOf(rep.score / 100) }}>{rep.score}</span>
+                            <span className="keytag">{rep.grade}</span>
+                            <span className="rlbl" style={{ opacity:.6 }}>part {LAYER_NAMES[secL]} · the shapes that make tunes stick</span>
+                          </div>
+                          {rep.checks.map(c => (
+                            <div key={c.id} className="row" title={c.tip}
+                              style={{ gap:8, marginTop:6, alignItems:"center", flexWrap:"wrap" }}>
+                              <span aria-hidden="true" style={{ width:8, height:8, borderRadius:99,
+                                background: inkOf(c.score), flex:"0 0 auto" }} />
+                              <b style={{ flex:"0 0 auto" }}>{c.name}</b>
+                              <span className="rlbl" style={{ opacity:.8 }}>{c.detail}</span>
+                              {c.fix && c.score < 0.99 &&
+                                <button className="mini" onClick={() => putLayer(d.key, secL, c.fix(bars, u))}
+                                  title={c.tip + " — one deterministic edit; undo puts it back"}>✎ {c.fixLabel}</button>}
+                            </div>
+                          ))}
+                          <p className="arrnote" style={{ marginTop:8 }}>
+                            A shape check, not taste: these are the properties the earworm studies keep
+                            finding. A fix edits the grid once — listen, and ⌘Z if it lost the point.
+                          </p>
+                        </div>);
+                    })()}
+
+                    {/* The hook duel: the melody against a family of its own rivals, two at a time.
+                        Volume and selection is how hooks actually get good. */}
+                    {tab === "duel" && (() => {
+                      const my = duel && duel.key === d.key && duel.L === secL ? duel : null;
+                      const bars = barsOf(sec, secL);
+                      const any = bars && bars.some(b => b.some(c => c.length));
+                      if (!my) return (
+                        <div className="sugmel">
+                          <p className="arrnote">
+                            Eight rivals are bred from the melody on the grid — same tune, small
+                            mutations. Hear <b>A</b>, hear <b>B</b>, tap the winner; the loser's place
+                            goes to the next rival, and when the pool runs out the champion breeds
+                            fresh challengers. The section loops while you judge. Keep the champion,
+                            or cancel and the melody comes back exactly as it was.
+                          </p>
+                          <div className="row" style={{ gap:6, marginTop:8 }}>
+                            <button className="btn" disabled={!any} onClick={() => startDuel(d, sec, secL)}>⚔ Start the duel</button>
+                            {!any && <span className="rlbl" style={{ opacity:.7 }}>write a melody on part {LAYER_NAMES[secL]} first</span>}
+                          </div>
+                        </div>);
+                      return (
+                        <div className="sugmel">
+                          <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                            <button className={"btn" + (my.side === "A" ? " on" : "")} style={{ padding:"5px 11px" }}
+                              onClick={() => duelHear(d, "A")}
+                              title="Put the champion on the grid and loop this section">▶ A · {my.champLbl}</button>
+                            <button className={"btn" + (my.side === "B" ? " on" : "")} style={{ padding:"5px 11px" }}
+                              onClick={() => duelHear(d, "B")}
+                              title="Put the challenger on the grid and loop this section">▶ B · rival {my.chalIdx + 1}</button>
+                            <span className="keytag">duel {my.round + 1}</span>
+                          </div>
+                          <div className="row" style={{ gap:6, marginTop:7, alignItems:"center", flexWrap:"wrap" }}>
+                            <span className="rlbl" style={{ opacity:.7 }}>who sticks?</span>
+                            <button className="mini" onClick={() => duelPick(d, "A")}>A wins</button>
+                            <button className="mini" onClick={() => duelPick(d, "B")}>B wins</button>
+                            <span className="rlbl" style={{ opacity:.5 }}>·</span>
+                            <button className="mini" onClick={() => endDuel(d, true)}
+                              title="Keep the reigning champion on the grid and end the duel">✓ Keep champion</button>
+                            <button className="mini" onClick={() => endDuel(d, false)}
+                              title="End the duel and put the melody back exactly as it was">✕ Cancel</button>
+                          </div>
+                          {my.side == null && <p className="arrnote" style={{ marginTop:6 }}>
+                            Hear both before judging — the grid below shows whichever played last.</p>}
+                        </div>);
+                    })()}
 
                     <div className={"mscroll" + (melMove ? " mvmode" : "")}
                       data-sync={d.key} onScroll={syncScroll}>
