@@ -2123,6 +2123,11 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     const kept = M.syncopateBars(packed, 2, 2);
     if (M.barNotes(kept[0]).length !== M.barNotes(packed[0]).length)
       problems.push("syncopation swallowed a note whose push landed on another onset");
+    // …including the sly case: pushed against the tail of a note holding the SAME pitch, the two
+    // would read back as one held note and an onset would silently vanish
+    const samePitch = [[[2], [2], [2], [], [2], [], [], []]];   // a held 2, then 2 again on beat 2
+    if (M.barNotes(M.syncopateBars(samePitch, 2, 2)[0]).length !== M.barNotes(samePitch[0]).length)
+      problems.push("syncopation merged a pushed note into a same-pitch neighbour");
   }
 
   /* The tournament pool: a family of rivals, none of them the parent, no two of them the same. */

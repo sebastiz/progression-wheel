@@ -52,8 +52,11 @@ const syncopateBars = (bars, sub, level = 1) => {
       const onBeat = Number.isInteger(beat);
       const want = onBeat && beat > 0 && (level > 1 || beat % 2 === 1);
       if (!want || n.c - push < 0) return n;
-      // never onto another note's onset — a push that swallows a note is an edit, not a feel
-      const clash = ns.some(o => o !== n && o.c > n.c - push - 1 && o.c < n.c);
+      /* Never onto another note's onset — a push that swallows a note is an edit, not a feel. The
+         same-degree case is the sly one: pushed against the tail of a note holding the same pitch,
+         the two runs of columns read back as one note and an onset silently disappears. */
+      const clash = ns.some(o => o !== n && ((o.c > n.c - push - 1 && o.c < n.c)
+        || (o.d === n.d && o.c < n.c && o.c + o.len >= n.c - push)));
       return clash ? n : { ...n, c: n.c - push, len: n.len + push };
     });
     // later notes overwrite the tails of earlier ones, the way the pushed onset truncates the
