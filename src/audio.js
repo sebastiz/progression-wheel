@@ -1147,7 +1147,9 @@ const LEAD_SPECS = {
               atk:0.004, rel:0.12, vol:0.162, sus:0.25, lp:520, q:14, fenv:[5.5, 1] },
   reese:    { parts:[["sawtooth",0.98624,1],["sawtooth",1.01394,1],["sine",0.5,0.5]],
               atk:0.02, rel:0.18, vol:0.061, sus:0.85, lp:900, q:5 },
-  sub:      { parts:[["sine",1,1],["triangle",2,0.06]],               atk:0.012, rel:0.1, vol:0.073, sus:0.9 },
+  // the octave partial is what lets the sub read on small speakers, which can't reproduce
+  // the ~65 Hz fundamental at all — too little of it and the default bass simply vanishes
+  sub:      { parts:[["sine",1,1],["triangle",2,0.15]],               atk:0.012, rel:0.1, vol:0.073, sus:0.9 },
   stab:     { parts:[["sawtooth",1,0.6],["square",2,0.2],["sawtooth",1.00694,0.5]],
               atk:0.003, rel:0.18, vol:0.22, sus:0, lp:3400, q:1.4, fenv:[1.6, 0.7] },
 };

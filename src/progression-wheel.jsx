@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
@@ -446,6 +446,12 @@ const TRACK_MODS = [TRACK_LVL, ...["cut","res","hp","drive","wob","wobRate","tre
   "pan","apan","apanRate","send","verb","duck"].map(k => MOD_BY_KEY[k])];
 const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
   ["bass", "Bass", "🎸"], ["pad", "Pad", "🌫️"]];
+/* Default make-up gain for the pitched sources. The chord, bass and melody voices are all far
+   quieter than the drums, and at unity gain they could disappear entirely on small speakers.
+   Each boost sits on the source's own bus inside the graph — upstream of the duck nodes and
+   applied identically in a stem render — so the Level sliders still read 100% out of the box
+   and the stems still sum to the mix. */
+const CHORD_MAKEUP = 1.6, BASS_MAKEUP = 1.6, MELODY_MAKEUP = 1.5;
 
 // section-type accent colours for the song write-out grouping
 /* One colour per section letter. Chosen by function rather than prettiness, so the arrangement
@@ -1865,6 +1871,51 @@ export default function ProgressionWheel() {
       i === bar ? b.map((s2, j) => j === step ? (s2 === tok ? "" : tok) : s2) : [...b]) });
   };
   const resetChordBeat = key => { const next = { ...secChordBeat }; delete next[key]; setSecChordBeat(next); };
+  /* ---- write one groove track across the whole song ----
+     The sections follow the groove sketch on their own: a pass only stops following when it is
+     given a version of this track that is its own — a pattern picked on the Arrange tab, a
+     template's pick, or a written grid. So "play the sketch's drums everywhere" is a clearing
+     move: drop every section's own version of this one track and the whole song follows the
+     sketch again. The arrangement's *layout* survives on purpose — "off" picks, the mutes and
+     the drum subtractions (a build's kick-out is arrangement, not material) all stay, and no
+     other track is touched. */
+  const keepIf = (map, keep) => Object.fromEntries(
+    Object.entries(map).filter(([k, v]) => k === GROOVE || keep(v)));
+  const writeAcross = {
+    drums:  () => { setSecDrum(keepIf(secDrum, v => v && (!DRUMS[v] || DRUM_CUTS.has(v))));
+                    setSecBeat(keepIf(secBeat, () => false)); },
+    perc:   () => { setSecPercPat(keepIf(secPercPat, v => v === "off"));
+                    setSecPercBeat(keepIf(secPercBeat, () => false)); },
+    bass:   () => { setSecBassPat(keepIf(secBassPat, v => v === "off"));
+                    setSecBassBeat(keepIf(secBassBeat, () => false)); },
+    pad:    () => { setSecPadVoice(keepIf(secPadVoice, v => v === "off"));
+                    setSecPadBeat(keepIf(secPadBeat, () => false)); },
+    chords: () => setSecChordBeat(keepIf(secChordBeat, () => false)),
+  };
+  // does any section hold a version of its own that this button would hand back to the sketch?
+  const acrossPinned = {
+    drums:  () => Object.entries(secDrum).some(([k, v]) => k !== GROOVE && v && DRUMS[v] && !DRUM_CUTS.has(v))
+      || Object.keys(secBeat).some(k => k !== GROOVE),
+    perc:   () => Object.entries(secPercPat).some(([k, v]) => k !== GROOVE && v && v !== "off")
+      || Object.keys(secPercBeat).some(k => k !== GROOVE),
+    bass:   () => Object.entries(secBassPat).some(([k, v]) => k !== GROOVE && v && v !== "off")
+      || Object.keys(secBassBeat).some(k => k !== GROOVE),
+    pad:    () => Object.entries(secPadVoice).some(([k, v]) => k !== GROOVE && v && v !== "off")
+      || Object.keys(secPadBeat).some(k => k !== GROOVE),
+    chords: () => Object.keys(secChordBeat).some(k => k !== GROOVE),
+  };
+  const ACROSS_NAME = { drums:"drums", perc:"percussion", bass:"bassline", pad:"pad", chords:"chord rhythm" };
+  const wholeSongBtn = id => {
+    const pinned = acrossPinned[id]();
+    return (
+      <button className="mini" disabled={!pinned}
+        onClick={() => writeAcross[id]()}
+        title={pinned
+          ? `Play the sketch's ${ACROSS_NAME[id]} in every section of the song. Sections given a version of their own on the Arrange tab follow the sketch again; the arrangement's layout survives — sections it leaves this track out of stay out${id === "drums" ? ", and kick-out builds keep their subtraction" : ""} — and no other track changes.`
+          : `Every section already follows the sketch's ${ACROSS_NAME[id]} — there is nothing to write across`}>
+        ✍ Whole song</button>
+    );
+  };
   const copyChordBeat = (d, to) => {
     const bars = chordGridBars(d), next = { ...secChordBeat };
     for (const o of to) next[o.key] = Array.from({ length: o.nbars },
@@ -2636,6 +2687,9 @@ export default function ProgressionWheel() {
   const wetDuck = ctx.createGain(); wetDuck.gain.value = 1; wetDuck.connect(filt);
   const music = makeReverb(ctx, filt, 1.6, 0.16, wetDuck);   // reverb bus for pitched sources
   const cduck = ctx.createGain(); cduck.gain.value = 1; cduck.connect(music);
+  // the chords' make-up gain — its own node upstream of the duck, because duckAt resets the
+  // duck node to exactly 1 and would silently eat a boost written onto it
+  const chordBus = ctx.createGain(); chordBus.gain.value = CHORD_MAKEUP; chordBus.connect(cduck);
   // the bass track's own duck: straight into the move filter, not the reverb bus — low end in a
   // room is mud — and pumped harder than the chords when the kick lands
   const bduck = ctx.createGain(); bduck.gain.value = 1; bduck.connect(filt);
@@ -2684,8 +2738,9 @@ export default function ProgressionWheel() {
   const trDrums = mkChain(master);
   const trPerc = mkChain(master);
   const trBass = mkChain(bduck);
+  trBass.in.gain.value = BASS_MAKEUP;              // audible before the first beat's applyFx runs
   const trPad = mkChain(padDuck);
-  const m = { ctx, master, music, cduck, bduck, padDuck, wetDuck, filt, mhp,
+  const m = { ctx, master, music, cduck, chordBus, bduck, padDuck, wetDuck, filt, mhp,
     trDrums, trPerc, trBass, trPad,
     bassLp: trBass.lp, percLp: trPerc.lp, padLp: trPad.lp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
     lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
@@ -2824,8 +2879,8 @@ export default function ProgressionWheel() {
         if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
         if (chord && !quiet && (!m.stem || m.stem.kind === "chords")) {
           // while the bass track carries the root, the chords stop doubling it an octave down
-          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.cduck, m.voicing, bassOn);
-          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.cduck, m.voicing, bassOn);
+          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.chordBus, m.voicing, bassOn);
+          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.chordBus, m.voicing, bassOn);
         }
       }
       /* The bass track. A written grid plays bar by bar exactly as the drums' own bars do; a
@@ -2984,14 +3039,14 @@ export default function ProgressionWheel() {
       if (i % ticksPerBeat === 0) {
         const A3 = autoRef.current || {};
         const fxBar = (structBar >= 0 ? structBar : Math.floor(m.step / L)) + i / L;
-        const applyFx = (tr, fx, laneId) => {
+        const applyFx = (tr, fx, laneId, makeup = 1) => {
           const val = k => {
             const v = fx ? fx[k] : undefined;
             if (v != null) return v;
             const md = MOD_BY_KEY[k];
             return md ? md.dflt : (k === "lvl" ? 100 : 0);
           };
-          tr.in.gain.setValueAtTime(val("lvl") / 100, t);
+          tr.in.gain.setValueAtTime((val("lvl") / 100) * makeup, t);
           const dvv = val("drive") / 100;
           if (dvv !== tr.driveAmt) { tr.driveAmt = dvv; tr.drive.curve = dvv > 0 ? driveCurve(dvv) : null; }
           tr.hp.frequency.setValueAtTime(nyq(m, 20 * Math.pow(1200 / 20, val("hp") / 100)), t);
@@ -3021,7 +3076,7 @@ export default function ProgressionWheel() {
         const F3 = trackFxRef.current || {};
         applyFx(m.trDrums, F3.drums, null);
         applyFx(m.trPerc, F3.perc, "cutperc");
-        applyFx(m.trBass, F3.bass, "cutbass");
+        applyFx(m.trBass, F3.bass, "cutbass", BASS_MAKEUP);
         applyFx(m.trPad, F3.pad, "cutpad");
       }
       // section moves: fire once, on the downbeat of each section instance, scheduling the whole
@@ -3126,6 +3181,7 @@ export default function ProgressionWheel() {
             if (!dest) {
               const C = m.ctx;
               dest = m.partGain[li] = C.createGain();
+              dest.gain.value = MELODY_MAKEUP;     // the melody parts' share of the make-up gain
               const drive = m.partDrive[li] = C.createWaveShaper();
               const hp = m.partHp[li] = C.createBiquadFilter();
               hp.type = "highpass"; hp.frequency.value = 20; hp.Q.value = 0.7;
@@ -5505,6 +5561,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && wholeSongBtn("drums")}
                         {own && <button className="mini" onClick={() => resetBeat(d.key)}
                           title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(d, sameRole)}
@@ -5588,6 +5645,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && wholeSongBtn("perc")}
                         {own && <button className="mini" onClick={() => resetPercBeat(d.key)}
                           title="Hand this section back to the perc menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyPercBeat(d, sameRole)}
@@ -5665,6 +5723,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && wholeSongBtn("bass")}
                         {/* Bass-as-hook: a riff written into the sixteenths the kick leaves free, from
                             this section's own resolved drums — so it interlocks with the groove
                             instead of doubling it. Press again for the next riff; the grid stays
@@ -5756,6 +5815,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && wholeSongBtn("pad")}
                         {own && <button className="mini" onClick={() => resetPadBeat(d.key)}
                           title="Back to the pad's one-hold-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(d, sameRole)}
@@ -5817,6 +5877,7 @@ export default function ProgressionWheel() {
                         <span className="gridname">🎹 {own ? `${who}'s own chord rhythm`
                           : (d.key !== GROOVE && secChordBeat[GROOVE] && secChordBeat[GROOVE].length) ? "following the groove"
                           : "following " + rhythm.name}</span>
+                        {view.groove && wholeSongBtn("chords")}
                         {own && <button className="mini" onClick={() => resetChordBeat(d.key)}
                           title="Hand this section back to the song's strum pattern — the grid goes on showing it, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyChordBeat(d, sameRole)}

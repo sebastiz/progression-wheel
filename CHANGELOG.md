@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+- **✍ Whole song — write one groove track across the arrangement.** Sections already follow the
+  Sketch tab's groove by default, but a section stops following the moment it is given a version
+  of its own — an arrangement template's pick, a pattern chosen on the Arrange tab, or a written
+  grid — so changing the sketch's drums could leave half the song playing the old groove. Each
+  track bar on the Sketch tab (drums, percussion, bass, pad, chords) now carries a **✍ Whole
+  song** button that hands every section back to the sketch for that one track. The arrangement's
+  layout survives: sections the arrangement leaves the track out of stay out, the drum
+  subtractions (a build's kick-out, a DJ intro's bare kick) keep their subtraction, and no other
+  track changes. The button sits disabled — with a tooltip saying so — while every section
+  already follows the sketch.
+- **The chords, bass and melody are audible out of the box.** All three pitched sources sat far
+  below the drums at their default settings — quiet enough to disappear entirely on laptop and
+  phone speakers. Each now gets a fixed make-up gain on its own bus (chords ×1.6, bass ×1.6,
+  melody parts ×1.5), upstream of the sidechain ducks and applied identically in stem renders, so
+  the Level sliders still read 100%, stems still sum to the mix, and nothing about the controls
+  changes — the defaults are just loud enough to hear. The default Sub bass voice also gains a
+  stronger octave partial: its ~65 Hz sine fundamental is below what small speakers can reproduce
+  at all, so without it the bass track was silent on them no matter the level.
 - **🩺 Check — the hook report card.** A third mode beside Write and Suggest on every melody
   part: the melody scored against the properties the earworm studies keep finding — mostly
   stepwise motion with one distinctive leap, a leap that gets answered, a motif that restates
