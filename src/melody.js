@@ -375,6 +375,12 @@ const RHYTHMS = [];
   [[0,4]]],
 ["question",  "Question & space",   "A short phrase, then silence — the half of a melody people forget to write.",
   [[0,0.5],[0.5,0.5],[1,1],[2,2]]],
+["clave",     "Son clave (3–2)",    "The Cuban key pattern, folded into one bar — three pushed hits answered by two square ones. Reggaeton's dembow is this cell's cousin.",
+  [[0,0.75],[0.75,0.75],[1.5,1],[2.5,0.5],[3,1]]],
+["clave23",   "Son clave (2–3)",    "The clave the other way round — two square hits, then the three pushed ones. Starts settled and ends leaning.",
+  [[0.5,0.5],[1,1],[2,0.75],[2.75,0.75],[3.5,0.5]]],
+["billie",    "Anticipated pairs",  "Pairs of notes with the second pushed early onto the “and” — the lean that carried a thousand basslines.",
+  [[0,0.75],[0.75,1.25],[2,0.75],[2.75,1.25]]],
 ].forEach(([id, name, desc, cell]) => { RHYTHMS[RHYTHMS.length] = { id, name, desc, cell }; });
 const RHYTHM_BY_ID = Object.fromEntries(RHYTHMS.map(r => [r.id, r]));
 // Which cell each kind of section leans on when a narrative writes the whole song. A verse
