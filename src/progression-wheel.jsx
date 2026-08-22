@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
@@ -1856,6 +1856,51 @@ export default function ProgressionWheel() {
       i === bar ? b.map((s2, j) => j === step ? (s2 === tok ? "" : tok) : s2) : [...b]) });
   };
   const resetChordBeat = key => { const next = { ...secChordBeat }; delete next[key]; setSecChordBeat(next); };
+  /* ---- write one groove track across the whole song ----
+     The sections follow the groove sketch on their own: a pass only stops following when it is
+     given a version of this track that is its own — a pattern picked on the Arrange tab, a
+     template's pick, or a written grid. So "play the sketch's drums everywhere" is a clearing
+     move: drop every section's own version of this one track and the whole song follows the
+     sketch again. The arrangement's *layout* survives on purpose — "off" picks, the mutes and
+     the drum subtractions (a build's kick-out is arrangement, not material) all stay, and no
+     other track is touched. */
+  const keepIf = (map, keep) => Object.fromEntries(
+    Object.entries(map).filter(([k, v]) => k === GROOVE || keep(v)));
+  const writeAcross = {
+    drums:  () => { setSecDrum(keepIf(secDrum, v => v && (!DRUMS[v] || DRUM_CUTS.has(v))));
+                    setSecBeat(keepIf(secBeat, () => false)); },
+    perc:   () => { setSecPercPat(keepIf(secPercPat, v => v === "off"));
+                    setSecPercBeat(keepIf(secPercBeat, () => false)); },
+    bass:   () => { setSecBassPat(keepIf(secBassPat, v => v === "off"));
+                    setSecBassBeat(keepIf(secBassBeat, () => false)); },
+    pad:    () => { setSecPadVoice(keepIf(secPadVoice, v => v === "off"));
+                    setSecPadBeat(keepIf(secPadBeat, () => false)); },
+    chords: () => setSecChordBeat(keepIf(secChordBeat, () => false)),
+  };
+  // does any section hold a version of its own that this button would hand back to the sketch?
+  const acrossPinned = {
+    drums:  () => Object.entries(secDrum).some(([k, v]) => k !== GROOVE && v && DRUMS[v] && !DRUM_CUTS.has(v))
+      || Object.keys(secBeat).some(k => k !== GROOVE),
+    perc:   () => Object.entries(secPercPat).some(([k, v]) => k !== GROOVE && v && v !== "off")
+      || Object.keys(secPercBeat).some(k => k !== GROOVE),
+    bass:   () => Object.entries(secBassPat).some(([k, v]) => k !== GROOVE && v && v !== "off")
+      || Object.keys(secBassBeat).some(k => k !== GROOVE),
+    pad:    () => Object.entries(secPadVoice).some(([k, v]) => k !== GROOVE && v && v !== "off")
+      || Object.keys(secPadBeat).some(k => k !== GROOVE),
+    chords: () => Object.keys(secChordBeat).some(k => k !== GROOVE),
+  };
+  const ACROSS_NAME = { drums:"drums", perc:"percussion", bass:"bassline", pad:"pad", chords:"chord rhythm" };
+  const wholeSongBtn = id => {
+    const pinned = acrossPinned[id]();
+    return (
+      <button className="mini" disabled={!pinned}
+        onClick={() => writeAcross[id]()}
+        title={pinned
+          ? `Play the sketch's ${ACROSS_NAME[id]} in every section of the song. Sections given a version of their own on the Arrange tab follow the sketch again; the arrangement's layout survives — sections it leaves this track out of stay out${id === "drums" ? ", and kick-out builds keep their subtraction" : ""} — and no other track changes.`
+          : `Every section already follows the sketch's ${ACROSS_NAME[id]} — there is nothing to write across`}>
+        ✍ Whole song</button>
+    );
+  };
   const copyChordBeat = (d, to) => {
     const bars = chordGridBars(d), next = { ...secChordBeat };
     for (const o of to) next[o.key] = Array.from({ length: o.nbars },
@@ -5052,6 +5097,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && wholeSongBtn("drums")}
                         {own && <button className="mini" onClick={() => resetBeat(d.key)}
                           title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(d, sameRole)}
@@ -5135,6 +5181,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && wholeSongBtn("perc")}
                         {own && <button className="mini" onClick={() => resetPercBeat(d.key)}
                           title="Hand this section back to the perc menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyPercBeat(d, sameRole)}
@@ -5212,6 +5259,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && wholeSongBtn("bass")}
                         {own && <button className="mini" onClick={() => resetBassBeat(d.key)}
                           title="Hand this section back to the bass menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyBassBeat(d, sameRole)}
@@ -5288,6 +5336,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && wholeSongBtn("pad")}
                         {own && <button className="mini" onClick={() => resetPadBeat(d.key)}
                           title="Back to the pad's one-hold-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(d, sameRole)}
@@ -5349,6 +5398,7 @@ export default function ProgressionWheel() {
                         <span className="gridname">🎹 {own ? `${who}'s own chord rhythm`
                           : (d.key !== GROOVE && secChordBeat[GROOVE] && secChordBeat[GROOVE].length) ? "following the groove"
                           : "following " + rhythm.name}</span>
+                        {view.groove && wholeSongBtn("chords")}
                         {own && <button className="mini" onClick={() => resetChordBeat(d.key)}
                           title="Hand this section back to the song's strum pattern — the grid goes on showing it, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyChordBeat(d, sameRole)}

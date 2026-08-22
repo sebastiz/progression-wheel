@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **✍ Whole song — write one groove track across the arrangement.** Sections already follow the
+  Sketch tab's groove by default, but a section stops following the moment it is given a version
+  of its own — an arrangement template's pick, a pattern chosen on the Arrange tab, or a written
+  grid — so changing the sketch's drums could leave half the song playing the old groove. Each
+  track bar on the Sketch tab (drums, percussion, bass, pad, chords) now carries a **✍ Whole
+  song** button that hands every section back to the sketch for that one track. The arrangement's
+  layout survives: sections the arrangement leaves the track out of stay out, the drum
+  subtractions (a build's kick-out, a DJ intro's bare kick) keep their subtraction, and no other
+  track changes. The button sits disabled — with a tooltip saying so — while every section
+  already follows the sketch.
 - **The chords, bass and melody are audible out of the box.** All three pitched sources sat far
   below the drums at their default settings — quiet enough to disappear entirely on laptop and
   phone speakers. Each now gets a fixed make-up gain on its own bus (chords ×1.6, bass ×1.6,
