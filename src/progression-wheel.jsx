@@ -627,6 +627,9 @@ export default function ProgressionWheel() {
   /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
      early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
   const [syncIn, setSyncIn] = useState({});
+  // ✦ Riff the holes, per section: which riff the next press writes. UI state — the riff itself
+  // lands in the bass grid and is saved from there like any painted line.
+  const [riffSeed, setRiffSeed] = useState({});
   /* The hook duel: one section+part's tournament in progress — the melody as it was (restored on
      cancel), the pool of rivals, the reigning champion and which round this is. UI state: what gets
      saved is whatever melody the duel leaves on the grid. */
@@ -5383,6 +5386,21 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {/* Bass-as-hook: a riff written into the sixteenths the kick leaves free, from
+                            this section's own resolved drums — so it interlocks with the groove
+                            instead of doubling it. Press again for the next riff; the grid stays
+                            yours to edit, and ↺ Reset hands it back to the menu. */}
+                        <button className="mini" onClick={() => {
+                            const seed = riffSeed[d.key] || 0;
+                            const riff = bassRiffBars(beatBars(d), n, barBeats, d.nbars, seed);
+                            setSecBassBeat({ ...secBassBeat, [d.key]: riff });
+                            setRiffSeed({ ...riffSeed, [d.key]: seed + 1 });
+                            setIoNote(`Bass riff written into the kick's holes — ${riffShapeName(seed)}. Press again for another.`);
+                          }}
+                          title={"Write a bass riff into the holes this " + (view.groove ? "groove" : d.word.toLowerCase())
+                            + "'s kick leaves — in house and garage the hook is as often the bassline, and what makes it groove "
+                            + "is answering the kick rather than doubling it. Every press writes a different riff."}>
+                          ✦ Riff the holes</button>
                         {own && <button className="mini" onClick={() => resetBassBeat(d.key)}
                           title="Hand this section back to the bass menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
                         {sameRole.length > 0 && <button className="mini" onClick={() => copyBassBeat(d, sameRole)}
