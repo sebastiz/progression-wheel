@@ -1103,6 +1103,9 @@ const NO_SHAPE = { atk: 0, dec: 1, sus: 1, rel: 1, lvl: 1 };
 // partials (oscillator type · harmonic multiple · relative level) plus an
 // envelope: atk = attack, rel = release tail, vol = peak, sus = sustain level
 // (0 = percussive decay, >0 = held tone). lp adds a low-pass; vib adds vibrato.
+// The `vol` values are loudness-normalized: every voice rendered offline and matched to the
+// default synth lead by K-weighted loudness (scripts/measure-loudness.mjs), so at the same
+// Level slider every instrument starts equally audible and swapping voices holds the mix.
 const LEAD_VOICES = [
   ["synth","Synth lead"], ["sine","Soft sine"], ["triangle","Mellow triangle"],
   ["square","Chiptune square"], ["saw","Bright saw"], ["flute","Flute"],
@@ -1116,37 +1119,37 @@ const LEAD_VOICES = [
 ];
 const LEAD_SPECS = {
   synth:    { parts:[["triangle",1,1],["sine",2,0.3]],                 atk:0.012, rel:0.13, vol:0.12, sus:0.6 },
-  sine:     { parts:[["sine",1,1],["sine",2,0.1]],                     atk:0.02,  rel:0.18, vol:0.13, sus:0.7 },
-  triangle: { parts:[["triangle",1,1]],                               atk:0.01,  rel:0.15, vol:0.13, sus:0.65 },
-  square:   { parts:[["square",1,0.6]],                               atk:0.005, rel:0.07, vol:0.085, sus:0.55, lp:2600 },
-  saw:      { parts:[["sawtooth",1,0.6]],                             atk:0.008, rel:0.13, vol:0.085, sus:0.6, lp:3200 },
-  flute:    { parts:[["sine",1,1],["sine",2,0.05]],                   atk:0.05,  rel:0.15, vol:0.15, sus:0.8, vib:true },
-  pluck:    { parts:[["triangle",1,1],["sine",3,0.15]],               atk:0.003, rel:0.3,  vol:0.14, sus:0 },
-  bell:     { parts:[["sine",1,1],["sine",2.76,0.5],["sine",5.4,0.2]],atk:0.002, rel:0.6,  vol:0.11, sus:0 },
-  musicbox: { parts:[["sine",1,1],["sine",4,0.35],["sine",8,0.08]],   atk:0.002, rel:0.45, vol:0.1,  sus:0 },
-  ep:       { parts:[["sine",1,1],["triangle",2,0.25],["sine",5,0.06]],atk:0.004,rel:0.4,  vol:0.13, sus:0.15 },
-  strings:  { parts:[["sawtooth",1,0.5],["sawtooth",1.004,0.5]],      atk:0.1,   rel:0.28, vol:0.08, sus:0.85, lp:2400, vib:true },
-  brass:    { parts:[["sawtooth",1,0.7],["square",1,0.1]],            atk:0.035, rel:0.15, vol:0.085, sus:0.7, lp:2800 },
-  organ:    { parts:[["sine",1,1],["sine",2,0.5],["sine",3,0.3],["sine",4,0.15]], atk:0.006, rel:0.06, vol:0.075, sus:0.9 },
-  voice:    { parts:[["sawtooth",1,0.4],["sine",1,0.45]],             atk:0.06,  rel:0.18, vol:0.1,  sus:0.8, lp:1500, vib:true },
-  glass:    { parts:[["sine",1,1],["sine",3,0.2],["triangle",2,0.15]],atk:0.07,  rel:0.32, vol:0.1,  sus:0.75 },
-  whistle:  { parts:[["sine",1,1],["sine",2,0.02]],                   atk:0.03,  rel:0.1,  vol:0.12, sus:0.85, vib:true },
+  sine:     { parts:[["sine",1,1],["sine",2,0.1]],                     atk:0.02,  rel:0.18, vol:0.091, sus:0.7 },
+  triangle: { parts:[["triangle",1,1]],                               atk:0.01,  rel:0.15, vol:0.12, sus:0.65 },
+  square:   { parts:[["square",1,0.6]],                               atk:0.005, rel:0.07, vol:0.148, sus:0.55, lp:2600 },
+  saw:      { parts:[["sawtooth",1,0.6]],                             atk:0.008, rel:0.13, vol:0.234, sus:0.6, lp:3200 },
+  flute:    { parts:[["sine",1,1],["sine",2,0.05]],                   atk:0.05,  rel:0.15, vol:0.079, sus:0.8, vib:true },
+  pluck:    { parts:[["triangle",1,1],["sine",3,0.15]],               atk:0.003, rel:0.3,  vol:0.154, sus:0 },
+  bell:     { parts:[["sine",1,1],["sine",2.76,0.5],["sine",5.4,0.2]],atk:0.002, rel:0.6,  vol:0.097, sus:0 },
+  musicbox: { parts:[["sine",1,1],["sine",4,0.35],["sine",8,0.08]],   atk:0.002, rel:0.45, vol:0.107,  sus:0 },
+  ep:       { parts:[["sine",1,1],["triangle",2,0.25],["sine",5,0.06]],atk:0.004,rel:0.4,  vol:0.21, sus:0.15 },
+  strings:  { parts:[["sawtooth",1,0.5],["sawtooth",1.004,0.5]],      atk:0.1,   rel:0.28, vol:0.139, sus:0.85, lp:2400, vib:true },
+  brass:    { parts:[["sawtooth",1,0.7],["square",1,0.1]],            atk:0.035, rel:0.15, vol:0.14, sus:0.7, lp:2800 },
+  organ:    { parts:[["sine",1,1],["sine",2,0.5],["sine",3,0.3],["sine",4,0.15]], atk:0.006, rel:0.06, vol:0.062, sus:0.9 },
+  voice:    { parts:[["sawtooth",1,0.4],["sine",1,0.45]],             atk:0.06,  rel:0.18, vol:0.109,  sus:0.8, lp:1500, vib:true },
+  glass:    { parts:[["sine",1,1],["sine",3,0.2],["triangle",2,0.15]],atk:0.07,  rel:0.32, vol:0.079,  sus:0.75 },
+  whistle:  { parts:[["sine",1,1],["sine",2,0.02]],                   atk:0.03,  rel:0.1,  vol:0.077, sus:0.85, vib:true },
   /* Dance voices. `q` adds filter resonance, `fenv:[from,to]` sweeps the cutoff across the note
      (as a multiple of `lp`), and `bend` drops the pitch in from that many semitones above. */
   supersaw: { parts:[["sawtooth",0.97940,0.7],["sawtooth",0.98624,0.7],["sawtooth",0.99311,0.7],
                      ["sawtooth",1,1],
                      ["sawtooth",1.00694,0.7],["sawtooth",1.01394,0.7],["sawtooth",1.02098,0.7]],
-              atk:0.02, rel:0.35, vol:0.038, sus:0.8, lp:4200, q:0.9 },
+              atk:0.02, rel:0.35, vol:0.051, sus:0.8, lp:4200, q:0.9 },
   hoover:   { parts:[["sawtooth",0.98624,0.8],["sawtooth",1,1],["sawtooth",1.01394,0.8],
                      ["square",0.5,0.35]],
-              atk:0.015, rel:0.3, vol:0.05, sus:0.75, lp:3000, q:2.5, bend:7 },
+              atk:0.015, rel:0.3, vol:0.068, sus:0.75, lp:3000, q:2.5, bend:7 },
   acid:     { parts:[["sawtooth",1,1]],
-              atk:0.004, rel:0.12, vol:0.1, sus:0.25, lp:520, q:14, fenv:[5.5, 1] },
+              atk:0.004, rel:0.12, vol:0.162, sus:0.25, lp:520, q:14, fenv:[5.5, 1] },
   reese:    { parts:[["sawtooth",0.98624,1],["sawtooth",1.01394,1],["sine",0.5,0.5]],
-              atk:0.02, rel:0.18, vol:0.075, sus:0.85, lp:900, q:5 },
-  sub:      { parts:[["sine",1,1],["triangle",2,0.06]],               atk:0.012, rel:0.1, vol:0.2, sus:0.9 },
+              atk:0.02, rel:0.18, vol:0.061, sus:0.85, lp:900, q:5 },
+  sub:      { parts:[["sine",1,1],["triangle",2,0.06]],               atk:0.012, rel:0.1, vol:0.073, sus:0.9 },
   stab:     { parts:[["sawtooth",1,0.6],["square",2,0.2],["sawtooth",1.00694,0.5]],
-              atk:0.003, rel:0.18, vol:0.075, sus:0, lp:3400, q:1.4, fenv:[1.6, 0.7] },
+              atk:0.003, rel:0.18, vol:0.22, sus:0, lp:3400, q:1.4, fenv:[1.6, 0.7] },
 };
 // legato=true softens the attack and lets the note ring past its slot so a
 // moving line flows together instead of re-articulating on every eighth.
@@ -1226,11 +1229,14 @@ const BASS_VOICES = [["sub", "Sub bass"], ["saw", "Saw bass"], ["square", "Squar
    voicing a bar at a time, so everything here has a real sustain and none of it is percussive. */
 const PAD_VOICES = [["strings", "Strings"], ["glass", "Glass pad"], ["voice", "Voice (ah)"],
   ["organ", "Organ"], ["brass", "Brass"], ["supersaw", "Supersaw"]];
-const BASS_LVL = { sub: 1.05, saw: 1.8, square: 1.8, pluck: 1.35, acid: 1.5, reese: 1.8 };
+/* Measured like the lead vols (scripts/measure-loudness.mjs), but at C2 and to a hotter target,
+   because one low note has to carry the way a whole chord does — every bass voice lands at the
+   same K-weighted loudness, so swapping the bass sound never moves the bass level. */
+const BASS_LVL = { sub: 2.9, saw: 2.7, square: 2.8, pluck: 3.5, acid: 3.4, reese: 3.0 };
 function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
   const k = LEAD_SPECS[kind] ? kind : "sub";
   // C2 upward: below the chord window (VOICE_LO 55), above the kick's fundamental
-  leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 1.4) * vel });
+  leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 3.0) * vel });
 }
 
 export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
