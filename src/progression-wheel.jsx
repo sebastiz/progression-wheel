@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyWithin } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin } from "./melody.js";
 import { bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -630,6 +630,10 @@ export default function ProgressionWheel() {
   // ✦ Riff the holes, per section: which riff the next press writes. UI state — the riff itself
   // lands in the bass grid and is saved from there like any painted line.
   const [riffSeed, setRiffSeed] = useState({});
+  /* The chorus lift, per section: which ingredients are on and what each replaced, so every
+     ingredient is individually reversible. UI state like varyIn — the lifted values themselves
+     live in the song (part settings, section maps, notes) and persist on their own. */
+  const [liftSt, setLiftSt] = useState({});
   /* The hook duel: one section+part's tournament in progress — the melody as it was (restored on
      cancel), the pool of rivals, the reigning champion and which round this is. UI state: what gets
      saved is whatever melody the duel leaves on the grid. */
@@ -2385,6 +2389,95 @@ export default function ProgressionWheel() {
       ? (duel.round ? `Kept ${duel.champLbl} after ${duel.round} duel${duel.round > 1 ? "s" : ""}.` : "Kept the original.")
       : "Duel cancelled — the melody is back as it was.");
     setDuel(null);
+  };
+
+  /* ---- the chorus lift ----
+     The moment listeners decide a song is catchy is the first chorus, and the standard kit for
+     lifting one is always the same: the melody sung higher, the lead thickened, the accents leant
+     on, every subtraction removed, the hook saying a little more per bar. Each ingredient is one
+     tap and individually reversible — the kit is learnable, not a black box. Everything that lands
+     on part A goes through ONE putSec, because two setLayerProp calls in one handler both spread
+     the same render's melos and the second write clobbers the first. */
+  const LIFTS = [
+    { id:"higher", name:"sing it higher", tip:"Part A up a third, in key (its Scale-steps setting). Pop's big chorus is usually the same notes sung higher." },
+    { id:"double", name:"double the octave", tip:"Part A doubled an octave up — the cheapest way to make a thin lead sound expensive." },
+    { id:"accent", name:"lean the accents", tip:"Part A's downbeats played harder, so the hook pushes instead of ambling." },
+    { id:"allin", name:"everything in", tip:"Every subtraction on this section — drums out, chords out, bass or pad off, parts muted out — is lifted. The chorus is where the full stack earns its keep." },
+    { id:"busier", name:"busier hook", tip:"Two small additive edits to the melody — an added note, a split held note — so the chorus says more per bar. Reversible here, and by ⌘Z." },
+  ];
+  const liftOf = d => liftSt[d.key] || { on: {}, prev: {} };
+  // the part-A modulation an ingredient sets; "allin" and "busier" are handled beside it
+  const liftPatch = (ing, ly) => (
+    ing === "higher" ? { dia: Math.min(7, (modOf(ly, "dia") || 0) + 2) }
+    : ing === "double" ? { oct2: 1 }
+    : ing === "accent" ? { accent: Math.max(35, modOf(ly, "accent") || 0) } : null);
+  const applyLift = (d, ings) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const ly = layerOf(sec, 0) || {};
+    const st = liftOf(d);
+    const prev = { ...st.prev }, on = { ...st.on };
+    let mods = {}, bars = null, n = 0;
+    for (const ing of ings) {
+      if (on[ing]) continue;
+      n++;
+      const p = liftPatch(ing, ly);
+      if (p) {
+        for (const k of Object.keys(p)) if (!(k in prev)) prev[k] = modOf(ly, k);
+        mods = { ...mods, ...p };
+      }
+      if (ing === "busier") {
+        prev.bars = dupBars(barsOf(sec, 0) || []);
+        bars = dupBars(prev.bars);
+        varyPass(bars, { pass: 1, seed: 613, nd: scaleSemis.length, amount: 2 });
+      }
+      if (ing === "allin") {
+        prev.allin = { drum: secDrum[d.key], quiet: secQuiet[d.key], bass: secBass[d.key],
+          bassPat: secBassPat[d.key], percPat: secPercPat[d.key], padV: secPadVoice[d.key],
+          partOut: secPartOut[d.key] };
+        const lift1 = (m, set, when) => {
+          if (m[d.key] !== undefined && when(m[d.key])) { const nx = { ...m }; delete nx[d.key]; set(nx); }
+        };
+        lift1(secDrum, setSecDrum, v => v === "off");
+        lift1(secQuiet, setSecQuiet, v => v === true);
+        lift1(secBass, setSecBass, v => v === true);
+        lift1(secBassPat, setSecBassPat, v => v === "off");
+        lift1(secPercPat, setSecPercPat, v => v === "off");
+        lift1(secPadVoice, setSecPadVoice, v => v === "off");
+        lift1(secPartOut, setSecPartOut, () => true);
+      }
+      on[ing] = true;
+    }
+    if (!n) return;
+    if (Object.keys(mods).length || bars)
+      putSec(d.key, { layers: sec.layers.map((l, li) => li === 0
+        ? { ...cloneLayer(l), ...mods, ...(bars ? { bars } : {}), mute: false } : cloneLayer(l)) });
+    setLiftSt({ ...liftSt, [d.key]: { on, prev } });
+    if (n > 1) setIoNote(`${d.key} lifted — ${n} ingredients on. Tap any one of them to take it back off.`);
+  };
+  const unLift = (d, ing) => {
+    const st = liftOf(d); if (!st.on[ing]) return;
+    const prev = { ...st.prev }, on = { ...st.on };
+    delete on[ing];
+    if (ing === "allin") {
+      const p = prev.allin || {};
+      const put1 = (m, set, v) => {
+        const nx = { ...m }; if (v === undefined) delete nx[d.key]; else nx[d.key] = v; set(nx);
+      };
+      put1(secDrum, setSecDrum, p.drum); put1(secQuiet, setSecQuiet, p.quiet);
+      put1(secBass, setSecBass, p.bass); put1(secBassPat, setSecBassPat, p.bassPat);
+      put1(secPercPat, setSecPercPat, p.percPat); put1(secPadVoice, setSecPadVoice, p.padV);
+      put1(secPartOut, setSecPartOut, p.partOut);
+      delete prev.allin;
+    } else if (ing === "busier") {
+      if (prev.bars) putLayer(d.key, 0, dupBars(prev.bars));
+      delete prev.bars;
+    } else {
+      const k1 = ing === "higher" ? "dia" : ing === "double" ? "oct2" : "accent";
+      const patch = { [k1]: prev[k1] };
+      delete prev[k1];
+      setLayerProp(d.key, 0, patch);
+    }
+    setLiftSt({ ...liftSt, [d.key]: { on, prev } });
   };
 
   /* ---- melodic narrative: one shape written across every section at once ---- */
@@ -4766,6 +4859,23 @@ export default function ProgressionWheel() {
                       {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                     </select>
                   </label>
+                </div>
+                {/* The chorus lift: the standard kit for making one section land bigger, as one tap
+                    or ingredient by ingredient. Each chip shows whether it is on, and tapping an
+                    on chip takes exactly that ingredient back off. */}
+                <div className="row secopts">
+                  <span className="optlbl" style={{ opacity:0.6 }}>lift</span>
+                  <button className="mini"
+                    onClick={() => applyLift(d, LIFTS.map(g => g.id))}
+                    title={"Lift this " + d.word.toLowerCase() + " the way a chorus gets lifted: melody up a third, "
+                      + "the lead doubled an octave up, accents leant on, every subtraction removed, and the hook made "
+                      + "a little busier — all at once, each ingredient still individually reversible below."}>
+                    ⤴ Lift this {d.word.toLowerCase()}</button>
+                  {LIFTS.map(g => (
+                    <button key={g.id} className={"mini" + (liftOf(d).on[g.id] ? " on" : "")} title={g.tip}
+                      onClick={() => (liftOf(d).on[g.id] ? unLift(d, g.id) : applyLift(d, [g.id]))}>
+                      {g.name}</button>
+                  ))}
                 </div>
                 </>}
                 {view.groove && gridBar("🎵", "Melody", open,
