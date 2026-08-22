@@ -56,6 +56,40 @@ const maxId = xml => {
   return max;
 };
 
+/* The MainTrack's automation targets, read off the template rather than hard-coded: an envelope
+   points at a parameter by the parameter's own AutomationTarget id, and those ids are the reference
+   set's to assign. The template ships with two envelopes already — tempo and time signature — each
+   holding one event at Live's initial-value sentinel time; Live reads the *envelope* when one
+   exists, so both are synced to the song below or a 6/8 export at 140 would open at the reference
+   set's own 100 bpm in 4/4. */
+const ALS_MAIN = ALS_DOC.slice(ALS_DOC.indexOf("<MainTrack"), ALS_DOC.indexOf("</MainTrack>"));
+const mainTargetOf = param =>
+  (ALS_MAIN.match(new RegExp(`<${param}>[\\s\\S]*?AutomationTarget Id="(\\d+)"`)) || [])[1] || null;
+const MAIN_VOL_TARGET = mainTargetOf("Volume");
+const MAIN_TEMPO_TARGET = mainTargetOf("Tempo");
+const MAIN_TS_TARGET = mainTargetOf("TimeSignature");
+// rewrite the single sentinel event of one of the template's own MainTrack envelopes
+const syncMainEnv = (doc, pointee, value) => pointee == null ? doc : doc.replace(
+  new RegExp(`(<PointeeId Value="${pointee}" /></EnvelopeTarget><Automation><Events><(?:Float|Enum)Event Id="\\d+" Time="-63072000" Value=")[-\\d.]+(")`),
+  `$1${value}$2`);
+
+/* A drawn Level lane, carried out as master-volume automation. Live interpolates float automation
+   linearly between events and holds flat outside them — exactly what the app's lanes do — and it
+   wants an initial event at the sentinel time, which takes the first point's value so nothing jumps
+   before the first breakpoint. Event ids continue the template's own small per-tag numbering (its
+   two envelopes carry events 0 and 1); the envelope joins their list as Id 2. The lane's 0..1 is
+   already the gain the scheduler writes onto the master, and Live's volume Manual is 1 at unity, so
+   the values carry across without a mapping. */
+const mainLevelEnvelope = pts => {
+  if (!MAIN_VOL_TARGET || !pts || !pts.length) return "";
+  let id = 2;
+  const evs = [`<FloatEvent Id="${id++}" Time="-63072000" Value="${alsNum(pts[0].v)}" />`,
+    ...pts.map(p => `<FloatEvent Id="${id++}" Time="${alsNum(p.beat)}" Value="${alsNum(p.v)}" />`)].join("");
+  return `<AutomationEnvelope Id="2"><EnvelopeTarget><PointeeId Value="${MAIN_VOL_TARGET}" /></EnvelopeTarget>`
+    + `<Automation><Events>${evs}</Events><AutomationTransformViewState><IsTransformPending Value="false" />`
+    + `<TimeAndValueTransforms /></AutomationTransformViewState></Automation></AutomationEnvelope>`;
+};
+
 /* One clip's worth of notes, grouped by pitch — Live stores a KeyTrack per note number rather than
    one flat list, so the grouping is the format's, not a choice. The note ids are the clip's own
    counter, and NoteIdGenerator below has to sit above the highest of them. */
@@ -86,7 +120,7 @@ const alsClip = ({ name, notes, end, color, tsNum, tsDen }) => ALS_CLIP
 /* The set. `tracks` is [{ name, color, vol, notes:[{t,dur,note,vel}], end }] with every time in
    beats; `locators` is [{ beat, name }] — the section markers, which is what makes the arrangement
    legible on Live's ruler rather than an undifferentiated run of bars. */
-function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = "song" }) {
+function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = "song", mainAuto = null }) {
   const total = Math.max(4, ...tracks.map(t => t.end || 0));
   // clones start above every id the template shell already uses, and each one moves the mark along
   let next = maxId(ALS_DOC) + 1;
@@ -101,7 +135,16 @@ function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = 
     `<Locator Id="${i}"><LomId Value="0" /><Time Value="${alsNum(l.beat)}" />`
     + `<Name Value="${esc(l.name)}" /><Annotation Value="" />`
     + `<IsSongStart Value="${i === 0 ? "true" : "false"}" /></Locator>`).join("");
-  return ALS_DOC
+  // the template's own tempo and meter envelopes follow the song, and a drawn Level lane joins them
+  let doc = syncMainEnv(syncMainEnv(ALS_DOC, MAIN_TEMPO_TARGET, alsNum(bpm)),
+    MAIN_TS_TARGET, tsEnum(tsNum, tsDen));
+  const levelEnv = mainLevelEnvelope(mainAuto && mainAuto.level);
+  if (levelEnv) {
+    const at = doc.indexOf("<MainTrack");
+    const end = doc.indexOf("</Envelopes></AutomationEnvelopes>", at);
+    if (end >= 0) doc = doc.slice(0, end) + levelEnv + doc.slice(end);
+  }
+  return doc
     .replace("%TRACKS%", () => trackXml)
     .replace("%LOCATORS%", () => locXml)
     .replace("%BPM%", alsNum(bpm))

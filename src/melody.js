@@ -29,9 +29,10 @@ const LAYER_DEFAULT_INSTR = ["", "ep", "synth_bass_1", "pad_2_warm", "lead_2_saw
 // bassline drops two octaves, the pad sits under the lead, the saw lead sits above it.
 const LAYER_DEFAULT_OCT = [0, 0, -2, -1, 1, 1];
 const LAYER_OCT_MIN = -3, LAYER_OCT_MAX = 2;
-// Level per part, 0..1. Defaults duck the accompaniment under the lead so a six-part arrangement
-// is roughly balanced before you touch anything.
-const LAYER_DEFAULT_VOL = [1, 0.8, 0.9, 0.6, 0.7, 0.7];
+// Level per part, 0..1. Every part starts at full: the voices themselves are loudness-normalized
+// (see LEAD_SPECS in audio.js), so a flat 100% is a genuinely equal starting mix, and any ducking
+// of the accompaniment under the lead is a choice made on the sliders rather than baked in here.
+const LAYER_DEFAULT_VOL = [1, 1, 1, 1, 1, 1];
 // one part's gain, folding in mute and any soloing elsewhere in the section
 const layerGain = (ly, anySolo) =>
   (ly.mute || (anySolo && !ly.solo)) ? 0 : (ly.vol == null ? 1 : ly.vol);
@@ -374,6 +375,12 @@ const RHYTHMS = [];
   [[0,4]]],
 ["question",  "Question & space",   "A short phrase, then silence — the half of a melody people forget to write.",
   [[0,0.5],[0.5,0.5],[1,1],[2,2]]],
+["clave",     "Son clave (3–2)",    "The Cuban key pattern, folded into one bar — three pushed hits answered by two square ones. Reggaeton's dembow is this cell's cousin.",
+  [[0,0.75],[0.75,0.75],[1.5,1],[2.5,0.5],[3,1]]],
+["clave23",   "Son clave (2–3)",    "The clave the other way round — two square hits, then the three pushed ones. Starts settled and ends leaning.",
+  [[0.5,0.5],[1,1],[2,0.75],[2.75,0.75],[3.5,0.5]]],
+["billie",    "Anticipated pairs",  "Pairs of notes with the second pushed early onto the “and” — the lean that carried a thousand basslines.",
+  [[0,0.75],[0.75,1.25],[2,0.75],[2.75,1.25]]],
 ].forEach(([id, name, desc, cell]) => { RHYTHMS[RHYTHMS.length] = { id, name, desc, cell }; });
 const RHYTHM_BY_ID = Object.fromEntries(RHYTHMS.map(r => [r.id, r]));
 // Which cell each kind of section leans on when a narrative writes the whole song. A verse

@@ -19,6 +19,72 @@
   changes — the defaults are just loud enough to hear. The default Sub bass voice also gains a
   stronger octave partial: its ~65 Hz sine fundamental is below what small speakers can reproduce
   at all, so without it the bass track was silent on them no matter the level.
+- **🩺 Check — the hook report card.** A third mode beside Write and Suggest on every melody
+  part: the melody scored against the properties the earworm studies keep finding — mostly
+  stepwise motion with one distinctive leap, a leap that gets answered, a motif that restates
+  itself and drifts when it does, two to six notes a bar, three to five different pitches, an
+  ending that lands on the harmony, a peak that arrives past the opening. One line per property
+  with a plain-words reading, and each failing line carries a **one-tap fix** — a single
+  deterministic edit (smooth the wildest leaps, lift the peak into a leap, restate the opening,
+  land the last note, fold in the stray pitches) that improves exactly that line and nothing
+  else. The number is a shape check, not taste, and says so.
+- **⚔ Duel — hooks get good by selection.** The fourth mode breeds eight rivals of the melody
+  on the grid — same tune, small deterministic mutations from the same engine ✦ Vary repeats
+  uses — and plays them pairwise while the section loops: hear A, hear B, tap the winner. The
+  loser's slot goes to the next rival, and when the pool runs out the champion breeds fresh
+  challengers, so five minutes of taps evolves the hook instead of settling for the first
+  plausible one. Keep the champion, or cancel and the melody comes back exactly as written.
+- **⇢ Syncopate — anticipation as one tap.** Beside ✦ Vary repeats: push the part's on-beat
+  notes half a beat early, held through the beat they left — the lean that carries most pop and
+  house toplines. One tap pushes the backbeats, two pushes every beat but the downbeat, three
+  puts the melody back; always re-derived from the pre-press baseline, so two taps push harder
+  rather than pushing the pushed. A push never swallows a note — an onset in its way keeps the
+  note where it was. Two new sticky rhythm cells join the Suggest menu with it: **son clave**,
+  both ways round, and **anticipated pairs**.
+- **✦ Riff the holes — the bassline as the hook.** One button on every bass grid, groove and
+  section alike. It reads the section's own resolved drums and writes a riff — offbeat pump,
+  tresillo, two-step, funk holes, rolling sixteenths — dropping any onset the kick owns, so the
+  line interlocks with the groove instead of doubling it; odd bars answer even ones. Every press
+  writes a different riff, and the result is an ordinary painted bass grid: it saves, exports
+  and ↺ resets like one.
+- **⤴ Chorus lift.** The standard kit for making one section land bigger, in the section's
+  Transitions & presets: melody up a third in key, the lead doubled an octave up, accents leant
+  on, every subtraction on the section removed (drums, chords, bass, pad and muted parts back
+  in), and the hook made a little busier. One button applies the lot; each ingredient is a chip
+  that shows its state and taps back off individually, restoring exactly the value it replaced —
+  the kit is learnable, not a black box.
+- **☕ Morning review.** Catchiness is judged cold, days later — everything sounds like a hook at
+  midnight. The review on the Save tab stashes the current song and plays every saved sketch
+  back to back, never-reviewed first, each starting by itself, with a verdict tap per sketch:
+  😍 Keep stamps it (and badges it in the Load menu), 🔧 Rework leaves that sketch loaded and
+  ends the queue, 🗑 Kill deletes with one step of undo, ▸ Skip passes. Closing the queue puts
+  the stashed song back exactly as it was.
+- **↓ Live project — the handoff that plays.** One zip laid out the way a Live project sits on
+  disk: the `.als` at the top, the stems in `Samples/Imported` beside it, and the settings
+  snapshot. Open the set, select everything in Samples/Imported and drag it onto the arrangement
+  at 1.1.1 — Live lands each wav on its own audio track and the project plays the sketch
+  immediately, while the MIDI tracks (already carrying the same notes) wait for real
+  instruments. The stems are pre-master and sum to the mix. Audio tracks are deliberately not
+  written into the `.als` itself: a Live Set is not a format to infer from the outside, as this
+  exporter's own history shows.
+- **The Live Set carries more of the song.** Every exported track's info text (Live's Annotation
+  pane) now states the settings that shaped it — each part's instrument, register, level and
+  every non-default modulation in plain words, generated from the same table the scheduler
+  reads, so recreating a sound in Live is reading the track's own info text; the chords carry
+  their voicing colour and strum, the bass its voice and pattern. The drawn **Level lane**
+  arrives as real master-volume automation, interpolated the way the app plays it. And the
+  template's tempo and meter *envelopes* — which Live reads over the Manual values, and which
+  carried the reference set's 100 bpm / 4-4 into every export — now follow the song.
+- **Every instrument now starts at the same audible level.** The synth voices are
+  loudness-normalized — each one rendered offline and matched to the default synth lead by
+  K-weighted loudness (the new `scripts/measure-loudness.mjs` prints the numbers) — so before,
+  the same Level slider could mean a booming sub bass on one part and a whisper of a saw on the
+  next (a ~17 dB spread across the voices); now 100% is the same loudness on every voice, and
+  swapping a part's instrument no longer moves its level. The six parts also all start at
+  100% instead of the old staggered 100/80/90/60/70/70 defaults: the mix begins flat and equal,
+  and any ducking of the accompaniment under the lead is yours to set on the sliders. The bass
+  track's per-voice boosts were re-measured the same way at C2, so its six voices land on one
+  level too, anchored to where the sub bass has always sat.
 - **The Sketch tab tidied into collapsible bars.** Every grid on the groove card — melody, drums,
   percussion, bass, pad and chords — now sits under its own full-width collapsible bar named for
   what it holds, with a ● when something is written there. The row of grid-opening buttons and the

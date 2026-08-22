@@ -43,12 +43,34 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   two-bar hook, a sequence a step higher), keeps the first statement and varies every one after it —
   a different landing note, an added or dropped note, a phrase pushed early — drifting a little
   further with each restatement. Tap again for more, one tap past the top to put it back
+- **The hook toolkit** — catchiness, measured and worked. **🩺 Check** scores a part's melody
+  against the earworm properties (stepwise with one answered leap, a motif that restates and
+  drifts, singable density and economy, an ending that lands), one line per property with a
+  one-tap fix on each failing line. **⚔ Duel** breeds eight rivals of the melody and plays them
+  pairwise on the looping section — tap the winner, the loser's slot goes to the next rival, a
+  spent pool breeds challengers from the champion. **⇢ Syncopate** pushes on-beat notes half a
+  beat early, held through the beat they left — one tap for the backbeats, two for every beat,
+  three to put it back
+- **✦ Riff the holes** — a bassline hook written into the sixteenths the section's own kick
+  leaves free — offbeat pump, tresillo, two-step, funk holes — so it interlocks with the groove
+  instead of doubling it. Every press is a different riff; the result is an ordinary bass grid
+- **⤴ Chorus lift** — the standard kit for making one section land bigger, one tap or ingredient
+  by ingredient: melody up a third, the lead doubled an octave up, accents leant on, every
+  subtraction removed, the hook made busier — each chip individually reversible
+- **☕ Morning review** — the saved sketches heard back to back, cold, with a verdict tap on
+  each: keep, rework, kill (with undo), skip. The current song is stashed and restored when the
+  queue ends, because the test that matters for a hook is the one taken days later
 - **Melodic narratives** — one melodic idea written across the *whole* song from a single menu under
   the structure chooser: 19 shapes (arch, terraced climb, range expansion at the hook, descending
   lament, withheld peak, ostinato, call & response, motif development and more) that pick each
   section's register, density and contour from its role and its place in the running order
 - **Tools** — destination finder (shortest chord path between two chords), descending-bass
   harmonisations, ear training, dice, MIDI export, persistent sketches
+- **↓ Live project** — the Ableton handoff as one zip laid out like a Live project: the `.als`
+  (tracks carrying their settings in the info text, sections as locators, the drawn Level lane as
+  master-volume automation), the stems in `Samples/Imported` beside it — drag them onto the
+  arrangement and the project plays the sketch — and the settings snapshot for everything no file
+  format can carry
 - **Fingerings** — tap any chord for guitar chord boxes (open + barre shapes) and highlighted piano
   keys
 
