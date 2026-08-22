@@ -445,6 +445,12 @@ const TRACK_MODS = [TRACK_LVL, ...["cut","res","hp","drive","wob","wobRate","tre
   "pan","apan","apanRate","send","verb","duck"].map(k => MOD_BY_KEY[k])];
 const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
   ["bass", "Bass", "🎸"], ["pad", "Pad", "🌫️"]];
+/* Default make-up gain for the pitched sources. The chord, bass and melody voices are all far
+   quieter than the drums, and at unity gain they could disappear entirely on small speakers.
+   Each boost sits on the source's own bus inside the graph — upstream of the duck nodes and
+   applied identically in a stem render — so the Level sliders still read 100% out of the box
+   and the stems still sum to the mix. */
+const CHORD_MAKEUP = 1.6, BASS_MAKEUP = 1.6, MELODY_MAKEUP = 1.5;
 
 // section-type accent colours for the song write-out grouping
 /* One colour per section letter. Chosen by function rather than prettiness, so the arrangement
@@ -2462,6 +2468,9 @@ export default function ProgressionWheel() {
   const wetDuck = ctx.createGain(); wetDuck.gain.value = 1; wetDuck.connect(filt);
   const music = makeReverb(ctx, filt, 1.6, 0.16, wetDuck);   // reverb bus for pitched sources
   const cduck = ctx.createGain(); cduck.gain.value = 1; cduck.connect(music);
+  // the chords' make-up gain — its own node upstream of the duck, because duckAt resets the
+  // duck node to exactly 1 and would silently eat a boost written onto it
+  const chordBus = ctx.createGain(); chordBus.gain.value = CHORD_MAKEUP; chordBus.connect(cduck);
   // the bass track's own duck: straight into the move filter, not the reverb bus — low end in a
   // room is mud — and pumped harder than the chords when the kick lands
   const bduck = ctx.createGain(); bduck.gain.value = 1; bduck.connect(filt);
@@ -2510,8 +2519,9 @@ export default function ProgressionWheel() {
   const trDrums = mkChain(master);
   const trPerc = mkChain(master);
   const trBass = mkChain(bduck);
+  trBass.in.gain.value = BASS_MAKEUP;              // audible before the first beat's applyFx runs
   const trPad = mkChain(padDuck);
-  const m = { ctx, master, music, cduck, bduck, padDuck, wetDuck, filt, mhp,
+  const m = { ctx, master, music, cduck, chordBus, bduck, padDuck, wetDuck, filt, mhp,
     trDrums, trPerc, trBass, trPad,
     bassLp: trBass.lp, percLp: trPerc.lp, padLp: trPad.lp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
     lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
@@ -2650,8 +2660,8 @@ export default function ProgressionWheel() {
         if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
         if (chord && !quiet && (!m.stem || m.stem.kind === "chords")) {
           // while the bass track carries the root, the chords stop doubling it an octave down
-          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.cduck, m.voicing, bassOn);
-          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.cduck, m.voicing, bassOn);
+          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.chordBus, m.voicing, bassOn);
+          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.chordBus, m.voicing, bassOn);
         }
       }
       /* The bass track. A written grid plays bar by bar exactly as the drums' own bars do; a
@@ -2810,14 +2820,14 @@ export default function ProgressionWheel() {
       if (i % ticksPerBeat === 0) {
         const A3 = autoRef.current || {};
         const fxBar = (structBar >= 0 ? structBar : Math.floor(m.step / L)) + i / L;
-        const applyFx = (tr, fx, laneId) => {
+        const applyFx = (tr, fx, laneId, makeup = 1) => {
           const val = k => {
             const v = fx ? fx[k] : undefined;
             if (v != null) return v;
             const md = MOD_BY_KEY[k];
             return md ? md.dflt : (k === "lvl" ? 100 : 0);
           };
-          tr.in.gain.setValueAtTime(val("lvl") / 100, t);
+          tr.in.gain.setValueAtTime((val("lvl") / 100) * makeup, t);
           const dvv = val("drive") / 100;
           if (dvv !== tr.driveAmt) { tr.driveAmt = dvv; tr.drive.curve = dvv > 0 ? driveCurve(dvv) : null; }
           tr.hp.frequency.setValueAtTime(nyq(m, 20 * Math.pow(1200 / 20, val("hp") / 100)), t);
@@ -2847,7 +2857,7 @@ export default function ProgressionWheel() {
         const F3 = trackFxRef.current || {};
         applyFx(m.trDrums, F3.drums, null);
         applyFx(m.trPerc, F3.perc, "cutperc");
-        applyFx(m.trBass, F3.bass, "cutbass");
+        applyFx(m.trBass, F3.bass, "cutbass", BASS_MAKEUP);
         applyFx(m.trPad, F3.pad, "cutpad");
       }
       // section moves: fire once, on the downbeat of each section instance, scheduling the whole
@@ -2952,6 +2962,7 @@ export default function ProgressionWheel() {
             if (!dest) {
               const C = m.ctx;
               dest = m.partGain[li] = C.createGain();
+              dest.gain.value = MELODY_MAKEUP;     // the melody parts' share of the make-up gain
               const drive = m.partDrive[li] = C.createWaveShaper();
               const hp = m.partHp[li] = C.createBiquadFilter();
               hp.type = "highpass"; hp.frequency.value = 20; hp.Q.value = 0.7;

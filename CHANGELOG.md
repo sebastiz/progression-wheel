@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **The chords, bass and melody are audible out of the box.** All three pitched sources sat far
+  below the drums at their default settings — quiet enough to disappear entirely on laptop and
+  phone speakers. Each now gets a fixed make-up gain on its own bus (chords ×1.6, bass ×1.6,
+  melody parts ×1.5), upstream of the sidechain ducks and applied identically in stem renders, so
+  the Level sliders still read 100%, stems still sum to the mix, and nothing about the controls
+  changes — the defaults are just loud enough to hear. The default Sub bass voice also gains a
+  stronger octave partial: its ~65 Hz sine fundamental is below what small speakers can reproduce
+  at all, so without it the bass track was silent on them no matter the level.
 - **The Sketch tab tidied into collapsible bars.** Every grid on the groove card — melody, drums,
   percussion, bass, pad and chords — now sits under its own full-width collapsible bar named for
   what it holds, with a ● when something is written there. The row of grid-opening buttons and the
