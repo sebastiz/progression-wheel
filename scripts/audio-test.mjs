@@ -17,8 +17,9 @@ import * as arrange from "../src/arrange.js";
 import * as arrTpl from "../src/arrange-templates.js";
 import * as als from "../src/als.js";
 import * as exportState from "../src/export-state.js";
+import * as hook from "../src/hook.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...als, ...exportState };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...als, ...exportState, ...hook };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -352,6 +353,50 @@ for (const kit of ["acoustic", "909", "808"]) {
     problems.push("als: the clip did not get the song's meter");
   if (!/<Manual Value="128" \/>/.test(xml)) problems.push("als: the tempo did not reach the main track");
   if ((xml.match(/<Locator Id=/g) || []).length !== 2) problems.push("als: the section locators are missing");
+  /* The template ships MainTrack envelopes for tempo and time signature holding the reference
+     set's values (100 bpm, 4/4). Live reads the envelope when one exists, so both must follow the
+     song or every export opens at 100 whatever the Manual says. */
+  {
+    const main = xml.slice(xml.indexOf("<MainTrack"), xml.indexOf("</MainTrack>"));
+    const tempoTgt = (main.match(/<Tempo>[\s\S]*?AutomationTarget Id="(\d+)"/) || [])[1];
+    const tsTgt = (main.match(/<TimeSignature>[\s\S]*?AutomationTarget Id="(\d+)"/) || [])[1];
+    const envOf = tgt => (main.match(new RegExp(
+      `<PointeeId Value="${tgt}" /></EnvelopeTarget><Automation><Events><(?:Float|Enum)Event Id="\\d+" Time="-63072000" Value="([-\\d.]+)"`)) || [])[1];
+    if (envOf(tempoTgt) !== "128") problems.push(`als: the tempo envelope still says ${envOf(tempoTgt)} — Live will open at the reference set's tempo`);
+    if (envOf(tsTgt) !== "201") problems.push(`als: the meter envelope still says ${envOf(tsTgt)} — Live will open in the reference set's meter`);
+    const m68 = M.alsXml({ ...spec, tsNum: 6, tsDen: 8 });
+    const main68 = m68.slice(m68.indexOf("<MainTrack"), m68.indexOf("</MainTrack>"));
+    if (!main68.includes(`<PointeeId Value="${tsTgt}" /></EnvelopeTarget><Automation><Events><EnumEvent Id="0" Time="-63072000" Value="302"`))
+      problems.push("als: 6/8 did not reach the meter envelope");
+  }
+  /* A drawn Level lane arrives as master-volume automation: an envelope on the MainTrack's own
+     Volume target, opening with Live's initial-value sentinel at the first point's level, then one
+     event per breakpoint at its bar's beat. Without a lane no envelope is added at all. */
+  {
+    const withAuto = M.alsXml({ ...spec, mainAuto: { level: [{ beat: 0, v: 1 }, { beat: 16, v: 0.35 }, { beat: 24, v: 1 }] } });
+    const main = withAuto.slice(withAuto.indexOf("<MainTrack"), withAuto.indexOf("</MainTrack>"));
+    const volTgt = (main.match(/<Volume>[\s\S]*?AutomationTarget Id="(\d+)"/) || [])[1];
+    const env = main.match(new RegExp(`<AutomationEnvelope Id="\\d+"><EnvelopeTarget><PointeeId Value="${volTgt}" /></EnvelopeTarget><Automation><Events>((?:<FloatEvent [^>]*/>)+)</Events>`));
+    if (!env) problems.push("als: a drawn Level lane wrote no volume envelope on the main track");
+    else {
+      const evs = [...env[1].matchAll(/Time="([-\d.]+)" Value="([\d.]+)"/g)].map(m => [Number(m[1]), Number(m[2])]);
+      if (evs.length !== 4) problems.push(`als: the volume envelope has ${evs.length} events for 3 lane points + the sentinel`);
+      if (evs[0][0] !== -63072000 || evs[0][1] !== 1) problems.push("als: the volume envelope's sentinel is not the first point's level");
+      if (evs[2] && (evs[2][0] !== 16 || evs[2][1] !== 0.35)) problems.push("als: a lane point did not land at its beat and level");
+    }
+    // well-formed with the envelope in — the insertion must not tear the document
+    const stack = [];
+    for (const m of withAuto.matchAll(/<(\/?)([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?)(\/?)>/g)) {
+      const [, close, tag, , self] = m;
+      if (close) { if (stack.pop() !== tag) { problems.push(`als: automation broke nesting at </${tag}>`); break; } }
+      else if (!self) stack.push(tag);
+    }
+    const plain = xml.slice(xml.indexOf("<MainTrack"), xml.indexOf("</MainTrack>"));
+    if ((plain.match(/<AutomationEnvelope /g) || []).length !== 2)
+      problems.push("als: a set with no lane grew or lost a main-track envelope");
+    if ((main.match(/<AutomationEnvelope /g) || []).length !== 3)
+      problems.push("als: the lane did not join the main track's envelope list");
+  }
   // names arrive from the user: every & in the document has to be part of an entity, since one bare
   // ampersand from a section name is a file Live refuses to parse at all
   if (/&(?!(amp|lt|gt|quot|apos);)/.test(xml)) problems.push("als: a bare & reached the document");
@@ -2006,6 +2051,128 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`  pressing it again changes the result in ${steps - flat}/${steps} cases`);
 }
 
+/* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----
+   Everything in hook.js is pure and deterministic, and the fixes have one job: applying a check's
+   fix must improve (or at worst hold) that check's own score without corrupting the grid. */
+{
+  const ND = 7;
+  const show = bars => bars.map(b => b.map(c => (c.length ? c[0] : ".")).join("")).join("|");
+  const dupB = bars => bars.map(b => b.map(c => [...c]));
+  const mkBar = spec => {                                     // "0.1.2.5." → [[0],[],[1],[],[2],[],[5],[]]
+    return [...spec].map(ch => (ch === "." ? [] : [Number(ch)]));
+  };
+  const legal = (bars, what) => {
+    for (const bar of bars) for (const col of bar) for (const d of col)
+      if (!(Number.isInteger(d) && d >= 0 && d < ND)) problems.push(`${what} wrote degree ${d}`);
+  };
+
+  // a deliberately well-made hook: stepwise with one answered leap, a restated two-bar motif that
+  // drifts on its restatement, four notes a bar, ending on the tonic chord's root
+  const good = [mkBar("0.1.2.5."), mkBar("4.2.1.0."), mkBar("0.1.2.5."), mkBar("4.2.1.1.")];
+  // and a deliberately bad one: busy, wide, never restating itself, ending nowhere
+  const bad = [
+    mkBar("06152604"), mkBar("30462513"), mkBar("51260340"), mkBar("64031526")];
+  const u = bars => ({ bars, nd: ND, sub: 2, chordDegs: [0, 3, 0, 6] });
+
+  const gr = M.hookReport(u(good)), br = M.hookReport(u(bad));
+  if (!(gr.score >= 70)) problems.push(`hookReport scores a well-made hook ${gr.score} — the card calls good shapes bad`);
+  if (!(br.score < gr.score - 15)) problems.push(`hookReport scores a scribble ${br.score} vs ${gr.score} — it cannot tell them apart`);
+  for (const rep of [gr, br]) for (const c of rep.checks) {
+    if (!(c.score >= 0 && c.score <= 1)) problems.push(`hook check ${c.id} scored ${c.score}`);
+    if (!c.detail) problems.push(`hook check ${c.id} has no reading`);
+    if (c.fix && !c.fixLabel) problems.push(`hook check ${c.id} has a fix but no label for it`);
+  }
+  // the report reads the melody; it must never write it
+  const before = show(bad);
+  M.hookReport(u(bad));
+  if (show(bad) !== before) problems.push("hookReport mutated the bars it was scoring");
+
+  // every offered fix improves its own line (or at worst holds it), stays legal, stays deterministic
+  let fixes = 0;
+  for (const c of br.checks) {
+    if (!c.fix) continue;
+    fixes++;
+    const fixed = c.fix(dupB(bad), u(bad));
+    if (show(bad) !== before) problems.push(`fix ${c.id} mutated its input`);
+    legal(fixed, `fix ${c.id}`);
+    if (fixed.length !== bad.length) problems.push(`fix ${c.id} changed the bar count`);
+    const spec = M.HOOK_CHECKS.find(x => x.id === c.id);
+    const after = spec.run(u(fixed));
+    if (after && after.score < c.score - 1e-9)
+      problems.push(`fix ${c.id} made its own check worse (${c.score.toFixed(2)} → ${after.score.toFixed(2)})`);
+    if (show(c.fix(dupB(bad), u(bad))) !== show(fixed)) problems.push(`fix ${c.id} is not deterministic`);
+  }
+  if (!fixes) problems.push("the bad hook's report offered no fixes at all");
+
+  /* Syncopation: anticipation moves an on-beat note half a beat early and holds it through the
+     beat it left — level 1 the backbeats, level 2 every beat but the bar's downbeat. */
+  {
+    const straight = [mkBar("0.1.2.3.")];
+    const one = M.syncopateBars(straight, 2, 1);
+    const onsets = bars => bars.flatMap((b, i) => M.barNotes(b).map(n => ({ c: i * b.length + n.c, d: n.d, len: n.len })));
+    if (show(straight) !== show([mkBar("0.1.2.3.")])) problems.push("syncopateBars mutated its input");
+    const o1 = onsets(one);
+    if (o1.map(n => n.c).join() !== "0,1,4,5") problems.push(`level-1 syncopation put onsets at ${o1.map(n => n.c).join()}, wanted 0,1,4,5`);
+    if (o1.map(n => n.d).join() !== "0,1,2,3") problems.push("syncopation changed the notes themselves");
+    if (o1[1].len !== 2) problems.push("a pushed note no longer holds through the beat it left");
+    const two = M.syncopateBars(straight, 2, 2);
+    if (onsets(two).map(n => n.c).join() !== "0,1,3,5") problems.push(`level-2 syncopation put onsets at ${onsets(two).map(n => n.c).join()}, wanted 0,1,3,5`);
+    if (show(M.syncopateBars(straight, 2, 0)) !== show(straight)) problems.push("syncopation level 0 is not the identity");
+    // a push never swallows a note: with the half-beat before it already an onset, the note stays
+    const packed = [[[0], [5], [1], [], [], [], [], []]];
+    const kept = M.syncopateBars(packed, 2, 2);
+    if (M.barNotes(kept[0]).length !== M.barNotes(packed[0]).length)
+      problems.push("syncopation swallowed a note whose push landed on another onset");
+    // …including the sly case: pushed against the tail of a note holding the SAME pitch, the two
+    // would read back as one held note and an onset would silently vanish
+    const samePitch = [[[2], [2], [2], [], [2], [], [], []]];   // a held 2, then 2 again on beat 2
+    if (M.barNotes(M.syncopateBars(samePitch, 2, 2)[0]).length !== M.barNotes(samePitch[0]).length)
+      problems.push("syncopation merged a pushed note into a same-pitch neighbour");
+  }
+
+  /* The tournament pool: a family of rivals, none of them the parent, no two of them the same. */
+  {
+    const pool = M.hookPool(good, { n: 8, seed: 3, nd: ND });
+    if (pool.length < 6) problems.push(`hookPool found only ${pool.length} distinct rivals of 8 asked for`);
+    const keys = pool.map(show);
+    if (keys.includes(show(good))) problems.push("hookPool handed back the parent as a rival");
+    if (new Set(keys).size !== keys.length) problems.push("hookPool repeated a rival");
+    for (const v of pool) legal(v, "hookPool");
+    if (M.hookPool(good, { n: 8, seed: 3, nd: ND }).map(show).join() !== keys.join())
+      problems.push("hookPool is not deterministic");
+    const mut = M.mutateHook(good, { seed: 5, pass: 2, nd: ND });
+    if (show(mut) === show(good)) problems.push("mutateHook returned its parent unchanged");
+  }
+
+  /* Bass riffs: written into the kick's holes — never a token on a sixteenth the kick owns. */
+  {
+    const fourFloor = [Array.from({ length: 16 }, (_, i) => (i % 4 === 0 ? "K" : ""))];
+    const seeds = [];
+    for (let seed = 0; seed < 8; seed++) {
+      const riff = M.bassRiffBars(fourFloor, 16, 4, 4, seed);
+      if (riff.length !== 4) problems.push("bassRiffBars wrote the wrong number of bars");
+      riff.forEach((bar, b) => {
+        if (bar.length !== 16) problems.push("bassRiffBars wrote the wrong number of steps");
+        bar.forEach((tok, s) => {
+          if (tok && !["R", "F", "O"].includes(tok)) problems.push(`bassRiffBars wrote token ${tok}`);
+          if (tok && s % 4 === 0) problems.push(`bassRiffBars put a note on the kick's sixteenth (bar ${b}, step ${s})`);
+        });
+        if (bar.filter(Boolean).length < 2) problems.push("bassRiffBars wrote a bar with fewer than two notes");
+      });
+      if (M.bassRiffBars(fourFloor, 16, 4, 4, seed).map(b => b.join()).join("|") !== riff.map(b => b.join()).join("|"))
+        problems.push("bassRiffBars is not deterministic");
+      seeds.push(riff.map(b => b.join()).join("|"));
+    }
+    if (new Set(seeds).size < 3) problems.push("bassRiffBars barely varies with the seed — pressing again should find a different riff");
+    // 3/4: a 12-step grid, and cells past the barline drop out rather than wrapping
+    const waltz = M.bassRiffBars([Array.from({ length: 12 }, (_, i) => (i === 0 ? "K" : ""))], 12, 3, 2, 1);
+    if (waltz.some(bar => bar.length !== 12)) problems.push("bassRiffBars broke on a 3/4 grid");
+  }
+
+  console.log(`hook toolkit: report card ${gr.score} vs ${br.score} on good vs bad, ${fixes} fixes verified, `
+    + `pool + syncopation + kick-hole riffs deterministic`);
+}
+
 /* ---- per-part modulation ----
    Every setting a part carries is one entry in MOD_GROUPS, and that entry is read by five different
    things: the control that draws it, the scheduler that applies it, the packer that saves it, the
@@ -2790,7 +2957,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "als.js", "als-template.js", "progressions.js", "export-state.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "als.js", "als-template.js", "progressions.js", "export-state.js", "hook.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")

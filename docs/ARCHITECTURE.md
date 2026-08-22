@@ -19,6 +19,7 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/als-template.js` | the shape of a Live Set, generated from one Live saved | — |
 | `src/pitch.js` | the McLeod-Pitch-Method transcriber | — |
 | `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
+| `src/hook.js` | the catchiness toolkit: hook report card, syncopation, tournament pool, kick-hole bass riffs | melody |
 | `src/song.js` | the serialisable song document, melody and drum-bar packing, link encoding | melody |
 | `src/wav.js` | 16-bit PCM wav writing | — |
 | `src/zip.js` | a store-only ZIP writer, for the stem archive | — |
@@ -532,6 +533,32 @@ crashed over is present and its counts agree (a clip slot per scene on every tra
 shared between tracks or sits at or above the watermark, and that the bytes are really gzip and
 decompress back to the document. Whether Live *accepts* the schema is the part only Live can answer.
 
+Three later additions, all built on the same read-it-off-the-template discipline:
+
+- **Info text.** The `%NOTE%` placeholder lands in each track's `<Annotation>` — Live's info
+  pane — and now carries the settings that shaped the track: a part's instrument, register, level
+  and every non-default modulation, generated from `MOD_GROUPS` so a new control appears in the
+  info text with no edit to the exporter. One line of `·`-separated clauses, because newlines do
+  not survive an XML attribute.
+- **Automation.** The MainTrack's parameters are addressed by `AutomationTarget` ids the reference
+  set assigned, so als.js *parses* them out of the template (`<Volume>`, `<Tempo>`,
+  `<TimeSignature>`) rather than hard-coding numbers. The drawn Level lane becomes a volume
+  envelope on that target — an initial event at Live's `-63072000` sentinel holding the first
+  point's value, then one `FloatEvent` per bar-point; Live interpolates linearly and holds flat
+  outside, which is exactly what the app's lanes do. The template also *ships* envelopes for tempo
+  and meter, holding the reference set's values — and Live reads an envelope over the Manual it
+  shadows, so both sentinels are synced to the song or every export would open at 100 bpm in 4/4
+  whatever `%BPM%` said. Event ids follow the template's own small per-tag numbering; the
+  filter/hi-pass/resonance lanes describe a device the empty tracks don't have, so they travel in
+  the settings snapshot instead.
+- **The Live project** (component-side) zips the handoff in Live's own on-disk layout: the `.als`
+  at the top, the stems (the same `renderStemFiles` loop the stem export uses — pre-master, so
+  they sum) under `Samples/Imported/`, the settings JSON and a README beside them. Opening the set
+  and dragging the Samples folder's files onto the arrangement gives one audio track per stem,
+  aligned, and the project plays the sketch. Audio tracks are deliberately not written into the
+  `.als` itself: the template carries no audio track to clone, and this file's own history is the
+  argument against inferring one.
+
 ### Melody parts
 
 A section holds `layers: [{bars, flat, instr, oct, vol, mute, solo, send, ...LAYER_FX}]` — up to
@@ -838,6 +865,49 @@ press past the top puts the original back. The baseline is only trusted while th
 what was last written from it (the notes are compared, not a counter), so a hand-drawn note, an
 undo, or a pattern written over the top between presses starts the count again. `varyIn` is UI state
 like `varySt`: what gets saved is the notes.
+
+## The hook toolkit
+
+`src/hook.js` is the catchiness features' shared engine, and everything in it is pure and
+deterministic for the same reason the variation engine is: a shared sketch has to read and sound
+the same wherever it is opened.
+
+- **The report card** (`hookReport`) scores a part's bars against `HOOK_CHECKS` — one entry per
+  property the earworm literature keeps finding (stepwise motion, one answered leap, restatement
+  with drift, density, pitch economy, anchoring, the peak's position, the landing). A check returns
+  a 0..1 score, a one-line reading, and optionally a `fix` — a pure transform whose contract, held
+  by `npm test`, is that applying it never worsens that check's own score and never corrupts the
+  grid. A check may also return `null` to sit out ("no leaps to answer" is not a grade). The
+  weighted total is printed as a number precisely because two of the checks (restatement, stepwise)
+  carry more weight than the rest — that ordering *is* the literature's.
+- **Syncopation** (`syncopateBars`) moves on-beat onsets half a beat early and extends them through
+  the beat they left — level 1 the backbeats, level 2 every beat but the bar's downbeat. A push
+  whose target column holds another note's onset is skipped: anticipation shortens the note before
+  it, it never swallows one. The component wraps it in the same baseline discipline as ✦ Vary
+  repeats (`syncIn`), so each press re-derives from the pre-press melody and a third press is the
+  way back.
+- **The tournament pool** (`hookPool` / `mutateHook`) drives ⚔ Duel: rivals are the parent pushed
+  through `varyPass` at successive passes (the same engine as repeat variation, so the family
+  resembles its parent), deduplicated by grid key so no duel is wasted on twins; a mutation that
+  lands on its parent is pushed again, harder. The duel itself is component state — champion,
+  challenger index, and the original bars for cancel — and auditions by writing a rival to the grid
+  and looping the section, so playback needs no second path.
+- **Bass riffs** (`bassRiffBars`) write the bass grid's own token format (`R`/`F`/`O` on the
+  sixteenth grid) from a shape table positioned in beats (so 3/4 and 5/4 work), dropping any onset
+  that coincides with a `K` or `B` in the section's resolved drum bars — the riff interlocks with
+  the kick by construction. Odd bars answer even ones (one onset dropped, the last token swapped),
+  and the seed steps through shapes so every press differs while the same seed is always the same
+  riff. The output is an ordinary painted bass grid: playback, exports and ↺ Reset need to know
+  nothing.
+
+The chorus lift (⤴, in the component) is deliberately *not* in hook.js: its ingredients are writes
+to component state — part-A modulations, the per-section subtraction maps — with the replaced
+values kept per ingredient (`liftSt`) so each chip is individually reversible. Everything that
+lands on part A goes through one `putSec`, because two `setLayerProp` calls in one handler both
+spread the same render's `melos` and the second clobbers the first (the same rule `npm test`
+enforces for loops). The morning review (☕) is likewise component-level: it stashes `docJson`,
+walks the saved sketches coldest-first, stamps verdicts onto the sketch entries, and restores the
+stash through `restoreDoc` so the queue costs nothing to open.
 
 ## Notation
 
