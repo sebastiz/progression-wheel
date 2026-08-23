@@ -680,6 +680,27 @@ after a key change, a new structure, or edits you'd rather throw away — and **
 melodies back as they were. It writes to layer A only, so a 2nd melody you've written stays put, and
 everything it writes is ordinary grid notes: edit any section afterwards.
 
+**The narrative's phrasing dials.** Under the narrative menu sit three controls that shape *how* it
+writes:
+
+- **Vary repeats** — a continuous slider, from *identical repeats* at the left to *barely repeats*
+  at the right. It sets how far each later pass of a section drifts from its first time round — a
+  new landing note, a note added or taken away, a phrase pushed early, a held note broken in two —
+  and being continuous, anywhere on the dial is a real setting: 1.4 means every repeat takes one
+  edit and some, deterministically, take a second. The first pass is always left alone (it is the
+  thing the others are variations of), and the slider rewrites the narrative when you release it.
+- **Syncopate** — writes the narrative with anticipation baked in: on-beat notes pushed half a beat
+  early and held through the beat they left, the lean that carries most pop and house toplines.
+  *Push the backbeats* moves beats 2 and 4; *push every beat* moves everything but each bar's
+  downbeat. It lands on the tune before the repeats are varied, so every pass leans the same way.
+- **Vary within repeats too** — the other kind of identical: a section is usually one motif said
+  several times (a one-bar riff over four bars, a two-bar hook over eight), and this varies every
+  restatement *inside* each section by the slider's amount as well — each drifting its own way,
+  with the first statement always kept as the reference.
+
+All three are deterministic — the same song at the same settings always comes back the same — and
+everything they write is ordinary grid notes, editable per section afterwards.
+
 **Loop one section.** Each section entry has a **🔁** toggle. Turn it on and playback confines to that
 section and repeats it (and starts from there if nothing's playing) — handy for drilling a chorus or
 recording a part against a loop. Tap it again to release and let the whole song play through.
@@ -708,6 +729,14 @@ choruses, bridge or verses — the write-out marks those sections ② and playba
 Ten reference songs per progression; pick one to see the progression spelled in that song's own key.
 When you've edited the progression, the panel first lists songs that use your applied *moves*
 (Creep for V/vi and iv, Take the 'A' Train for V/V, …), since exact catalogue matches get rarer.
+
+## Start from scratch
+
+At the bottom of the **Write** page, the **🧹 Start from scratch** button clears the whole song —
+key, chords and every chord edit, drums, bass, percussion, pad, melodies, structure, automation and
+effects — back to the app's defaults, a genuinely blank page. It asks before it wipes, saved
+sketches on the Save tab are untouched, and the wipe lands in the undo history like any other edit,
+so **⌘Z** brings the song straight back.
 
 ## MIDI export
 
