@@ -4330,7 +4330,7 @@ export default function ProgressionWheel() {
         if (!used[p]) return null;
         const ly = partOf(p) || {};
         return { cols, program: programOf(ly.instr || melInstr),
-          gain: ly.vol == null ? 1 : ly.vol };
+          gain: ly.vol == null ? 1 : ly.vol, pan: modOf(ly, "pan"), voice: ly.instr || melInstr };
       });
       // What a DAW needs to lay the file out: the meter, the key, and where each section starts.
       // MAJOR_SIG is indexed by the *relative major* of the current mode, which is what a key
@@ -4557,11 +4557,16 @@ export default function ProgressionWheel() {
         if (i > 0 && at(i - 1, n)) continue;                    // a held note, already counted
         let run = 1;
         while (i + run < cols.length && at(i + run, n)) run++;
+        // the part's level is on the fader below, so it must not also be in the velocity — a
+        // quiet part would arrive twice as quiet as it sounds here
         notes.push({ t: i * colB, dur: run * colB, note: n,
-          vel: 96 * (part.gain == null ? 1 : part.gain) * accentAt(i % (B * meloSub), meloSub) });
+          vel: 96 * accentAt(i % (B * meloSub), meloSub) });
       }
       if (notes.length) tracks.push({ name: "Part " + (LAYER_NAMES[p] || p + 1),
-        color: ALS_COLORS.part, vol: 0.8, notes, end: bars.length * B,
+        // the part's own level and pan ride the mixer rather than the notes: Live opens balanced
+        // and spread the way the sketch sounds, and the velocities stay what was written
+        color: ALS_COLORS.part, vol: 0.8 * (part.gain == null ? 1 : part.gain), pan: part.pan || 0,
+        notes, end: bars.length * B,
         note: partInfo(partOf(p)) || ("was " + (part.voice || melInstr)) });
     });
     const M = METER_BY_ID[curMeter] || METERS[0];

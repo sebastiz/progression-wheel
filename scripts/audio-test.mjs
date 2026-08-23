@@ -262,7 +262,7 @@ for (const kit of ["acoustic", "909", "808"]) {
     tracks: [
       { name: "Chords", color: M.ALS_COLORS.chords, vol: 0.85, end: 8,
         notes: [{ t: 0, dur: 4, note: 60, vel: 78 }, { t: 4, dur: 4, note: 64, vel: 78 }] },
-      { name: "Drums & <bells>", color: M.ALS_COLORS.drums, vol: 0.85, end: 8,
+      { name: "Drums & <bells>", color: M.ALS_COLORS.drums, vol: 0.6, pan: -70, end: 8,
         notes: [{ t: 0, dur: 0.25, note: 36, vel: 92 }, { t: 1, dur: 0.25, note: 38, vel: 92 }] },
     ],
     locators: [{ beat: 0, name: "Intro" }, { beat: 4, name: "Chorus & drop" }],
@@ -411,6 +411,20 @@ for (const kit of ["acoustic", "909", "808"]) {
   if (/&(?!(amp|lt|gt|quot|apos);)/.test(xml)) problems.push("als: a bare & reached the document");
   if (!xml.includes("Drums &amp; &lt;bells&gt;")) problems.push("als: a track name with markup in it was not escaped");
   if (!/EffectiveName Value="Chords"/.test(xml)) problems.push("als: track names are missing");
+  /* A part's level and pan ride the mixer, not the notes — so Live opens balanced and spread the
+     way the sketch sounds, with the written velocities intact. Live's pan is -1..1 where the app's
+     is -100..100. */
+  {
+    const t = trackXml[1] || "";
+    const mix = t.slice(t.indexOf("<Mixer>"), t.indexOf("<MainSequencer>"));
+    const pan = (mix.match(/<Pan><LomId Value="0" \/><Manual Value="([-0-9.]*)"/) || [])[1];
+    const vol = (mix.match(/<Volume><LomId Value="0" \/><Manual Value="([0-9.]*)"/) || [])[1];
+    if (pan !== "-0.7") problems.push(`als: pan -70 reached the mixer as ${pan}, expected -0.7`);
+    if (vol !== "0.6") problems.push(`als: the track's level reached the mixer as ${vol}, expected 0.6`);
+    // a pan beyond the ends of the field is Live's -1..1 clamped, not a value it will refuse
+    const hard = M.alsXml({ ...spec, tracks: [{ ...spec.tracks[0], pan: 400 }] });
+    if (!/<Pan><LomId Value="0" \/><Manual Value="1"/.test(hard)) problems.push("als: an out-of-range pan was not clamped");
+  }
   if (!/Annotation Value="Chorus &amp; drop"/.test(xml) && !/Name Value="Chorus &amp; drop"/.test(xml))
     problems.push("als: a locator name with an ampersand was not escaped");
   // and the file itself is gzip, which is the one thing that makes it a .als rather than XML

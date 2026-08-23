@@ -2,7 +2,7 @@
 // HTML is served network-first (new builds appear on the next online load); static assets are
 // cache-first for speed + offline. CACHE is stamped with the app version at build time, so every
 // release invalidates the old cache and installed PWAs re-fetch.
-const CACHE = "pw-v4.91.0";
+const CACHE = "pw-v4.91.1";
 const ASSETS = [
   ".", "index.html", "transcribe.html", "manifest.json", "icon-192.png", "icon-512.png", "apple-touch-icon.png",
   "https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js",

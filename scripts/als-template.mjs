@@ -97,6 +97,10 @@ let TRACK = clean;
   const vol = elem(TRACK, "Volume");
   TRACK = TRACK.slice(0, vol.i) + swapValue(vol.text, "Manual", "%VOL%")
         + TRACK.slice(vol.i + vol.text.length);
+  // the mixer's own Pan, not the auto-pan LFO: where the part sits in the stereo picture
+  const pan = elem(TRACK, "Pan");
+  TRACK = TRACK.slice(0, pan.i) + swapValue(pan.text, "Manual", "%PAN%")
+        + TRACK.slice(pan.i + pan.text.length);
   TRACK = swap(TRACK, "Sends", "<Sends />");                      // no returns, so no sends
   const takeLanes = elem(clipSrc, "TakeLanes");
   TRACK = swap(TRACK, "TakeLanes",
