@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+- **The narrative's variation is a continuous slider — and it can syncopate and vary inside
+  sections.** The song-wide melodic narrative's "vary repeats" menu (four fixed levels) is now a
+  continuous slider from *identical repeats* to *barely repeats*: a fractional amount resolves,
+  deterministically per pass, to one of the integer edit counts either side of it, so 1.4 really
+  does sit between 1 and 2 and the same song always comes back the same. The slider rewrites on
+  release, so dragging it doesn't flood the undo history. Beside it, two new dials: **Syncopate**
+  writes the narrative with anticipation baked in (backbeats pushed half a beat early, or every
+  beat but the downbeat), applied to the tune *before* the repeats are varied so pass 0 leans the
+  same way the others do; and **vary within repeats too** runs the in-section variation engine over
+  every section the narrative writes, so the one-bar riff said four times drifts on each
+  restatement — first statement always kept as the reference. A section's own narrative menu goes
+  through the same three dials, so a section rewritten alone matches the song-wide write.
+- **🧹 Start from scratch.** A button at the bottom of the Write page that clears the whole song —
+  key, chords and every chord edit, drums, bass, percussion, pad, melodies, structure, automation,
+  effects — back to the app's defaults. It asks before it wipes, saved sketches are untouched, and
+  the wipe lands in the undo history, so ⌘Z puts the song back.
 - **✍ Whole song — write one groove track across the arrangement.** Sections already follow the
   Sketch tab's groove by default, but a section stops following the moment it is given a version
   of its own — an arrangement template's pick, a pattern chosen on the Arrange tab, or a written

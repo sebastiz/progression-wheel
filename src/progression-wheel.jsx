@@ -8,8 +8,8 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, VARY_LEVELS, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin } from "./melody.js";
-import { bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin } from "./melody.js";
+import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
@@ -622,7 +622,12 @@ export default function ProgressionWheel() {
   const [rhySel, setRhySel] = useState({});                 // per-section melody rhythm cell                 // per-section: { pat, start } suggested-melody picks
   const [narSel, setNarSel] = useState({ key:"", id:"" });  // melodic narrative written across the whole song
   const [narUndo, setNarUndo] = useState(null);             // melody snapshot from before the last narrative write
-  const [varySt, setVarySt] = useState({ key:"", val:1 });  // how much a narrative varies each repeat of a section
+  const [varySt, setVarySt] = useState({ key:"", val:1 });  // how much a narrative varies each repeat of a section — continuous, 0..VARY_MAX
+  /* The narrative write's other two dials: syncopation (0 as written, 1 backbeats pushed early,
+     2 every beat), and whether the repeats *inside* each section — the restated motifs — are
+     varied too, not just the later passes of the section. Keyed by progression like varySt. */
+  const [narSyncSt, setNarSyncSt] = useState({ key:"", val:0 });
+  const [narInSt, setNarInSt] = useState({ key:"", val:false });
   /* In-section variation, per section+part: the melody as it was before any of it (the statement the
      variations are heard against), the grid we last wrote from it, and how far up the writer has
      stepped. Keeping the baseline is what makes the button an amount rather than a ratchet — every
@@ -2535,13 +2540,20 @@ export default function ProgressionWheel() {
   const narId = narSel.key === progId ? narSel.id : "";
   const curNar = NARRATIVES.find(n => n.id === narId) || null;
   const varyAmt = varySt.key === progId ? varySt.val : 1;
+  const narSync = narSyncSt.key === progId ? narSyncSt.val : 0;
+  const narWithin = narInSt.key === progId ? narInSt.val : false;
+  // the slider's dial positions in words, anchored on the levels the old menu offered
+  const VARY_MAX = 6;
+  const varyWords = a => a <= 0 ? "identical repeats" : a < 0.75 ? "barely varied"
+    : a < 1.5 ? "vary a little" : a < 2.5 ? "vary more" : a < 3.5 ? "vary a lot"
+    : a < 5 ? "really varied" : "barely repeats";
   // the bar's chord as a scale degree — the hook narratives use to follow the harmony
   const chordDegsOf = cs => cs.map(c => {
     const i = scaleNotes.indexOf(((c.root % 12) + 12) % 12);
     return i >= 0 ? i : null;
   });
   // write every section's melody A in one state update (a putSec per section would read stale state)
-  const applyNarrative = (id, amt = varyAmt) => {
+  const applyNarrative = (id, amt = varyAmt, sync = narSync, within = narWithin) => {
     const nar = NARRATIVES.find(n => n.id === id);
     setNarSel({ key: progId, id: nar ? id : "" });
     if (!nar || !sections.insts.length) return;
@@ -2557,9 +2569,20 @@ export default function ProgressionWheel() {
       const gen = nar.gen({ nBars: d.cs.length, B: meloBeats, sub: meloSub, nd: scaleSemis.length, spots,
         chordDegs: chordDegsOf(d.cs), role: d.base, pass, passes: passes[d.base],
         idx, total, frac: total > 1 ? idx / (total - 1) : 0 });
+      /* Syncopation lands on the generated line BEFORE the repeats are varied, so the pushed
+         phrasing is part of the tune itself: pass 0 leans the same way the others do, and the
+         variations are heard against the syncopated statement rather than fighting it. */
+      const shaped = sync ? syncopateBars(gen, meloSub, sync) : gen;
       // second chorus, third verse: same tune, small edits. Pass 0 is left alone — it is the thing
       // the later ones are variations of.
-      const bars = varyBars(gen, { pass, role: d.base, nd: scaleSemis.length, amount: amt });
+      let bars = varyBars(shaped, { pass, role: d.base, nd: scaleSemis.length, amount: amt });
+      /* …and, asked for, the repeats *inside* the section too: the restated motifs — the one-bar
+         riff said four times, the two-bar hook said twice — each drift from their first statement,
+         which stays as written. Seeded per role and pass so chorus 1 and chorus 2 drift their own
+         ways, and skipped at amount 0 so the identical-repeats end of the slider means identical. */
+      if (within && amt > 0)
+        bars = varyWithin(bars, { nd: scaleSemis.length, amount: amt,
+          seed: d.base.charCodeAt(0) * 131 + pass * 977 }).bars;
       const sec = secMelos[d.key], prev = secs[d.key] || {};
       /* A narrative writes part A of every section and nothing else — cloneLayer rather than a
          bars/instr pair, so registers, levels, mutes and sends survive. A part the section
@@ -2597,7 +2620,13 @@ export default function ProgressionWheel() {
     setNarUndo(melos);                                 // one step back, same as the song-wide write
     // like the song-wide write: part A only, unmuted, and inherited parts stay following the
     // groove rather than freezing as copies (putLayer would materialise the whole section)
-    const bars = varyBars(gen, { pass, role: d.base, nd: scaleSemis.length, amount: varyAmt });
+    // — and through the same three dials: syncopation first, then the pass's variation, then
+    // the drift between the motif's restatements inside the section
+    const shaped = narSync ? syncopateBars(gen, meloSub, narSync) : gen;
+    let bars = varyBars(shaped, { pass, role: d.base, nd: scaleSemis.length, amount: varyAmt });
+    if (narWithin && varyAmt > 0)
+      bars = varyWithin(bars, { nd: scaleSemis.length, amount: varyAmt,
+        seed: d.base.charCodeAt(0) * 131 + pass * 977 }).bars;
     const sec = secMelos[d.key]; if (!sec) return;
     const prev = (melos.progId === progId ? melos.secs : {})[d.key] || {};
     const inh = sec.inhParts || {};
@@ -4842,6 +4871,57 @@ export default function ProgressionWheel() {
     setMelos(s.melos ? songMelos(s) : { progId:"", secs:{} });
     setMelSel({ key:"", layer:0, notes:{} }); setNarUndo(null); setVaryIn({});
     setIoNote("Loaded “" + s.name + "”.");
+  };
+
+  /* ---- start from scratch ----
+     Every choice back to the app's own defaults — key, chords, edits, drums, bass, perc, pad,
+     melodies, structure, automation, effects, the lot — so a new song starts on a genuinely blank
+     page instead of on the bones of the last one. Saved sketches are untouched (they live in
+     storage, not in this state), and the wipe lands in the undo history like any other edit, so
+     ⌘Z puts the whole song back. */
+  const startFresh = () => {
+    if (typeof window !== "undefined" && !window.confirm(
+      "Start completely from scratch? The current song is cleared — saved sketches are kept, and ⌘Z undoes this."))
+      return;
+    stopMetro();
+    /* A recording in progress is discarded, not transcribed — stopSecRec would write the take
+       onto a section grid in the same breath as the wipe. Same teardown the unmount cleanup does. */
+    if (recRef.current) { const r = recRef.current;
+      try { clearInterval(r.monitor); r.node.disconnect(); r.src.disconnect();
+        r.stream.getTracks().forEach(t => t.stop()); r.ctx.close(); } catch (e) {}
+      recRef.current = null; }
+    setRecSec(null); setRecLevel(0); setRecHz(null);
+    setDuel(null);
+    // the song itself: progression, key, colour and every chord-level edit
+    setForce(null); setTonic(0); setGenre("Pop"); setEmotion(null); setMode(null); setColour("triads");
+    setEdits({ key:"", map:{} }); setInserts({ key:"", list:[] }); setQuals({ key:"", map:{} });
+    setRemoved({ key:"", list:[] }); setOrder({ key:"", list:null }); setPillSel([]); setSel(null);
+    setReorder(false); setAdding(false); setRemoving(false); setFingerIdx(null); setSelSong("");
+    // sound: instruments, rhythm, tempo, feel and the whole rhythm section
+    setInstr("acoustic_guitar_steel"); setMelInstr("flute");
+    setPatSel({ key:"", id:"" }); setBpmSt({ key:"", val:0 }); setNChordsSt({ key:"", val:0 });
+    setGridSt({ key:"", val:"" }); setDelaySt({ key:"", val:"" }); setSwingSt({ key:"", val:0 }); setHumanise(0);
+    setDrumSt({ key:"", val:"" }); setKitSt({ key:"", val:"" }); setPumpSt({ key:"", val:"" });
+    setBassSt({ key:"", val:"" }); setBassVoiceSt({ key:"", val:"" }); setSecBass({});
+    setPercSt({ key:"", val:"" }); setSecPerc({}); setPercKitSt({ key:"", val:"" });
+    setPadSt({ key:"", val:"" }); setSecPad({}); setTrackFx({});
+    // structure, arrangement and everything written onto the sections
+    setSelStruct(""); setContrast({ id:"", sec:"C" }); setCustom({ key:"", plan:null });
+    setAuto({ key:"", filter:null, level:null }); setSketchArr([]); setSketchSel(0);
+    setSecDrum({}); setSecQuiet({}); setSecMove({}); setSecTrans({}); setSecBeat({});
+    setSecBassPat({}); setSecBassBeat({}); setSecPercPat({}); setSecPercBeat({});
+    setSecPadVoice({}); setSecPadBeat({}); setSecChordBeat({}); setSecPartOut({});
+    // melodies, the narrative dials, and the per-section writing state that pointed at them
+    setMelos({ progId:"", secs:{} }); setSecNar({}); setNarSel({ key:"", id:"" }); setNarUndo(null);
+    setVarySt({ key:"", val:1 }); setNarSyncSt({ key:"", val:0 }); setNarInSt({ key:"", val:false });
+    setVaryIn({}); setSyncIn({}); setLiftSt({}); setRiffSeed({});
+    setMelSel({ key:"", layer:0, notes:{} }); setMelTab({}); setSugSel({}); setRhySel({});
+    setSecPart({}); setModTab({}); setImpSec(""); setAddMel(false); setLoopSec(null);
+    // the page itself: grids closed, editors closed, name cleared
+    setOpenSecs({}); setOpenBeats({}); setOpenPercs({}); setOpenBass({}); setOpenPads({});
+    setOpenChordGrids({}); setOpenOpts({}); setOpenFx({}); setEditArr(false); setSelRow(0); setFocusRow(0);
+    setSketchName("");
+    setIoNote("Started from scratch — a blank page. ⌘Z brings the old song back.");
   };
 
   /* ---- svg pieces ---- */
@@ -7694,13 +7774,6 @@ export default function ProgressionWheel() {
             </select>
             {curNar && <button className="mini" onClick={() => applyNarrative(narId)}
               title="Rewrite it — after a key change, a new structure, or edits you want to throw away">↻ Rewrite</button>}
-            {/* a second chorus that is note-for-note the first one is the fastest way to sound like a demo */}
-            <select value={varyAmt} onChange={e => { const v = +e.target.value;
-                setVarySt({ key: progId, val: v }); if (narId) applyNarrative(narId, v); }}
-              style={{ flex:"0 1 150px" }}
-              title="How much each repeat of a section differs from its first time round — a new landing note, a note added or taken away, a phrase pushed early, a held note broken in two. The first time is always left alone.">
-              {VARY_LEVELS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-            </select>
             {narUndo && narSel.key === progId && <button className="mini" onClick={undoNarrative}
               title="Put the melodies back as they were before the narrative was written">↶ Undo</button>}
             {/* How finely you can write, which is not the same decision as how the chords are
@@ -7714,6 +7787,34 @@ export default function ProgressionWheel() {
                 + " Changing it re-times what you have written, so every note keeps the moment it sounds at."}>
               {MEL_GRIDS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
             </select>
+          </div>
+          {/* the narrative's phrasing dials. Variation is a continuous slider, not a menu — the
+              fraction becomes a deterministic per-pass coin toss on one extra edit, so 1.4 really
+              does sit between 1 and 2. The slider rewrites on release rather than on every tick,
+              so dragging it doesn't bury the undo history under sixty intermediate songs. */}
+          <div className="row" style={{ marginTop:6, gap:"6px 10px", alignItems:"center", flexWrap:"wrap" }}>
+            <span className="keytag" style={{ margin:0 }}
+              title="How much each repeat of a section differs from its first time round — a new landing note, a note added or taken away, a phrase pushed early, a held note broken in two. The first time is always left alone. Continuous: anywhere on the dial is a real setting.">
+              Vary repeats</span>
+            <input type="range" min={0} max={VARY_MAX} step={0.05} value={varyAmt}
+              onChange={e => setVarySt({ key: progId, val: +e.target.value })}
+              onPointerUp={e => { if (narId) applyNarrative(narId, +e.target.value); }}
+              onKeyUp={e => { if (narId) applyNarrative(narId, +e.target.value); }}
+              style={{ flex:"1 1 140px", minWidth:110 }}
+              title="Slide right for wilder repeats — released, it rewrites the narrative at the new amount. The left end means every repeat is identical." />
+            <span className="keytag" style={{ margin:0, minWidth:96 }}>{varyWords(varyAmt)} · {varyAmt.toFixed(2)}</span>
+            <select value={narSync} onChange={e => { const v = +e.target.value;
+                setNarSyncSt({ key: progId, val: v }); if (narId) applyNarrative(narId, varyAmt, v); }}
+              style={{ flex:"0 1 180px" }}
+              title="Syncopate the narrative as it writes: on-beat notes pushed half a beat early and held through the beat they left — the lean that carries most pop and house toplines. Backbeats first, or every beat but the downbeat.">
+              {SYNC_LEVELS.map(([v, label]) => <option key={v} value={v}>{v ? "Syncopate — " + label : "No syncopation"}</option>)}
+            </select>
+            <label className="keytag" style={{ margin:0, display:"inline-flex", gap:5, alignItems:"center", cursor:"pointer" }}
+              title="Also vary the repeats INSIDE each section: the one-bar riff said four times, the two-bar hook said twice — every restatement after the first drifts by the slider's amount, so a section isn't the same bar photocopied. The first statement always stays as written.">
+              <input type="checkbox" checked={narWithin} onChange={e => { const v = e.target.checked;
+                setNarInSt({ key: progId, val: v }); if (narId) applyNarrative(narId, varyAmt, narSync, v); }} />
+              vary within repeats too
+            </label>
           </div>
           {curNar
             ? <p className="arrnote" style={{ marginTop:6 }}>{curNar.tip}
@@ -7962,6 +8063,23 @@ export default function ProgressionWheel() {
               </div>
             );
           })()}
+        </div>}
+
+        {/* the way out — a genuinely blank page, at the bottom where a finished (or abandoned)
+            song ends up. It asks first, and it lands in the undo history like any other edit. */}
+        {tab === "write" && <div className="panel">
+          <div className="row" style={{ justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"6px 10px" }}>
+            <div style={{ flex:"1 1 260px" }}>
+              <div className="progtitle" style={{ fontSize:17 }}>Start from scratch</div>
+              <p className="keytag" style={{ margin:"2px 0 0" }}>
+                Clear everything — key, chords, drums, bass, melodies, structure, effects — back to a
+                fresh page. Saved sketches are kept, and ⌘Z brings the song back.
+              </p>
+            </div>
+            <button className="btn" style={{ padding:"6px 14px" }} onClick={startFresh}
+              title="Wipe the current song and begin again from the app's defaults. Sketches saved on the Save tab are untouched, and ⌘Z undoes the wipe.">
+              🧹 Start from scratch</button>
+          </div>
         </div>}
       </div>
     </div>
