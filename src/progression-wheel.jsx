@@ -446,12 +446,15 @@ const TRACK_MODS = [TRACK_LVL, ...["cut","res","hp","drive","wob","wobRate","tre
   "pan","apan","apanRate","send","verb","duck"].map(k => MOD_BY_KEY[k])];
 const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
   ["bass", "Bass", "🎸"], ["pad", "Pad", "🌫️"]];
-/* Default make-up gain for the pitched sources. The chord, bass and melody voices are all far
-   quieter than the drums, and at unity gain they could disappear entirely on small speakers.
+/* Default make-up gain for the pitched sources, setting the mix's default hierarchy: the
+   melody on top level with the drums, the bass beside them (its own anchor in audio.js already
+   makes one low note carry), and the chords ~5 dB under the lead — comping at the lead's own
+   level just masks it in the same register. Measured, not guessed: a bar of each source at its
+   in-song gain, compared by K-weighted loudness (same method as scripts/measure-loudness.mjs).
    Each boost sits on the source's own bus inside the graph — upstream of the duck nodes and
    applied identically in a stem render — so the Level sliders still read 100% out of the box
    and the stems still sum to the mix. */
-const CHORD_MAKEUP = 1.6, BASS_MAKEUP = 1.6, MELODY_MAKEUP = 1.5;
+const CHORD_MAKEUP = 1.15, BASS_MAKEUP = 1.0, MELODY_MAKEUP = 2.0;
 
 // section-type accent colours for the song write-out grouping
 /* One colour per section letter. Chosen by function rather than prettiness, so the arrangement

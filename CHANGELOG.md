@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **The melody sits on top of the mix.** The default balance is now a measured hierarchy rather
+  than three separate boosts: a bar of each source at its in-song gain, compared by K-weighted
+  loudness. The bass make-up gain had stacked onto the bass track's own loudness anchor, leaving
+  the bass ~6 dB above everything, and the chords sat at exactly the lead's level in the same
+  register — together they buried the melody. Now the melody rides level with the drums at the
+  top, the bass sits beside the drums instead of over them, and the chords comp ~5 dB under the
+  lead. Sliders still read 100%; stems still sum to the mix.
 - **✍ Whole song — write one groove track across the arrangement.** Sections already follow the
   Sketch tab's groove by default, but a section stops following the moment it is given a version
   of its own — an arrangement template's pick, a pattern chosen on the Arrange tab, or a written
