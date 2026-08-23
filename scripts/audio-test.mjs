@@ -1065,6 +1065,15 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       problems.push("src: applyNarrative copies a part's bars by hand — go through cloneLayer, or the other fields are dropped");
     if (!/varyBars\(/.test(fn))
       problems.push("src: applyNarrative no longer varies repeats — every pass of a section will be identical");
+    /* The narrative's phrasing dials: syncopation lands on the generated line BEFORE the repeats
+       are varied (pass 0 has to lean the same way the others do), and the within-section pass is
+       optional but has to exist — the one-bar riff said four times is the other kind of identical. */
+    if (!/syncopateBars\(/.test(fn))
+      problems.push("src: applyNarrative cannot syncopate — the narrative's syncopation option has gone");
+    if (!/varyWithin\(/.test(fn))
+      problems.push("src: applyNarrative cannot vary within a section — the within-repeats option has gone");
+    if (fn.includes("syncopateBars(") && fn.indexOf("syncopateBars(") > fn.indexOf("varyBars("))
+      problems.push("src: applyNarrative syncopates after varying — pass 0 would stay square while the repeats lean");
   }
   /* A section's own narrative has to be handed the same position in the song the song-wide write
      would have handed it — which pass of its kind it is, and where it sits in the running order.
@@ -1083,6 +1092,30 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/sections\.insts/.test(fn) || !/findIndex/.test(fn))
       problems.push("src: applySecNarrative does not work out where the section sits from the running order");
     if (!/varyBars\(/.test(fn)) problems.push("src: applySecNarrative does not vary repeats");
+    // a section rewritten on its own goes through the same three dials as the song-wide write —
+    // syncopation, the pass's variation, the drift inside the section — or the two paths diverge
+    if (!/syncopateBars\(/.test(fn)) problems.push("src: applySecNarrative does not syncopate like the song-wide write");
+    if (!/varyWithin\(/.test(fn)) problems.push("src: applySecNarrative does not vary within the section like the song-wide write");
+  }
+  /* Start from scratch: the Write page's bottom exit. It has to ask first (a one-tap wipe beside
+     ordinary buttons is a trap), reset the melodies (the state a half-reset most easily forgets),
+     and actually be on the page. */
+  {
+    if (!/const startFresh = /.test(code)) problems.push("src: startFresh has gone — the Write page's start-from-scratch button has nothing to call");
+    const fn = code.slice(code.indexOf("const startFresh ="), code.indexOf("/* ---- svg pieces ----"));
+    if (!/confirm\(/.test(fn)) problems.push("src: startFresh wipes the song without asking");
+    for (const call of ["setMelos", "setEdits", "setSecBeat", "setSketchArr", "setNarSel", "setTrackFx"])
+      if (!new RegExp(call + "\\(").test(fn)) problems.push(`src: startFresh does not reset ${call} — the fresh page would keep part of the old song`);
+    if (!/startFresh}/.test(code) && !/onClick=\{startFresh\}/.test(code))
+      problems.push("src: nothing on the page calls startFresh");
+  }
+  /* The variation dial is a continuous slider, not a menu: a range input wired to varySt, applied
+     on release. And the narrative row carries its other two dials — syncopation and within-repeats. */
+  {
+    if (!/type="range"[\s\S]{0,200}?VARY_MAX/.test(code) && !/max=\{VARY_MAX\}/.test(code))
+      problems.push("src: the vary-repeats control is no longer a continuous slider");
+    if (!/SYNC_LEVELS\.map/.test(code)) problems.push("src: the narrative row lost its syncopation menu");
+    if (!/narInSt|vary within/.test(code)) problems.push("src: the narrative row lost its within-repeats option");
   }
   /* In-section variation is an *amount*, not a ratchet. Every press has to re-derive the variations
      from the melody as it stood before the first one — vary the grid that is already varied and the
@@ -1851,6 +1884,32 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
      below it is not a bug on its own — a level that does so *often* is a menu entry pretending to
      do something. Two per cent is the room a genuinely exhausted phrase needs. */
   if (flat > steps * 0.02) problems.push(`${flat}/${steps} steps up the variation menu change nothing`);
+  /* The variation amount is a continuous slider now, so the fractions between the levels have to
+     be real settings: a fractional amount resolves — deterministically, per pass — to one of the
+     two integer amounts either side of it, never to a rounding of the dial and never differently
+     on a second open of the same song. And across the corpus the dial has to actually turn: some
+     passes at 1.5 take the extra edit and some don't, or the fraction is a label for "2". */
+  {
+    let above = 0, below = 0;
+    for (const nar of M.NARRATIVES) for (const role of ROLES) {
+      const spots = M.rhythmSpots(M.ROLE_RHYTHM[role] || "straight", 8, 2, 4);
+      const base = nar.gen({ nBars: 4, B: 8, sub: 2, nd: ND, spots,
+        chordDegs: [[0, 2, 4], [3, 5, 0], [4, 6, 1], [0, 2, 4]], role,
+        pass: 0, passes: 4, idx: 0, total: 4, frac: 0 });
+      for (let p = 1; p <= 3; p++) {
+        const mid = show(M.varyBars(base, { pass: p, role, nd: ND, amount: 1.5 }));
+        if (mid !== show(M.varyBars(base, { pass: p, role, nd: ND, amount: 1.5 })))
+          problems.push(`a fractional variation amount is not deterministic (${nar.id}/${role} pass ${p})`);
+        const lo = show(M.varyBars(base, { pass: p, role, nd: ND, amount: 1 }));
+        const hi = show(M.varyBars(base, { pass: p, role, nd: ND, amount: 2 }));
+        if (mid !== lo && mid !== hi)
+          problems.push(`amount 1.5 matches neither 1 nor 2 on ${nar.id}/${role} pass ${p}`);
+        if (mid === hi) above++; else below++;
+      }
+    }
+    if (!above || !below)
+      problems.push(`a fractional amount never lands ${above ? "below" : "above"} itself — the slider's in-between positions do nothing`);
+  }
   for (const v of M.VARIATIONS) if (!v.id || typeof v.apply !== "function") problems.push("a VARIATION has no id or no apply");
   /* Each kind of edit checked on its own. Two properties per variation: it fires somewhere in the
      corpus at all (an edit whose preconditions are never met is dead code that reads as a feature),

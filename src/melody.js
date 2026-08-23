@@ -1101,6 +1101,14 @@ const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).j
    differ by construction rather than by luck. */
 const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1 }) => {
   if (!amount || !pass || !out.length) return 0;
+  /* A fractional amount is a continuous dial over a count of edits, so the fraction becomes a
+     deterministic coin toss on one extra edit — seeded from the seed and the pass, never from
+     Math.random, so 1.4 means "every pass gets one edit, and this particular pass either does or
+     does not get a second, the same way every time the song is opened". Rounding instead would
+     snap the dial back onto the integers it exists to sit between. */
+  const whole = Math.floor(amount), frac = amount - whole;
+  if (frac) amount = whole + (hash01(seed * 8.09 + pass * 13.7) < frac ? 1 : 0);
+  if (!amount) return 0;
   /* Walk a rotation of the list rather than drawing from it: a draw can miss a variation entirely
      over its tries, and in a sparse bar most variations have nowhere to go — no interior note to
      lift, no gap to fill — so the one that *can* act has to be reached, not hoped for. */
