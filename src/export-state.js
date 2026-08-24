@@ -1,8 +1,8 @@
 import { MODES, SEMI_NAME, modeId } from "./theory.js";
 import { DRUMS, BASS, PERCS, PATTERNS, PUMPS, PUMP_AMT, METER_BY_ID, METERS } from "./patterns.js";
 import { ARP_BY_ID, ARP_RATES, GATE_BY_ID, LAYER_NAMES, MODS, MOD_GROUPS, modOf } from "./melody.js";
-import { BASS_VOICES, DELAY_BEATS, DELAY_TIMES, FILTER_OPEN, GM_LABEL, LEAD_VOICES, MOVES,
-  PAD_VOICES, TRANS, gmKey, isGM } from "./audio.js";
+import { BASS_VOICES, DELAY_BEATS, DELAY_TIMES, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_LABEL,
+  LEAD_VOICES, MOVES, PAD_VOICES, TRANS, gmKey, isGM } from "./audio.js";
 
 /* export-state — the settings half of "Export for Claude": one JSON snapshot of every choice that
    shaped the rendered audio, written to be read without the source code beside it.
@@ -56,7 +56,7 @@ function sanitizeJson(v, seen = new Set()) {
 const snake = s => String(s || "").toLowerCase()
   .replace(/&/g, "and").replace(/→/g, "to").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 const UNIT_SUFFIX = { "%": "_percent", "st": "_semitones", "¢": "_cents", "ms": "_ms",
-  " steps": "_steps", "": "" };
+  " steps": "_steps", "dB": "_db", ":1": "_ratio", "bit": "_bit", "": "" };
 const modField = m => snake(m.name) + (UNIT_SUFFIX[m.unit] != null ? UNIT_SUFFIX[m.unit] : "");
 // a select's stored value is an id; the reader wants the label ("1/16", "Up & down")
 const optLabel = (m, v) => {
@@ -283,6 +283,22 @@ function buildExportState(x) {
     if (Object.keys(changed).length) trackFxOut[trId] = changed;
   }
 
+  // The insert-effects rack: a second, independent processing stage per bus (see FX_TYPES in
+  // audio.js), off by default. Only slots actually set to something are listed, named and unit-ed
+  // the same way MODS are above — a slot left at "off" needs no explanation, it did nothing.
+  const fxRackOut = {};
+  for (const bus of ["master", "drums", "perc", "bass", "pad", "lead"]) {
+    const slots = ((x.fxRack || {})[bus] || []).filter(s => s && s.type && s.type !== "off");
+    if (!slots.length) continue;
+    fxRackOut[bus] = slots.map(s => {
+      const t = FX_TYPES.find(([id]) => id === s.type);
+      const out = { type: t ? t[1] : s.type };
+      for (const [k, name, , , , dflt, unit] of FX_PARAMS[s.type] || [])
+        out[snake(name) + (UNIT_SUFFIX[unit] != null ? UNIT_SUFFIX[unit] : "")] = s[k] != null ? s[k] : dflt;
+      return out;
+    });
+  }
+
   return sanitizeJson({
     format: "progression-wheel-settings",
     format_version: 1,
@@ -357,6 +373,11 @@ function buildExportState(x) {
     track_effects: {
       note: "per-track versions of the part controls (level, filter, drive, LFOs, sends); only tracks with non-default settings are listed",
       ...trackFxOut,
+    },
+    insert_fx: {
+      note: "a second, independent two-slot processing rack per bus (chorus/flanger/phaser/bitcrusher/compressor/stereo widener, plus a second distortion stage) — 'lead' is one shared rack all six melody parts feed into; only buses with a slot set to something other than Off are listed",
+      master_note: "the master rack sits just before the limiter on the full mix render; like the limiter, it is bypassed for stem exports so the stems still sum to the mix without it applied twice",
+      ...fxRackOut,
     },
     master_effects: {
       sidechain_pump: { setting: pumpLabel, duck_amount_0_to_1: PUMP_AMT[x.pump] || 0,

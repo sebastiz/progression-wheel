@@ -3,7 +3,7 @@ import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_ID
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
 import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
-import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
+import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
@@ -14,6 +14,7 @@ import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
+import { TRACK_PRESETS } from "./track-presets.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -446,6 +447,12 @@ const TRACK_MODS = [TRACK_LVL, ...["cut","res","hp","drive","wob","wobRate","tre
   "pan","apan","apanRate","send","verb","duck"].map(k => MOD_BY_KEY[k])];
 const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
   ["bass", "Bass", "🎸"], ["pad", "Pad", "🌫️"]];
+/* The insert-effects rack's six buses. "lead" is one shared rack all six melody parts feed into
+   (see the note beside its wiring in chainOf) rather than a rack per part — one set of knobs, the
+   simplest thing that is still useful, matching how the delay and reverb sends are one shared bus
+   too. "master" sits just before the limiter, so it colours the whole song, drums included. */
+const FX_BUSES = [["master", "Master"], ["drums", "Drums"], ["perc", "Perc"],
+  ["bass", "Bass"], ["pad", "Pad"], ["lead", "Lead"]];
 /* Default make-up gain for the pitched sources, setting the mix's default hierarchy: the
    melody on top level with the drums, the bass beside them (its own anchor in audio.js already
    makes one low note carry), and the chords ~5 dB under the lead — comping at the lead's own
@@ -504,6 +511,7 @@ export default function ProgressionWheel() {
   const [showSec, setShowSec] = useState(false);
   const [selStruct, setSelStruct] = useState("");
   const [selSong, setSelSong] = useState("");
+  const [trackSt, setTrackSt] = useState("");   // "recreate a famous track" — the TRACK_PRESETS id last picked
   const [sel, setSel] = useState(null);                       // baseName of chord being swapped
   const [edits, setEdits] = useState({ key:"", map:{} });     // chord root/quality swaps
   const [inserts, setInserts] = useState({ key:"", list:[] }); // inserted / duplicated chords
@@ -578,6 +586,11 @@ export default function ProgressionWheel() {
   const [trackFx, setTrackFx] = useState({});         // { drums:{...}, perc:{...}, bass:{...}, pad:{...} }
   const [openFx, setOpenFx] = useState({});           // which track effect panels are open
   const [trackFxTab, setTrackFxTab] = useState({});   // per track, which settings group is showing
+  /* The insert-effects rack: two slots per bus, each `{ type, ...its own params }`. Sparse the same
+     way trackFx is — a bus/slot never opened simply is not a key here, and `fxSlotRow` below hands
+     back the "off" shape for it. */
+  const [fxRack, setFxRack] = useState({});   // { master:[{},{}], drums:[{},{}], perc:[...], bass:[...], pad:[...], lead:[...] }
+  const [fxBusTab, setFxBusTab] = useState("master");   // which bus's rack the FX panel is showing
   const [secDrum, setSecDrum] = useState({});               // per-section-type drum override, keyed by base letter ("" = follow global)
   // per-section-type chord mute, keyed by base letter. Dropping the chords for a breakdown while
   // the drums carry on is a basic arrangement move that had no way to be expressed before.
@@ -696,7 +709,7 @@ export default function ProgressionWheel() {
   const secBassPatRef = useRef({}), secBassBeatRef = useRef({});
   const secPercPatRef = useRef({}), secPercBeatRef = useRef({});
   const secPadVoiceRef = useRef({});
-  const trackFxRef = useRef({}), percKitRef = useRef("hand");
+  const trackFxRef = useRef({}), percKitRef = useRef("hand"), fxRackRef = useRef({});
   const secPadBeatRef = useRef({}), secChordBeatRef = useRef({});
   const subRef = useRef(2), melRef = useRef(8);
   const moveRef = useRef({ moves:{}, span:{} });
@@ -1197,6 +1210,89 @@ export default function ProgressionWheel() {
     applyArrangement(tpl.plan, v);
   };
 
+  /* ---- track presets: "recreate a famous track" ----
+     A track preset (src/track-presets.js) is a template pick plus a key/progression plus a melody
+     steering choice, applied from one dropdown. It cannot simply call `pickStruct`-style logic and
+     `applyNarrative` back to back in the same click handler: both eventually call `setMelos`, and
+     two `setMelos` calls issued synchronously in one handler always collapse to the *second* call's
+     argument — React holds the newest value written to a piece of state, it does not merge two
+     writes to it. Worse, `applyArrangement` (via `applyPartMutes`) and `applyNarrative` both read
+     the *committed* `chords` / `poolFor` / `sections` for their bar math and their section list —
+     which still describe the *old* progression the instant after `setForce`/`setTonic` are called,
+     because state only takes effect on the next render. Calling them in the same breath as picking a
+     new progression would therefore both silently drop one of the two melody writes and resolve the
+     template against the wrong chord count.
+
+     So a preset lands over three renders, gated by one ref rather than its own state (nothing here
+     needs to survive a reload, only a few renders): this render sets the key, the progression and
+     every tempo/drum/kit/bass control — exactly what `pickStruct` sets, just keyed to the preset's
+     own progression rather than the current one. The next render — once `progId`/`tonic`/`selStruct`
+     have actually committed and `chords`/`sections` are freshly derived from them — applies the
+     arrangement, via the very same `applyArrangement` a manual template pick uses. And the render
+     after *that* — once the arrangement's part mutes have themselves committed and `secMelos`
+     reflects them — writes the melody narrative over the top, so a DJ intro the template just
+     silenced doesn't get un-muted by a narrative computed from the section list as it stood a render
+     earlier. Three plain, unmodified calls to the app's own functions, sequenced rather than merged
+     — which is also why nothing here duplicates `pickStruct`'s or `applyNarrative`'s own logic; this
+     only decides *when* each already-correct call is safe to make. */
+  const trackPresetRef = useRef(null);
+  useEffect(() => {
+    const p = trackPresetRef.current;
+    if (!p) return;
+    if (p.stage === "arrange") {
+      const tpl = DANCE_TEMPLATES[p.tplIdx];
+      if (tpl) applyArrangement(tpl.plan, p.selVal);
+      trackPresetRef.current = p.preset.narrative ? { ...p, stage: "melody" } : null;
+      return;
+    }
+    // stage "melody" — the sliders get the same values baked into the melody, or they would show a
+    // position that disagrees with what just played, exactly as a manual drag + apply does
+    const { narrative, vary, sync, within } = p.preset;
+    const amt = vary == null ? 1 : vary;
+    setVarySt({ key: progId, val: amt });
+    setNarSyncSt({ key: progId, val: sync || 0 });
+    setNarInSt({ key: progId, val: !!within });
+    applyNarrative(narrative, amt, sync || 0, !!within);
+    trackPresetRef.current = null;
+  });
+  /* The steering itself — register, density, contour, syncopation, hook placement — never a
+     transcribed note. See the header of track-presets.js for why that line is drawn where it is. */
+  const applyTrackPreset = id => {
+    setTrackSt(id);
+    const preset = TRACK_PRESETS.find(t => t.id === id);
+    if (!preset) return;
+    const pid = preset.progId;
+    const tplIdx = DANCE_TEMPLATES.findIndex(t => t.id === preset.baseTemplate);
+    const tpl = tplIdx >= 0 ? DANCE_TEMPLATES[tplIdx] : null;
+    setForce(PROGRESSIONS[pid] ? pid : null); setTonic(preset.tonic || 0);
+    setGenre(null); setEmotion(null); setMode(preset.mode || null);
+    // a fresh key deserves a fresh set of chord-level edits — an insert or a swap keyed to the old
+    // progression:tonic pair would simply fail to match and sit inert, but starting clean is honest
+    setEdits({ key:"", map:{} }); setInserts({ key:"", list:[] });
+    setQuals({ key:"", map:{} }); setRemoved({ key:"", list:[] }); setOrder({ key:"", list:null });
+    const bpm = preset.bpm || (tpl && tpl.bpm);
+    if (bpm) setBpmSt({ key: pid, val: bpm });
+    const patId = preset.pat || (tpl && tpl.pat);
+    if (patId && PATTERNS[patId]) setPatSel({ key: pid, id: patId });
+    const drumId = preset.drum || (tpl && tpl.drum);
+    if (drumId && DRUMS[drumId]) setDrumSt({ key: pid, val: drumId });
+    const kitId = preset.kit || (tpl && tpl.kit);
+    if (kitId) setKitSt({ key: pid, val: kitId });
+    const pumpId = preset.pump || (tpl && tpl.pump);
+    if (pumpId) setPumpSt({ key: pid, val: pumpId });
+    const bassId = preset.bass || (tpl && tpl.bass);
+    setBassSt({ key: pid, val: bassId && BASS[bassId] ? bassId : "" });
+    setBassVoiceSt({ key: pid, val: preset.bassVoice || (tpl && tpl.bassVoice) || "" });
+    if (preset.pad) setPadSt({ key: pid, val: preset.pad });
+    if (preset.percKit) setPercKitSt({ key: pid, val: preset.percKit });
+    if (preset.delay) setDelaySt({ key: pid, val: preset.delay });
+    if (preset.swing != null) setSwingSt({ key: pid, val: preset.swing });
+    setSelRow(0); setCustom({ key:"", plan:null });
+    const selVal = tplIdx >= 0 ? pid + ":t:" + tplIdx : "";
+    setSelStruct(selVal);
+    trackPresetRef.current = tplIdx >= 0 ? { stage:"arrange", tplIdx, selVal, preset } : null;
+  };
+
   /* ---- melody scale + targets ---- */
   const scaleSemis = MODES[effMode].semis;
   const scaleNotes = scaleSemis.map(s => (tonic + s) % 12);
@@ -1262,7 +1358,7 @@ export default function ProgressionWheel() {
   secBassPatRef.current = secBassPat; secBassBeatRef.current = secBassBeat;
   secPercPatRef.current = secPercPat; secPercBeatRef.current = secPercBeat;
   secPadVoiceRef.current = secPadVoice;
-  trackFxRef.current = trackFx; percKitRef.current = percKit;
+  trackFxRef.current = trackFx; percKitRef.current = percKit; fxRackRef.current = fxRack;
   secPadBeatRef.current = secPadBeat; secChordBeatRef.current = secChordBeat;
   clickRef.current = clickOn;
   /* Time signature. The chosen strum pattern is the single source of truth for the bar — the meter
@@ -1474,6 +1570,44 @@ export default function ProgressionWheel() {
         </div>
         {tips && grp === "space" && delayId === "off" &&
           <p className="arrnote" style={{ margin:"4px 0 0" }}>Echo needs a Delay time — pick one on the <b>Sound</b> tab.</p>}
+      </div>
+    );
+  };
+  /* One slot of the insert-effects rack: a type picker, then whatever sliders that type takes
+     (from FX_PARAMS — nothing else is drawn, so a Compressor slot shows four sliders and a
+     Widener shows one). Picking a type seeds its defaults immediately, so the slot is already
+     doing something musical rather than sitting at zero — "off" is the only slot state a song
+     that never opens this panel has to inherit unchanged. */
+  const fxSlotRow = (busId, slotIdx) => {
+    const slots = fxRack[busId] || [];
+    const slot = slots[slotIdx] || { type: "off" };
+    const type = slot.type || "off";
+    const params = FX_PARAMS[type] || [];
+    const setSlot = patch => {
+      const next = [slots[0] || { type: "off" }, slots[1] || { type: "off" }];
+      next[slotIdx] = { ...next[slotIdx], ...patch };
+      setFxRack({ ...fxRack, [busId]: next });
+    };
+    return (
+      <div key={slotIdx} className="selrow" style={{ alignItems:"flex-end", flexWrap:"wrap", marginTop:6 }}>
+        <label className="selwrap" style={{ minWidth:140, flex:"0 0 auto" }}>
+          <span className="lbl" style={{ margin:0 }}>Slot {slotIdx + 1}</span>
+          <select value={type} onChange={e => setSlot({ type: e.target.value, ...fxDefaults(e.target.value) })}
+            title="What this slot processes. Off costs nothing — no node, no added latency; every other type starts at a tasteful preset you can then dial in.">
+            {FX_TYPES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
+          </select>
+        </label>
+        {params.map(([k, name, min, max, step, dflt, unit]) => {
+          const v = slot[k] != null ? slot[k] : dflt;
+          return (
+            <label className="selwrap" key={k} style={{ minWidth:110 }}>
+              <span className="lbl" style={{ margin:0 }}>{name} {v}{unit}</span>
+              <input className="lvl" type="range" min={min} max={max} step={step} value={v}
+                onChange={e => setSlot({ [k]: +e.target.value })}
+                title={(FX_TYPES.find(([id]) => id === type) || [])[2] || name} />
+            </label>
+          );
+        })}
       </div>
     );
   };
@@ -2663,6 +2797,19 @@ export default function ProgressionWheel() {
   // an OfflineAudioContext for rendering the song to a file. Everything downstream of `master`
   // is identical either way, so a render sounds like what you heard.
   const buildGraph = (ctx, from, stem) => {
+  // fixed once, here, so every LFO-bearing insert (chorus/flanger/phaser) built below — on the
+  // master path or on a track — shares the same phase reference every other LFO in this graph
+  // already uses (see `t0v` and the part-chain LFOs further down)
+  const fxT0 = ctx.currentTime;
+  // A slot's type is structural, exactly like a delay time or a bass voice: read once, here, and
+  // fixed for the length of this playback or render. Only the knobs move live (see `writeFxRack`
+  // in the per-beat block below) — changing a slot's type is heard on the next Play, the same as
+  // changing the delay time is.
+  const FR = fxRackRef.current || {};
+  const fxIdsOf = bus => {
+    const s = FR[bus] || [];
+    return [(s[0] && s[0].type) || "off", (s[1] && s[1].type) || "off"];
+  };
   // Stems are pre-master: the limiter is a compressor, and compression is not linear, so
   // limiting each stem on its own could never add back up to a limited mix. Bypassing it means
   // the stems sum to the raw mix sample for sample, and the DAW's own master chain does the
@@ -2686,7 +2833,7 @@ export default function ProgressionWheel() {
      entirely, and a stutter that leaves the drums running is not a stutter.
      `fx` is where risers, rolls and crashes go: added sources, so they belong to exactly one stem. */
   const tn = makeTrans(ctx, autoFilt, 60 / (bpmRef.current || 120), !!(stem && stem.kind !== "fx"));
-  let master;
+  let master, fxMaster = null;
   if (stem) {
     master = ctx.createGain(); master.gain.value = 0.65; master.connect(tn.in);
     autoGain.connect(ctx.destination);
@@ -2698,7 +2845,13 @@ export default function ProgressionWheel() {
   limiter.attack.value = 0.002; limiter.release.value = 0.14;
   limiter.connect(ctx.destination);
   master = ctx.createGain(); master.gain.value = 0.65; master.connect(tn.in);
-  autoGain.connect(limiter);
+  // the master insert rack, just before the limiter — built only here, not on the stem branch
+  // above, for the same reason the limiter itself is stem-only: a stem is meant to sum back to
+  // this exact mix, and a nonlinear insert (compressor, bitcrusher) baked into every stem could
+  // not add back up to what the rack does on the full signal, so stems get the clean, pre-rack
+  // signal and a producer applies their own master processing in the DAW, same as with the limiter.
+  fxMaster = makeFxRack(ctx, fxIdsOf("master"), fxT0);
+  autoGain.connect(fxMaster.input); fxMaster.output.connect(limiter);
   }
   // section-move filter: a build sweeps the whole pitched mix including its reverb tail, which is
   // what makes it sound like the room opening up
@@ -2743,7 +2896,21 @@ export default function ProgressionWheel() {
      LFOs (wobble, tremolo, auto-pan) running from t0 so stems line up with the mix. Every default
      is transparent: a song that never opens the panels is what it always was. */
   const t0v = ctx.currentTime;
-  const mkChain = out => {
+  /* Each track's own insert rack, built here (not inside `mkChain`, which is shared by all four
+     tracks and would otherwise build one rack per call and have no way to tell them apart) and
+     handed in as `fx`. Slotted between the chain's own duck and `out` — after the filter/drive/
+     pan/duck stage every track already has, so an insert here never disturbs the sidechain-duck,
+     delay-send or reverb-send taps above it, all of which are taken off `tail`, before the duck. */
+  const fxDrums = makeFxRack(ctx, fxIdsOf("drums"), fxT0);
+  const fxPerc = makeFxRack(ctx, fxIdsOf("perc"), fxT0);
+  const fxBass = makeFxRack(ctx, fxIdsOf("bass"), fxT0);
+  const fxPad = makeFxRack(ctx, fxIdsOf("pad"), fxT0);
+  // one shared rack for every melody part — connected once, here, to the reverb bus every part's
+  // chain already fed straight into; each part's own duck fans into `fxLead.input` below, in
+  // chainOf, so six parts get one rack and one set of knobs rather than six independent ones
+  const fxLead = makeFxRack(ctx, fxIdsOf("lead"), fxT0);
+  fxLead.output.connect(music);
+  const mkChain = (out, fx) => {
     const inG = ctx.createGain(); inG.gain.value = 1;
     const drive = ctx.createWaveShaper(); drive.oversample = "2x";
     const chp = ctx.createBiquadFilter(); chp.type = "highpass"; chp.frequency.value = 20; chp.Q.value = 0.7;
@@ -2753,7 +2920,7 @@ export default function ProgressionWheel() {
     const duck = ctx.createGain(); duck.gain.value = 1;
     inG.connect(drive); drive.connect(chp); chp.connect(lp); lp.connect(trem);
     const tail = pan ? (trem.connect(pan), pan) : trem;
-    tail.connect(duck); duck.connect(out);
+    tail.connect(duck); duck.connect(fx.input); fx.output.connect(out);
     let send = null;
     if (delay) { send = ctx.createGain(); send.gain.value = 0; tail.connect(send); send.connect(delay.send); }
     const verbS = ctx.createGain(); verbS.gain.value = 0; tail.connect(verbS); verbS.connect(verb);
@@ -2764,16 +2931,16 @@ export default function ProgressionWheel() {
       o.start(t0v); o.stop(t0v + 3600);
       return { osc: o, depth: g };
     };
-    return { in: inG, drive, hp: chp, lp, trem, pan, duck, send, verbS,
+    return { in: inG, drive, hp: chp, lp, trem, pan, duck, send, verbS, fx,
       wob: lfo(lp.frequency), tremLfo: lfo(trem.gain), panLfo: pan ? lfo(pan.pan) : null, driveAmt: 0 };
   };
-  const trDrums = mkChain(master);
-  const trPerc = mkChain(master);
-  const trBass = mkChain(bduck);
+  const trDrums = mkChain(master, fxDrums);
+  const trPerc = mkChain(master, fxPerc);
+  const trBass = mkChain(bduck, fxBass);
   trBass.in.gain.value = BASS_MAKEUP;              // audible before the first beat's applyFx runs
-  const trPad = mkChain(padDuck);
+  const trPad = mkChain(padDuck, fxPad);
   const m = { ctx, master, music, cduck, chordBus, bduck, padDuck, wetDuck, filt, mhp,
-    trDrums, trPerc, trBass, trPad,
+    trDrums, trPerc, trBass, trPad, fxLead, fxMaster,
     bassLp: trBass.lp, percLp: trPerc.lp, padLp: trPad.lp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
     lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
     partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
@@ -3110,6 +3277,23 @@ export default function ProgressionWheel() {
         applyFx(m.trPerc, F3.perc, "cutperc");
         applyFx(m.trBass, F3.bass, "cutbass", BASS_MAKEUP);
         applyFx(m.trPad, F3.pad, "cutpad");
+        /* The insert rack's own knobs, same cadence as the track panel above. Only the numbers move
+           here — a slot's *type* was fixed back in buildGraph, so a slot whose type was changed
+           since Play still writes into the nodes that were actually built for it; `write` falls
+           back to its own defaults for any key it does not recognise, so that is silent rather than
+           wrong-sounding, and the change is heard cleanly on the next Play. */
+        const writeFxRack = (rack, slots) => {
+          if (!rack) return;
+          const S = slots || [];
+          rack.slots.forEach((slot, si) => slot.write(t, S[si] || {}));
+        };
+        const FXR = fxRackRef.current || {};
+        writeFxRack(m.trDrums.fx, FXR.drums);
+        writeFxRack(m.trPerc.fx, FXR.perc);
+        writeFxRack(m.trBass.fx, FXR.bass);
+        writeFxRack(m.trPad.fx, FXR.pad);
+        writeFxRack(m.fxLead, FXR.lead);
+        writeFxRack(m.fxMaster, FXR.master);
       }
       // section moves: fire once, on the downbeat of each section instance, scheduling the whole
       // sweep across that instance's length. Guarded by the bar index so a re-entered bar (or the
@@ -3193,8 +3377,8 @@ export default function ProgressionWheel() {
           const base = (mel.tonic > 6 ? 60 : 72) + mel.tonic;
           /* One part's signal chain, built on first use and reused after:
 
-               gain ─ drive ─ high-pass ─ low-pass ─ tremolo ─ pan ─ gate ─┬─ duck ─→ pitched bus
-               (level·mute·solo)          ▲            ▲        ▲          ├─ echo send → delay
+               gain ─ drive ─ high-pass ─ low-pass ─ tremolo ─ pan ─ gate ─┬─ duck ─→ FX rack ─→ pitched bus
+               (level·mute·solo)          ▲            ▲        ▲          ├─ echo send → delay      (shared)
                                           │            │        │          └─ reverb send → room
                                         wobble      tremolo   auto-pan
                                                  (three tempo-synced LFOs)
@@ -3203,11 +3387,15 @@ export default function ProgressionWheel() {
              filter (so the filter tames the harmonics the drive just made, rather than the drive
              re-brightening a filtered signal), the gate last of the level stages so it chops
              everything above it at once, and both sends taken after the gate — a gated part throws
-             gated repeats rather than a smooth pad's worth of echo the dry signal never had.
+             gated repeats rather than a smooth pad's worth of echo the dry signal never had. The FX
+             rack sits after the duck too, for the same reason: it should hear the part gated and
+             pumped, not the dry signal the duck is about to chop.
 
              Every node is built whether or not the part uses it. Building lazily would mean an
              LFO's phase depended on which bar a control was first turned up in, and a stem bounce
-             would no longer line up with the mix it came from. */
+             would no longer line up with the mix it came from. (The FX rack itself is the one
+             exception worth naming: it is shared by all six parts and is built once, eagerly, in
+             buildGraph — see the comment there — not inside this per-part chain.) */
           const chainOf = li => {
             let dest = m.partGain[li];
             if (!dest) {
@@ -3226,7 +3414,10 @@ export default function ProgressionWheel() {
               const pduck = m.partDuck[li] = C.createGain(); pduck.gain.value = 1;
               dest.connect(drive); drive.connect(hp); hp.connect(lp); lp.connect(trem);
               if (pan) { trem.connect(pan); pan.connect(gate); } else trem.connect(gate);
-              gate.connect(pduck); pduck.connect(m.music);
+              // the insert rack sits after the duck, shared by every part (see its build above) —
+              // the delay/reverb sends below are taken off `gate`, before the duck, so they and the
+              // sidechain are untouched by whatever this rack does
+              gate.connect(pduck); pduck.connect(m.fxLead.input);
               if (m.delay) {                       // a parallel send, so the dry part is untouched
                 const sd = m.partSend[li] = C.createGain();
                 sd.gain.value = 0; gate.connect(sd); sd.connect(m.delay.send);
@@ -3922,7 +4113,7 @@ export default function ProgressionWheel() {
       sections: sections.insts.map(secOf),
       groove: grooveUsed ? secOf(grooveInst) : null,
       instr, melInstr, kit, percKit, pump, bassVoice, padId: pad,
-      drum, patId, delayId, trackFx, realSounds, legato, clickOn,
+      drum, patId, delayId, trackFx, fxRack, realSounds, legato, clickOn,
       auto: auto.key === planKey ? auto : {},
     });
   };
@@ -4561,7 +4752,7 @@ export default function ProgressionWheel() {
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
     kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
-    secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit,
+    secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit, fxRack,
     secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
     sketchArr,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
@@ -4577,7 +4768,7 @@ export default function ProgressionWheel() {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
       kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
-      secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit,
+      secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit, fxRack,
       secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, sketchArr, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
@@ -4863,6 +5054,7 @@ export default function ProgressionWheel() {
     setSecPadBeat(unpackBeats(s.secPadBeat)); setSecChordBeat(unpackBeats(s.secChordBeat));
     setOpenBass({}); setOpenPercs({}); setOpenPads({}); setOpenChordGrids({});
     setTrackFx(s.trackFx || {});
+    setFxRack(s.fxRack || {});
     setPercKitSt({ key:s.progId, val:s.percKit || "" });
     setSelStruct(s.selStruct || ""); setContrast(s.contrast || { id:"", sec:"C" });
     const eKey = s.progId + ":" + s.tonic;
@@ -4907,7 +5099,7 @@ export default function ProgressionWheel() {
     setDrumSt({ key:"", val:"" }); setKitSt({ key:"", val:"" }); setPumpSt({ key:"", val:"" });
     setBassSt({ key:"", val:"" }); setBassVoiceSt({ key:"", val:"" }); setSecBass({});
     setPercSt({ key:"", val:"" }); setSecPerc({}); setPercKitSt({ key:"", val:"" });
-    setPadSt({ key:"", val:"" }); setSecPad({}); setTrackFx({});
+    setPadSt({ key:"", val:"" }); setSecPad({}); setTrackFx({}); setFxRack({});
     // structure, arrangement and everything written onto the sections
     setSelStruct(""); setContrast({ id:"", sec:"C" }); setCustom({ key:"", plan:null });
     setAuto({ key:"", filter:null, level:null }); setSketchArr([]); setSketchSel(0);
@@ -6221,6 +6413,19 @@ export default function ProgressionWheel() {
       ))}
     </select>
   );
+  // the current pick, but only while it still matches what's on screen — switching the key or
+  // progression away from it by hand is how you leave the preset, the same way curTpl does
+  const curTrackPreset = trackSt && TRACK_PRESETS.find(t => t.id === trackSt && t.progId === progId) || null;
+  // "recreate a famous track" — sits beside structPicker() because picking one *is* picking a
+  // structure (and a key, a tempo and a groove) at once; see applyTrackPreset for why it can't
+  // just call pickStruct and the narrative picker back to back
+  const trackPicker = () => (
+    <select value={trackSt} onChange={e => applyTrackPreset(e.target.value)}
+      title="Reconfigures the song — tempo, key, chords, arrangement and groove — to closely match a real record, so you can study how it's built. The melody is this app's own generated hook, steered toward the real track's character, never a copy of it.">
+      <option value="">Recreate a famous track…</option>
+      {TRACK_PRESETS.map(t => <option key={t.id} value={t.id}>{t.artist} — {t.name}</option>)}
+    </select>
+  );
   /* ---- the arrangement at a glance, and its editor ----
      One function because it renders in two places: the Arrange tab, where it always
      lived, and the Sketch tab, where it is the second half of the subtractive workflow —
@@ -7345,6 +7550,29 @@ export default function ProgressionWheel() {
             );
           })}
 
+          {/* ---- insert-effects rack ----
+              A second, independent processing stage per bus — chorus, flanger, phaser, a
+              bitcrusher, a compressor, a stereo widener, and a second drive stage — on top of the
+              filter/drive/pan chain every track and part already has above. Two slots, one bus
+              shown at a time, same dense selrow/selwrap layout as the rest of this tab. */}
+          <div className="grouphdr">FX</div>
+          <div className="selrow" style={{ flexWrap:"wrap" }}>
+            <label className="selwrap" style={{ minWidth:120, flex:"0 0 auto" }}>
+              <span className="lbl" style={{ margin:0 }}>Bus</span>
+              <select value={fxBusTab} onChange={e => setFxBusTab(e.target.value)}
+                title="Which bus these two slots process. Lead is one shared rack all six melody parts feed into; Master sits just before the limiter, so it colours the whole song.">
+                {FX_BUSES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+          </div>
+          {fxSlotRow(fxBusTab, 0)}
+          {fxSlotRow(fxBusTab, 1)}
+          {tips && <p className="arrnote" style={{ marginTop:4 }}>
+            Slots run in order, after this track's own filter/drive/pan above. Master's rack is
+            skipped on stem exports, the same as the limiter — a stem sums cleanly, and its own
+            processing belongs in your DAW.
+          </p>}
+
         </div>}
 
         {/* ---- Sketch: the full groove, then the arrangement that subtracts from it ----
@@ -7739,6 +7967,30 @@ export default function ProgressionWheel() {
             <div className="progtitle" style={{ fontSize:17 }}>Song & melody</div>
             {structPicker()}
           </div>
+          <div className="row" style={{ justifyContent:"space-between", alignItems:"center", marginTop:6, gap:"6px 8px", flexWrap:"wrap" }}>
+            <span className="keytag" style={{ margin:0 }}>Recreate a famous track</span>
+            {trackPicker()}
+          </div>
+          {curTrackPreset && (
+            <div className="tplnote" style={{ marginTop:6 }}>
+              <div className="row" style={{ gap:"6px 8px", alignItems:"baseline", flexWrap:"wrap" }}>
+                <b style={{ color:GOLD }}>{curTrackPreset.artist} — {curTrackPreset.name}</b>
+                <span className="keytag" style={{ margin:0 }}>{curTrackPreset.year} · {curTrackPreset.bpm} bpm · {keyLabel}</span>
+              </div>
+              <p className="arrnote" style={{ marginTop:5 }}>{curTrackPreset.tip}</p>
+              {/* The distinction that matters most here, so it's on screen rather than only in a
+                  chat reply: everything provably factual about the record — tempo, key, chord
+                  shape, arrangement, groove — is set to match it closely. The lead line is not a
+                  copy of anything; it's this app's own generator, steered toward the record's
+                  melodic character (register, repetition, syncopation) rather than its notes. */}
+              <p className="keytag" style={{ margin:"4px 0 0" }}>
+                Tempo, key, chords, arrangement and groove are set to match the record closely. The
+                melody is not a copy of it — this app never ships a transcribed hook, so the lead
+                line is its own generated tune, steered toward the record's register, repetition and
+                syncopation. Write over it, or pick a different melodic narrative, any time.
+              </p>
+            </div>
+          )}
 
           {/* What a template did, and how to put it back. A template writes across five different
               controls at once — the drum menus, the chords, the parts, the moves and transitions,

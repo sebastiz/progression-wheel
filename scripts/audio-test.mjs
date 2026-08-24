@@ -15,11 +15,12 @@ import * as wav from "../src/wav.js";
 import * as zip from "../src/zip.js";
 import * as arrange from "../src/arrange.js";
 import * as arrTpl from "../src/arrange-templates.js";
+import * as trackPresets from "../src/track-presets.js";
 import * as als from "../src/als.js";
 import * as exportState from "../src/export-state.js";
 import * as hook from "../src/hook.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...als, ...exportState, ...hook };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...trackPresets, ...als, ...exportState, ...hook };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -84,6 +85,14 @@ const ctx = {
   createDynamicsCompressor() {
     const n = baseNode("comp");
     for (const k of ["threshold","knee","ratio","attack","release"]) n[k] = mkParam(k, "comp");
+    return n;
+  },
+  createChannelSplitter(n) { const s = baseNode("splitter"); s._n = n; return s; },
+  createChannelMerger(n) { const m = baseNode("merger"); m._n = n; return m; },
+  // deprecated but still what this app uses for main-thread DSP (see the bitcrusher); the stub
+  // records the callback rather than driving it, since nothing here plays real audio
+  createScriptProcessor(buf, ins, outs) {
+    const n = baseNode("script"); n._buf = buf; n._ins = ins; n._outs = outs; n.onaudioprocess = null;
     return n;
   },
 };
@@ -1465,6 +1474,138 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const slow = M.makeDelay(ctx, baseNode("dest"), 60 / 40, "4");
   if (slow.time > 2) problems.push(`delay clamps: ${slow.time}s at 40bpm exceeds the line`);
   console.log(`delay at 40bpm, quarter note: ${(slow.time * 1000).toFixed(0)}ms (clamped under the 2s line)`);
+}
+
+/* ---- the insert-effects rack ---- */
+{
+  const { FX_TYPES, FX_PARAMS, fxDefaults, makeFxSlot, makeFxRack } = M;
+  // every param's default sits inside its own [min, max], and fxDefaults returns exactly the
+  // keys its own type declares — a stray key would silently never reach a slider
+  for (const [id] of FX_TYPES) {
+    if (id === "off") continue;
+    const rows = FX_PARAMS[id] || [];
+    if (!rows.length) problems.push(`fx ${id}: no params declared`);
+    const d = fxDefaults(id);
+    if (Object.keys(d).length !== rows.length) problems.push(`fx ${id}: fxDefaults key count does not match FX_PARAMS`);
+    for (const [k, name, min, max, step, dflt] of rows) {
+      if (!(dflt >= min && dflt <= max)) problems.push(`fx ${id}.${k} (${name}): default ${dflt} outside [${min},${max}]`);
+      if (!(step > 0)) problems.push(`fx ${id}.${k} (${name}): non-positive step ${step}`);
+      if (d[k] !== dflt) problems.push(`fx ${id}.${k}: fxDefaults disagrees with FX_PARAMS`);
+    }
+  }
+
+  // "off" is a single unity gain and nothing else — no added latency or coloration for a bus
+  // that never opens the FX panel, and building a rack of two never adds a third node either
+  {
+    nodes.length = 0;
+    const slot = makeFxSlot(ctx, "off", 0);
+    if (slot.input !== slot.output) problems.push("fx off: input and output are not the same node");
+    if (slot.input.gain.value !== 1) problems.push("fx off: bypass gain is not unity");
+    if (nodes.length !== 1) problems.push(`fx off: built ${nodes.length} nodes, want exactly 1`);
+    nodes.length = 0;
+    const rack = makeFxRack(ctx, ["off", "off"], 0);
+    if (nodes.length !== 2) problems.push(`fx rack of two off slots built ${nodes.length} nodes, want 2`);
+    // slot 0's output must actually feed slot 1's input, or the second slot is silent
+    const s0 = rack.slots[0];
+    if (!s0.output._conns.includes(rack.slots[1].input)) problems.push("fx rack: slot 0 does not connect into slot 1");
+    if (rack.input !== s0.input || rack.output !== rack.slots[1].output)
+      problems.push("fx rack: input/output do not point at the outer slots");
+  }
+
+  // every real type builds cleanly, at both its extremes, with every oscillator it starts also
+  // stopped, and produces no non-finite value, negative time or exponential-ramp-to-zero (the
+  // recording stub above catches all three automatically the moment `write` schedules one)
+  for (const [id, name] of FX_TYPES) {
+    if (id === "off") continue;
+    for (const extreme of [0, 100]) {
+      nodes.length = 0;
+      const before = problems.length;
+      const slot = makeFxSlot(ctx, id, 1.0);
+      const p = Object.fromEntries((FX_PARAMS[id] || []).map(([k, , min, max]) => [k, extreme ? max : min]));
+      slot.write(2.0, p);
+      for (const n of nodes) if (n._kind === "osc") {
+        if (!n._started) problems.push(`fx ${id} (${extreme}%): an oscillator never started`);
+        if (n._t1 == null) problems.push(`fx ${id} (${extreme}%): an oscillator never stops`);
+        if (n._t1 != null && n._t1 < n._t0) problems.push(`fx ${id} (${extreme}%): oscillator stops before it starts`);
+      }
+      if (problems.length !== before) console.log(`fx ${id} (${name}) at ${extreme}%: see above`);
+    }
+  }
+
+  /* Every modulated delay/filter stays on the safe side of zero at its deepest setting — the one
+     property the recording stub cannot check for us, because the actual value is the *sum* of a
+     base .value and an AC signal it never simulates. These numbers are the same ones the factory
+     functions' own comments promise, recomputed independently here the way the delay test above
+     recomputes its own `want`. */
+  {
+    // chorus: two delay centres, ±5ms at 100% depth
+    if (0.008 - 0.005 <= 0) problems.push("fx chorus: voice 1 delay can reach zero or below at full depth");
+    if (0.013 - 0.005 <= 0) problems.push("fx chorus: voice 2 delay can reach zero or below at full depth");
+    // flanger: 3ms centre, ±2.5ms at 100% depth
+    if (0.003 - 0.0025 <= 0) problems.push("fx flanger: delay can reach zero or below at full depth");
+    // phaser: lowest stage 280Hz, ±220Hz at 100% depth
+    if (280 - 220 <= 0) problems.push("fx phaser: lowest stage can reach zero or below at full depth");
+  }
+
+  // distortion reuses the exact drive curve the track/part Tone panel uses, just in a second,
+  // independent WaveShaper — turning it to 0 is a true bypass (null curve), same rule as the panel
+  {
+    const slot = makeFxSlot(ctx, "drive", 0);
+    slot.write(0, { amt: 0 });
+    if (slot.output.curve !== null) problems.push("fx drive at 0%: does not bypass (curve is not null)");
+    slot.write(0, { amt: 50 });
+    const want = M.driveCurve(0.5);
+    if (!slot.output.curve || slot.output.curve.join() !== Array.from(want).join())
+      problems.push("fx drive at 50%: curve does not match driveCurve(0.5)");
+  }
+
+  // the stereo widener reconstructs L/R exactly at 100% width — the "default is transparent"
+  // guarantee, just centred on 100 instead of 0 (see the comment beside fxWide)
+  {
+    nodes.length = 0;
+    const slot = makeFxSlot(ctx, "wide", 0);
+    // the initial default (1.4 = 140%) is set directly on .value, like every other node's default
+    // elsewhere in this file, so it is read off the node rather than out of the event log
+    const scaler = nodes.filter(n => n._kind === "gain").find(n => n.gain.value === 1.4);
+    if (!scaler) problems.push("fx wide: no side-scale gain found at its 140% default");
+    slot.write(1, { width: 100 });
+    if (!scaler.gain._events.some(e => e.kind === "set" && e.t === 1 && Math.abs(e.v - 1) < 1e-9))
+      problems.push("fx wide: 100% width does not scale the side signal by exactly 1");
+  }
+
+  // the compressor exposes exactly the four controls asked for, in the right units (ms → s)
+  {
+    const slot = makeFxSlot(ctx, "comp", 0);
+    if (slot.input !== slot.output) problems.push("fx comp: not a single DynamicsCompressorNode");
+    slot.write(3, { thresh: -18, ratio: 8, atk: 25, rel: 400 });
+    const last = k => [...slot.output[k]._events].reverse().find(e => e.kind === "set");
+    if (last("threshold").v !== -18) problems.push("fx comp: threshold did not reach the node");
+    if (last("ratio").v !== 8) problems.push("fx comp: ratio did not reach the node");
+    if (Math.abs(last("attack").v - 0.025) > 1e-9) problems.push("fx comp: attack is not converted ms → s");
+    if (Math.abs(last("release").v - 0.4) > 1e-9) problems.push("fx comp: release is not converted ms → s");
+  }
+
+  // the bitcrusher: mix crossfades dry/wet to exactly 1 between them, and a context with no
+  // ScriptProcessorNode degrades to a clean pass-through instead of going silent or throwing
+  {
+    nodes.length = 0;
+    const slot = makeFxSlot(ctx, "crush", 0);
+    slot.write(1, { mix: 30 });
+    const gains = nodes.filter(n => n._kind === "gain");
+    const dry = gains.find(n => n._conns.length && n.gain._events.some(e => e.kind === "set" && Math.abs(e.v - 0.7) < 1e-9));
+    const wet = gains.find(n => n.gain._events.some(e => e.kind === "set" && Math.abs(e.v - 0.3) < 1e-9));
+    if (!dry || !wet) problems.push("fx crush: dry/wet gains do not sum to 1 at mix 30%");
+    const noSP = { ...ctx, createScriptProcessor: undefined };
+    nodes.length = 0;
+    const slot2 = makeFxSlot(noSP, "crush", 0);
+    slot2.write(1, { mix: 100 });
+    const g2 = nodes.filter(n => n._kind === "gain");
+    const dry2 = g2.find(n => n.gain._events.some(e => e.kind === "set" && e.v === 1));
+    const wet2 = g2.find(n => n.gain._events.some(e => e.kind === "set" && e.v === 0));
+    if (!dry2 || !wet2) problems.push("fx crush without ScriptProcessorNode: does not fall back to a clean pass-through");
+  }
+
+  console.log(`insert fx: ${FX_TYPES.length - 1} types, ${FX_TYPES.reduce((n2, [id]) => n2 + (FX_PARAMS[id] || []).length, 0)} params, all clean at both extremes`);
 }
 
 /* ---- voice leading actually leads voices ---- */
@@ -2887,6 +3028,53 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     + `${silences} of them with the drums out; every one rises, collapses and rises again (${subtractions})`);
 }
 
+/* ---- track presets: "recreate a famous track" ----
+   Every field here is either a catalogue id (has to exist in the catalogue it names) or a fact
+   about a real record (has to at least be a plausible one) — the checks below are the same shape
+   as the arrangement-templates block above, because a typo'd baseTemplate is just as silent a
+   failure as a typo'd drum kit: the dropdown lists the track, picking it does nothing useful, and
+   nobody sees why. Nothing here checks the *melody* steering for musical taste — only that it names
+   a narrative the app actually has — because taste is not this file's job. */
+{
+  const kits = new Set(M.DRUM_KITS.map(([k]) => k)), pumps = new Set(M.PUMPS.map(([k]) => k));
+  const syncLevels = new Set(M.SYNC_LEVELS.map(([v]) => v));
+  const bassVoices = new Set(M.BASS_VOICES.map(([v]) => v)), padVoices = new Set(M.PAD_VOICES.map(([v]) => v));
+  const percKits = new Set(M.PERC_KITS.map(([v]) => v)), delayTimes = new Set(M.DELAY_TIMES.map(([v]) => v));
+  const templateIds = new Set(M.DANCE_TEMPLATES.map(t => t.id));
+  const seen = new Set();
+  for (const p of M.TRACK_PRESETS) {
+    const where = `track preset ${p.id || p.name}`;
+    if (!p.id || seen.has(p.id)) problems.push(`${where}: missing or duplicate id`);
+    seen.add(p.id);
+    if (!p.name || !p.artist) problems.push(`${where}: missing a name or an artist`);
+    if (!p.tip || p.tip.length < 20) problems.push(`${where}: no real tip, or too short to teach anything`);
+    if (!(p.bpm >= 60 && p.bpm <= 200)) problems.push(`${where}: ${p.bpm} bpm is not a dance tempo`);
+    if (!(Number.isInteger(p.tonic) && p.tonic >= 0 && p.tonic <= 11)) problems.push(`${where}: tonic ${p.tonic} is not a pitch class 0–11`);
+    if (!M.PROGRESSIONS[p.progId]) problems.push(`${where}: unknown progression "${p.progId}"`);
+    if (!templateIds.has(p.baseTemplate)) problems.push(`${where}: unknown base template "${p.baseTemplate}"`);
+    if (p.narrative && !M.NARRATIVES.some(n => n.id === p.narrative)) problems.push(`${where}: unknown narrative "${p.narrative}"`);
+    if (p.vary != null && !(Number.isFinite(p.vary) && p.vary >= 0)) problems.push(`${where}: vary ${p.vary} is not a non-negative number`);
+    if (p.sync != null && !syncLevels.has(p.sync)) problems.push(`${where}: unknown syncopation level ${p.sync}`);
+    if (p.drum && (!M.DRUMS[p.drum] || !M.DRUMS[p.drum].pattern)) problems.push(`${where}: unknown drum pattern "${p.drum}"`);
+    if (p.kit && !kits.has(p.kit)) problems.push(`${where}: unknown drum kit "${p.kit}"`);
+    if (p.pump && !pumps.has(p.pump)) problems.push(`${where}: unknown pump "${p.pump}"`);
+    if (p.pat && !M.PATTERNS[p.pat]) problems.push(`${where}: unknown chord rhythm "${p.pat}"`);
+    if (p.bass && !M.BASS[p.bass]) problems.push(`${where}: unknown bass pattern "${p.bass}"`);
+    if (p.bassVoice && !bassVoices.has(p.bassVoice)) problems.push(`${where}: unknown bass voice "${p.bassVoice}"`);
+    if (p.pad && !padVoices.has(p.pad)) problems.push(`${where}: unknown pad voice "${p.pad}"`);
+    if (p.percKit && !percKits.has(p.percKit)) problems.push(`${where}: unknown perc kit "${p.percKit}"`);
+    if (p.delay && !delayTimes.has(p.delay)) problems.push(`${where}: unknown delay time "${p.delay}"`);
+    if (p.swing != null && !(p.swing >= 0 && p.swing <= 0.6)) problems.push(`${where}: swing ${p.swing} is outside 0–0.6`);
+  }
+  // no melody transcription ever lands here by accident — a preset steers the generator with a
+  // narrative id and a couple of numbers, never with note data of its own
+  const noteish = ["notes", "melody", "bars", "riff", "flat", "degrees"];
+  for (const p of M.TRACK_PRESETS)
+    for (const k of noteish)
+      if (k in p) problems.push(`track preset ${p.id}: carries a "${k}" field — presets steer the melody engine, they never hold notes`);
+  console.log(`track presets: ${M.TRACK_PRESETS.length} tracks across ${new Set(M.TRACK_PRESETS.map(p => p.baseTemplate)).size} arrangement templates and ${new Set(M.TRACK_PRESETS.map(p => p.progId)).size} progressions`);
+}
+
 /* ---- the settings export reads clean without the source beside it ----
    "Export for Claude" hands two files to an analysis that has neither the app nor its code: the
    arrangement wav and this JSON. So the snapshot has to hold three properties whatever the song:
@@ -3016,7 +3204,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "als.js", "als-template.js", "progressions.js", "export-state.js", "hook.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "track-presets.js", "als.js", "als-template.js", "progressions.js", "export-state.js", "hook.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")

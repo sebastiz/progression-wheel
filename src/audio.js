@@ -1095,6 +1095,264 @@ function driveCurve(amt) {
   return c;
 }
 
+/* ===== insert effects =====
+   A two-slot rack — chosen once per track/part bus and once more on the master path — for
+   processing the existing chains don't already carry: modulation (chorus/flanger/phaser), lo-fi
+   destruction, dynamics and stereo width. A slot's *type* is structural, the same as a delay time
+   or a bass voice: fixed for the length of a playback or a render (`buildGraph` reads it once),
+   and only its knobs move live, written every beat exactly like the track panel's own drive/filter.
+   "Off" builds a single unity gain and nothing else — no added node, no added latency, so a song
+   that never opens the FX panel is bit-for-bit what it always was. Every other type is built once,
+   eagerly, when its rack is made (never on first note through it), so a chorus/flanger/phaser's LFO
+   starts at the same `t0` every other LFO in the graph does and a stem's modulation phase still
+   lines up with the mix it came from. */
+const FX_TYPES = [
+  ["off", "Off", "No insert here — the signal passes through untouched, at no extra cost"],
+  ["drive", "Distortion", "A second, independent drive stage — see the note on fxDrive below"],
+  ["chorus", "Chorus", "Two detuned, modulated delay voices — thickens a part without truly doubling it"],
+  ["flanger", "Flanger", "A very short modulated delay with feedback — a sweeping, resonant comb"],
+  ["phaser", "Phaser", "Cascaded allpass filters swept together — a swirling notch sweep, no comb ring"],
+  ["crush", "Bitcrusher", "Reduces bit depth and effective sample rate for lo-fi, aliased grit"],
+  ["comp", "Compressor", "Pulls the loud peaks down and lifts the rest — evens a part out, or glues a bus"],
+  ["wide", "Stereo widener", "Mid/side widens the stereo image — 100% width is the untouched signal"],
+];
+/* One row per knob a slot exposes: [key, label, min, max, step, default, unit]. Ranges are chosen
+   so every parameter stays inside safe, always-finite, always-positive-where-it-must-be territory
+   at its extremes (see each factory's own comments) — the UI can hand these straight to a
+   <input type="range"> with no further clamping. */
+const FX_PARAMS = {
+  drive:   [["amt", "Amount", 0, 100, 1, 35, "%"]],
+  chorus:  [["rate", "Rate", 0, 100, 1, 30, "%"], ["depth", "Depth", 0, 100, 1, 45, "%"],
+            ["mix", "Mix", 0, 100, 1, 35, "%"]],
+  flanger: [["rate", "Rate", 0, 100, 1, 25, "%"], ["depth", "Depth", 0, 100, 1, 55, "%"],
+            ["fb", "Feedback", 0, 100, 1, 45, "%"]],
+  phaser:  [["rate", "Rate", 0, 100, 1, 20, "%"], ["depth", "Depth", 0, 100, 1, 60, "%"],
+            ["fb", "Feedback", 0, 100, 1, 35, "%"]],
+  crush:   [["bits", "Bit depth", 1, 16, 1, 8, "bit"], ["red", "Rate reduce", 0, 100, 1, 45, "%"],
+            ["mix", "Mix", 0, 100, 1, 100, "%"]],
+  comp:    [["thresh", "Threshold", -60, 0, 1, -24, "dB"], ["ratio", "Ratio", 1, 20, 1, 4, ":1"],
+            ["atk", "Attack", 1, 300, 1, 10, "ms"], ["rel", "Release", 10, 1000, 5, 250, "ms"]],
+  wide:    [["width", "Width", 0, 200, 1, 140, "%"]],
+};
+const fxDefaults = id => Object.fromEntries((FX_PARAMS[id] || []).map(([k, , , , , dflt]) => [k, dflt]));
+
+// off / bypass: the one node every slot can fall back to, live or offline, at zero extra cost
+function fxOff(ctx) {
+  const g = ctx.createGain(); g.gain.value = 1;
+  return { input: g, output: g, write() {} };
+}
+/* Distortion. This is the same tanh waveshaper the track/part Tone panel already puts in front of
+   the low-pass (see `mkChain`/`chainOf` in progression-wheel.jsx) — but it is a second, wholly
+   independent WaveShaper, placed after the insert point (post-filter, post-pan, post-duck for a
+   track; post-gate for a melody part). It shares no curve and no state with the panel's own drive:
+   turning up both simply puts two different-sounding drives in series — pre-filter grit, then
+   post-everything crunch — rather than one fighting the other for the same AudioParam. That is a
+   deliberate choice: overriding or scaling the existing drive from here would mean a part's sound
+   depended on which panel was opened last, which is exactly the kind of two-envelopes-one-param
+   surprise this codebase avoids everywhere else (see the automation-lane and duck comments). */
+function fxDrive(ctx) {
+  const shaper = ctx.createWaveShaper(); shaper.oversample = "2x";
+  let last = null;
+  return { input: shaper, output: shaper, write(t, p) {
+    const amt = (p.amt != null ? p.amt : 35) / 100;
+    if (amt !== last) { last = amt; shaper.curve = amt > 0 ? driveCurve(amt) : null; }
+  } };
+}
+/* Chorus. Two voices from one shared LFO, modulated in opposite directions (push/pull) rather than
+   from two independently-phased oscillators — cheap, and it still widens rather than just doubling,
+   because the voices move apart from each other instead of together. Centre delays (8ms/13ms) and
+   the depth cap (5ms either way) keep both delay times comfortably positive at every setting. */
+function fxChorus(ctx, t0) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const dry = ctx.createGain(); dry.gain.value = 1;
+  input.connect(dry); dry.connect(output);
+  const d1 = ctx.createDelay(0.03), d2 = ctx.createDelay(0.03);
+  d1.delayTime.value = 0.008; d2.delayTime.value = 0.013;
+  const w1 = ctx.createGain(), w2 = ctx.createGain(); w1.gain.value = 0; w2.gain.value = 0;
+  input.connect(d1); d1.connect(w1); w1.connect(output);
+  input.connect(d2); d2.connect(w2); w2.connect(output);
+  const lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.5;
+  const depthPos = ctx.createGain(), depthNeg = ctx.createGain(); depthPos.gain.value = 0; depthNeg.gain.value = 0;
+  lfo.connect(depthPos); depthPos.connect(d1.delayTime);
+  lfo.connect(depthNeg); depthNeg.connect(d2.delayTime);
+  lfo.start(t0); lfo.stop(t0 + 3600);
+  return { input, output, write(t, p) {
+    const rate = 0.05 + ((p.rate != null ? p.rate : 30) / 100) * 3;        // 0.05–3.05 Hz
+    const depthSec = ((p.depth != null ? p.depth : 45) / 100) * 0.005;     // 0–5ms swing either way
+    const mix = (p.mix != null ? p.mix : 35) / 100;
+    lfo.frequency.setValueAtTime(rate, t);
+    depthPos.gain.setValueAtTime(depthSec, t);
+    depthNeg.gain.setValueAtTime(-depthSec, t);
+    w1.gain.setValueAtTime(mix, t); w2.gain.setValueAtTime(mix, t);
+  } };
+}
+/* Flanger. One very short delay (3ms centre) with its own output fed back into its input for the
+   resonant "jet" sweep, modulated more slowly and with more feedback headroom than the chorus —
+   the two effects share a shape but not a character. Feedback is clamped under 0.9, well short of
+   the runaway point, and the depth cap (2.5ms) keeps the delay at or above 0.5ms at every setting. */
+function fxFlanger(ctx, t0) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const dry = ctx.createGain(); dry.gain.value = 1;
+  input.connect(dry); dry.connect(output);
+  const delay = ctx.createDelay(0.02); delay.delayTime.value = 0.003;
+  const fb = ctx.createGain(); fb.gain.value = 0;
+  const wet = ctx.createGain(); wet.gain.value = 0.5;
+  input.connect(delay); delay.connect(fb); fb.connect(delay);
+  delay.connect(wet); wet.connect(output);
+  const lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.2;
+  const depth = ctx.createGain(); depth.gain.value = 0;
+  lfo.connect(depth); depth.connect(delay.delayTime);
+  lfo.start(t0); lfo.stop(t0 + 3600);
+  return { input, output, write(t, p) {
+    const rate = 0.02 + ((p.rate != null ? p.rate : 25) / 100) * 1.5;      // 0.02–1.52 Hz
+    const depthSec = ((p.depth != null ? p.depth : 55) / 100) * 0.0025;    // keeps delayTime ≥ 0.5ms
+    const fbAmt = ((p.fb != null ? p.fb : 45) / 100) * 0.9;
+    lfo.frequency.setValueAtTime(rate, t);
+    depth.gain.setValueAtTime(depthSec, t);
+    fb.gain.setValueAtTime(fbAmt, t);
+  } };
+}
+/* Phaser. Six allpass filters in series, spread across the spectrum (280Hz–3.6kHz) so the sweep
+   moves several notches at once, all fed from one LFO for a coherent swirl. A little of the
+   cascade's own output feeds back to its input for extra bite. The depth cap (220Hz) keeps every
+   stage's frequency positive even at the lowest base (280 − 220 = 60Hz). */
+const PHASER_STAGES = [280, 480, 820, 1400, 2300, 3600];
+function fxPhaser(ctx, t0) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const dry = ctx.createGain(); dry.gain.value = 1;
+  input.connect(dry); dry.connect(output);
+  const sum = ctx.createGain();
+  input.connect(sum);
+  const stages = PHASER_STAGES.map(f => {
+    const ap = ctx.createBiquadFilter(); ap.type = "allpass"; ap.frequency.value = f; ap.Q.value = 0.5;
+    return ap;
+  });
+  let node = sum;
+  for (const ap of stages) { node.connect(ap); node = ap; }
+  const wet = ctx.createGain(); wet.gain.value = 0.5;
+  node.connect(wet); wet.connect(output);
+  const fb = ctx.createGain(); fb.gain.value = 0;
+  node.connect(fb); fb.connect(sum);
+  const lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.15;
+  const depth = ctx.createGain(); depth.gain.value = 0;
+  lfo.connect(depth);
+  for (const ap of stages) depth.connect(ap.frequency);
+  lfo.start(t0); lfo.stop(t0 + 3600);
+  return { input, output, write(t, p) {
+    const rate = 0.02 + ((p.rate != null ? p.rate : 20) / 100) * 1.2;      // 0.02–1.22 Hz
+    const depthHz = ((p.depth != null ? p.depth : 60) / 100) * 220;
+    const fbAmt = ((p.fb != null ? p.fb : 35) / 100) * 0.85;
+    lfo.frequency.setValueAtTime(rate, t);
+    depth.gain.setValueAtTime(depthHz, t);
+    fb.gain.setValueAtTime(fbAmt, t);
+  } };
+}
+/* Bitcrusher. Web Audio has no built-in for this, so it is hand-rolled: hold-and-round each sample
+   to a fixed step count (bit depth) and only refresh that hold every few samples (the sample-rate
+   reduction). A ScriptProcessorNode runs it — deprecated, but it is what this app already uses for
+   pitch detection (see the ScriptProcessor comment in progression-wheel.jsx) rather than an
+   AudioWorklet: this app bundles to one self-contained HTML page with no second file the build
+   would have to ship and no worklet-module fetch that could fail; ScriptProcessorNode still runs
+   deterministically inside an OfflineAudioContext render the way a worklet is not guaranteed to
+   everywhere this app is loaded, and every browser that can open this page still implements it.
+   Where it is missing outright (`ctx.createScriptProcessor` absent), the slot degrades to a plain
+   pass-through rather than throwing — quieter than a crash, if not as satisfying as grit. */
+function fxCrush(ctx) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const dryGain = ctx.createGain(); dryGain.gain.value = 0;
+  const wetGain = ctx.createGain(); wetGain.gain.value = 1;
+  input.connect(dryGain); dryGain.connect(output);
+  const supported = typeof ctx.createScriptProcessor === "function";
+  const state = { bits: 8, red: 19 };
+  let cr = null;
+  if (supported) {
+    cr = ctx.createScriptProcessor(1024, 2, 2);
+    let holdL = 0, holdR = 0, phase = 0;
+    cr.onaudioprocess = e => {
+      const inp = e.inputBuffer, out = e.outputBuffer;
+      const inL = inp.getChannelData(0), inR = inp.numberOfChannels > 1 ? inp.getChannelData(1) : inL;
+      const outL = out.getChannelData(0), outR = out.numberOfChannels > 1 ? out.getChannelData(1) : outL;
+      const steps = Math.pow(2, Math.max(1, Math.min(16, state.bits)));
+      const red = Math.max(1, Math.round(state.red));
+      let ph = phase;
+      for (let i = 0; i < inL.length; i++) {
+        if (ph % red === 0) { holdL = Math.round(inL[i] * steps) / steps; holdR = Math.round(inR[i] * steps) / steps; }
+        ph++;
+        outL[i] = holdL; if (outR !== outL) outR[i] = holdR;
+      }
+      phase = ph % red;
+    };
+    input.connect(cr); cr.connect(wetGain); wetGain.connect(output);
+  } else {
+    input.connect(wetGain); wetGain.connect(output);
+  }
+  return { input, output, write(t, p) {
+    if (!supported) { dryGain.gain.setValueAtTime(1, t); wetGain.gain.setValueAtTime(0, t); return; }
+    const mix = (p.mix != null ? p.mix : 100) / 100;
+    dryGain.gain.setValueAtTime(1 - mix, t);
+    wetGain.gain.setValueAtTime(mix, t);
+    state.bits = p.bits != null ? p.bits : 8;
+    // 0% is no reduction (every sample refreshed); 100% holds for 40 samples, ~1.1kHz at 44.1kHz
+    state.red = 1 + Math.round(((p.red != null ? p.red : 45) / 100) * 39);
+  } };
+}
+/* Compressor: DynamicsCompressorNode as-is, with the four controls a producer actually reaches
+   for. Knee is fixed (a soft 6dB) rather than exposed, to keep the rack to the params asked for. */
+function fxComp(ctx) {
+  const c = ctx.createDynamicsCompressor();
+  c.knee.value = 6;
+  return { input: c, output: c, write(t, p) {
+    c.threshold.setValueAtTime(p.thresh != null ? p.thresh : -24, t);
+    c.ratio.setValueAtTime(p.ratio != null ? p.ratio : 4, t);
+    c.attack.setValueAtTime((p.atk != null ? p.atk : 10) / 1000, t);
+    c.release.setValueAtTime((p.rel != null ? p.rel : 250) / 1000, t);
+  } };
+}
+/* Stereo widener, mid/side: mid = (L+R)/2, side = (L−R)/2, output = mid ± side·width. At width=1
+   that reconstructs L and R exactly — a slot left at 100% is the untouched stereo image, the same
+   "default is transparent" guarantee every other stage in this file makes, just centred on 100
+   instead of 0 because a widener's neutral point is the middle of its range, not its floor. */
+function fxWide(ctx) {
+  const input = ctx.createGain();
+  const splitter = ctx.createChannelSplitter(2), merger = ctx.createChannelMerger(2);
+  input.connect(splitter);
+  const midL = ctx.createGain(), midR = ctx.createGain(); midL.gain.value = 0.5; midR.gain.value = 0.5;
+  const sideL = ctx.createGain(), sideR = ctx.createGain(); sideL.gain.value = 0.5; sideR.gain.value = -0.5;
+  splitter.connect(midL, 0); splitter.connect(sideL, 0);
+  splitter.connect(midR, 1); splitter.connect(sideR, 1);
+  const mid = ctx.createGain(); midL.connect(mid); midR.connect(mid);
+  const side = ctx.createGain(); sideL.connect(side); sideR.connect(side);
+  const sideScaled = ctx.createGain(); sideScaled.gain.value = 1.4;
+  side.connect(sideScaled);
+  const invSide = ctx.createGain(); invSide.gain.value = -1; sideScaled.connect(invSide);
+  const toL = ctx.createGain(); mid.connect(toL); sideScaled.connect(toL);
+  const toR = ctx.createGain(); mid.connect(toR); invSide.connect(toR);
+  toL.connect(merger, 0, 0); toR.connect(merger, 0, 1);
+  return { input, output: merger, write(t, p) {
+    const width = (p.width != null ? p.width : 140) / 100;
+    sideScaled.gain.setValueAtTime(width, t);
+  } };
+}
+const FX_BUILD = { drive: fxDrive, chorus: fxChorus, flanger: fxFlanger, phaser: fxPhaser,
+  crush: fxCrush, comp: fxComp, wide: fxWide };
+function makeFxSlot(ctx, id, t0) {
+  const build = FX_BUILD[id];
+  if (!build) return { id: "off", ...fxOff(ctx) };
+  const slot = { id, ...build(ctx, t0) };
+  // seed every AudioParam to this type's own defaults right away — every `write` fallback above
+  // already matches FX_PARAMS' defaults, so this is the same values the first beat's writeFxRack
+  // would set, just not left to Web Audio's own node defaults for the fraction of a second before
+  // that first beat (the same reasoning as `trBass.in.gain.value = BASS_MAKEUP` in buildGraph)
+  slot.write(ctx.currentTime, {});
+  return slot;
+}
+// two slots in series — every bus's insert rack, live or a stem, the master path included
+function makeFxRack(ctx, ids, t0) {
+  const slots = [makeFxSlot(ctx, ids && ids[0], t0), makeFxSlot(ctx, ids && ids[1], t0)];
+  slots[0].output.connect(slots[1].input);
+  return { input: slots[0].input, output: slots[1].output, slots };
+}
+
 /* No envelope shaping: nothing added to the attack, every stage at its own length. A part with the
    Envelope group untouched passes this, and the voice is exactly what it always was. */
 const NO_SHAPE = { atk: 0, dec: 1, sus: 1, rel: 1, lvl: 1 };
@@ -1241,4 +1499,4 @@ function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
   leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 3.0) * vel });
 }
 
-export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
