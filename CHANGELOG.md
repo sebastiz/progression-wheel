@@ -14,22 +14,35 @@
   plainly, and each entry carries a short tip on what's structurally distinctive about the pick.
   New catalogue: `src/track-presets.js`.
 - **An insert-effects rack — chorus, flanger, phaser, a bitcrusher, a compressor and a stereo
-  widener, on every bus.** The **FX** section on the Sound tab gives Drums, Perc, Bass, Pad, Lead
-  (one shared rack across all six melody parts) and Master two insert slots each, sitting after
-  each bus's own filter/drive/pan chain. Distortion is back on the list too, as a second,
-  independent drive stage rather than a reach into the existing Tone-panel knob — turning up both
-  stacks two different-sounding drives instead of one fighting the other for the same curve. Every
-  slot defaults to Off (no added node, no added latency); picking a type seeds a tasteful preset
-  so it does something immediately. The master rack sits just before the limiter and, like the
-  limiter, is skipped on stem exports, so stems still sum cleanly to the mix.
-- **The insert rack can now vary by section.** Drums, Perc, Bass, Pad and Lead each get a nested
-  **FX** sub-panel under their own instrument controls — in the Arrange tab under each section and
-  in the Sketch tab under the groove — closed by default and reading "song default" until opened.
-  Switched on, a section dials its own amount for that bus, so the Drop can hit the bass with more
-  distortion than the Breakdown; switched off, it plays whatever the Sound tab's rack currently is,
-  live. A slot's *type* stays a song-wide choice (it is built once for the whole playback, the same
-  as a bass voice or a delay time) — a section can only vary the amount, not swap the effect
-  entirely. Master has no per-section entry; it colours the whole song by design.
+  widener, on every bus.** Drums, Perc, Bass and Pad each get their two insert slots as a fifth
+  **FX** tab beside Mix/Tone/Movement/Space, in their own instrument panel on the Sound tab — and,
+  per section, under their own grid in the Arrange and Sketch tabs — rather than behind a separate
+  bus-picker section elsewhere on the page. Lead's rack (one shared rack across all six melody
+  parts) sits by the Lead voice picker on the Sound tab, since it has no per-track panel of its own
+  to live inside; Master, which belongs to no instrument, keeps a small dedicated **Master FX** spot
+  on the Sound tab. Distortion is back on the list too, as a second, independent drive stage rather
+  than a reach into the existing Tone-panel knob — turning up both stacks two different-sounding
+  drives instead of one fighting the other for the same curve. Every slot defaults to Off (no added
+  node, no added latency); picking a type seeds a tasteful preset so it does something immediately.
+  The master rack sits just before the limiter and, like the limiter, is skipped on stem exports, so
+  stems still sum cleanly to the mix.
+- **The insert rack can now vary by section.** Drums, Perc, Bass and Pad each get this as their
+  instrument panel's own **FX** tab — the same tab strip their Mix/Tone/Movement/Space settings
+  use, in the Arrange tab under each section and in the Sketch tab under the groove — reading
+  "following the song default" until switched on. Switched on, a section dials its own amount for
+  that bus, so the Drop can hit the bass with more distortion than the Breakdown; switched off, it
+  plays whatever the Sound tab's rack currently is, live. Lead keeps its own small standalone
+  collapsible under the melody grid, since melody parts have no such tab strip to fold it into. A
+  slot's *type* stays a song-wide choice (it is built once for the whole playback, the same as a
+  bass voice or a delay time) — a section can only vary the amount, not swap the effect entirely.
+  Master has no per-section entry; it colours the whole song by design.
+- **Arrange now opens each section's instruments the same way Sketch does.** A row of small
+  melody/drums/perc/bass/pad/chords buttons used to toggle each grid open in Arrange, a second
+  interaction pattern alongside the full-width collapsible bar Sketch already draws per instrument.
+  Arrange draws that same bar now — one per instrument, opening to reveal its settings and grid
+  together — so the two tabs share one pattern instead of two. Play-from-here, the loop toggle,
+  copying a donor section's melody and recording straight onto a section's grid stay where they
+  were; only the redundant row of toggle buttons is gone.
 - **The melody sits on top of the mix.** The default balance is now a measured hierarchy rather
   than three separate boosts: a bar of each source at its in-song gain, compared by K-weighted
   loudness. The bass make-up gain had stacked onto the bass track's own loudness anchor, leaving
