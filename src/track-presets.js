@@ -64,12 +64,12 @@ const DEFS = [
    narrative:"ostinato", vary:0.2, sync:0,
    tip:"Minimal techno reduced to its studs: one hypnotic pattern, barely pitched at all, that runs unchanged for most of the record — the point is the groove's own repetition, not melodic incident. Low variation keeps every pass close to identical, the way the real pattern never really departs from itself." },
 
- { id:"strobe", name:"Strobe", artist:"deadmau5", year:2009, bpm:128, tonic:5,
+ { id:"strobe", name:"Strobe", artist:"deadmau5", year:2009, bpm:128, tonic:8,
    progId:"festival", baseTemplate:"melotech",
    narrative:"archSong", vary:1, sync:0,
    tip:"Ten minutes as one continuous climb rather than a string of sections — the famous two-minute intro is the first quarter of a single arc that only resolves at the drop. `archSong` shapes register the same way across the whole running order instead of per section, which is the one narrative built for a song that is itself one long phrase." },
 
- { id:"sandstorm", name:"Sandstorm", artist:"Darude", year:2000, bpm:136, tonic:5,
+ { id:"sandstorm", name:"Sandstorm", artist:"Darude", year:2000, bpm:136, tonic:11,
    progId:"festival", baseTemplate:"trance",
    narrative:"motif", vary:1, sync:1,
    tip:"Built from one small, instantly-hummable synth figure restated through every section rather than developed into a longer tune — arguably the most recognisable four-bar idea in dance music precisely because it never becomes anything more complicated. `motif` restates and transforms one short cell the same way, section to section." },
@@ -104,12 +104,12 @@ const DEFS = [
    narrative:"suspend", vary:1, sync:0,
    tip:"The record that proved drum & bass could carry a soul vocal — atmosphere and ache stated over the breaks before either drop properly lands, matching the dnb template's own 'mood before drop' shape. `suspend` writes a line that keeps landing a step above the chord and resolving down, the ache that keeps a slow melody moving over a fast rhythm section." },
 
- { id:"scarymonsters", name:"Scary Monsters and Nice Sprites", artist:"Skrillex", year:2010, bpm:140, tonic:5,
+ { id:"scarymonsters", name:"Scary Monsters and Nice Sprites", artist:"Skrillex", year:2010, bpm:140, tonic:7,
    progId:"axisMinor", baseTemplate:"dubstep",
    narrative:"chordLock", vary:0.5, sync:2,
    tip:"The mid-range wobble bass *is* the hook here — the dubstep template's own tip notes that harmony comes out at the drop because the mid-range synth has replaced it, and `chordLock` writes a hard, chord-snapped stutter in that same register instead of a sung line, at the more aggressive syncopation level." },
 
- { id:"neverbelikeyou", name:"Never Be Like You", artist:"Flume ft. Kai", year:2016, bpm:150, tonic:7,
+ { id:"neverbelikeyou", name:"Never Be Like You", artist:"Flume ft. Kai", year:2016, bpm:150, tonic:0,
    progId:"futureBass", baseTemplate:"futurebass", pad:"voice",
    narrative:"gapfill", vary:1, sync:2,
    tip:"Future bass built from a chopped, pitch-bent vocal — leaping to a high note and stepping back down through the gap it just left, the shape that makes a vocal chop read as a hook rather than a glitch. `gapfill` is that leap-then-fill pattern exactly; the voice pad stands in for the sung timbre without repeating its words." },
