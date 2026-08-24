@@ -1679,10 +1679,13 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (JSON.stringify(back.secs.V1.layers[0][k]) !== JSON.stringify(melos.secs.V1.layers[0][k]))
       problems.push(`part effect \`${k}\` does not survive a save (got ${JSON.stringify(back.secs.V1.layers[0][k])})`);
 
+  // a section's own copy of the insert-fx rack — off the song document exactly like fxRack is,
+  // so a Drop's own distortion amount survives a save the same way its transition does
+  const secFx = { D1: { bass: [{ type: "drive", amt: 62 }, { type: "off" }] } };
   const doc = M.makeSong({ name: "test", progId: "edm", tonic: 0, genre: "House", emotion: null,
     mode: null, colour: "triads", patId: "house16", drum: "house16d", secDrum: { V: "deep" },
     instr: "acoustic_grand_piano", melInstr: "flute", kit: "909", pump: "classic",
-    secMove: { C: "drop" }, secTrans: { C: "fulldrop", C2: "gap1" }, delayId: "8d", grid: "4", bpm: 128, selStruct: "", contrast: { id: "", sec: "C" },
+    secMove: { C: "drop" }, secTrans: { C: "fulldrop", C2: "gap1" }, secFx, delayId: "8d", grid: "4", bpm: 128, selStruct: "", contrast: { id: "", sec: "C" },
     edits: {}, inserts: [], quals: {}, removed: [], order: null, melos });
   if (!doc.melos) problems.push("makeSong dropped the melodies");
   const code = await M.encodeSong(doc);
@@ -1694,6 +1697,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // a transition is part of the arrangement, and a per-instance one is the easiest thing to drop
     if (round.secMove.C !== "drop" || round.secTrans.C !== "fulldrop" || round.secTrans.C2 !== "gap1")
       problems.push("the link lost a section's move or transition");
+    if (!same(round.secFx, secFx)) problems.push("the link lost a section's own insert-fx rack");
     // the writing grid decides how many columns a melody has, so losing it re-times every note
     if (round.grid !== "4") problems.push("the link lost the writing grid");
     const rm = M.songMelos(round);

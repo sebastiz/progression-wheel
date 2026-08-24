@@ -201,6 +201,22 @@ function describeSource(src, table, offWord) {
     pattern_steps: p && p.pattern ? joinSteps(p.pattern) : null };
 }
 
+/* ===== insert-effects rack =====
+   Shared by the song-wide rack (`insert_fx`) and a section's own copy of one bus
+   (`insert_fx_override`), so the two can never describe a slot differently. Only slots actually
+   set to something are named — a slot left at "off" needs no explanation, it did nothing. */
+function shapeFxBus(slots) {
+  const active = (slots || []).filter(s => s && s.type && s.type !== "off");
+  if (!active.length) return null;
+  return active.map(s => {
+    const t = FX_TYPES.find(([id]) => id === s.type);
+    const out = { type: t ? t[1] : s.type };
+    for (const [k, name, , , , dflt, unit] of FX_PARAMS[s.type] || [])
+      out[snake(name) + (UNIT_SUFFIX[unit] != null ? UNIT_SUFFIX[unit] : "")] = s[k] != null ? s[k] : dflt;
+    return out;
+  });
+}
+
 /* ===== automation lanes =====
    A lane is sparse [{bar, v}] with v in 0..1; what a value *means* differs per lane, so each lane
    carries its own mapping in words. */
@@ -270,6 +286,14 @@ function buildExportState(x) {
     } : null,
     melody_parts_inherited_from_groove: !!s.inherited,
     melody_parts: (s.layers || []).map((ly, li) => describeLayer(ly, li, x.melInstr)),
+    insert_fx_override: (() => {
+      const out = {};
+      for (const [bus, slots] of Object.entries(s.fxOverride || {})) {
+        const shaped = shapeFxBus(slots);
+        if (shaped) out[bus] = shaped;
+      }
+      return Object.keys(out).length ? out : null;
+    })(),
   });
 
   const trackFxOut = {};
@@ -288,15 +312,8 @@ function buildExportState(x) {
   // the same way MODS are above — a slot left at "off" needs no explanation, it did nothing.
   const fxRackOut = {};
   for (const bus of ["master", "drums", "perc", "bass", "pad", "lead"]) {
-    const slots = ((x.fxRack || {})[bus] || []).filter(s => s && s.type && s.type !== "off");
-    if (!slots.length) continue;
-    fxRackOut[bus] = slots.map(s => {
-      const t = FX_TYPES.find(([id]) => id === s.type);
-      const out = { type: t ? t[1] : s.type };
-      for (const [k, name, , , , dflt, unit] of FX_PARAMS[s.type] || [])
-        out[snake(name) + (UNIT_SUFFIX[unit] != null ? UNIT_SUFFIX[unit] : "")] = s[k] != null ? s[k] : dflt;
-      return out;
-    });
+    const shaped = shapeFxBus((x.fxRack || {})[bus]);
+    if (shaped) fxRackOut[bus] = shaped;
   }
 
   return sanitizeJson({
@@ -375,8 +392,8 @@ function buildExportState(x) {
       ...trackFxOut,
     },
     insert_fx: {
-      note: "a second, independent two-slot processing rack per bus (chorus/flanger/phaser/bitcrusher/compressor/stereo widener, plus a second distortion stage) — 'lead' is one shared rack all six melody parts feed into; only buses with a slot set to something other than Off are listed",
-      master_note: "the master rack sits just before the limiter on the full mix render; like the limiter, it is bypassed for stem exports so the stems still sum to the mix without it applied twice",
+      note: "a second, independent two-slot processing rack per bus (chorus/flanger/phaser/bitcrusher/compressor/stereo widener, plus a second distortion stage) — 'lead' is one shared rack all six melody parts feed into; only buses with a slot set to something other than Off are listed. This is the song-wide default every section inherits; a section with its own copy of a bus lists it under that section's own insert_fx_override instead, with the same slot type (a slot's type is fixed for the whole song) but its own amount",
+      master_note: "the master rack sits just before the limiter on the full mix render; like the limiter, it is bypassed for stem exports so the stems still sum to the mix without it applied twice — it also has no per-section override, since it colours the whole song by design",
       ...fxRackOut,
     },
     master_effects: {

@@ -22,6 +22,14 @@
   slot defaults to Off (no added node, no added latency); picking a type seeds a tasteful preset
   so it does something immediately. The master rack sits just before the limiter and, like the
   limiter, is skipped on stem exports, so stems still sum cleanly to the mix.
+- **The insert rack can now vary by section.** Drums, Perc, Bass, Pad and Lead each get a nested
+  **FX** sub-panel under their own instrument controls — in the Arrange tab under each section and
+  in the Sketch tab under the groove — closed by default and reading "song default" until opened.
+  Switched on, a section dials its own amount for that bus, so the Drop can hit the bass with more
+  distortion than the Breakdown; switched off, it plays whatever the Sound tab's rack currently is,
+  live. A slot's *type* stays a song-wide choice (it is built once for the whole playback, the same
+  as a bass voice or a delay time) — a section can only vary the amount, not swap the effect
+  entirely. Master has no per-section entry; it colours the whole song by design.
 - **The melody sits on top of the mix.** The default balance is now a measured hierarchy rather
   than three separate boosts: a bar of each source at its in-song gain, compared by K-weighted
   loudness. The bass make-up gain had stacked onto the bass track's own loudness anchor, leaving
