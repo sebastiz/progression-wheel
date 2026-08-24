@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- **Recreate a famous track, on the Arrange tab.** A new dropdown beside the structure picker holds
+  twenty real dance and electronic records — house, nu-disco, tech house, techno, trance, big room,
+  progressive house, melodic techno, drum & bass, dubstep, future bass, trap and UK garage — and
+  picking one reconfigures the whole song to closely match it: tempo, key, chord progression,
+  arrangement shape and drum/bass groove. What it deliberately does not do is copy the real melody.
+  This app generates every sound from scratch and ships as a public page under its author's own
+  name, so no transcribed riff, hook or vocal line is in the catalogue or ever will be — instead
+  each preset steers the app's own melody engine (a narrative shape, a variation amount, a
+  syncopation level) toward the record's melodic *character* — register, repetition, contour,
+  syncopation — and writes its own tune in that shape. The in-app note beside the dropdown says so
+  plainly, and each entry carries a short tip on what's structurally distinctive about the pick.
+  New catalogue: `src/track-presets.js`.
 - **An insert-effects rack — chorus, flanger, phaser, a bitcrusher, a compressor and a stereo
   widener, on every bus.** The **FX** section on the Sound tab gives Drums, Perc, Bass, Pad, Lead
   (one shared rack across all six melody parts) and Master two insert slots each, sitting after

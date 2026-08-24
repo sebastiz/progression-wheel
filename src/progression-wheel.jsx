@@ -14,6 +14,7 @@ import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
+import { TRACK_PRESETS } from "./track-presets.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -510,6 +511,7 @@ export default function ProgressionWheel() {
   const [showSec, setShowSec] = useState(false);
   const [selStruct, setSelStruct] = useState("");
   const [selSong, setSelSong] = useState("");
+  const [trackSt, setTrackSt] = useState("");   // "recreate a famous track" — the TRACK_PRESETS id last picked
   const [sel, setSel] = useState(null);                       // baseName of chord being swapped
   const [edits, setEdits] = useState({ key:"", map:{} });     // chord root/quality swaps
   const [inserts, setInserts] = useState({ key:"", list:[] }); // inserted / duplicated chords
@@ -1206,6 +1208,89 @@ export default function ProgressionWheel() {
     setBassSt({ key: progId, val: tpl.bass && BASS[tpl.bass] ? tpl.bass : "" });
     setBassVoiceSt({ key: progId, val: tpl.bassVoice || "" });
     applyArrangement(tpl.plan, v);
+  };
+
+  /* ---- track presets: "recreate a famous track" ----
+     A track preset (src/track-presets.js) is a template pick plus a key/progression plus a melody
+     steering choice, applied from one dropdown. It cannot simply call `pickStruct`-style logic and
+     `applyNarrative` back to back in the same click handler: both eventually call `setMelos`, and
+     two `setMelos` calls issued synchronously in one handler always collapse to the *second* call's
+     argument — React holds the newest value written to a piece of state, it does not merge two
+     writes to it. Worse, `applyArrangement` (via `applyPartMutes`) and `applyNarrative` both read
+     the *committed* `chords` / `poolFor` / `sections` for their bar math and their section list —
+     which still describe the *old* progression the instant after `setForce`/`setTonic` are called,
+     because state only takes effect on the next render. Calling them in the same breath as picking a
+     new progression would therefore both silently drop one of the two melody writes and resolve the
+     template against the wrong chord count.
+
+     So a preset lands over three renders, gated by one ref rather than its own state (nothing here
+     needs to survive a reload, only a few renders): this render sets the key, the progression and
+     every tempo/drum/kit/bass control — exactly what `pickStruct` sets, just keyed to the preset's
+     own progression rather than the current one. The next render — once `progId`/`tonic`/`selStruct`
+     have actually committed and `chords`/`sections` are freshly derived from them — applies the
+     arrangement, via the very same `applyArrangement` a manual template pick uses. And the render
+     after *that* — once the arrangement's part mutes have themselves committed and `secMelos`
+     reflects them — writes the melody narrative over the top, so a DJ intro the template just
+     silenced doesn't get un-muted by a narrative computed from the section list as it stood a render
+     earlier. Three plain, unmodified calls to the app's own functions, sequenced rather than merged
+     — which is also why nothing here duplicates `pickStruct`'s or `applyNarrative`'s own logic; this
+     only decides *when* each already-correct call is safe to make. */
+  const trackPresetRef = useRef(null);
+  useEffect(() => {
+    const p = trackPresetRef.current;
+    if (!p) return;
+    if (p.stage === "arrange") {
+      const tpl = DANCE_TEMPLATES[p.tplIdx];
+      if (tpl) applyArrangement(tpl.plan, p.selVal);
+      trackPresetRef.current = p.preset.narrative ? { ...p, stage: "melody" } : null;
+      return;
+    }
+    // stage "melody" — the sliders get the same values baked into the melody, or they would show a
+    // position that disagrees with what just played, exactly as a manual drag + apply does
+    const { narrative, vary, sync, within } = p.preset;
+    const amt = vary == null ? 1 : vary;
+    setVarySt({ key: progId, val: amt });
+    setNarSyncSt({ key: progId, val: sync || 0 });
+    setNarInSt({ key: progId, val: !!within });
+    applyNarrative(narrative, amt, sync || 0, !!within);
+    trackPresetRef.current = null;
+  });
+  /* The steering itself — register, density, contour, syncopation, hook placement — never a
+     transcribed note. See the header of track-presets.js for why that line is drawn where it is. */
+  const applyTrackPreset = id => {
+    setTrackSt(id);
+    const preset = TRACK_PRESETS.find(t => t.id === id);
+    if (!preset) return;
+    const pid = preset.progId;
+    const tplIdx = DANCE_TEMPLATES.findIndex(t => t.id === preset.baseTemplate);
+    const tpl = tplIdx >= 0 ? DANCE_TEMPLATES[tplIdx] : null;
+    setForce(PROGRESSIONS[pid] ? pid : null); setTonic(preset.tonic || 0);
+    setGenre(null); setEmotion(null); setMode(preset.mode || null);
+    // a fresh key deserves a fresh set of chord-level edits — an insert or a swap keyed to the old
+    // progression:tonic pair would simply fail to match and sit inert, but starting clean is honest
+    setEdits({ key:"", map:{} }); setInserts({ key:"", list:[] });
+    setQuals({ key:"", map:{} }); setRemoved({ key:"", list:[] }); setOrder({ key:"", list:null });
+    const bpm = preset.bpm || (tpl && tpl.bpm);
+    if (bpm) setBpmSt({ key: pid, val: bpm });
+    const patId = preset.pat || (tpl && tpl.pat);
+    if (patId && PATTERNS[patId]) setPatSel({ key: pid, id: patId });
+    const drumId = preset.drum || (tpl && tpl.drum);
+    if (drumId && DRUMS[drumId]) setDrumSt({ key: pid, val: drumId });
+    const kitId = preset.kit || (tpl && tpl.kit);
+    if (kitId) setKitSt({ key: pid, val: kitId });
+    const pumpId = preset.pump || (tpl && tpl.pump);
+    if (pumpId) setPumpSt({ key: pid, val: pumpId });
+    const bassId = preset.bass || (tpl && tpl.bass);
+    setBassSt({ key: pid, val: bassId && BASS[bassId] ? bassId : "" });
+    setBassVoiceSt({ key: pid, val: preset.bassVoice || (tpl && tpl.bassVoice) || "" });
+    if (preset.pad) setPadSt({ key: pid, val: preset.pad });
+    if (preset.percKit) setPercKitSt({ key: pid, val: preset.percKit });
+    if (preset.delay) setDelaySt({ key: pid, val: preset.delay });
+    if (preset.swing != null) setSwingSt({ key: pid, val: preset.swing });
+    setSelRow(0); setCustom({ key:"", plan:null });
+    const selVal = tplIdx >= 0 ? pid + ":t:" + tplIdx : "";
+    setSelStruct(selVal);
+    trackPresetRef.current = tplIdx >= 0 ? { stage:"arrange", tplIdx, selVal, preset } : null;
   };
 
   /* ---- melody scale + targets ---- */
@@ -6328,6 +6413,19 @@ export default function ProgressionWheel() {
       ))}
     </select>
   );
+  // the current pick, but only while it still matches what's on screen — switching the key or
+  // progression away from it by hand is how you leave the preset, the same way curTpl does
+  const curTrackPreset = trackSt && TRACK_PRESETS.find(t => t.id === trackSt && t.progId === progId) || null;
+  // "recreate a famous track" — sits beside structPicker() because picking one *is* picking a
+  // structure (and a key, a tempo and a groove) at once; see applyTrackPreset for why it can't
+  // just call pickStruct and the narrative picker back to back
+  const trackPicker = () => (
+    <select value={trackSt} onChange={e => applyTrackPreset(e.target.value)}
+      title="Reconfigures the song — tempo, key, chords, arrangement and groove — to closely match a real record, so you can study how it's built. The melody is this app's own generated hook, steered toward the real track's character, never a copy of it.">
+      <option value="">Recreate a famous track…</option>
+      {TRACK_PRESETS.map(t => <option key={t.id} value={t.id}>{t.artist} — {t.name}</option>)}
+    </select>
+  );
   /* ---- the arrangement at a glance, and its editor ----
      One function because it renders in two places: the Arrange tab, where it always
      lived, and the Sketch tab, where it is the second half of the subtractive workflow —
@@ -7869,6 +7967,30 @@ export default function ProgressionWheel() {
             <div className="progtitle" style={{ fontSize:17 }}>Song & melody</div>
             {structPicker()}
           </div>
+          <div className="row" style={{ justifyContent:"space-between", alignItems:"center", marginTop:6, gap:"6px 8px", flexWrap:"wrap" }}>
+            <span className="keytag" style={{ margin:0 }}>Recreate a famous track</span>
+            {trackPicker()}
+          </div>
+          {curTrackPreset && (
+            <div className="tplnote" style={{ marginTop:6 }}>
+              <div className="row" style={{ gap:"6px 8px", alignItems:"baseline", flexWrap:"wrap" }}>
+                <b style={{ color:GOLD }}>{curTrackPreset.artist} — {curTrackPreset.name}</b>
+                <span className="keytag" style={{ margin:0 }}>{curTrackPreset.year} · {curTrackPreset.bpm} bpm · {keyLabel}</span>
+              </div>
+              <p className="arrnote" style={{ marginTop:5 }}>{curTrackPreset.tip}</p>
+              {/* The distinction that matters most here, so it's on screen rather than only in a
+                  chat reply: everything provably factual about the record — tempo, key, chord
+                  shape, arrangement, groove — is set to match it closely. The lead line is not a
+                  copy of anything; it's this app's own generator, steered toward the record's
+                  melodic character (register, repetition, syncopation) rather than its notes. */}
+              <p className="keytag" style={{ margin:"4px 0 0" }}>
+                Tempo, key, chords, arrangement and groove are set to match the record closely. The
+                melody is not a copy of it — this app never ships a transcribed hook, so the lead
+                line is its own generated tune, steered toward the record's register, repetition and
+                syncopation. Write over it, or pick a different melodic narrative, any time.
+              </p>
+            </div>
+          )}
 
           {/* What a template did, and how to put it back. A template writes across five different
               controls at once — the drum menus, the chords, the parts, the moves and transitions,

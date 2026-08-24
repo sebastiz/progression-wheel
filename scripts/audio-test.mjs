@@ -15,11 +15,12 @@ import * as wav from "../src/wav.js";
 import * as zip from "../src/zip.js";
 import * as arrange from "../src/arrange.js";
 import * as arrTpl from "../src/arrange-templates.js";
+import * as trackPresets from "../src/track-presets.js";
 import * as als from "../src/als.js";
 import * as exportState from "../src/export-state.js";
 import * as hook from "../src/hook.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...als, ...exportState, ...hook };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...trackPresets, ...als, ...exportState, ...hook };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -3027,6 +3028,53 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     + `${silences} of them with the drums out; every one rises, collapses and rises again (${subtractions})`);
 }
 
+/* ---- track presets: "recreate a famous track" ----
+   Every field here is either a catalogue id (has to exist in the catalogue it names) or a fact
+   about a real record (has to at least be a plausible one) — the checks below are the same shape
+   as the arrangement-templates block above, because a typo'd baseTemplate is just as silent a
+   failure as a typo'd drum kit: the dropdown lists the track, picking it does nothing useful, and
+   nobody sees why. Nothing here checks the *melody* steering for musical taste — only that it names
+   a narrative the app actually has — because taste is not this file's job. */
+{
+  const kits = new Set(M.DRUM_KITS.map(([k]) => k)), pumps = new Set(M.PUMPS.map(([k]) => k));
+  const syncLevels = new Set(M.SYNC_LEVELS.map(([v]) => v));
+  const bassVoices = new Set(M.BASS_VOICES.map(([v]) => v)), padVoices = new Set(M.PAD_VOICES.map(([v]) => v));
+  const percKits = new Set(M.PERC_KITS.map(([v]) => v)), delayTimes = new Set(M.DELAY_TIMES.map(([v]) => v));
+  const templateIds = new Set(M.DANCE_TEMPLATES.map(t => t.id));
+  const seen = new Set();
+  for (const p of M.TRACK_PRESETS) {
+    const where = `track preset ${p.id || p.name}`;
+    if (!p.id || seen.has(p.id)) problems.push(`${where}: missing or duplicate id`);
+    seen.add(p.id);
+    if (!p.name || !p.artist) problems.push(`${where}: missing a name or an artist`);
+    if (!p.tip || p.tip.length < 20) problems.push(`${where}: no real tip, or too short to teach anything`);
+    if (!(p.bpm >= 60 && p.bpm <= 200)) problems.push(`${where}: ${p.bpm} bpm is not a dance tempo`);
+    if (!(Number.isInteger(p.tonic) && p.tonic >= 0 && p.tonic <= 11)) problems.push(`${where}: tonic ${p.tonic} is not a pitch class 0–11`);
+    if (!M.PROGRESSIONS[p.progId]) problems.push(`${where}: unknown progression "${p.progId}"`);
+    if (!templateIds.has(p.baseTemplate)) problems.push(`${where}: unknown base template "${p.baseTemplate}"`);
+    if (p.narrative && !M.NARRATIVES.some(n => n.id === p.narrative)) problems.push(`${where}: unknown narrative "${p.narrative}"`);
+    if (p.vary != null && !(Number.isFinite(p.vary) && p.vary >= 0)) problems.push(`${where}: vary ${p.vary} is not a non-negative number`);
+    if (p.sync != null && !syncLevels.has(p.sync)) problems.push(`${where}: unknown syncopation level ${p.sync}`);
+    if (p.drum && (!M.DRUMS[p.drum] || !M.DRUMS[p.drum].pattern)) problems.push(`${where}: unknown drum pattern "${p.drum}"`);
+    if (p.kit && !kits.has(p.kit)) problems.push(`${where}: unknown drum kit "${p.kit}"`);
+    if (p.pump && !pumps.has(p.pump)) problems.push(`${where}: unknown pump "${p.pump}"`);
+    if (p.pat && !M.PATTERNS[p.pat]) problems.push(`${where}: unknown chord rhythm "${p.pat}"`);
+    if (p.bass && !M.BASS[p.bass]) problems.push(`${where}: unknown bass pattern "${p.bass}"`);
+    if (p.bassVoice && !bassVoices.has(p.bassVoice)) problems.push(`${where}: unknown bass voice "${p.bassVoice}"`);
+    if (p.pad && !padVoices.has(p.pad)) problems.push(`${where}: unknown pad voice "${p.pad}"`);
+    if (p.percKit && !percKits.has(p.percKit)) problems.push(`${where}: unknown perc kit "${p.percKit}"`);
+    if (p.delay && !delayTimes.has(p.delay)) problems.push(`${where}: unknown delay time "${p.delay}"`);
+    if (p.swing != null && !(p.swing >= 0 && p.swing <= 0.6)) problems.push(`${where}: swing ${p.swing} is outside 0–0.6`);
+  }
+  // no melody transcription ever lands here by accident — a preset steers the generator with a
+  // narrative id and a couple of numbers, never with note data of its own
+  const noteish = ["notes", "melody", "bars", "riff", "flat", "degrees"];
+  for (const p of M.TRACK_PRESETS)
+    for (const k of noteish)
+      if (k in p) problems.push(`track preset ${p.id}: carries a "${k}" field — presets steer the melody engine, they never hold notes`);
+  console.log(`track presets: ${M.TRACK_PRESETS.length} tracks across ${new Set(M.TRACK_PRESETS.map(p => p.baseTemplate)).size} arrangement templates and ${new Set(M.TRACK_PRESETS.map(p => p.progId)).size} progressions`);
+}
+
 /* ---- the settings export reads clean without the source beside it ----
    "Export for Claude" hands two files to an analysis that has neither the app nor its code: the
    arrangement wav and this JSON. So the snapshot has to hold three properties whatever the song:
@@ -3156,7 +3204,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
    declares something but forgets to export it, and the component referencing a module's symbol
    without importing it (esbuild assumes it's a global and says nothing). Both are cheap to check. */
 {
-  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "als.js", "als-template.js", "progressions.js", "export-state.js", "hook.js"];
+  const MODS = ["theory.js", "progressions.js", "patterns.js", "audio.js", "midi.js", "pitch.js", "melody.js", "song.js", "wav.js", "zip.js", "arrange.js", "arrange-templates.js", "track-presets.js", "als.js", "als-template.js", "progressions.js", "export-state.js", "hook.js"];
   const strip = t => t
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<![:\w])\/\/[^\n]*/g, " ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
