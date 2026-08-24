@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- **An insert-effects rack — chorus, flanger, phaser, a bitcrusher, a compressor and a stereo
+  widener, on every bus.** The **FX** section on the Sound tab gives Drums, Perc, Bass, Pad, Lead
+  (one shared rack across all six melody parts) and Master two insert slots each, sitting after
+  each bus's own filter/drive/pan chain. Distortion is back on the list too, as a second,
+  independent drive stage rather than a reach into the existing Tone-panel knob — turning up both
+  stacks two different-sounding drives instead of one fighting the other for the same curve. Every
+  slot defaults to Off (no added node, no added latency); picking a type seeds a tasteful preset
+  so it does something immediately. The master rack sits just before the limiter and, like the
+  limiter, is skipped on stem exports, so stems still sum cleanly to the mix.
 - **The melody sits on top of the mix.** The default balance is now a measured hierarchy rather
   than three separate boosts: a bar of each source at its in-song gain, compared by K-weighted
   loudness. The bass make-up gain had stacked onto the bass track's own loudness anchor, leaving
