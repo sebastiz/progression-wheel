@@ -117,7 +117,7 @@ const alsClip = ({ name, notes, end, color, tsNum, tsDen }) => ALS_CLIP
   .replace(/%NEXTNOTE%/g, (notes || []).length + 1)
   .replace(/%KEYTRACKS%/g, keyTracks(notes));
 
-/* The set. `tracks` is [{ name, color, vol, notes:[{t,dur,note,vel}], end }] with every time in
+/* The set. `tracks` is [{ name, color, vol, pan, notes:[{t,dur,note,vel}], end }] with every time in
    beats; `locators` is [{ beat, name }] — the section markers, which is what makes the arrangement
    legible on Live's ruler rather than an undifferentiated run of bars. */
 function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = "song", mainAuto = null }) {
@@ -129,7 +129,9 @@ function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = 
     .replace(/%CLIP%/g, () => alsClip({ name: t.name, notes: t.notes, end: t.end || total,
       color: t.color, tsNum, tsDen }))
     .replace(/%NAME%/g, esc(t.name)).replace(/%NOTE%/g, esc(t.note || ""))
-    .replace(/%COLOR%/g, t.color).replace(/%VOL%/g, alsNum(t.vol == null ? 0.85 : t.vol)),
+    .replace(/%COLOR%/g, t.color).replace(/%VOL%/g, alsNum(t.vol == null ? 0.85 : t.vol))
+    // Live's pan is -1..1 where the app's is -100..100, and the two mean the same thing
+    .replace(/%PAN%/g, alsNum(Math.max(-1, Math.min(1, (t.pan || 0) / 100)))),
     nextId)).join("");
   const locXml = (locators || []).map((l, i) =>
     `<Locator Id="${i}"><LomId Value="0" /><Time Value="${alsNum(l.beat)}" />`
