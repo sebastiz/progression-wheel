@@ -1622,6 +1622,99 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`insert fx: ${FX_TYPES.length - 1} types, ${FX_TYPES.reduce((n2, [id]) => n2 + (FX_PARAMS[id] || []).length, 0)} params, all clean at both extremes`);
 }
 
+/* ---- the multi-type insert rack: two sections, two genuinely different effect types, one bus ---- */
+{
+  const { makeFxMultiSlot, makeFxMultiRack } = M;
+
+  // a slot asked to be built with several types (plus duplicates, plus no explicit "off") builds
+  // exactly one chain per distinct id, "off" included as the always-present fallback, and starts
+  // with only the requested active id's gate open
+  {
+    nodes.length = 0;
+    const slot = makeFxMultiSlot(ctx, ["chorus", "crush", "chorus", "comp"], 0, "crush");
+    const want = ["chorus", "crush", "comp", "off"];
+    if (slot.ids.length !== want.length || want.some(id => !slot.ids.includes(id)))
+      problems.push(`fx multi-slot: built ids ${slot.ids.join(",")}, want exactly ${want.join(",")}`);
+    if (slot.activeId() !== "crush") problems.push(`fx multi-slot: active id is ${slot.activeId()}, want the requested "crush"`);
+    for (const id of want) {
+      const gate = slot.chains[id].gate;
+      const wantGain = id === "crush" ? 1 : 0;
+      if (gate.gain.value !== wantGain) problems.push(`fx multi-slot: ${id}'s gate starts at ${gate.gain.value}, want ${wantGain}`);
+    }
+    // an id never requested at all falls back to a built "off" chain rather than throwing
+    if (slot.chains.flanger) problems.push(`fx multi-slot: built a chain for an id never requested`);
+  }
+
+  // switching the active id ramps the outgoing chain's gate down and the incoming one up — finite,
+  // non-negative-time, click-free (linear, never exponential) — and only those two gates move
+  {
+    nodes.length = 0;
+    const slot = makeFxMultiSlot(ctx, ["chorus", "crush"], 0, "chorus");
+    const before = problems.length; // the recording stub itself flags non-finite/negative/exp-to-0
+    slot.setActive("crush", 2.0);
+    if (problems.length !== before) console.log("fx multi-slot switch: see above");
+    const outEvs = slot.chains.chorus.gate.gain._events.filter(e => e.kind !== "cancel");
+    const inEvs = slot.chains.crush.gate.gain._events.filter(e => e.kind !== "cancel");
+    const lastOut = outEvs[outEvs.length - 1], lastIn = inEvs[inEvs.length - 1];
+    if (!lastOut || Math.abs(lastOut.v - 0) > 1e-9) problems.push("fx multi-slot switch: outgoing gate does not settle at 0");
+    if (!lastIn || Math.abs(lastIn.v - 1) > 1e-9) problems.push("fx multi-slot switch: incoming gate does not settle at 1");
+    if (lastOut.t <= 2.0 || lastOut.t > 2.03) problems.push(`fx multi-slot switch: ramp lands at ${lastOut.t}s, want just after 2.0s and well under a beat`);
+    if (slot.activeId() !== "crush") problems.push("fx multi-slot switch: activeId() did not update");
+    // requesting the id that is already active, or one that was never built, is a no-op
+    const evCount = () => slot.chains.chorus.gate.gain._events.length + slot.chains.crush.gate.gain._events.length;
+    const before2 = evCount();
+    slot.setActive("crush", 3.0);
+    slot.setActive("phaser", 3.0);
+    if (evCount() !== before2) problems.push("fx multi-slot: setActive to the current id, or an unbuilt one, scheduled an event anyway");
+  }
+
+  // params written into one id's chain land on that chain's own nodes and nowhere else — the
+  // mechanism behind the task's own example (Chorus on the bass in the Drop, Bitcrusher on the
+  // bass in the Breakdown): the song default plays one type, a section's own copy asks for a
+  // genuinely different one, and resolving that section must feed *its* type's own params, not
+  // the song default's, even though both chains are built into the same rack and reachable
+  {
+    nodes.length = 0;
+    const slot = makeFxMultiSlot(ctx, ["chorus", "crush"], 0, "chorus");   // song default: chorus
+    slot.write("chorus", 1, { rate: 80, depth: 90, mix: 70 });             // Sound tab's own knobs
+    // the Breakdown's own copy of this bus: a different type (crush) and its own mix — resolving
+    // it must reach the crush chain's own dry/wet gains, computed from crush's own params, not
+    // chorus's write above and not crush's built-in defaults
+    slot.write("crush", 2, { bits: 3, red: 90, mix: 60 });
+    const chorusLfo = nodes.filter(n => n._kind === "osc").find(n =>
+      n.frequency._events.some(e => e.kind === "set" && e.t === 1 && Math.abs(e.v - (0.05 + 0.8 * 3)) < 1e-6));
+    if (!chorusLfo) problems.push("fx multi-slot write: chorus's own rate did not reach its chain");
+    const gains = nodes.filter(n => n._kind === "gain");
+    const crushDry = gains.find(n => n.gain._events.some(e => e.kind === "set" && e.t === 2 && Math.abs(e.v - 0.4) < 1e-9));
+    const crushWet = gains.find(n => n.gain._events.some(e => e.kind === "set" && e.t === 2 && Math.abs(e.v - 0.6) < 1e-9));
+    if (!crushDry || !crushWet)
+      problems.push("fx multi-slot write: the Breakdown's own crush mix (60%) did not reach the crush chain, independent of the song default's chorus write");
+    // and switching onto it live is the same click-free ramp already checked above
+    const before = problems.length;
+    slot.setActive("crush", 5);
+    if (problems.length !== before) console.log("fx multi-slot section resolve: see above");
+    if (slot.activeId() !== "crush") problems.push("fx multi-slot: switching to the section's own type did not take");
+  }
+
+  // makeFxMultiRack: two multi-slots in series, same outer shape as makeFxRack — a call site can
+  // treat `.input`/`.output` identically, and both slot's active ids seed from what was asked for
+  {
+    nodes.length = 0;
+    const rack = makeFxMultiRack(ctx, ["chorus", "crush"], ["comp", "wide"], 0, ["crush", "wide"]);
+    const s0 = rack.slots[0], s1 = rack.slots[1];
+    if (!s0.output._conns.includes(s1.input))
+      problems.push("fx multi-rack: slot 0's output does not connect into slot 1's input");
+    if (rack.input !== s0.input || rack.output !== s1.output)
+      problems.push("fx multi-rack: input/output do not point at the outer slots");
+    if (s0.activeId() !== "crush" || s1.activeId() !== "wide")
+      problems.push(`fx multi-rack: active ids are ${s0.activeId()},${s1.activeId()}, want crush,wide`);
+    if (!s0.ids.includes("off") || !s1.ids.includes("off"))
+      problems.push("fx multi-rack: a slot was built without its \"off\" fallback");
+  }
+
+  console.log("insert fx multi-rack: builds one chain per requested type, switches the active one with a short click-free ramp, keeps every id's params on its own chain");
+}
+
 /* ---- voice leading actually leads voices ---- */
 {
   const { voiceChord, VOICE_LO, VOICE_HI } = M;
