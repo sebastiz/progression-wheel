@@ -17,10 +17,11 @@ import * as arrange from "../src/arrange.js";
 import * as arrTpl from "../src/arrange-templates.js";
 import * as trackPresets from "../src/track-presets.js";
 import * as als from "../src/als.js";
+import * as alsFx from "../src/als-fx.js";
 import * as exportState from "../src/export-state.js";
 import * as hook from "../src/hook.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...trackPresets, ...als, ...exportState, ...hook };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...trackPresets, ...als, ...alsFx, ...exportState, ...hook };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -260,7 +261,7 @@ for (const kit of ["acoustic", "909", "808"]) {
   const spec = {
     bpm: 128, tsNum: 4, tsDen: 4,
     tracks: [
-      { name: "Chords", color: M.ALS_COLORS.chords, vol: 0.85, end: 8,
+      { name: "Chords", color: M.ALS_COLORS.chords, vol: 0.85, instrument: true, end: 8,
         notes: [{ t: 0, dur: 4, note: 60, vel: 78 }, { t: 4, dur: 4, note: 64, vel: 78 }] },
       { name: "Drums & <bells>", color: M.ALS_COLORS.drums, vol: 0.6, pan: -70, end: 8,
         notes: [{ t: 0, dur: 0.25, note: 36, vel: 92 }, { t: 1, dur: 0.25, note: 38, vel: 92 }] },
@@ -312,12 +313,15 @@ for (const kit of ["acoustic", "909", "808"]) {
      NextPointeeId, the watermark Live allocates from. The handful of tags Live itself numbers per
      list rather than per document are exempt; that list was measured from a real set. */
   {
-    const LOCAL = ["ClipSlot", "AutomationLane", "TrackSendHolder", "TakeLane", "MidiClip",
-                   "KeyTrack", "RemoteableTimeSignature", "Scene", "SendPreBool", "Locator"];
+    /* The document's own ids, named the way src/als.js names them: the tags that carry a different
+       id in every track of a real Live set. A device's own place in its chain, a clip slot, an
+       automation lane — those are numbered within their list and repeat from track to track. */
+    const isDoc = tag => tag === "MidiTrack" || tag === "Pointee"
+      || /(?:AutomationTarget|ModulationTarget)$/.test(tag) || /^ControllerTargets\./.test(tag);
     const ids = [];
     for (const t of trackXml)
       for (const m of t.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g))
-        if (!LOCAL.includes(m[1])) ids.push({ tag: m[1], id: Number(m[3]) });
+        if (isDoc(m[1])) ids.push({ tag: m[1], id: Number(m[3]) });
     const seen = new Set(), dupes = new Set();
     for (const { id } of ids) (seen.has(id) ? dupes : seen).add(id);
     if (dupes.size) problems.push(`als: ${dupes.size} id(s) shared between tracks — Live calls that an invalid pointee id (${[...dupes].slice(0, 4).join(", ")})`);
@@ -327,11 +331,28 @@ for (const kit of ["acoustic", "909", "808"]) {
     if (!npi) problems.push("als: no NextPointeeId");
     else {
       const all = [...xml.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g)]
-        .filter(m => !LOCAL.includes(m[1])).map(m => Number(m[3]));
+        .filter(m => isDoc(m[1])).map(m => Number(m[3]));
       const over = all.filter(id => id >= npi);
       if (over.length) problems.push(`als: ${over.length} id(s) at or above NextPointeeId ${npi} (max ${Math.max(...all)})`);
       if (npi <= 1000) problems.push("als: NextPointeeId has to clear 1000");
     }
+  }
+  /* A pitched track arrives with an instrument on it, because a track with no device is silent in
+     Live however good its notes are — the meters move and nothing comes out, which is exactly what
+     the first working export did. The drums stay empty on purpose: a Drum Rack's pads are sample
+     references into the library of whoever saved them, and would arrive broken anywhere else. */
+  {
+    const chain = t => t.slice(t.lastIndexOf("<Devices>"), t.lastIndexOf("</Devices>"));
+    const withInst = chain(trackXml[0]), without = chain(trackXml[1]);
+    if (withInst.length < 500) problems.push("als: the pitched track has no instrument on it");
+    if (/<Devices>.{0,20}</.test(without) === false && without.length > 40)
+      problems.push("als: a track that asked for no instrument got one anyway");
+    // the instrument brings its own automation targets, and a clone reusing them is the invalid
+    // pointee id all over again — so they have to be renumbered with everything else
+    const targets = [...withInst.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g)]
+      .filter(m => /(?:AutomationTarget|ModulationTarget)$/.test(m[1])).map(m => Number(m[3]));
+    if (targets.length < 20) problems.push(`als: the instrument brought only ${targets.length} automation targets — it is not the real device`);
+    if (new Set(targets).size !== targets.length) problems.push("als: the instrument's automation targets repeat");
   }
   /* Live keeps an arrangement clip in two places — the take lane and the arranger automation — and
      writes the same clip into both. One copy is a clip that shows on the timeline and vanishes from
@@ -3308,6 +3329,55 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (!/renderOffline\(null, setRenderPct\)/.test(code) || !/renderOffline\(stems\[n\], setRenderPct\)/.test(code))
     problems.push("progression-wheel.jsx: an export path renders without reporting progress");
   console.log(`export for Claude: ${ref.length} modulations referenced, ${state.arrangement.sections.length} sections described, round-trips clean`);
+}
+
+/* ---- the app's controls, in Live's units ----
+   src/als-fx.js is a conversion table, and a conversion table is exactly the thing to test without
+   Live: every law here is one the export snapshot already states, so the numbers are checkable
+   against the app's own documentation of itself. What cannot be checked is whether Live's reverb
+   sounds like ours at the same decay — it does not, and the module says so. */
+{
+  const F = M;
+  // the filter laws, at the ends and in the middle: 100% is open, and the song's own lane values
+  if (F.cutHz(100) !== 18000) problems.push(`als-fx: a fully open low-pass is ${F.cutHz(100)} Hz, expected 18000`);
+  if (F.cutHz(0) !== 120) problems.push(`als-fx: a shut low-pass is ${F.cutHz(0)} Hz, expected the 120 floor`);
+  if (Math.abs(F.cutHz(50) - 1470) > 1) problems.push(`als-fx: 50% reads ${F.cutHz(50)} Hz, expected ~1470`);
+  if (Math.abs(F.cutHz(28) - 488) > 1) problems.push(`als-fx: 28% reads ${F.cutHz(28)} Hz, expected ~488`);
+  if (F.hpHz(0) !== 20) problems.push("als-fx: a high-pass at rest is not at 20 Hz");
+  if (Math.abs(F.hpHz(100) - 1200) > 1) problems.push("als-fx: a full high-pass does not reach 1200 Hz");
+  // a dotted eighth is three sixteenths, which is how Live counts a synced delay
+  if (F.sixteenths(0.75) !== 3) problems.push(`als-fx: a dotted eighth is ${F.sixteenths(0.75)} sixteenths, expected 3`);
+  if (F.sixteenths(1) !== 4) problems.push("als-fx: a beat is not four sixteenths");
+  // a threshold in dB is a gain factor in the file
+  if (F.dbToGain(0) !== 1) problems.push("als-fx: 0 dB is not unity gain");
+  if (Math.abs(F.dbToGain(-6) - 0.501) > 0.01) problems.push(`als-fx: −6 dB is ${F.dbToGain(-6)}, expected ~0.5`);
+  // an LFO in beats becomes one in hertz, the one conversion that needs the tempo
+  if (Math.abs(F.rateHz(2, 120) - 1) > 1e-6) problems.push("als-fx: two beats at 120bpm is not 1 Hz");
+  /* A part at its defaults gets no devices at all. This is the difference between an export that
+     says what the sketch does and one that arrives as a rack of bypassed effects. */
+  if (F.partDevices({}) !== "") problems.push("als-fx: a part at its defaults still got a device chain");
+  if (F.partDevices({ cut: 100, res: 0, hp: 0, drive: 0 }) !== "")
+    problems.push("als-fx: controls left at their defaults still wrote devices");
+  // and the values really land on the dial rather than being computed and dropped
+  {
+    const chain = F.partDevices({ cut: 50, res: 30, hp: 20, drive: 40, verb: 25 }, 123);
+    const freq = (chain.match(/<Filter_Frequency>[\s\S]{0,120}?<Manual Value="([^"]*)"/) || [])[1];
+    if (Math.abs(Number(freq) - 1470) > 1) problems.push(`als-fx: the low-pass reached the device as ${freq}`);
+    if ((chain.match(/<AutoFilter2[ >]/g) || []).length !== 2)
+      problems.push("als-fx: a part using both ends of the filter did not get a low-pass and a high-pass");
+    if (!/<Saturator[ >]/.test(chain)) problems.push("als-fx: Drive did not reach a Saturator");
+    if (!/<Reverb[ >]/.test(chain)) problems.push("als-fx: the reverb send did not reach a Reverb");
+    if (/<Echo[ >]/.test(chain)) problems.push("als-fx: a part with no delay send still got an Echo");
+  }
+  // the master limiter, whose four numbers the app states in Live's own units
+  {
+    const lim = F.limiter({ thresholdDb: -5, ratio: 12, attackMs: 2, releaseMs: 140, kneeDb: 3 })[0];
+    const get = n => (lim.match(new RegExp(`<${n}>[\\s\\S]{0,160}?<Manual Value="([^"]*)"`)) || [])[1];
+    if (Math.abs(Number(get("Threshold")) - 0.562) > 0.01) problems.push(`als-fx: −5 dB reached the limiter as ${get("Threshold")}`);
+    if (get("Ratio") !== "12") problems.push(`als-fx: the ratio reached the limiter as ${get("Ratio")}`);
+    if (get("Release") !== "140") problems.push(`als-fx: the release reached the limiter as ${get("Release")}`);
+  }
+  console.log(`als-fx: ${Object.keys(M.ALS_DEVICES || {}).length || 7} devices, filter/delay/threshold laws hold`);
 }
 
 /* ---- the module seams hold ----

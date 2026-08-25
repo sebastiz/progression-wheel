@@ -16,7 +16,7 @@
 
    Times are in beats throughout, which is what Live's XML uses. A bar is `beatsPerBar` of them. */
 
-import { ALS_DOC, ALS_TRACK, ALS_CLIP } from "./als-template.js";
+import { ALS_DOC, ALS_TRACK, ALS_CLIP, ALS_INSTRUMENT } from "./als-template.js";
 
 // XML text has to survive a section called "Verse & Chorus" or a sketch named after its author
 const esc = s => String(s == null ? "" : s)
@@ -44,15 +44,21 @@ const tsEnum = (num, den) => {
    handful of ids that are numbered within their own list rather than the document, which is why
    Live's own tracks can all carry ClipSlot 0-7: those are the tags below, measured by comparing
    the tracks in a real set rather than assumed. Everything else in a cloned track is renumbered. */
-const ALS_LOCAL_IDS = new Set(["ClipSlot", "AutomationLane", "TrackSendHolder", "TakeLane",
-  "MidiClip", "KeyTrack", "RemoteableTimeSignature", "Scene", "SendPreBool", "Locator"]);
+/* Which ids belong to the document rather than to their own list, named rather than guessed: these
+   are the tags that carry a *different* id in every track of a real Live set, found by comparing
+   its tracks. Everything else — clip slots, automation lanes, send holders, a device's own place in
+   its chain — is numbered within its list and repeats from track to track, so it is left alone.
+   Anything ending in AutomationTarget or ModulationTarget is included: a device brings dozens of
+   them (Drift alone has 114), and a clone that reused them would be the invalid pointee id again. */
+const isDocumentId = tag => tag === "MidiTrack" || tag === "Pointee"
+  || /(?:AutomationTarget|ModulationTarget)$/.test(tag) || /^ControllerTargets\./.test(tag);
 // `\s` before Id keeps this off NoteId and LomId, which are attributes rather than object ids
 const ID_ATTR = /<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g;
 const renumber = (xml, nextId) => xml.replace(ID_ATTR,
-  (m, tag, pre) => ALS_LOCAL_IDS.has(tag) ? m : `<${tag}${pre}Id="${nextId()}"`);
+  (m, tag, pre) => isDocumentId(tag) ? `<${tag}${pre}Id="${nextId()}"` : m);
 const maxId = xml => {
   let max = 0;
-  for (const m of xml.matchAll(ID_ATTR)) max = Math.max(max, Number(m[3]));
+  for (const m of xml.matchAll(ID_ATTR)) if (isDocumentId(m[1])) max = Math.max(max, Number(m[3]));
   return max;
 };
 
@@ -117,7 +123,7 @@ const alsClip = ({ name, notes, end, color, tsNum, tsDen }) => ALS_CLIP
   .replace(/%NEXTNOTE%/g, (notes || []).length + 1)
   .replace(/%KEYTRACKS%/g, keyTracks(notes));
 
-/* The set. `tracks` is [{ name, color, vol, pan, notes:[{t,dur,note,vel}], end }] with every time in
+/* The set. `tracks` is [{ name, color, vol, pan, instrument, notes:[{t,dur,note,vel}], end }] — every time in
    beats; `locators` is [{ beat, name }] — the section markers, which is what makes the arrangement
    legible on Live's ruler rather than an undifferentiated run of bars. */
 function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = "song", mainAuto = null }) {
@@ -129,6 +135,9 @@ function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = 
     .replace(/%CLIP%/g, () => alsClip({ name: t.name, notes: t.notes, end: t.end || total,
       color: t.color, tsNum, tsDen }))
     .replace(/%NAME%/g, esc(t.name)).replace(/%NOTE%/g, esc(t.note || ""))
+    // an instrument where the part wants one. A track with no device is silent in Live whatever its
+    // notes say, so this is the difference between a set that plays and one that only looks right
+    .replace("%DEVICES%", () => (t.instrument ? ALS_INSTRUMENT : ""))
     .replace(/%COLOR%/g, t.color).replace(/%VOL%/g, alsNum(t.vol == null ? 0.85 : t.vol))
     // Live's pan is -1..1 where the app's is -100..100, and the two mean the same thing
     .replace(/%PAN%/g, alsNum(Math.max(-1, Math.min(1, (t.pan || 0) / 100)))),

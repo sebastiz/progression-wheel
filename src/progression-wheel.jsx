@@ -4538,7 +4538,7 @@ export default function ProgressionWheel() {
             note: n, vel: CVEL[tok] || 78 });
       }
     });
-    if (chordNotes.length) tracks.push({ name: "Chords", color: ALS_COLORS.chords, vol: 0.85,
+    if (chordNotes.length) tracks.push({ name: "Chords", color: ALS_COLORS.chords, vol: 0.85, instrument: true,
       notes: chordNotes, end: bars.length * B,
       note: "was " + instr + " · " + colour + " voicings · strum: " + (rhythm.name || patId) });
     // drums: each bar's own pattern, at whatever step count that pattern has
@@ -4574,12 +4574,12 @@ export default function ProgressionWheel() {
         notes: percNotes, end: bars.length * B, note: "perc layer — same Drum Rack as the drums" });
     }
     // the bass track: the same resolved notes the MIDI writer gets, already in beats
-    if (bassTrack) tracks.push({ name: "Bass", color: ALS_COLORS.bass, vol: 0.85,
+    if (bassTrack) tracks.push({ name: "Bass", color: ALS_COLORS.bass, vol: 0.85, instrument: true,
       notes: bassTrack.notes, end: bars.length * B,
       note: "was " + bassVoice + (bass && BASS[bass] ? " · pattern: " + BASS[bass].name : "")
         + " — drop a bass synth on this" });
     // the pad: the held upper voicings
-    if (padTrack) tracks.push({ name: "Pad", color: ALS_COLORS.pad, vol: 0.8,
+    if (padTrack) tracks.push({ name: "Pad", color: ALS_COLORS.pad, vol: 0.8, instrument: true,
       notes: padTrack.notes, end: bars.length * B, note: "drop a pad synth on this" });
     // melody parts: grid columns merged into held notes, the same way the MIDI writer merges them
     (parts || []).forEach((part, p) => {
@@ -4599,6 +4599,7 @@ export default function ProgressionWheel() {
         // the part's own level and pan ride the mixer rather than the notes: Live opens balanced
         // and spread the way the sketch sounds, and the velocities stay what was written
         color: ALS_COLORS.part, vol: 0.8 * (part.gain == null ? 1 : part.gain), pan: part.pan || 0,
+        instrument: true,
         notes, end: bars.length * B,
         note: partInfo(partOf(p)) || ("was " + (part.voice || melInstr)) });
     });
