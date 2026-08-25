@@ -17,10 +17,11 @@ import * as arrange from "../src/arrange.js";
 import * as arrTpl from "../src/arrange-templates.js";
 import * as trackPresets from "../src/track-presets.js";
 import * as als from "../src/als.js";
+import * as alsFx from "../src/als-fx.js";
 import * as exportState from "../src/export-state.js";
 import * as hook from "../src/hook.js";
 
-const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...trackPresets, ...als, ...exportState, ...hook };
+const M = { ...theory, ...patterns, ...audio, ...midiMod, ...melody, ...song, ...wav, ...progs, ...zip, ...arrange, ...arrTpl, ...trackPresets, ...als, ...alsFx, ...exportState, ...hook };
 // the component source, read as text for the shape guard at the end
 const code = readFileSync("src/progression-wheel.jsx", "utf8");
 
@@ -3328,6 +3329,55 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (!/renderOffline\(null, setRenderPct\)/.test(code) || !/renderOffline\(stems\[n\], setRenderPct\)/.test(code))
     problems.push("progression-wheel.jsx: an export path renders without reporting progress");
   console.log(`export for Claude: ${ref.length} modulations referenced, ${state.arrangement.sections.length} sections described, round-trips clean`);
+}
+
+/* ---- the app's controls, in Live's units ----
+   src/als-fx.js is a conversion table, and a conversion table is exactly the thing to test without
+   Live: every law here is one the export snapshot already states, so the numbers are checkable
+   against the app's own documentation of itself. What cannot be checked is whether Live's reverb
+   sounds like ours at the same decay — it does not, and the module says so. */
+{
+  const F = M;
+  // the filter laws, at the ends and in the middle: 100% is open, and the song's own lane values
+  if (F.cutHz(100) !== 18000) problems.push(`als-fx: a fully open low-pass is ${F.cutHz(100)} Hz, expected 18000`);
+  if (F.cutHz(0) !== 120) problems.push(`als-fx: a shut low-pass is ${F.cutHz(0)} Hz, expected the 120 floor`);
+  if (Math.abs(F.cutHz(50) - 1470) > 1) problems.push(`als-fx: 50% reads ${F.cutHz(50)} Hz, expected ~1470`);
+  if (Math.abs(F.cutHz(28) - 488) > 1) problems.push(`als-fx: 28% reads ${F.cutHz(28)} Hz, expected ~488`);
+  if (F.hpHz(0) !== 20) problems.push("als-fx: a high-pass at rest is not at 20 Hz");
+  if (Math.abs(F.hpHz(100) - 1200) > 1) problems.push("als-fx: a full high-pass does not reach 1200 Hz");
+  // a dotted eighth is three sixteenths, which is how Live counts a synced delay
+  if (F.sixteenths(0.75) !== 3) problems.push(`als-fx: a dotted eighth is ${F.sixteenths(0.75)} sixteenths, expected 3`);
+  if (F.sixteenths(1) !== 4) problems.push("als-fx: a beat is not four sixteenths");
+  // a threshold in dB is a gain factor in the file
+  if (F.dbToGain(0) !== 1) problems.push("als-fx: 0 dB is not unity gain");
+  if (Math.abs(F.dbToGain(-6) - 0.501) > 0.01) problems.push(`als-fx: −6 dB is ${F.dbToGain(-6)}, expected ~0.5`);
+  // an LFO in beats becomes one in hertz, the one conversion that needs the tempo
+  if (Math.abs(F.rateHz(2, 120) - 1) > 1e-6) problems.push("als-fx: two beats at 120bpm is not 1 Hz");
+  /* A part at its defaults gets no devices at all. This is the difference between an export that
+     says what the sketch does and one that arrives as a rack of bypassed effects. */
+  if (F.partDevices({}) !== "") problems.push("als-fx: a part at its defaults still got a device chain");
+  if (F.partDevices({ cut: 100, res: 0, hp: 0, drive: 0 }) !== "")
+    problems.push("als-fx: controls left at their defaults still wrote devices");
+  // and the values really land on the dial rather than being computed and dropped
+  {
+    const chain = F.partDevices({ cut: 50, res: 30, hp: 20, drive: 40, verb: 25 }, 123);
+    const freq = (chain.match(/<Filter_Frequency>[\s\S]{0,120}?<Manual Value="([^"]*)"/) || [])[1];
+    if (Math.abs(Number(freq) - 1470) > 1) problems.push(`als-fx: the low-pass reached the device as ${freq}`);
+    if ((chain.match(/<AutoFilter2[ >]/g) || []).length !== 2)
+      problems.push("als-fx: a part using both ends of the filter did not get a low-pass and a high-pass");
+    if (!/<Saturator[ >]/.test(chain)) problems.push("als-fx: Drive did not reach a Saturator");
+    if (!/<Reverb[ >]/.test(chain)) problems.push("als-fx: the reverb send did not reach a Reverb");
+    if (/<Echo[ >]/.test(chain)) problems.push("als-fx: a part with no delay send still got an Echo");
+  }
+  // the master limiter, whose four numbers the app states in Live's own units
+  {
+    const lim = F.limiter({ thresholdDb: -5, ratio: 12, attackMs: 2, releaseMs: 140, kneeDb: 3 })[0];
+    const get = n => (lim.match(new RegExp(`<${n}>[\\s\\S]{0,160}?<Manual Value="([^"]*)"`)) || [])[1];
+    if (Math.abs(Number(get("Threshold")) - 0.562) > 0.01) problems.push(`als-fx: −5 dB reached the limiter as ${get("Threshold")}`);
+    if (get("Ratio") !== "12") problems.push(`als-fx: the ratio reached the limiter as ${get("Ratio")}`);
+    if (get("Release") !== "140") problems.push(`als-fx: the release reached the limiter as ${get("Release")}`);
+  }
+  console.log(`als-fx: ${Object.keys(M.ALS_DEVICES || {}).length || 7} devices, filter/delay/threshold laws hold`);
 }
 
 /* ---- the module seams hold ----

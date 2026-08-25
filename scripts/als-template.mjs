@@ -13,10 +13,16 @@
 import { readFileSync, writeFileSync } from "fs";
 import { gunzipSync } from "zlib";
 
-const src = process.argv[2];
-if (!src) { console.error("usage: node scripts/als-template.mjs <reference.als>"); process.exit(1); }
-const raw = readFileSync(src);
-const xml = (raw[0] === 0x1f && raw[1] === 0x8b ? gunzipSync(raw) : raw).toString("utf8");
+const [src, ...extra] = process.argv.slice(2);
+if (!src) { console.error("usage: node scripts/als-template.mjs <reference.als> [devices.als ...]"); process.exit(1); }
+const read = f => {
+  const raw = readFileSync(f);
+  return (raw[0] === 0x1f && raw[1] === 0x8b ? gunzipSync(raw) : raw).toString("utf8");
+};
+const xml = read(src);
+// devices may come from other sets — a reference full of effects need not be the one the document
+// shape is taken from, and asking for both in one file is asking for a set nobody wants to build
+const pool = [xml, ...extra.map(read)];
 
 const TAG = /<(\/?)([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?)(\/?)>/g;
 // the whole element beginning at `i`, brackets included
@@ -131,6 +137,34 @@ for (const tag of INSTRUMENT_TAGS) {
   break;
 }
 
+/* The effects, for carrying the sketch's own sound across. Live's parameter names are its own
+   (`Filter_Frequency` in Hz, `Filter_Resonance`, `Envelope_Amount`), so what the app has to do is
+   convert its 0..100 controls into those units — which is src/als-fx.js's job, not this file's.
+   Here they are only lifted, one block each, from wherever in the reference they sit: a device
+   inside a rack is as good as one on the chain, because the block is self-contained either way.
+
+   A preset reference carries the path it was loaded from, and those are somebody's home directory.
+   They are stripped: Live shows the device's own name instead of a preset's, which is what we want
+   anyway, since every value is about to be overwritten. */
+const DEVICE_TAGS = {
+  autoFilter: "AutoFilter2", compressor: "Compressor2", echo: "Echo", reverb: "Reverb",
+  saturator: "Saturator", phaser: "PhaserNew", autoPan: "AutoPan",
+};
+const stripPaths = s => s
+  .replace(/<Path Value="[^"]*"/g, '<Path Value=""')
+  .replace(/<RelativePath Value="[^"]*"/g, '<RelativePath Value=""')
+  .replace(/<Name Value="[^"]*\.(?:adv|adg|amxd)"/g, '<Name Value=""');
+const DEVICES = {};
+for (const [key, tag] of Object.entries(DEVICE_TAGS)) {
+  for (const doc of pool) {
+    const i = doc.indexOf(`<${tag} `) >= 0 ? doc.indexOf(`<${tag} `) : doc.indexOf(`<${tag}>`);
+    if (i < 0) continue;
+    DEVICES[key] = stripPaths(block(doc, i));
+    break;
+  }
+  if (!DEVICES[key]) console.warn(`  (no <${tag}> in any reference — ${key} will be unavailable)`);
+}
+
 /* the document around them. The reference's own tracks, sends, grooves and playhead go; its shell
    — main track, prehear, scenes, transport and the sixty-odd view-state values Live writes and a
    hand-written set never knew about — stays exactly as Live wrote it. */
@@ -184,7 +218,14 @@ const ALS_CLIP = ${lit(CLIP)};
    score into something you can press play on. */
 const ALS_INSTRUMENT = ${lit(INSTRUMENT)};
 
-export { ALS_DOC, ALS_TRACK, ALS_CLIP, ALS_INSTRUMENT };
+/* The effect devices, at whatever settings the reference had them — every value src/als-fx.js maps
+   is overwritten on the way out, so what matters here is the shape, not the sound. */
+const ALS_DEVICES = {
+${Object.entries(DEVICES).map(([k, v]) => `  ${k}: ${lit(v)},`).join("\n")}
+};
+
+export { ALS_DOC, ALS_TRACK, ALS_CLIP, ALS_INSTRUMENT, ALS_DEVICES };
 `);
 console.log(`src/als-template.js written — doc ${tighten(DOC).length}, track ${tighten(TRACK).length}, `
   + `clip ${tighten(CLIP).length}, instrument ${tighten(INSTRUMENT).length} chars (Live ${head[1]})`);
+for (const [k, v] of Object.entries(DEVICES)) console.log(`  device ${k}: ${tighten(v).length} chars`);
