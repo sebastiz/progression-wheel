@@ -3,7 +3,7 @@ import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_ID
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
 import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
-import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
+import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxMultiRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
@@ -1558,8 +1558,9 @@ export default function ProgressionWheel() {
      living behind a separate bus-picker section elsewhere on the page.
      `secCtx`, when given (`{ key, word }`, from a section card), switches the FX tab to that
      section's own copy of the rack — the checkbox that seeds it from the song default, then the
-     same `fxSlotRow`s the song-wide version uses, type-locked the same way. Omitted, the FX tab
-     edits the song-wide rack (`fxRack`) directly, as it does on the Sound tab. */
+     same `fxSlotRow`s the song-wide version uses, editable exactly the same way: a section can now
+     pick its own type as well as its own amount. Omitted, the FX tab edits the song-wide rack
+     (`fxRack`) directly, as it does on the Sound tab. */
   const trackFxRow = (trId, secCtx) => {
     const fx = trackFx[trId] || {};
     const ly = { lvl: 100, ...fx };
@@ -1607,13 +1608,13 @@ export default function ProgressionWheel() {
       return (
         <div style={{ marginTop:6 }}>
           <label className="keytag" style={{ margin:"0 0 6px", display:"inline-flex", gap:5, alignItems:"center", cursor:"pointer" }}
-            title="On, this section dials its own amount for this bus, starting from whatever the song default currently is. Off, it plays the song default live — moving the Sound tab's sliders moves this section too.">
+            title="On, this section picks its own type and dials its own amount for this bus, starting from whatever the song default currently is. Off, it plays the song default live — moving the Sound tab's sliders, or picking a new type there, moves this section too.">
             <input type="checkbox" checked={!!own} onChange={e => toggleOwn(e.target.checked)} />
             Use this section's own FX
           </label>
           {own ? <>
-            {fxSlotRow(own, 0, commit, (song[0] || {}).type || "off")}
-            {fxSlotRow(own, 1, commit, (song[1] || {}).type || "off")}
+            {fxSlotRow(own, 0, commit)}
+            {fxSlotRow(own, 1, commit)}
           </> : (
             <p className="keytag" style={{ margin:0 }}>
               Following the song default — {namesOf(song).length ? namesOf(song).join(" · ") : "both slots off"}.
@@ -1637,7 +1638,7 @@ export default function ProgressionWheel() {
           <button className={"modtab" + (grp === "fx" ? " on" : "")}
             title={secCtx
               ? `This ${secCtx.word}'s own copy of the ${trName.toLowerCase()} insert rack — chorus, flanger, phaser, bitcrusher, compressor, stereo widener.`
-              : `Insert effects on the whole ${trName.toLowerCase()} bus — chorus, flanger, phaser, bitcrusher, compressor, stereo widener.`}
+              : `Insert effects on the whole ${trName.toLowerCase()} bus — chorus, flanger, phaser, bitcrusher, compressor, stereo widener. The default a new section starts from; open a section's own FX panel to give it a different type entirely.`}
             onClick={() => setTrackFxTab({ ...trackFxTab, [trId]: "fx" })}>
             FX{fxOn > 0 && <i className="lydot">{fxOn}</i>}
           </button>
@@ -1667,36 +1668,33 @@ export default function ProgressionWheel() {
      Takes the two-slot array and a `commit(nextSlots)` callback rather than being hardwired to
      `fxRack`/`setFxRack`, so the Sound tab's song-wide rack and a section's own copy of a bus (see
      the FX sub-panel in sectionCard) can share this one renderer instead of two implementations
-     drifting apart. `lockType`, when given, is a section panel asking for a *fixed* type: a slot's
-     type is structural (built once, back in buildGraph — see the comment beside `writeFxRack`), so
-     a section may only vary a bus's *amount* live, not swap it to a different effect entirely. The
-     dropdown is hidden in that case and the type shown is always the song's own, never whatever
-     happens to be stored on the section's slot (which could be stale from before the song default
-     last changed). */
-  const fxSlotRow = (slots, slotIdx, commit, lockType) => {
+     drifting apart — every caller draws the same editable type dropdown, a section's own panel
+     included: a section can now run a genuinely different effect type from the song's own, not
+     just a different amount of the same one (`buildGraph` builds every bus with one node chain per
+     type id the song could need there, gated, and the per-beat scheduler switches which is audible
+     as playback crosses a section boundary — see `makeFxMultiSlot` in audio.js and `writeFxRack`
+     in the per-beat block). The one limitation: a type nothing in the song asked for before the
+     last Play/render started has no chain built for it, so picking a brand-new type on a section
+     while a song is already playing is heard only after a restart — exactly like changing a delay
+     time or a bass voice already is. */
+  const fxSlotRow = (slots, slotIdx, commit) => {
     const s0 = (slots && slots[0]) || { type: "off" }, s1 = (slots && slots[1]) || { type: "off" };
     const slot = slotIdx === 0 ? s0 : s1;
-    const type = lockType || slot.type || "off";
+    const type = slot.type || "off";
     const params = FX_PARAMS[type] || [];
     const setSlot = patch => {
       const next = [s0, s1];
-      next[slotIdx] = { ...next[slotIdx], ...patch, ...(lockType ? { type: lockType } : {}) };
+      next[slotIdx] = { ...next[slotIdx], ...patch };
       commit(next);
     };
     return (
       <div key={slotIdx} className="selrow" style={{ alignItems:"flex-end", flexWrap:"wrap", marginTop:6 }}>
         <label className="selwrap" style={{ minWidth:140, flex:"0 0 auto" }}>
           <span className="lbl" style={{ margin:0 }}>Slot {slotIdx + 1}</span>
-          {lockType ? (
-            <span className="fxlocked" title="This section can only change the amount, not the type — a slot's type is fixed for the whole song on the Sound tab.">
-              {(FX_TYPES.find(([id]) => id === type) || [, "Off"])[1]}
-            </span>
-          ) : (
-            <select value={type} onChange={e => setSlot({ type: e.target.value, ...fxDefaults(e.target.value) })}
-              title="What this slot processes. Off costs nothing — no node, no added latency; every other type starts at a tasteful preset you can then dial in.">
-              {FX_TYPES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
-            </select>
-          )}
+          <select value={type} onChange={e => setSlot({ type: e.target.value, ...fxDefaults(e.target.value) })}
+            title="What this slot processes. Off costs nothing — no node, no added latency; every other type starts at a tasteful preset you can then dial in. Picking a brand-new type here while the song is already playing needs a restart to be heard.">
+            {FX_TYPES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
+          </select>
         </label>
         {params.map(([k, name, min, max, step, dflt, unit]) => {
           const v = slot[k] != null ? slot[k] : dflt;
@@ -2902,14 +2900,37 @@ export default function ProgressionWheel() {
   // master path or on a track — shares the same phase reference every other LFO in this graph
   // already uses (see `t0v` and the part-chain LFOs further down)
   const fxT0 = ctx.currentTime;
-  // A slot's type is structural, exactly like a delay time or a bass voice: read once, here, and
-  // fixed for the length of this playback or render. Only the knobs move live (see `writeFxRack`
-  // in the per-beat block below) — changing a slot's type is heard on the next Play, the same as
-  // changing the delay time is.
+  /* Which type ids each bus's rack needs to be *built* with. A section can now run a genuinely
+     different insert type from the song's own, live, at a boundary (see `makeFxMultiSlot` in
+     audio.js and `writeFxRack` in the per-beat block below) — but only among ids that were built.
+     So every bus builds one chain per id that could be wanted for it *anywhere in the current
+     song*: the song's own default plus every section override stored under any key — instance or
+     letter, whether or not that key belongs to the arrangement currently loaded, since a saved
+     override on a section nobody has open right now must still work the moment it's scrolled back
+     into view. Deduped, "off" always included as a safe fallback. A type nothing in the song asked
+     for before this Play/render started has no chain and so needs a restart to be heard, exactly
+     like a delay time or a bass voice always has. Master has no per-section entry — it colours the
+     whole song by design — so there is nothing to union: its set is just its own two slot types. */
   const FR = fxRackRef.current || {};
-  const fxIdsOf = bus => {
+  const SFXAll = secFxRef.current || {};
+  const fxIdsFor = bus => {
+    const song = FR[bus] || [];
+    if (bus === "master")
+      return [0, 1].map(si => Array.from(new Set([(song[si] || {}).type || "off", "off"])));
+    const sets = [new Set(["off"]), new Set(["off"])];
+    [0, 1].forEach(si => sets[si].add((song[si] || {}).type || "off"));
+    for (const key in SFXAll) {
+      const busSlots = SFXAll[key] && SFXAll[key][bus];
+      if (!busSlots) continue;
+      [0, 1].forEach(si => sets[si].add((busSlots[si] || {}).type || "off"));
+    }
+    return sets.map(s => Array.from(s));
+  };
+  // which id starts audible in each slot — always the song's own current type, so a fresh Play or
+  // render sounds exactly like the Sound tab's rack until a section's own tick says otherwise
+  const fxActiveFor = bus => {
     const s = FR[bus] || [];
-    return [(s[0] && s[0].type) || "off", (s[1] && s[1].type) || "off"];
+    return [(s[0] || {}).type || "off", (s[1] || {}).type || "off"];
   };
   // Stems are pre-master: the limiter is a compressor, and compression is not linear, so
   // limiting each stem on its own could never add back up to a limited mix. Bypassing it means
@@ -2951,7 +2972,7 @@ export default function ProgressionWheel() {
   // this exact mix, and a nonlinear insert (compressor, bitcrusher) baked into every stem could
   // not add back up to what the rack does on the full signal, so stems get the clean, pre-rack
   // signal and a producer applies their own master processing in the DAW, same as with the limiter.
-  fxMaster = makeFxRack(ctx, fxIdsOf("master"), fxT0);
+  fxMaster = makeFxMultiRack(ctx, ...fxIdsFor("master"), fxT0, fxActiveFor("master"));
   autoGain.connect(fxMaster.input); fxMaster.output.connect(limiter);
   }
   // section-move filter: a build sweeps the whole pitched mix including its reverb tail, which is
@@ -3002,14 +3023,14 @@ export default function ProgressionWheel() {
      handed in as `fx`. Slotted between the chain's own duck and `out` — after the filter/drive/
      pan/duck stage every track already has, so an insert here never disturbs the sidechain-duck,
      delay-send or reverb-send taps above it, all of which are taken off `tail`, before the duck. */
-  const fxDrums = makeFxRack(ctx, fxIdsOf("drums"), fxT0);
-  const fxPerc = makeFxRack(ctx, fxIdsOf("perc"), fxT0);
-  const fxBass = makeFxRack(ctx, fxIdsOf("bass"), fxT0);
-  const fxPad = makeFxRack(ctx, fxIdsOf("pad"), fxT0);
+  const fxDrums = makeFxMultiRack(ctx, ...fxIdsFor("drums"), fxT0, fxActiveFor("drums"));
+  const fxPerc = makeFxMultiRack(ctx, ...fxIdsFor("perc"), fxT0, fxActiveFor("perc"));
+  const fxBass = makeFxMultiRack(ctx, ...fxIdsFor("bass"), fxT0, fxActiveFor("bass"));
+  const fxPad = makeFxMultiRack(ctx, ...fxIdsFor("pad"), fxT0, fxActiveFor("pad"));
   // one shared rack for every melody part — connected once, here, to the reverb bus every part's
   // chain already fed straight into; each part's own duck fans into `fxLead.input` below, in
   // chainOf, so six parts get one rack and one set of knobs rather than six independent ones
-  const fxLead = makeFxRack(ctx, fxIdsOf("lead"), fxT0);
+  const fxLead = makeFxMultiRack(ctx, ...fxIdsFor("lead"), fxT0, fxActiveFor("lead"));
   fxLead.output.connect(music);
   const mkChain = (out, fx) => {
     const inG = ctx.createGain(); inG.gain.value = 1;
@@ -3040,8 +3061,13 @@ export default function ProgressionWheel() {
   const trBass = mkChain(bduck, fxBass);
   trBass.in.gain.value = BASS_MAKEUP;              // audible before the first beat's applyFx runs
   const trPad = mkChain(padDuck, fxPad);
+  // which id is currently audible in each bus/slot — starts matching what was just built (the
+  // song's own type), and is the thing the per-beat block below compares each tick's resolved
+  // section type against, switching (`writeFxRack`) when they disagree
+  const fxActiveId = { drums: fxActiveFor("drums"), perc: fxActiveFor("perc"), bass: fxActiveFor("bass"),
+    pad: fxActiveFor("pad"), lead: fxActiveFor("lead"), master: fxActiveFor("master") };
   const m = { ctx, master, music, cduck, chordBus, bduck, padDuck, wetDuck, filt, mhp,
-    trDrums, trPerc, trBass, trPad, fxLead, fxMaster,
+    trDrums, trPerc, trBass, trPad, fxLead, fxMaster, fxActiveId,
     bassLp: trBass.lp, percLp: trPerc.lp, padLp: trPad.lp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
     lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
     partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
@@ -3378,30 +3404,37 @@ export default function ProgressionWheel() {
         applyFx(m.trPerc, F3.perc, "cutperc");
         applyFx(m.trBass, F3.bass, "cutbass", BASS_MAKEUP);
         applyFx(m.trPad, F3.pad, "cutpad");
-        /* The insert rack's own knobs, same cadence as the track panel above. Only the numbers move
-           here — a slot's *type* was fixed back in buildGraph, so a slot whose type was changed
-           since Play still writes into the nodes that were actually built for it; `write` falls
-           back to its own defaults for any key it does not recognise, so that is silent rather than
-           wrong-sounding, and the change is heard cleanly on the next Play. What *does* vary tick
-           to tick is which params are written: a section with its own copy of a bus feeds its own
-           numbers into the same nodes the song's rack built, exactly the instance-then-letter
-           fallback secDrum/secPadVoice already resolve `tInst`/`tBase` against above. Master has no
-           per-section entry — it colours the whole song by design — so it always reads the song's
-           own rack. */
-        const writeFxRack = (rack, slots) => {
-          if (!rack) return;
+        /* The insert rack's own knobs, same cadence as the track panel above — plus, now, the
+           active *type* itself. Each bus's rack was built (back in buildGraph) with one node chain
+           per type id the song could need for that bus/slot, every chain silent except the one
+           `m.fxActiveId` already names. Resolving which type the currently-sounding section wants
+           — the same instance-then-letter-then-song fallback secDrum/secPadVoice already resolve
+           `tInst`/`tBase` against above — and finding it differs from what is actually audible
+           switches the rack onto it (`setActive`, a short click-free crossfade — see
+           `makeFxMultiSlot` in audio.js); only ids the rack was actually built with can be switched
+           to, so a type nothing in the song asked for before this Play/render started stays
+           unreachable until a restart, the same limitation a delay time or a bass voice already has.
+           Params are then written into whichever id is now active every tick, switch or not, so a
+           moved slider is heard immediately whichever type is playing. Master has no per-section
+           entry — it colours the whole song by design — so it always reads the song's own rack. */
+        const writeFxRack = (rack, active, slots) => {
+          if (!rack || !active) return;
           const S = slots || [];
-          rack.slots.forEach((slot, si) => slot.write(t, S[si] || {}));
+          rack.slots.forEach((slot, si) => {
+            const want = (S[si] && S[si].type) || "off";
+            if (want !== active[si] && slot.ids.includes(want)) { slot.setActive(want, t); active[si] = want; }
+            slot.write(active[si], t, S[si] || {});
+          });
         };
         const FXR = fxRackRef.current || {}, SFX = secFxRef.current || {};
         const secFxOf = bus => (tInst != null && SFX[tInst] && SFX[tInst][bus])
           || (tBase != null && SFX[tBase] && SFX[tBase][bus]) || null;
-        writeFxRack(m.trDrums.fx, secFxOf("drums") || FXR.drums);
-        writeFxRack(m.trPerc.fx, secFxOf("perc") || FXR.perc);
-        writeFxRack(m.trBass.fx, secFxOf("bass") || FXR.bass);
-        writeFxRack(m.trPad.fx, secFxOf("pad") || FXR.pad);
-        writeFxRack(m.fxLead, secFxOf("lead") || FXR.lead);
-        writeFxRack(m.fxMaster, FXR.master);
+        writeFxRack(m.trDrums.fx, m.fxActiveId.drums, secFxOf("drums") || FXR.drums);
+        writeFxRack(m.trPerc.fx, m.fxActiveId.perc, secFxOf("perc") || FXR.perc);
+        writeFxRack(m.trBass.fx, m.fxActiveId.bass, secFxOf("bass") || FXR.bass);
+        writeFxRack(m.trPad.fx, m.fxActiveId.pad, secFxOf("pad") || FXR.pad);
+        writeFxRack(m.fxLead, m.fxActiveId.lead, secFxOf("lead") || FXR.lead);
+        writeFxRack(m.fxMaster, m.fxActiveId.master, FXR.master);
       }
       // section moves: fire once, on the downbeat of each section instance, scheduling the whole
       // sweep across that instance's length. Guarded by the bar index so a re-entered bar (or the
@@ -5293,10 +5326,13 @@ export default function ProgressionWheel() {
                closed by default like every other sub-panel. Closed, it reads "song default" or
                "● own"; opened, a checkbox switches the section onto its own copy — seeded from
                whatever it currently inherits — and from there the two rows are `fxSlotRow`, the
-               exact renderer trackFxRow's FX tab draws with. A section can only vary a slot's
-               *amount*, not its type (`fxSlotRow`'s `lockType`): the type is structural, fixed for
-               the whole song back in buildGraph, so the type shown always follows the song's own
-               rack rather than whatever is stored on the section's copy. */
+               exact renderer trackFxRow's FX tab draws with, editable exactly the same way: a
+               section can pick its own type here, not just its own amount, and hear it hold across
+               the section boundary as playback crosses in and out (see `writeFxRack` in the
+               per-beat block, and `makeFxMultiSlot` in audio.js). The one catch is a type nothing
+               in the song asked for before the last Play/render started — that has no node chain
+               built for it yet, so picking it live needs a restart to be heard, same as any other
+               structural choice in this file. */
             const secFxPanel = (bus, name) => {
               const panelKey = d.key + "|" + bus;
               const isOpen = !!openSecFx[panelKey];
@@ -5321,17 +5357,17 @@ export default function ProgressionWheel() {
                 {gridBar(FX_BUS_ICON[bus] || "🎚", name + " FX", isOpen,
                   () => setOpenSecFx({ ...openSecFx, [panelKey]: !isOpen }), own ? "● own" : "song default",
                   "This " + (view.groove ? "groove" : d.word.toLowerCase()) + "'s own copy of the " + name.toLowerCase()
-                    + " insert rack. Off, it plays whatever the Sound tab's rack currently is; on, it can dial its own amount — the Drop hit harder than the Breakdown.")}
+                    + " insert rack. Off, it plays whatever the Sound tab's rack currently is; on, it can pick its own type and dial its own amount — Chorus on the bass in the Drop, Bitcrusher in the Breakdown.")}
                 {isOpen && (
                   <div style={{ marginTop:6 }}>
                     <label className="keytag" style={{ margin:"0 0 6px", display:"inline-flex", gap:5, alignItems:"center", cursor:"pointer" }}
-                      title="On, this section dials its own amount for this bus, starting from whatever the song default currently is. Off, it plays the song default live — moving the Sound tab's sliders moves this section too.">
+                      title="On, this section picks its own type and dials its own amount for this bus, starting from whatever the song default currently is. Off, it plays the song default live — moving the Sound tab's sliders, or picking a new type there, moves this section too.">
                       <input type="checkbox" checked={!!own} onChange={e => toggleOwn(e.target.checked)} />
                       Use this section's own FX
                     </label>
                     {own ? <>
-                      {fxSlotRow(own, 0, commit, (song[0] || {}).type || "off")}
-                      {fxSlotRow(own, 1, commit, (song[1] || {}).type || "off")}
+                      {fxSlotRow(own, 0, commit)}
+                      {fxSlotRow(own, 1, commit)}
                     </> : (
                       <p className="keytag" style={{ margin:0 }}>
                         Following the song default — {namesOf(song).length ? namesOf(song).join(" · ") : "both slots off"}.
@@ -7343,9 +7379,6 @@ export default function ProgressionWheel() {
         .secdrum { display:inline-flex; align-items:center; gap:4px; font-size:var(--fs-sm); }
         .fxsel { font-size:var(--fs-sm); padding:3px 6px; border-radius:var(--r-sm); background:var(--surface-2); color:var(--text);
           border:1px solid var(--line-2); max-width:150px; }
-        /* A section's FX slot whose type follows the song default — same footprint as the .fxsel
-           dropdown it stands in for, but plain text: there is nothing to choose here. */
-        .fxlocked { font-size:var(--fs-sm); padding:3px 6px; color:var(--muted); }
         .secdrum select { font-size:var(--fs-sm); padding:2px 5px; border-radius:var(--r-sm); background:var(--surface-2); color:var(--text);
           border:1px solid var(--line-2); max-width:130px; }
         .mbar { font-size:var(--fs-sm); font-weight:700; border-radius:var(--r-sm); text-align:center; padding:2px 0; margin:0 1px 2px; white-space:nowrap; overflow:hidden; }

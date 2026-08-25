@@ -1098,13 +1098,18 @@ function driveCurve(amt) {
 /* ===== insert effects =====
    A two-slot rack — chosen once per track/part bus and once more on the master path — for
    processing the existing chains don't already carry: modulation (chorus/flanger/phaser), lo-fi
-   destruction, dynamics and stereo width. A slot's *type* is structural, the same as a delay time
-   or a bass voice: fixed for the length of a playback or a render (`buildGraph` reads it once),
-   and only its knobs move live, written every beat exactly like the track panel's own drive/filter.
-   "Off" builds a single unity gain and nothing else — no added node, no added latency, so a song
-   that never opens the FX panel is bit-for-bit what it always was. Every other type is built once,
-   eagerly, when its rack is made (never on first note through it), so a chorus/flanger/phaser's LFO
-   starts at the same `t0` every other LFO in the graph does and a stem's modulation phase still
+   destruction, dynamics and stereo width. `makeFxSlot`/`makeFxRack` build exactly one type per
+   slot — used directly by the test harness below and wherever only one type is ever needed.
+   `progression-wheel.jsx`'s `buildGraph` instead uses `makeFxMultiSlot`/`makeFxMultiRack`: every
+   bus is built with one chain per type id the *song* could need there (its own default plus every
+   section's own override), so which one a section hears can switch live, at a boundary, rather
+   than being fixed for the whole render — a type nothing in the song asked for before Play/render
+   started still needs a restart, since nothing built its chain. Only the knobs of the audible chain
+   move live beat to beat, exactly like the track panel's own drive/filter. "Off" builds a single
+   unity gain and nothing else — no added node, no added latency, so a song that never opens the FX
+   panel is bit-for-bit what it always was. Every other type is built once, eagerly, when its rack
+   is made (never on first note through it), so a chorus/flanger/phaser's LFO starts at the same
+   `t0` every other LFO in the graph does and a stem's modulation phase still
    lines up with the mix it came from. */
 const FX_TYPES = [
   ["off", "Off", "No insert here — the signal passes through untouched, at no extra cost"],
@@ -1352,6 +1357,63 @@ function makeFxRack(ctx, ids, t0) {
   slots[0].output.connect(slots[1].input);
   return { input: slots[0].input, output: slots[1].output, slots };
 }
+/* A multi-type slot: every id in `ids` (deduplicated, "off" always included as a safe fallback)
+   is built once — one whole `makeFxSlot` chain each — and wired in parallel between one shared
+   input gain and one shared output gain, each chain gated by its own `GainNode`. This is the same
+   "build everything the song could need, gate what is not currently in use" idiom the melody-part
+   LFOs already use (see the comment beside `mkChain`'s `lfo()` in progression-wheel.jsx): every
+   chain exists from the first beat, so a chorus's LFO phase — like theirs — starts at the same
+   `t0` whichever chain ends up audible when, and a stem bounce lines up with the mix it came from.
+   Exactly one chain is audible at a time (`active`); `setActive(id, t)` ramps the outgoing chain's
+   gate to 0 and the incoming one to 1 over a short, click-free window — the mechanism that lets
+   two sections on the same bus sound genuinely different effect types as playback crosses their
+   boundary, not just different amounts of the same one. `write(id, t, params)` writes params into
+   one specific chain's own nodes regardless of whether that chain is the audible one right now, so
+   a switch never lands on stale values — the incoming chain is already current before its gate
+   opens. Requesting an id this slot was not built with (a type nothing in the song asked for
+   before the rack was built) is a no-op in `setActive` and falls back to "off" in `write`; the
+   caller (see `writeFxRack` in progression-wheel.jsx) only calls `setActive` with ids `ids`
+   actually contains, and documents the resulting "needs a restart" limitation. */
+function makeFxMultiSlot(ctx, ids, t0, activeId) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const list = Array.from(new Set([...(ids || []), "off"]));
+  const chains = {};
+  let active = list.includes(activeId) ? activeId : "off";
+  for (const id of list) {
+    const slot = makeFxSlot(ctx, id, t0);
+    const gate = ctx.createGain(); gate.gain.value = id === active ? 1 : 0;
+    input.connect(slot.input); slot.output.connect(gate); gate.connect(output);
+    chains[id] = { slot, gate };
+  }
+  // 15ms: audibly instant (well under duckAt's already-short 6ms dip is too fast to guarantee a
+  // gate crossing zero never clicks when the two chains' instantaneous values disagree; this is
+  // long enough to smooth that discontinuity and short enough that a switch on a beat is inaudible
+  // as its own event) — a section boundary, not a fade the ear is meant to notice.
+  const RAMP = 0.015;
+  const setActive = (id, t) => {
+    if (!chains[id] || id === active) return;
+    const from = chains[active], to = chains[id];
+    from.gate.gain.cancelScheduledValues(t);
+    from.gate.gain.setValueAtTime(1, t);
+    from.gate.gain.linearRampToValueAtTime(0, t + RAMP);
+    to.gate.gain.cancelScheduledValues(t);
+    to.gate.gain.setValueAtTime(0, t);
+    to.gate.gain.linearRampToValueAtTime(1, t + RAMP);
+    active = id;
+  };
+  const write = (id, t, params) => { (chains[id] || chains.off).slot.write(t, params); };
+  return { input, output, ids: list, chains, activeId: () => active, setActive, write };
+}
+// two multi-slots in series — the same shape as `makeFxRack` (`{ input, output, slots }`) so call
+// sites read the same way, just with each `slots[i]` a `makeFxMultiSlot` instead of one fixed type.
+// `activeIds` (`[id0, id1]`) is which id starts audible in each slot — the song's own current type,
+// so a fresh Play or render sounds like the Sound tab's rack until a section says otherwise.
+function makeFxMultiRack(ctx, idsSlot0, idsSlot1, t0, activeIds) {
+  const A = activeIds || [];
+  const slots = [makeFxMultiSlot(ctx, idsSlot0, t0, A[0]), makeFxMultiSlot(ctx, idsSlot1, t0, A[1])];
+  slots[0].output.connect(slots[1].input);
+  return { input: slots[0].input, output: slots[1].output, slots };
+}
 
 /* No envelope shaping: nothing added to the attack, every stage at its own length. A part with the
    Envelope group untouched passes this, and the voice is exactly what it always was. */
@@ -1499,4 +1561,4 @@ function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
   leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 3.0) * vel });
 }
 
-export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeFxMultiRack, makeFxMultiSlot, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
