@@ -260,7 +260,7 @@ for (const kit of ["acoustic", "909", "808"]) {
   const spec = {
     bpm: 128, tsNum: 4, tsDen: 4,
     tracks: [
-      { name: "Chords", color: M.ALS_COLORS.chords, vol: 0.85, end: 8,
+      { name: "Chords", color: M.ALS_COLORS.chords, vol: 0.85, instrument: true, end: 8,
         notes: [{ t: 0, dur: 4, note: 60, vel: 78 }, { t: 4, dur: 4, note: 64, vel: 78 }] },
       { name: "Drums & <bells>", color: M.ALS_COLORS.drums, vol: 0.6, pan: -70, end: 8,
         notes: [{ t: 0, dur: 0.25, note: 36, vel: 92 }, { t: 1, dur: 0.25, note: 38, vel: 92 }] },
@@ -312,12 +312,15 @@ for (const kit of ["acoustic", "909", "808"]) {
      NextPointeeId, the watermark Live allocates from. The handful of tags Live itself numbers per
      list rather than per document are exempt; that list was measured from a real set. */
   {
-    const LOCAL = ["ClipSlot", "AutomationLane", "TrackSendHolder", "TakeLane", "MidiClip",
-                   "KeyTrack", "RemoteableTimeSignature", "Scene", "SendPreBool", "Locator"];
+    /* The document's own ids, named the way src/als.js names them: the tags that carry a different
+       id in every track of a real Live set. A device's own place in its chain, a clip slot, an
+       automation lane — those are numbered within their list and repeat from track to track. */
+    const isDoc = tag => tag === "MidiTrack" || tag === "Pointee"
+      || /(?:AutomationTarget|ModulationTarget)$/.test(tag) || /^ControllerTargets\./.test(tag);
     const ids = [];
     for (const t of trackXml)
       for (const m of t.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g))
-        if (!LOCAL.includes(m[1])) ids.push({ tag: m[1], id: Number(m[3]) });
+        if (isDoc(m[1])) ids.push({ tag: m[1], id: Number(m[3]) });
     const seen = new Set(), dupes = new Set();
     for (const { id } of ids) (seen.has(id) ? dupes : seen).add(id);
     if (dupes.size) problems.push(`als: ${dupes.size} id(s) shared between tracks — Live calls that an invalid pointee id (${[...dupes].slice(0, 4).join(", ")})`);
@@ -327,11 +330,28 @@ for (const kit of ["acoustic", "909", "808"]) {
     if (!npi) problems.push("als: no NextPointeeId");
     else {
       const all = [...xml.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g)]
-        .filter(m => !LOCAL.includes(m[1])).map(m => Number(m[3]));
+        .filter(m => isDoc(m[1])).map(m => Number(m[3]));
       const over = all.filter(id => id >= npi);
       if (over.length) problems.push(`als: ${over.length} id(s) at or above NextPointeeId ${npi} (max ${Math.max(...all)})`);
       if (npi <= 1000) problems.push("als: NextPointeeId has to clear 1000");
     }
+  }
+  /* A pitched track arrives with an instrument on it, because a track with no device is silent in
+     Live however good its notes are — the meters move and nothing comes out, which is exactly what
+     the first working export did. The drums stay empty on purpose: a Drum Rack's pads are sample
+     references into the library of whoever saved them, and would arrive broken anywhere else. */
+  {
+    const chain = t => t.slice(t.lastIndexOf("<Devices>"), t.lastIndexOf("</Devices>"));
+    const withInst = chain(trackXml[0]), without = chain(trackXml[1]);
+    if (withInst.length < 500) problems.push("als: the pitched track has no instrument on it");
+    if (/<Devices>.{0,20}</.test(without) === false && without.length > 40)
+      problems.push("als: a track that asked for no instrument got one anyway");
+    // the instrument brings its own automation targets, and a clone reusing them is the invalid
+    // pointee id all over again — so they have to be renumbered with everything else
+    const targets = [...withInst.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g)]
+      .filter(m => /(?:AutomationTarget|ModulationTarget)$/.test(m[1])).map(m => Number(m[3]));
+    if (targets.length < 20) problems.push(`als: the instrument brought only ${targets.length} automation targets — it is not the real device`);
+    if (new Set(targets).size !== targets.length) problems.push("als: the instrument's automation targets repeat");
   }
   /* Live keeps an arrangement clip in two places — the take lane and the arranger automation — and
      writes the same clip into both. One copy is a clip that shows on the timeline and vanishes from

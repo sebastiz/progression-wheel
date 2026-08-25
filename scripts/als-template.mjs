@@ -102,12 +102,33 @@ let TRACK = clean;
   TRACK = TRACK.slice(0, pan.i) + swapValue(pan.text, "Manual", "%PAN%")
         + TRACK.slice(pan.i + pan.text.length);
   TRACK = swap(TRACK, "Sends", "<Sends />");                      // no returns, so no sends
+  // the instrument chain: the last Devices list in the track, and the one an instrument goes in
+  {
+    const at = TRACK.lastIndexOf("<Devices />");
+    if (at < 0) throw new Error("the reference's clean track has devices on it — pick one without");
+    TRACK = TRACK.slice(0, at) + "<Devices>%DEVICES%</Devices>" + TRACK.slice(at + "<Devices />".length);
+  }
   const takeLanes = elem(clipSrc, "TakeLanes");
   TRACK = swap(TRACK, "TakeLanes",
     takeLanes.text.replace(block(takeLanes.text, takeLanes.text.indexOf("<MidiClip Id=")), "%CLIP%"));
   const timeable = elem(clipSrc, "ClipTimeable");
   TRACK = swap(TRACK, "ClipTimeable",
     timeable.text.replace(block(timeable.text, timeable.text.indexOf("<MidiClip Id=")), "%CLIP%"));
+}
+
+/* An instrument to put on the melodic tracks, so an exported set makes a sound the moment it opens
+   rather than sitting there silent with the meters moving. Lifted from whichever track in the
+   reference carries a plain instrument — no rack, because a Drum Rack's pads are sample references
+   into somebody else's library and would arrive broken on anyone's machine but the one that saved
+   them. The drums keep their "drop a Drum Rack on this" note for the same reason. */
+const INSTRUMENT_TAGS = ["Drift", "UltraAnalog", "Operator", "InstrumentVector", "Meld"];
+let INSTRUMENT = "";
+for (const tag of INSTRUMENT_TAGS) {
+  const i = xml.indexOf(`<${tag} `) >= 0 ? xml.indexOf(`<${tag} `) : xml.indexOf(`<${tag}>`);
+  if (i < 0) continue;
+  INSTRUMENT = block(xml, i);
+  console.log(`instrument taken from <${tag}> (${INSTRUMENT.length} chars)`);
+  break;
 }
 
 /* the document around them. The reference's own tracks, sends, grooves and playhead go; its shell
@@ -158,6 +179,12 @@ const ALS_TRACK = ${lit(TRACK)};
 
 const ALS_CLIP = ${lit(CLIP)};
 
-export { ALS_DOC, ALS_TRACK, ALS_CLIP };
+/* One instrument, for the melodic tracks. A track with no device is silent in Live however good
+   its notes are — the meters move and nothing comes out — so this is what turns an export from a
+   score into something you can press play on. */
+const ALS_INSTRUMENT = ${lit(INSTRUMENT)};
+
+export { ALS_DOC, ALS_TRACK, ALS_CLIP, ALS_INSTRUMENT };
 `);
-console.log(`src/als-template.js written — doc ${tighten(DOC).length}, track ${tighten(TRACK).length}, clip ${tighten(CLIP).length} chars (Live ${head[1]})`);
+console.log(`src/als-template.js written — doc ${tighten(DOC).length}, track ${tighten(TRACK).length}, `
+  + `clip ${tighten(CLIP).length}, instrument ${tighten(INSTRUMENT).length} chars (Live ${head[1]})`);
