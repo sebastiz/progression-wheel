@@ -417,7 +417,8 @@ schedules the whole thing at the section's downbeat: an exponential cutoff envel
 move filter — and on its paired high-pass for the specs that carry an `hp` half (bass draining
 through a build, a telephone section), which every move resets to 20 Hz so one telephone cannot
 thin the section after it — plus the optional riser (noise through a rising bandpass, cut on the
-boundary) and impact (sub boom + crash). The duration passed in is the section instance's own length, so a sweep
+boundary — spanning the last third of the section by default, or the fraction given by `riserSpan`
+for a longer tension build or a short snap cue) and impact (sub boom + crash). The duration passed in is the section instance's own length, so a sweep
 always lands on the boundary and re-times itself when the structure changes. The scheduler fires it
 once per instance, guarded by the bar index so the lookahead can't restack the automation. Cutoffs
 never reach zero because the ramps are exponential.

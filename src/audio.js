@@ -152,15 +152,19 @@ function drumSound(ctx, t, ch, noise, dest, kit, vel = 1) {
    that thin a mix from below rather than darkening it from above. */
 const MOVES = {};
 [
-["",       "— no move —",             null],
-["build",  "Build · filter opens",    { from: 260, to: 16000 }],
-["riser",  "Build + riser",           { from: 260, to: 16000, riser: true }],
-["hpbuild","Build · bass drains away",{ from: 16000, to: 16000, hp: { from: 30, to: 700 } }],
-["drop",   "Drop · slam open + crash",{ from: 16000, to: 16000, impact: true }],
-["fade",   "Fade · filter closes",    { from: 16000, to: 300 }],
-["under",  "Underwater · stays shut", { from: 600, to: 600 }],
-["phone",  "Telephone · mids only",   { from: 2600, to: 2600, hp: { from: 560, to: 560 } }],
-["swell",  "Swell · opens then shuts",{ from: 400, to: 400, peak: 14000 }],
+["",         "— no move —",                  null],
+["build",    "Build · filter opens",         { from: 260, to: 16000 }],
+["riser",    "Build + riser",                { from: 260, to: 16000, riser: true }],
+["longriser","Build · long tension riser",   { from: 800, to: 16000, riser: true, riserSpan: 0.85 }],
+["snaprise", "Build · snap riser (final bar)",{ from: 5000, to: 16000, riser: true, riserSpan: 0.1 }],
+["hpbuild",  "Build · bass drains away",     { from: 16000, to: 16000, hp: { from: 30, to: 700 } }],
+["drop",     "Drop · slam open + crash",     { from: 16000, to: 16000, impact: true }],
+["hpdrop",   "Drop · sub slams in",          { from: 16000, to: 16000, hp: { from: 700, to: 30 }, impact: true }],
+["crashonly","Drop · crash only (already open)",{ from: 18000, to: 18000, impact: true }],
+["fade",     "Fade · filter closes",         { from: 16000, to: 300 }],
+["under",    "Underwater · stays shut",      { from: 600, to: 600 }],
+["phone",    "Telephone · mids only",        { from: 2600, to: 2600, hp: { from: 560, to: 560 } }],
+["swell",    "Swell · opens then shuts",     { from: 400, to: 400, peak: 14000 }],
 ].forEach(([id, name, spec]) => { MOVES[id] = { name, spec }; });
 const FILTER_OPEN = 18000;                       // "no filtering", still inside Nyquist at 44.1k
 
@@ -204,8 +208,9 @@ function applyMove(ctx, filt, hpf, spec, t, dur, noise, dest) {
   }
   if (spec.riser) {
     // noise sweeping up through the last two bars (or the last third of a short section),
-    // swelling as it goes — the tension that makes the drop land
-    const rise = Math.min(dur * 0.34, 4);
+    // swelling as it goes — the tension that makes the drop land. `riserSpan` overrides how
+    // much of the section it runs across, for a longer tension build or a short snap cue.
+    const rise = spec.riserSpan != null ? dur * spec.riserSpan : Math.min(dur * 0.34, 4);
     const t0 = t + dur - rise;
     const n = ctx.createBufferSource(); n.buffer = noise; n.loop = true;
     const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4;
