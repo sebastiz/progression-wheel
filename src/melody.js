@@ -269,6 +269,72 @@ const modOf = (ly, k) => {
 // settings is visible without opening it
 const modCount = ly => MODS.reduce((n, m) => n + (modOf(ly, m.k) !== m.dflt ? 1 : 0), 0);
 
+/* ---- part moves: an individual instrument's pattern changing across the section ----
+   A section Move (MOVES, audio.js) shapes the master mix — one filter, one envelope, for the whole
+   group. A part move is the same idea one layer down: it linearly ramps one or more of a part's own
+   mods from a start value to an end value across the section instance's own length, so an arp speeds
+   up into a drop, a Euclidean pattern fills back in, a gate walks off the beat. Keyed by the same id
+   `secMove` already stores, so choosing "Build · arp speeds up" from the group's one Move dropdown
+   does both jobs — nothing new to wire up in the UI, and every id here also needs an entry in MOVES
+   (audio.js), even a silent one, or it never appears in that dropdown at all.
+
+   `through` is the same section-relative fraction Swell (the `ramp` mod, above) already measures
+   itself by — 0 at the section's own first bar, 1 at its last — so a part move re-times itself
+   automatically when the arrangement changes, exactly as Swell does. `enable` turns on the one mod a
+   ramp needs to be heard (arp for arpRate, gate for gateLen) only for parts that do not already have
+   it on: a part that is already arpeggiating, or already gated, keeps its own pattern and simply
+   inherits the move's ramp rather than having it switched on twice. */
+const rampAt = (from, to, mb, nbars) => {
+  const through = nbars > 1 ? Math.max(0, Math.min(1, mb / (nbars - 1))) : (mb ? 1 : 0);
+  return from + (to - from) * through;
+};
+
+const PART_MOVES = {
+  arpspeedup:    { arpRate: { from: 1, to: 8, round: true } },
+  arpforce:      { enable: { arp: "up" }, arpRate: { from: 2, to: 8, round: true } },
+  thicken:       { euclid: { from: 4, to: 0, round: true } },
+  thinout:       { euclid: { from: 0, to: 5, round: true } },
+  stutterbuild:  { ratchet: { from: 1, to: 4, round: true } },
+  stutterunwind: { ratchet: { from: 4, to: 1, round: true } },
+  gatetighten:   { enable: { gate: "tri" }, gateLen: { from: 16, to: 9, round: true } },
+  chaosrise:     { rpitch: { from: 0, to: 60, round: true }, octJump: { from: 0, to: 40, round: true } },
+  echocascade:   { echo: { from: 0, to: 4, round: true }, echoFade: { from: 70, to: 20, round: true } },
+  megabuild:     { enable: { arp: "up" }, arpRate: { from: 2, to: 8, round: true },
+                   euclid: { from: 4, to: 0, round: true }, ratchet: { from: 1, to: 3, round: true } },
+};
+// a layer patched for this tick's position in the section — every other reader (colFor, playArp,
+// applyMods…) goes on calling modOf as if the ramp were just another saved setting
+const partMoveOf = (ly, id, mb, nbars) => {
+  const spec = PART_MOVES[id];
+  if (!spec) return ly;
+  const patch = {};
+  if (spec.enable) for (const [k, v] of Object.entries(spec.enable)) if (!modOf(ly, k)) patch[k] = v;
+  for (const [k, r] of Object.entries(spec)) {
+    if (k === "enable") continue;
+    const v = rampAt(r.from, r.to, mb, nbars);
+    patch[k] = r.round ? Math.round(v) : v;
+  }
+  return { ...ly, ...patch };
+};
+
+/* A generative drum fill: rather than a hand-authored bar-by-bar pattern (a section's own written
+   drum grid), this adds extra hits on one channel, spread by the same Euclidean spacing `euclid`
+   already uses on a melody part — sparse at the section's first bar, packed by its last — without
+   silencing whatever pattern the section already plays. `from`/`to` are hit counts out of `n`, the
+   bar's own tick count, so the fill always fits the bar however the subdivision is set; unlike
+   `euclid`, 0 hits here is genuinely off rather than "play everything" — a fill has nothing to thin
+   out from, only hits to add. */
+const DRUM_MOVES = {
+  snaproll:    { ch: "S", from: 0, to: 16 },
+  kickstutter: { ch: "K", from: 0, to: 10 },
+  hatrun:      { ch: "H", from: 0, to: 16 },
+  megabuild:   { ch: "S", from: 0, to: 12 },
+};
+const fillHitAt = (from, to, mb, nbars, step, n) => {
+  const k = Math.round(rampAt(from, to, mb, nbars));
+  return k > 0 && euclidHit(k, n, step);
+};
+
 /* Arpeggiators. Each mode turns a chord's notes into an order to play them in — `seq(n)` returns
    indices into the pooled notes (the chord's voicing, repeated up through `arpOct` octaves). The
    step index is derived from the absolute tick rather than a running counter, so a render and a
@@ -1418,4 +1484,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7 };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
