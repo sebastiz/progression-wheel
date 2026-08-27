@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -1771,7 +1771,11 @@ export default function ProgressionWheel() {
     });
     return out;
   }, [sections.insts, secMove]);
-  moveRef.current = { moves: secMove, cues, span: moveSpan };
+  // each instance's own written bar count, by key — how a part move or a drum fill measures its
+  // ramp across the instance, the same way Swell measures itself across a melody part's own bars
+  const instBars = useMemo(() => Object.fromEntries(sections.insts.map(d => [d.key, d.nbars])),
+    [sections.insts]);
+  moveRef.current = { moves: secMove, cues, span: moveSpan, instBars };
   // key-independent chord identity, per pool: base slot / contrast slot / numeral position / insert tag
   const chordId = (c, i) => c.inserted ? c.baseName
     : c.c2 ? "c" + c.bi
@@ -3398,10 +3402,12 @@ export default function ProgressionWheel() {
             else percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
           }
       }
+      let b = null;                                     // this bar's struct entry, kept for the drum fill below
+      const inStruct = struct && struct.length && structBar >= 0 && !gvLoop;
+      if (inStruct) b = struct[structBar];
       const resolveDrumPat = (inst, base, ground, glob) => {
         let pat = glob;
-        if (struct && struct.length && structBar >= 0 && !gvLoop) {   // a section can override with its own kit
-          const b = struct[structBar];
+        if (inStruct) {   // a section can override with its own kit
           const sd = b ? ((inst != null && secDrumRef.current[inst])
             || (base != null ? secDrumRef.current[base] : "")) : "";
           if (sd) pat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
@@ -3585,7 +3591,19 @@ export default function ProgressionWheel() {
               maxPre: c.maxPre, maxPost: c.maxPost });
         }
       }
-      const dstep = sampleAt(dpat, i, L);          // the drum pattern resampled onto the bar's ticks
+      let dstep = sampleAt(dpat, i, L);            // the drum pattern resampled onto the bar's ticks
+      // a drum move adds extra hits on one channel, on top of whatever this section already plays —
+      // see DRUM_MOVES in melody.js. Only live inside an arrangement, same as a section move itself.
+      if (b) {
+        const dmId = (b.inst != null && moveRef.current.moves[b.inst])
+          || (b.base != null && moveRef.current.moves[b.base]) || "";
+        const dm = DRUM_MOVES[dmId];
+        if (dm) {
+          const dmNbars = (moveRef.current.instBars && b.inst != null && moveRef.current.instBars[b.inst]) || 1;
+          if (fillHitAt(dm.from, dm.to, b.mb, dmNbars, i, L))
+            dstep = dstep ? (dstep.includes(dm.ch) ? dstep : dstep + dm.ch) : dm.ch;
+        }
+      }
       const accent = accentAt(i, ticksPerBeat);    // lean on the pulse rather than hitting flat
       const kickNow = !!dstep && /[KB]/.test(dstep);
       if (dstep) {
@@ -3622,7 +3640,7 @@ export default function ProgressionWheel() {
       }
       const mel = meloRef.current;
       if (mel) {
-        let sym = null, mb = 0;
+        let sym = null, mb = 0, moveId = "";
         if (gvLoop && mel.bySym[GROOVE]) {
           sym = GROOVE;
           const nb = (mel.bySym[GROOVE].layers[0].bars.length) || 1;
@@ -3630,12 +3648,19 @@ export default function ProgressionWheel() {
         } else if (struct && struct.length) {
           const e = struct[structBar];   // same bar the chord engine chose (honours the loop window)
           sym = e.inst; mb = e.mb;
+          // a part move is structure-based, exactly like a section move: no arrangement, no move
+          moveId = (e.inst != null && moveRef.current.moves[e.inst])
+            || (e.base != null && moveRef.current.moves[e.base]) || "";
         } else if (mel.bySym.L1) {
           sym = "L1";
           const nb = (mel.bySym.L1.layers[0].bars.length) || 1;
           mb = Math.floor(m.step / L) % nb;
         }
         const sec = sym && mel.bySym[sym];
+        // the section instance's own written bar count, from the arrangement rather than the
+        // melody's own grid, so a part move's ramp matches the drum fill's exactly
+        const mvNbars = (moveRef.current.instBars && moveRef.current.instBars[sym])
+          || (sec && sec.layers[0] && sec.layers[0].bars.length) || 1;
         // an arpeggiated part has no written notes of its own, so "does this section sound?"
         // has to count arps as well as grids
         if (sec && sec.layers.some(ly => ly.flat.length || ly.arp)) {
@@ -4037,6 +4062,9 @@ export default function ProgressionWheel() {
           const anySolo = sec.layers.some(ly => ly.solo);
           sec.layers.forEach((ly, li) => {
             if (m.stem && !(m.stem.kind === "part" && m.stem.i === li)) return;
+            // a part move patches this tick's read of the layer's own mods — every reader below
+            // (layerFx, modOf, colFor, playArp…) sees it as if the ramp were just another setting
+            if (moveId) ly = partMoveOf(ly, moveId, mb, mvNbars);
             const fx = layerFx(ly);
             const gain = layerGain(ly, anySolo), voice = ly.instr || mel.melInstr;
             /* Build the chain for every part on every tick rather than only when something needs
@@ -8715,7 +8743,9 @@ export default function ProgressionWheel() {
                       its own card below — the second chorus wanting a different build from the
                       first is the normal case, not the exception. */}
                   <label className="secdrum" title={"Arrangement move for every " + g.word.toLowerCase()
-                    + " — a filter sweep, riser or drop, run across the section's whole length. Any single one can override it below."}>
+                    + " — a filter sweep, riser or drop, run across the section's whole length. Some also"
+                    + " reshape an instrument's own pattern as it goes — an arp speeding up, a Euclidean line"
+                    + " filling back in, a snare rolling in on the kit. Any single one can override it below."}>
                     <span className="optlbl"><span aria-hidden="true">🎛</span> Move</span>
                     <select value={secMove[g.base] || ""}
                       onChange={e => setSecMove({ ...secMove, [g.base]: e.target.value })}>

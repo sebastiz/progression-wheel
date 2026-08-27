@@ -936,6 +936,85 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`moves: ${Object.keys(M.MOVES).length} checked, including a 1.2s section`);
 }
 
+/* ---- part moves: an instrument's own pattern ramping across the section ---- */
+{
+  const before = problems.length;
+  // every PART_MOVES / DRUM_MOVES id must have a name in MOVES, or it never appears in the dropdown
+  for (const id of Object.keys(M.PART_MOVES))
+    if (!(id in M.MOVES)) problems.push(`part move "${id}" has no entry in MOVES — it would never appear in the dropdown`);
+  for (const id of Object.keys(M.DRUM_MOVES))
+    if (!(id in M.MOVES)) problems.push(`drum move "${id}" has no entry in MOVES — it would never appear in the dropdown`);
+  // every ramped/enabled key must be a real mod, or a typo silently does nothing all the way to playback
+  for (const [id, spec] of Object.entries(M.PART_MOVES)) {
+    for (const k of Object.keys(spec)) {
+      if (k === "enable") {
+        for (const ek of Object.keys(spec.enable))
+          if (!M.MOD_BY_KEY[ek]) problems.push(`part move ${id}: enables unknown mod "${ek}"`);
+        continue;
+      }
+      if (!M.MOD_BY_KEY[k]) problems.push(`part move ${id}: ramps unknown mod "${k}"`);
+    }
+  }
+  // rampAt lands exactly on `from` at the section's first bar and `to` at its last, at any length —
+  // except a one-bar section, whose only bar (mb 0) is always the first, so it holds at "from" the
+  // same way Swell's own `mb ? 1 : 0` already does for a single-bar section
+  for (const nbars of [1, 2, 4, 8]) {
+    if (M.rampAt(3, 11, 0, nbars) !== 3) problems.push(`rampAt(nbars=${nbars}): does not start at "from"`);
+    const wantEnd = nbars > 1 ? 11 : 3;
+    if (M.rampAt(3, 11, Math.max(0, nbars - 1), nbars) !== wantEnd)
+      problems.push(`rampAt(nbars=${nbars}): last bar is not ${wantEnd}`);
+  }
+  if (M.rampAt(0, 10, 1, 5) !== 2.5) problems.push("rampAt: midpoint interpolation is not linear");
+  if (M.rampAt(0, 10, 99, 4) !== 10) problems.push("rampAt: a bar past the section's own length is not clamped to \"to\"");
+  // an unrecognised id is a true no-op: the same layer object back, nothing patched
+  const ly0 = { arp: "", gate: "" };
+  if (M.partMoveOf(ly0, "not-a-real-move", 0, 4) !== ly0)
+    problems.push("partMoveOf: an unknown move id should return the same layer unchanged");
+  // a gated ramp (no `enable`) never turns the governing mod on — it only speeds up a part that
+  // already chose to arpeggiate, and does nothing audible to one that did not
+  const gated = M.partMoveOf({ arp: "" }, "arpspeedup", 3, 4);
+  if (gated.arp !== "") problems.push("arpspeedup: forced arp on for a part that never asked for one");
+  if (gated.arpRate !== 8) problems.push(`arpspeedup: arpRate at the section's last bar is ${gated.arpRate}, want 8`);
+  // a forced ramp turns its governing mod on only where the part had not already chosen one
+  const forcedOff = M.partMoveOf({ arp: "" }, "arpforce", 0, 4);
+  if (forcedOff.arp !== "up") problems.push(`arpforce: did not enable arp on a part with none (got "${forcedOff.arp}")`);
+  const forcedOwn = M.partMoveOf({ arp: "down" }, "arpforce", 0, 4);
+  if (forcedOwn.arp !== "down") problems.push(`arpforce: overrode a part's own arp pattern (got "${forcedOwn.arp}")`);
+  if (forcedOwn.arpRate !== 2) problems.push(`arpforce: arpRate at the section's first bar is ${forcedOwn.arpRate}, want 2`);
+  if (problems.length === before)
+    console.log(`part moves: ${Object.keys(M.PART_MOVES).length} checked (ramps + enable) — rampAt lands exactly on from/to at every section length`);
+}
+
+/* ---- drum moves: a generative fill, spread by the same Euclid spacing a melody part's Euclid uses ---- */
+{
+  const before = problems.length;
+  const N = 16;
+  // at the section's first bar every fill is silent — a fill starts with nothing to add
+  for (const [id, dm] of Object.entries(M.DRUM_MOVES))
+    for (let step = 0; step < N; step++)
+      if (M.fillHitAt(dm.from, dm.to, 0, 4, step, N))
+        problems.push(`drum move ${id}: already firing at the section's first bar (from=${dm.from})`);
+  // a fill whose "to" reaches the tick count fires on every tick by the section's last bar
+  for (const [id, dm] of Object.entries(M.DRUM_MOVES)) {
+    if (dm.to < N) continue;   // kickstutter and megabuild top out below 16 by design
+    let hits = 0;
+    for (let step = 0; step < N; step++) if (M.fillHitAt(dm.from, dm.to, 3, 4, step, N)) hits++;
+    if (hits !== N) problems.push(`drum move ${id}: only ${hits}/${N} ticks hit at the section's last bar, want every one`);
+  }
+  // density never falls as the section runs on — a roll rolls in, it does not stutter in and out
+  for (const [id, dm] of Object.entries(M.DRUM_MOVES)) {
+    let last = -1;
+    for (let mb = 0; mb < 4; mb++) {
+      const hits = Array.from({ length: N }, (_, step) => M.fillHitAt(dm.from, dm.to, mb, 4, step, N))
+        .filter(Boolean).length;
+      if (hits < last) problems.push(`drum move ${id}: hit count fell from ${last} to ${hits} between bar ${mb - 1} and ${mb}`);
+      last = hits;
+    }
+  }
+  if (problems.length === before)
+    console.log(`drum moves: ${Object.keys(M.DRUM_MOVES).length} checked, silent at the first bar and rolling in monotonically`);
+}
+
 /* ---- transitions: every preset lands on the boundary and puts the mix back where it found it ----
    A transition writes to nodes the whole song plays through, so the failure that matters is not a
    wrong sound — it is a filter left shut or a gain left at zero, which silences everything after
