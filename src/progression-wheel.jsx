@@ -447,6 +447,18 @@ const TRACK_MODS = [TRACK_LVL, ...["cut","res","hp","drive","wob","wobRate","tre
   "pan","apan","apanRate","send","verb","duck"].map(k => MOD_BY_KEY[k])];
 const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
   ["bass", "Bass", "🎸"], ["pad", "Pad", "🌫️"]];
+/* Extra tracks for drums/perc/bass/pad — the same "add a 2nd one" idea melody's layers (A-F)
+   already give the lead. Rather than a second family of per-section state, an extra track reuses
+   every map the first one already has (secDrum, secBassPat, secBassBeat, secBass mute, …), just
+   under a suffixed key — "C2#1" is the second drums track of section C2. Every resolver that reads
+   those maps by `d.key`/`d.base` therefore needs no change at all: pass it a `d` whose key/base
+   already carry the suffix (see `layered` below) and it resolves exactly as it does for track 0,
+   fallback chain and all. Only the groove-fallback ("nothing of my own — follow the sketch") had
+   to learn to look up the *same-suffixed* groove key rather than the bare one, so a section's 2nd
+   track follows the groove's 2nd track rather than its 1st. */
+const LSEP = "#";
+const layerSuf = key => { const i = key == null ? -1 : key.indexOf(LSEP); return i < 0 ? "" : key.slice(i); };
+const layered = (d, li) => (!li || !d) ? d : { ...d, key: d.key + LSEP + li, base: d.base + LSEP + li };
 /* The insert-effects rack's six buses. Drums, Perc, Bass and Pad each get their rack as a fifth
    "FX" tab inside their own trackFxRow (Sound tab and, per section, under their own grid in
    Arrange/Sketch) — see trackFxRow. "lead" is one shared rack all six melody parts feed into (see
@@ -578,6 +590,14 @@ export default function ProgressionWheel() {
      cannot live on the layers (writing a mute there would materialise a copy of the groove into
      the section, and editing the groove afterwards would no longer reach it). */
   const [secPartOut, setSecPartOut] = useState({});
+  /* How many tracks each section instance's drums/perc/bass/pad carry — { key: { drums:2, bass:3 } },
+     absent or 1 meaning just the one track every section already had. Track 0 is that original
+     track and always exists; tracks 1+ are addressed via `layered` above, the same way melody's
+     layers B-F are. Capped at MAX_LAYERS so the tab strip reads the same "A".."F" ceiling melody
+     uses. Only the count lives here — a track's content lives in the same maps track 0 already
+     used (secDrum, secBassPat, secBassBeat, …), just under a suffixed key. */
+  const [secTrackLayers, setSecTrackLayers] = useState({});
+  const [trackTab, setTrackTab] = useState({});   // { key: { drums: activeLayerIdx, bass: … } } — UI only
   /* The Sketch tab's draft arrangement — its own document, deliberately NOT the song's plan.
      Rows are sections the writer adds ({ sec, reps, on }), and `on` is that row's fills: which of
      the groove's tracks and melody parts the section plays ({ drums:true, p0:true }). A new
@@ -723,6 +743,7 @@ export default function ProgressionWheel() {
   const secBassPatRef = useRef({}), secBassBeatRef = useRef({});
   const secPercPatRef = useRef({}), secPercBeatRef = useRef({});
   const secPadVoiceRef = useRef({});
+  const secTrackLayersRef = useRef({});
   const trackFxRef = useRef({}), percKitRef = useRef("hand"), fxRackRef = useRef({}), secFxRef = useRef({});
   const secPadBeatRef = useRef({}), secChordBeatRef = useRef({});
   const subRef = useRef(2), melRef = useRef(8);
@@ -1200,7 +1221,7 @@ export default function ProgressionWheel() {
     setSecPerc(A.secPerc); setSecPad(A.secPad);
     // the template takes over the section menus (written grids survive, exactly as the drum
     // grids do) — half an old arrangement under a new one is what "apply" exists to prevent
-    setSecBassPat({}); setSecPercPat({}); setSecPadVoice({});
+    setSecBassPat({}); setSecPercPat({}); setSecPadVoice({}); setSecTrackLayers({}); setTrackTab({});
     setSecMove(A.secMove); setSecTrans(A.secTrans);
     setAuto({ key: progId + "|" + sel, filter: A.filter, level: A.level, hp: A.hp, res: A.res });
     applyPartMutes(A.parts);
@@ -1376,6 +1397,7 @@ export default function ProgressionWheel() {
   secBassPatRef.current = secBassPat; secBassBeatRef.current = secBassBeat;
   secPercPatRef.current = secPercPat; secPercBeatRef.current = secPercBeat;
   secPadVoiceRef.current = secPadVoice;
+  secTrackLayersRef.current = secTrackLayers;
   trackFxRef.current = trackFx; percKitRef.current = percKit; fxRackRef.current = fxRack; secFxRef.current = secFx;
   secPadBeatRef.current = secPadBeat; secChordBeatRef.current = secChordBeat;
   clickRef.current = clickOn;
@@ -1509,7 +1531,8 @@ export default function ProgressionWheel() {
      `loop: true` because a groove shorter than the section cycles round rather than holding its
      last bar — it is a loop, not a section that got stretched. */
   const grooveBeatOf = (beats, d) => {
-    const g = d && d.key !== GROOVE && beats[GROOVE];
+    const gk = GROOVE + layerSuf(d && d.key);   // this section's own track suffix, on the groove's key
+    const g = d && d.key !== gk && beats[gk];
     return g && g.length ? { beat: g, loop: true } : null;
   };
   const bassSrcOf = d => {
@@ -2183,6 +2206,74 @@ export default function ProgressionWheel() {
     putSec(key, { layers: sec.layers.filter((_, i) => i !== L).map(cloneLayer) });
     setSecPart(p => ({ ...p, [key]: (p[key] || 0) >= L ? Math.max(0, L - 1) : p[key] || 0 }));
     if (melSel.key === key && melSel.layer >= L) setMelSel({ key:"", layer:0, notes:{} });
+  };
+  /* ---- extra drums/perc/bass/pad tracks — the same "add a 2nd one" as melody's layers, for the
+     other instruments ---- */
+  const TRACK_MUTE_MAP = { drums: null, perc: secPerc, bass: secBass, pad: secPad };
+  const TRACK_MUTE_SETTER = { drums: null, perc: setSecPerc, bass: setSecBass, pad: setSecPad };
+  // the map whose value being "off" silences a fresh track — every instrument keys "no pattern
+  // chosen here" the same way, so seeding a new track with it is what keeps it silent by default
+  // rather than immediately parroting the groove or the song-wide default the way an unset track
+  // would (see the note beside TRACKS_FX)
+  const TRACK_PAT_SETTER = { drums: setSecDrum, perc: setSecPercPat, bass: setSecBassPat, pad: setSecPadVoice };
+  const TRACK_PAT_MAPS = { drums: secDrum, perc: secPercPat, bass: secBassPat, pad: secPadVoice };
+  const TRACK_BEAT_SETTER = { drums: setSecBeat, perc: setSecPercBeat, bass: setSecBassBeat, pad: setSecPadBeat };
+  const TRACK_BEAT_MAPS = { drums: secBeat, perc: secPercBeat, bass: secBassBeat, pad: secPadBeat };
+  const trackLayerCount = (type, key) =>
+    Math.max(1, Math.min(MAX_LAYERS, (secTrackLayers[key] && secTrackLayers[key][type]) || 1));
+  const addTrackLayer = (type, key) => {
+    const n = trackLayerCount(type, key);
+    if (n >= MAX_LAYERS) return;
+    setSecTrackLayers(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [type]: n + 1 } }));
+    const lk = key + LSEP + n;
+    TRACK_PAT_SETTER[type](prev => ({ ...prev, [lk]: "off" }));
+    setTrackTab(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [type]: n } }));
+  };
+  // only the newest (highest-index) track comes off, the way a stack of tabs is usually torn down —
+  // an arbitrary middle track would need every track above it renamed down by one suffix
+  const removeTrackLayer = (type, key) => {
+    const n = trackLayerCount(type, key);
+    if (n <= 1) return;
+    const li = n - 1, lk = key + LSEP + li;
+    setSecTrackLayers(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [type]: li } }));
+    const strip = (map, setter) => { if (!(lk in map)) return; const { [lk]: _drop, ...rest } = map; setter(rest); };
+    strip(TRACK_PAT_MAPS[type], TRACK_PAT_SETTER[type]);
+    strip(TRACK_BEAT_MAPS[type], TRACK_BEAT_SETTER[type]);
+    if (TRACK_MUTE_MAP[type]) strip(TRACK_MUTE_MAP[type], TRACK_MUTE_SETTER[type]);
+    setTrackTab(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [type]: Math.min(prev[key]?.[type] ?? 0, li - 1) } }));
+  };
+  const TRACK_NAME = { drums:"drums", perc:"perc", bass:"bass", pad:"pad" };
+  const activeLayerOf = (type, key) =>
+    Math.min(trackLayerCount(type, key) - 1, (trackTab[key] && trackTab[key][type]) || 0);
+  /* The tab strip a drums/perc/bass/pad grid opens with once it has more than one track — the
+     same shape as melody's own part tabs (lytab/lytabs), so "add a 2nd bassline" reads as the
+     same move as "add a 2nd melody" rather than a whole new idea. */
+  const trackTabStrip = (type, d) => {
+    const n = trackLayerCount(type, d.key);
+    if (n <= 1) return (
+      <button className="mini" onClick={() => addTrackLayer(type, d.key)}
+        title={`Add a second ${TRACK_NAME[type]} track, played alongside this one — the same idea as a 2nd melody`}>
+        ＋ 2nd {TRACK_NAME[type]}</button>
+    );
+    const active = activeLayerOf(type, d.key);
+    return (
+      <span className="row lytabs" style={{ gap:5 }}>
+        {Array.from({ length: n }, (_, li) => (
+          <button key={li} className={"lytab" + (active === li ? " on" : "")}
+            style={{ "--ly": LAYER_INK[li] }}
+            title={TRACK_NAME[type] + " track " + LAYER_NAMES[li]}
+            onClick={() => setTrackTab(prev => ({ ...prev, [d.key]: { ...(prev[d.key] || {}), [type]: li } }))}>
+            {LAYER_NAMES[li]}
+          </button>
+        ))}
+        {n < MAX_LAYERS &&
+          <button className="lytab lyadd" onClick={() => addTrackLayer(type, d.key)}
+            title={`Add another ${TRACK_NAME[type]} track`}>＋</button>}
+        {active === n - 1 &&
+          <button className="mini" onClick={() => removeTrackLayer(type, d.key)}
+            title={`Remove ${TRACK_NAME[type]} track ${LAYER_NAMES[n - 1]}`}>🗑</button>}
+      </span>
+    );
   };
   /* Copy one part's whole settings set onto the same part of other sections — every field it
      carries except its notes, which stay each section's own. The point of the feature is that
@@ -3181,26 +3272,35 @@ export default function ProgressionWheel() {
         const cs2 = stepAt(cbar.length, i, L);
         sym = cs2 == null ? "-" : (cbar[cs2] || "-");
       }
-      const srcOf = (beats, pats, mutes, glob) => {
-        const own = tInst != null ? beats[tInst] : null;
+      const srcOf = (beats, pats, mutes, glob, inst = tInst, base = tBase, ground = GROOVE) => {
+        const own = inst != null ? beats[inst] : null;
         if (own && own.length) return { beat: own };
-        const p = (tInst != null && pats[tInst]) || (tBase != null && pats[tBase]) || "";
+        const p = (inst != null && pats[inst]) || (base != null && pats[base]) || "";
         if (p) return p === "off" ? null : { pat: p };
-        const mut = tInst != null && mutes[tInst] != null ? mutes[tInst]
-          : (tBase != null ? mutes[tBase] : undefined);
+        const mut = inst != null && mutes[inst] != null ? mutes[inst]
+          : (base != null ? mutes[base] : undefined);
         if (mut) return null;
         // the groove sketch's written bars, before the song-level catalogue pattern — a loop, so
         // it cycles round a longer section rather than holding its last bar
-        const g = tInst !== GROOVE ? beats[GROOVE] : null;
+        const g = inst !== ground ? beats[ground] : null;
         if (g && g.length) return { beat: g, loop: true };
         return glob ? { pat: glob } : null;
       };
       // a written or picked bar for this tick, sized to the section like the drums' own bars are
       const srcBar = src => src.beat
         ? (src.beat[!src.loop && qb ? Math.min(tMb, src.beat.length - 1) : tMb % src.beat.length] || null) : null;
-      const bassSrc = chord
-        ? srcOf(secBassBeatRef.current, secBassPatRef.current, secBassRef.current, bassRef.current) : null;
-      const bassOn = !!bassSrc;
+      /* Extra tracks (drums/perc/bass/pad #1, #2, …) resolve exactly like track 0, just against a
+         `#N`-suffixed instance/letter/groove key — see the note beside TRACKS_FX. Every loop below
+         runs exactly once, over the plain unsuffixed keys, when a song has none — the ordinary
+         case, which has to keep sounding byte-for-byte as it did before extra tracks existed. */
+      const nLayersOf = type => Math.max(1, tInst != null
+        && secTrackLayersRef.current[tInst] && secTrackLayersRef.current[tInst][type] || 1);
+      const bassSrcs = chord ? Array.from({ length: nLayersOf("bass") }, (_, li) => {
+        const suf = li ? LSEP + li : "";
+        return srcOf(secBassBeatRef.current, secBassPatRef.current, secBassRef.current, li ? null : bassRef.current,
+          tInst != null ? tInst + suf : tInst, tBase != null ? tBase + suf : tBase, GROOVE + suf);
+      }) : [];
+      const bassOn = bassSrcs.some(Boolean);
       if (sym !== "-") {
         if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
         if (chord && !quiet && (!m.stem || m.stem.kind === "chords")) {
@@ -3214,7 +3314,8 @@ export default function ProgressionWheel() {
          carry, made separable; a catalogue pattern plays its own sixteenths. Every note is held
          until the next hit, so a lone hit is a whole-bar sub. It sounds through `quiet`: chords
          out with the bassline running is the disco filter-edit move the track exists for. */
-      if (bassSrc && chord && (!m.stem || m.stem.kind === "bass")) {
+      if (chord) bassSrcs.forEach((bassSrc, li) => {
+        if (!bassSrc || (m.stem && !(m.stem.kind === "bass" && (m.stem.i || 0) === li))) return;
         const bbar = srcBar(bassSrc);
         const bpat = bbar || (BASS[bassSrc.pat] || {}).pattern;
         if (!bbar && bassSrc.pat && !(BASS[bassSrc.pat] || {}).pattern) {
@@ -3231,27 +3332,31 @@ export default function ProgressionWheel() {
               bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
           }
         }
-      }
+      });
       /* The pad track: the chord's upper voicing held a bar at a time, legato, into its own
          filter and the reverb bus. Upper voicing only — the low root belongs to the bass or the
          chords, and a pad that doubles it is the mud the register fences exist to stop. */
-      const padPick = (() => {
-        const v = (tInst != null && secPadVoiceRef.current[tInst]) || (tBase != null && secPadVoiceRef.current[tBase]) || "";
-        if (v) return { off: v === "off", voice: v === "off" ? "" : v };
-        const mut = tInst != null && secPadRef.current[tInst] != null ? secPadRef.current[tInst]
-          : (tBase != null ? secPadRef.current[tBase] : undefined);
-        if (mut) return { off: true, voice: "" };
-        return { off: false, voice: padRef.current };
-      })();
-      const padV = padPick.voice;
-      // the pass's own pad rhythm, else the groove sketch's — unless this pass's pad is switched
-      // off, which is the allocation saying the pad sits this section out
-      let padOwn = tInst != null ? secPadBeatRef.current[tInst] : null, padLoop = false;
-      if (!(padOwn && padOwn.length) && tInst !== GROOVE && !padPick.off) {
-        const g = secPadBeatRef.current[GROOVE];
-        if (g && g.length) { padOwn = g; padLoop = true; }
-      }
-      if (chord && (!m.stem || m.stem.kind === "pad")) {
+      const resolvePad = (inst, base, ground) => {
+        const v = (inst != null && secPadVoiceRef.current[inst]) || (base != null && secPadVoiceRef.current[base]) || "";
+        let off, voice;
+        if (v) { off = v === "off"; voice = v === "off" ? "" : v; }
+        else {
+          const mut = inst != null && secPadRef.current[inst] != null ? secPadRef.current[inst]
+            : (base != null ? secPadRef.current[base] : undefined);
+          if (mut) { off = true; voice = ""; } else { off = false; voice = padRef.current; }
+        }
+        let own = inst != null ? secPadBeatRef.current[inst] : null, loop = false;
+        if (!(own && own.length) && inst !== ground && !off) {
+          const g = secPadBeatRef.current[ground];
+          if (g && g.length) { own = g; loop = true; }
+        }
+        return { voice, own, loop };
+      };
+      if (chord) for (let li = 0; li < nLayersOf("pad"); li++) {
+        if (m.stem && !(m.stem.kind === "pad" && (m.stem.i || 0) === li)) continue;
+        const suf = li ? LSEP + li : "";
+        const { voice: padV, own: padOwn, loop: padLoop } = resolvePad(
+          tInst != null ? tInst + suf : tInst, tBase != null ? tBase + suf : tBase, GROOVE + suf);
         if (padOwn && padOwn.length) {
           // the pass's own pad rhythm: H holds to the next hit, S stabs — voice from the section,
           // the song default, or strings, so a written rhythm always sounds
@@ -3276,8 +3381,12 @@ export default function ProgressionWheel() {
       /* The percussion layer: a second pattern from the drum table riding over the main groove on
          the same kit, slightly under it in level, through its own drawn filter. It never triggers
          the pump — that belongs to the song's kick. */
-      const percSrc = srcOf(secPercBeatRef.current, secPercPatRef.current, secPercRef.current, percRef.current);
-      if (percSrc && (!m.stem || m.stem.kind === "perc")) {
+      for (let li = 0; li < nLayersOf("perc"); li++) {
+        if (m.stem && !(m.stem.kind === "perc" && (m.stem.i || 0) === li)) continue;
+        const suf = li ? LSEP + li : "";
+        const percSrc = srcOf(secPercBeatRef.current, secPercPatRef.current, secPercRef.current, li ? null : percRef.current,
+          tInst != null ? tInst + suf : tInst, tBase != null ? tBase + suf : tBase, GROOVE + suf);
+        if (!percSrc) continue;
         // a legacy id from the drum table (saved before the layer had instruments of its own)
         // still plays on the kit, exactly as saved; everything else is hand percussion
         const legacy = !percSrc.beat && percSrc.pat && !PERCS[percSrc.pat] && DRUMS[percSrc.pat];
@@ -3289,30 +3398,34 @@ export default function ProgressionWheel() {
             else percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
           }
       }
-      let dpat = drumRef.current;                       // global drum pattern by default
-      if (struct && struct.length && structBar >= 0 && !gvLoop) {   // a section can override with its own kit
-        const b = struct[structBar];
-        const sd = b ? ((b.inst != null && secDrumRef.current[b.inst])
-          || (b.base != null ? secDrumRef.current[b.base] : "")) : "";
-        if (sd) dpat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
-        /* …and a section that has been written on its own grid plays that instead, bar by bar, so a
-           fill can land in the last bar of a verse. A section stretched since it was written repeats
-           its last written bar rather than falling silent — the same rule melodies follow. */
-        const own = b && b.inst != null ? secBeatRef.current[b.inst] : null;
-        if (own && own.length) dpat = own[Math.min(b.mb, own.length - 1)];
-        /* …and a section that said nothing at all follows the groove sketch's written drums,
-           cycling round its bars — a loop, not a stretched section, so it never holds its last bar. */
-        else if (!sd) {
-          const g = secBeatRef.current[GROOVE];
-          if (g && g.length) dpat = g[b.mb % g.length];
+      const resolveDrumPat = (inst, base, ground, glob) => {
+        let pat = glob;
+        if (struct && struct.length && structBar >= 0 && !gvLoop) {   // a section can override with its own kit
+          const b = struct[structBar];
+          const sd = b ? ((inst != null && secDrumRef.current[inst])
+            || (base != null ? secDrumRef.current[base] : "")) : "";
+          if (sd) pat = DRUMS[sd] ? DRUMS[sd].pattern : null;   // "off" → null → silent for this section
+          /* …and a section that has been written on its own grid plays that instead, bar by bar, so a
+             fill can land in the last bar of a verse. A section stretched since it was written repeats
+             its last written bar rather than falling silent — the same rule melodies follow. */
+          const own = b && inst != null ? secBeatRef.current[inst] : null;
+          if (own && own.length) pat = own[Math.min(b.mb, own.length - 1)];
+          /* …and a section that said nothing at all follows the groove sketch's written drums,
+             cycling round its bars — a loop, not a stretched section, so it never holds its last bar. */
+          else if (!sd) {
+            const g = secBeatRef.current[ground];
+            if (g && g.length) pat = g[b.mb % g.length];
+          }
+        } else {
+          // the plain loop (or the groove looping): the sketch section's own written bars, else the
+          // groove's — the same resolution every other track already makes here
+          const own = inst != null ? secBeatRef.current[inst] : null;
+          const g = (own && own.length) ? own : secBeatRef.current[ground];
+          if (g && g.length) pat = g[Math.floor(m.step / L) % g.length];
         }
-      } else {
-        // the plain loop (or the groove looping): the sketch section's own written bars, else the
-        // groove's — the same resolution every other track already makes here
-        const own = tInst != null ? secBeatRef.current[tInst] : null;
-        const g = (own && own.length) ? own : secBeatRef.current[GROOVE];
-        if (g && g.length) dpat = g[Math.floor(m.step / L) % g.length];
-      }
+        return pat;
+      };
+      let dpat = resolveDrumPat(tInst, tBase, GROOVE, drumRef.current);   // global drum pattern by default
       /* Automation lanes: on each bar's downbeat, ramp to the value the curve holds a bar later.
          Per bar rather than per tick because that is already smooth to the ear and keeps the event
          count down; guarded by the bar index so the lookahead cannot schedule one bar twice. */
@@ -3476,8 +3589,19 @@ export default function ProgressionWheel() {
       const accent = accentAt(i, ticksPerBeat);    // lean on the pulse rather than hitting flat
       const kickNow = !!dstep && /[KB]/.test(dstep);
       if (dstep) {
-        if (!m.stem || m.stem.kind === "drums")
+        if (!m.stem || (m.stem.kind === "drums" && (m.stem.i || 0) === 0))
           for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
+        // Extra drums tracks (#1, #2, …): a second (third, …) pattern riding the same kit, exactly
+        // like the perc layer already does over the main groove — see the note beside TRACKS_FX.
+        // They never trigger the pump either: that stays tied to track 0's own kick, the way the
+        // song's one pump control has always meant "the main groove's kick".
+        for (let li = 1; li < nLayersOf("drums"); li++) {
+          if (m.stem && !(m.stem.kind === "drums" && (m.stem.i || 0) === li)) continue;
+          const suf = LSEP + li;
+          const dpatL = resolveDrumPat(tInst != null ? tInst + suf : tInst, tBase != null ? tBase + suf : tBase, GROOVE + suf, null);
+          const dstepL = sampleAt(dpatL, i, L);
+          if (dstepL) for (const ch of dstepL) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
+        }
         // Pump the pitched sources under every kick. Recovery stops just short of the next beat, so
         // four-on-the-floor breathes fully back in right as the next kick hits. The pump belongs to
         // the pitched sources, so it stays in every pitched stem even though the kick that triggers
@@ -4124,6 +4248,27 @@ export default function ProgressionWheel() {
     if (bassAnywhere && chords.length) out.push({ kind:"bass", name:"bass-" + bassVoice });
     if (percAnywhere) out.push({ kind:"perc", name:"perc" });
     if (padAnywhere && chords.length) out.push({ kind:"pad", name:"pad" });
+    /* Extra tracks (#1, #2, …): one more stem per extra drums/perc/bass/pad track that actually
+       carries something, in whichever section (or the groove) it was written — mirrors the melody
+       parts loop just below, and the `i` here is what emitTick's `m.stem.kind === … && (m.stem.i
+       || 0) === li` guards (see the note beside TRACKS_FX) key their isolation off. */
+    const groove = { key: GROOVE, base: GROOVE };
+    const nExtraOf = type => Math.max(0, trackLayerCount(type, GROOVE),
+      ...sections.insts.map(x => trackLayerCount(type, x.key))) - 1;
+    for (let li = 1; li <= nExtraOf("drums"); li++)
+      if (sections.insts.some(x => !!drumSrcOf(layered(x, li))) || !!drumSrcOf(layered(groove, li)))
+        out.push({ kind:"drums", i: li, name: "drums-" + LAYER_NAMES[li] });
+    for (let li = 1; li <= nExtraOf("perc"); li++)
+      if (sections.insts.some(x => !!percSrcOf(layered(x, li))) || !!percSrcOf(layered(groove, li)))
+        out.push({ kind:"perc", i: li, name: "perc-" + LAYER_NAMES[li] });
+    if (chords.length) {
+      for (let li = 1; li <= nExtraOf("bass"); li++)
+        if (sections.insts.some(x => !!bassSrcOf(layered(x, li))) || !!bassSrcOf(layered(groove, li)))
+          out.push({ kind:"bass", i: li, name: "bass-" + LAYER_NAMES[li] + "-" + bassVoice });
+      for (let li = 1; li <= nExtraOf("pad"); li++)
+        if (sections.insts.some(x => padOnOf(layered(x, li))) || padOnOf(layered(groove, li)))
+          out.push({ kind:"pad", i: li, name: "pad-" + LAYER_NAMES[li] });
+    }
     // parts are per-section, so a part index counts if any section has notes on it
     const nParts = Math.max(0, ...Object.values(secMelos).map(s => nLayers(s)));
     for (let i = 0; i < nParts; i++) {
@@ -4202,7 +4347,8 @@ export default function ProgressionWheel() {
     if (own && own.length) return { beat: own };
     const sd = effDrum(d);
     if (sd) return DRUMS[sd] && DRUMS[sd].pattern ? { pat: sd } : null;
-    const g = d && d.key !== GROOVE && secBeat[GROOVE];
+    const gk = GROOVE + layerSuf(d && d.key);
+    const g = d && d.key !== gk && secBeat[gk];
     if (g && g.length) return { beat: g, loop: true };
     return DRUMS[drum] && DRUMS[drum].pattern ? { pat: drum } : null;
   };
@@ -4334,23 +4480,33 @@ export default function ProgressionWheel() {
             partCols[p].push(((barCols && barCols[c]) || []).map(d => melBase + 12 * oct + scaleSemis[d]));
         }
       });
-      // per-bar drum pattern: a section's own kit if it set one, else the global choice
-      const drumForBar = bi => {
+      // per-bar drum pattern: a section's own kit if it set one, else the global choice. Extra
+      // drums tracks (li > 0) resolve the same way against their own `#N`-suffixed keys, except
+      // they never fall back to the song-wide kit (glob=null) — see the note beside TRACKS_FX.
+      const drumForBarL = (li, glob) => bi => {
         const b = bars[bi];
+        const suf = li ? LSEP + li : "";
         // a section's own written bars first, then its type's catalogue choice, then the groove
         // sketch's written drums, then the song's — the same order playback resolves, so the file
         // is what you heard
-        const own = b && b.inst != null ? secBeat[b.inst] : null;
+        const own = b && b.inst != null ? secBeat[b.inst + suf] : null;
         if (own && own.length) return own[Math.min(b.mb, own.length - 1)];
-        const sd = b && ((b.inst != null && secDrum[b.inst]) || (b.base != null && secDrum[b.base]));
+        const sd = b && ((b.inst != null && secDrum[b.inst + suf]) || (b.base != null && secDrum[b.base + suf]));
         if (!sd) {
-          const g = secBeat[GROOVE];
+          const g = secBeat[GROOVE + suf];
           if (g && g.length) return g[(b && b.inst != null ? b.mb : bi) % g.length];
         }
-        const id = sd || drum;
-        return DRUMS[id] ? DRUMS[id].pattern : null;
+        const id = sd || glob;
+        return id && DRUMS[id] ? DRUMS[id].pattern : null;
       };
+      const drumForBar = drumForBarL(0, drum);
       const anyDrum = bars.some((_, i) => drumForBar(i));
+      // how many extra tracks (beyond the first) the song's sections carry for a given instrument —
+      // the ceiling every extra-track export loop below runs to
+      const nExtra = type => Math.max(0, trackLayerCount(type, GROOVE),
+        ...sections.insts.map(x => trackLayerCount(type, x.key))) - 1;
+      const drumsExtra = Array.from({ length: nExtra("drums") }, (_, i) => drumForBarL(i + 1, null))
+        .filter(fn => bars.some((_, bi) => fn(bi)));
       const used = partCols.map(cols => cols.some(c => c.length));
       const nUsed = used.filter(Boolean).length;
       // each part carries its own instrument and level into the file, so a DAW opens the
@@ -4400,8 +4556,11 @@ export default function ProgressionWheel() {
          the Live Set. Each bar resolves exactly as playback resolves it — the pass's own grid,
          then the section menus, then the template/global state — with the loop sketch reading as
          L1, so the exported file falls silent and moves precisely where the song does. */
-      const exSrc = (b, bi, srcFn) => {
-        const dk = b.inst != null ? { key: b.inst, base: b.base } : { key: "L1", base: "L1" };
+      // extra tracks (li > 0) resolve against their own `#N`-suffixed key, exactly like an extra
+      // melody layer — see the note beside TRACKS_FX
+      const exSrc = (b, bi, srcFn, li = 0) => {
+        const suf = li ? LSEP + li : "";
+        const dk = b.inst != null ? { key: b.inst + suf, base: b.base + suf } : { key: "L1" + suf, base: "L1" + suf };
         const src = srcFn(dk);
         if (!src) return null;
         // a groove-sketch source is a loop: it cycles round a longer section, never holds its last bar
@@ -4409,69 +4568,92 @@ export default function ProgressionWheel() {
           ? Math.min(b.mb, src.beat.length - 1) : (b.inst != null ? b.mb : bi) % src.beat.length] || null };
         return src;
       };
-      const bassNotes = [];
-      bars.forEach((b, bi) => {
-        const src = exSrc(b, bi, bassSrcOf);
-        if (!src) return;
-        const root = 36 + b.chord.root;
-        if (src.pat && !(BASS[src.pat] || {}).pattern) {
-          // "follow": the strum pattern's hits, skipping upstrokes the way the voice does
-          const pat = rhythm.pattern, steps = pat.length, stepB = barBeats / steps;
-          const hit = s2 => pat[s2] !== "-" && pat[s2] !== "U";
-          for (let s2 = 0; s2 < steps; s2++) {
-            if (!hit(s2)) continue;
-            let gap = 1;
-            while (gap < steps && !hit((s2 + gap) % steps)) gap++;
-            bassNotes.push({ t: bi * barBeats + s2 * stepB, dur: gap * stepB * 0.92,
-              note: root, vel: 96 * accentAt(s2, steps / barBeats) });
+      const bassNotesFor = li => {
+        const notes = [];
+        bars.forEach((b, bi) => {
+          const src = exSrc(b, bi, bassSrcOf, li);
+          if (!src) return;
+          const root = 36 + b.chord.root;
+          if (src.pat && !(BASS[src.pat] || {}).pattern) {
+            // "follow": the strum pattern's hits, skipping upstrokes the way the voice does
+            const pat = rhythm.pattern, steps = pat.length, stepB = barBeats / steps;
+            const hit = s2 => pat[s2] !== "-" && pat[s2] !== "U";
+            for (let s2 = 0; s2 < steps; s2++) {
+              if (!hit(s2)) continue;
+              let gap = 1;
+              while (gap < steps && !hit((s2 + gap) % steps)) gap++;
+              notes.push({ t: bi * barBeats + s2 * stepB, dur: gap * stepB * 0.92,
+                note: root, vel: 96 * accentAt(s2, steps / barBeats) });
+            }
+          } else {
+            const pat = src.bar || (BASS[src.pat] || {}).pattern;
+            if (!pat || !pat.length) return;
+            const steps = pat.length, stepB = barBeats / steps;
+            for (let s2 = 0; s2 < steps; s2++) {
+              const tok = pat[s2];
+              if (!tok || tok === "-") continue;
+              let gap = 1;
+              while (gap < steps && (!pat[(s2 + gap) % steps] || pat[(s2 + gap) % steps] === "-")) gap++;
+              notes.push({ t: bi * barBeats + s2 * stepB, dur: gap * stepB * 0.92,
+                note: root + (BASS_IV[tok] || 0), vel: 96 * accentAt(s2, steps / barBeats) });
+            }
           }
-        } else {
-          const pat = src.bar || (BASS[src.pat] || {}).pattern;
-          if (!pat || !pat.length) return;
-          const steps = pat.length, stepB = barBeats / steps;
-          for (let s2 = 0; s2 < steps; s2++) {
-            const tok = pat[s2];
-            if (!tok || tok === "-") continue;
-            let gap = 1;
-            while (gap < steps && (!pat[(s2 + gap) % steps] || pat[(s2 + gap) % steps] === "-")) gap++;
-            bassNotes.push({ t: bi * barBeats + s2 * stepB, dur: gap * stepB * 0.92,
-              note: root + (BASS_IV[tok] || 0), vel: 96 * accentAt(s2, steps / barBeats) });
-          }
-        }
-      });
-      // nearest GM bass program to each synth voice, so a DAW opens the track already low
+        });
+        return notes;
+      };
+      const bassNotes = bassNotesFor(0);
+      // nearest GM bass program to each synth voice, so a DAW opens the track already low. Every
+      // bass track shares the song's one voice — an extra bassline differs in pattern, not timbre,
+      // the same simplification perc and pad's extras make.
       const bassProgram = { sub: 38, saw: 38, square: 38, pluck: 34, acid: 38, reese: 39 }[bassVoice] || 38;
       const bassTrack = bassNotes.length ? { notes: bassNotes, program: bassProgram } : null;
-      const percForBar = bi => {
-        const src = exSrc(bars[bi], bi, percSrcOf);
+      const bassExtra = Array.from({ length: nExtra("bass") }, (_, i) => bassNotesFor(i + 1))
+        .map(notes => notes.length ? { notes, program: bassProgram } : null).filter(Boolean);
+      const percForBarL = li => bi => {
+        const src = exSrc(bars[bi], bi, percSrcOf, li);
         if (!src) return null;
         return src.bar || ((PERCS[src.pat] || DRUMS[src.pat] || {}).pattern) || null;
       };
+      const percForBar = percForBarL(0);
       const anyPerc = bars.some((_, bi) => percForBar(bi));
+      const percExtra = Array.from({ length: nExtra("perc") }, (_, i) => percForBarL(i + 1))
+        .filter(fn => bars.some((_, bi) => fn(bi)));
       // the pad: the chord's upper voicing held a bar at a time, an octave up, no low root
-      const padNotes = [];
-      let padVoiceUsed = "";
-      bars.forEach((b, bi) => {
-        const dk = b.inst != null ? { key: b.inst, base: b.base } : { key: "L1", base: "L1" };
-        // a written pad rhythm (the pass's own or the groove's) plays even with no voice picked,
-        // so it has to export too — as the held voicing, with the same fallback voice playback uses
-        const v = padVoiceOf(dk) || (padBeatOf(dk) ? (pad || "strings") : "");
-        if (!v) return;
-        padVoiceUsed = padVoiceUsed || v;
-        for (const x of chordIvs(b.chord.quality))
-          padNotes.push({ t: bi * barBeats, dur: barBeats * 0.98, note: 60 + b.chord.root + x, vel: 66 });
-      });
-      const padTrack = padNotes.length ? { notes: padNotes, program: programOf(padVoiceUsed || "strings", 89) } : null;
-      return { bars, parts, drumForBar, meta, anyDrum, nUsed, partOf, bassTrack, percForBar, anyPerc, padTrack };
+      const padNotesFor = li => {
+        const notes = []; let voiceUsed = "";
+        const suf = li ? LSEP + li : "";
+        bars.forEach((b, bi) => {
+          const dk = b.inst != null ? { key: b.inst + suf, base: b.base + suf } : { key: "L1" + suf, base: "L1" + suf };
+          // a written pad rhythm (the pass's own or the groove's) plays even with no voice picked,
+          // so it has to export too — as the held voicing, with the same fallback voice playback uses
+          const v = padVoiceOf(dk) || (padBeatOf(dk) ? (pad || "strings") : "");
+          if (!v) return;
+          voiceUsed = voiceUsed || v;
+          for (const x of chordIvs(b.chord.quality))
+            notes.push({ t: bi * barBeats, dur: barBeats * 0.98, note: 60 + b.chord.root + x, vel: 66 });
+        });
+        return { notes, voiceUsed };
+      };
+      const pad0 = padNotesFor(0);
+      const padTrack = pad0.notes.length ? { notes: pad0.notes, program: programOf(pad0.voiceUsed || "strings", 89) } : null;
+      const padExtra = Array.from({ length: nExtra("pad") }, (_, i) => padNotesFor(i + 1))
+        .map(r => r.notes.length ? { notes: r.notes, program: programOf(r.voiceUsed || "strings", 89) } : null)
+        .filter(Boolean);
+      return { bars, parts, drumForBar, meta, anyDrum, nUsed, partOf, bassTrack, percForBar, anyPerc, padTrack,
+        drumsExtra, percExtra, bassExtra, padExtra };
   };
   const exportMidi = () => {
     try {
-      const { bars, parts, drumForBar, meta, anyDrum, nUsed, bassTrack, percForBar, anyPerc, padTrack } = midiParts();
+      const { bars, parts, drumForBar, meta, anyDrum, nUsed, bassTrack, percForBar, anyPerc, padTrack,
+        drumsExtra, percExtra, bassExtra, padExtra } = midiParts();
       download(midiBytes(effBpm, barBeats, bars, drumForBar, parts, kit, meloSub, programOf(instr),
-        { ...meta, bass: bassTrack, perc: anyPerc ? percForBar : null, pad: padTrack }),
+        { ...meta, bass: bassTrack, perc: anyPerc ? percForBar : null, pad: padTrack,
+          drumsExtra, percExtra, bassExtra, padExtra }),
         "audio/midi", "mid");
+      const nExtraTracks = drumsExtra.length + percExtra.length + bassExtra.length + padExtra.length;
       setIoNote("MIDI exported — chords" + (anyDrum ? " + drums" : "") + (anyPerc ? " + perc" : "")
         + (bassTrack ? " + bass" : "") + (padTrack ? " + pad" : "")
+        + (nExtraTracks ? ` + ${nExtraTracks} extra track${nExtraTracks === 1 ? "" : "s"}` : "")
         + (nUsed ? ` + ${nUsed} melody part${nUsed === 1 ? "" : "s"}` : "") + " at " + effBpm + " bpm.");
     } catch (e) { setIoNote("Export failed in this viewer — try on desktop."); }
   };
@@ -4486,7 +4668,8 @@ export default function ProgressionWheel() {
      is a limit of what the two programs share, not of the file format: the MIDI export has exactly
      the same one. The stem bounce remains the reference for what it should sound like. */
   const alsSpec = () => {
-    const { bars, parts, drumForBar, meta, bassTrack, percForBar, anyPerc, padTrack, partOf } = midiParts();
+    const { bars, parts, drumForBar, meta, bassTrack, percForBar, anyPerc, padTrack, partOf,
+      drumsExtra, percExtra, bassExtra, padExtra } = midiParts();
     const B = barBeats, tracks = [];
     /* Each track's info text (Live's Annotation, shown in its info pane): the settings that shaped
        the sound here, in plain words, so recreating a part on a real instrument is reading the
@@ -4581,6 +4764,43 @@ export default function ProgressionWheel() {
     // the pad: the held upper voicings
     if (padTrack) tracks.push({ name: "Pad", color: ALS_COLORS.pad, vol: 0.8, instrument: true,
       notes: padTrack.notes, end: bars.length * B, note: "drop a pad synth on this" });
+    /* Extra tracks (#1, #2, …) — one more Live track per extra drums/perc/bass/pad track the song
+       carries, named the way the MIDI writer names them, so a set opened beside an exported MIDI
+       file reads as the same arrangement. */
+    const notesFromKit = (fn, noteMap, velOf) => {
+      const notes = [];
+      bars.forEach((_, bi) => {
+        const pat = fn(bi);
+        if (!pat || !pat.length) return;
+        const steps = pat.length, stepB = B / steps;
+        for (let s = 0; s < steps; s++) {
+          const acc = accentAt(s, steps / B);
+          for (const ch of (pat[s] || "")) { const n = noteMap(ch);
+            notes.push({ t: bi * B + s * stepB, dur: Math.min(0.25, stepB * 0.5), note: n, vel: velOf(n) * acc }); }
+        }
+      });
+      return notes;
+    };
+    const extraName = (base, i) => base + " " + (LAYER_NAMES[i + 1] || (i + 2));
+    drumsExtra.forEach((fn, i) => {
+      const notes = notesFromKit(fn, ch => DRUM_MIDI[ch] || 42, n => ([42, 46, 51, 37].includes(n) ? 62 : 92));
+      if (notes.length) tracks.push({ name: extraName("Drums", i), color: ALS_COLORS.drums, vol: 0.85,
+        notes, end: bars.length * B, note: kit + " kit — drop a Drum Rack on this" });
+    });
+    percExtra.forEach((fn, i) => {
+      const notes = notesFromKit(fn, ch => PERC_MIDI[ch] || DRUM_MIDI[ch] || 70, () => 68);
+      if (notes.length) tracks.push({ name: extraName("Percussion", i), color: ALS_COLORS.perc, vol: 0.8,
+        notes, end: bars.length * B, note: "perc layer — same Drum Rack as the drums" });
+    });
+    bassExtra.forEach((spec, i) => {
+      if (spec && spec.notes.length) tracks.push({ name: extraName("Bass", i), color: ALS_COLORS.bass,
+        vol: 0.85, instrument: true, notes: spec.notes, end: bars.length * B,
+        note: "was " + bassVoice + " — drop a bass synth on this" });
+    });
+    padExtra.forEach((spec, i) => {
+      if (spec && spec.notes.length) tracks.push({ name: extraName("Pad", i), color: ALS_COLORS.pad,
+        vol: 0.8, instrument: true, notes: spec.notes, end: bars.length * B, note: "drop a pad synth on this" });
+    });
     // melody parts: grid columns merged into held notes, the same way the MIDI writer merges them
     (parts || []).forEach((part, p) => {
       if (!part || !part.cols) return;
@@ -4726,23 +4946,27 @@ export default function ProgressionWheel() {
      it lands at the right speed with the arrangement marked however it is brought in. */
   const exportMidiSplit = () => {
     try {
-      const { bars, parts, drumForBar, meta, anyDrum, partOf, bassTrack, percForBar, anyPerc, padTrack } = midiParts();
+      const { bars, parts, drumForBar, meta, anyDrum, partOf, bassTrack, percForBar, anyPerc, padTrack,
+        drumsExtra, percExtra, bassExtra, padExtra } = midiParts();
       const files = [];
       const add = (label, bytes) => files.push({ name: `${String(files.length + 1).padStart(2, "0")}-${safeName(label)}.mid`, bytes });
       add("chords-" + gmKey(instr),
         midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, programOf(instr), meta));
-      if (anyDrum)
+      if (anyDrum || drumsExtra.length)
         add("drums-" + kit,
-          midiBytes(effBpm, barBeats, bars, drumForBar, [], kit, meloSub, null, { ...meta, skipChords: true }));
-      if (anyPerc)
+          midiBytes(effBpm, barBeats, bars, drumForBar, [], kit, meloSub, null, { ...meta, skipChords: true, drumsExtra }));
+      if (anyPerc || percExtra.length)
         add("perc",
-          midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null, { ...meta, skipChords: true, perc: percForBar }));
-      if (bassTrack)
+          midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null,
+            { ...meta, skipChords: true, perc: percForBar, percExtra }));
+      if (bassTrack || bassExtra.length)
         add("bass-" + bassVoice,
-          midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null, { ...meta, skipChords: true, bass: bassTrack }));
-      if (padTrack)
+          midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null,
+            { ...meta, skipChords: true, bass: bassTrack, bassExtra }));
+      if (padTrack || padExtra.length)
         add("pad",
-          midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null, { ...meta, skipChords: true, pad: padTrack }));
+          midiBytes(effBpm, barBeats, bars, () => null, [], kit, meloSub, null,
+            { ...meta, skipChords: true, pad: padTrack, padExtra }));
       parts.forEach((part, p) => {
         if (!part) return;
         // one part per file, but kept on its own channel so several files opened together do not
@@ -4903,7 +5127,7 @@ export default function ProgressionWheel() {
   const songDoc = name => makeSong({
     name, progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
     kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
-    secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit, fxRack, secFx,
+    secBassPat, secPercPat, secPadVoice, secPartOut, secTrackLayers, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit, fxRack, secFx,
     secMove, secTrans, secBeat, secNar, delayId, grid: gridSt.key === progId ? gridSt.val : "", bpm: effBpm, selStruct, contrast,
     sketchArr,
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
@@ -4919,7 +5143,7 @@ export default function ProgressionWheel() {
     try { return JSON.stringify(songDoc("")); } catch (e) { return null; }
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
       kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
-      secBassPat, secPercPat, secPadVoice, secPartOut, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit, fxRack, secFx,
+      secBassPat, secPercPat, secPadVoice, secPartOut, secTrackLayers, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit, fxRack, secFx,
       secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, sketchArr, ovMap, insList, qmap, remList, order, melos]);
   const lastDocRef = useRef(null);
   useEffect(() => {
@@ -5199,7 +5423,7 @@ export default function ProgressionWheel() {
     setPadSt({ key:s.progId, val:s.pad || "" }); setSecPad(s.secPad || {});
     // the per-section choices and written grids the tracks are authored with now
     setSecBassPat(s.secBassPat || {}); setSecPercPat(s.secPercPat || {}); setSecPadVoice(s.secPadVoice || {});
-    setSecPartOut(s.secPartOut || {});
+    setSecPartOut(s.secPartOut || {}); setSecTrackLayers(s.secTrackLayers || {}); setTrackTab({});
     setSketchArr(Array.isArray(s.sketchArr) ? s.sketchArr : []); setSketchSel(0);
     setSecBassBeat(unpackBeats(s.secBassBeat)); setSecPercBeat(unpackBeats(s.secPercBeat));
     setSecPadBeat(unpackBeats(s.secPadBeat)); setSecChordBeat(unpackBeats(s.secChordBeat));
@@ -5258,6 +5482,7 @@ export default function ProgressionWheel() {
     setSecDrum({}); setSecQuiet({}); setSecMove({}); setSecTrans({}); setSecBeat({});
     setSecBassPat({}); setSecBassBeat({}); setSecPercPat({}); setSecPercBeat({});
     setSecPadVoice({}); setSecPadBeat({}); setSecChordBeat({}); setSecPartOut({}); setSecFx({}); setOpenSecFx({});
+    setSecTrackLayers({}); setTrackTab({});
     // melodies, the narrative dials, and the per-section writing state that pointed at them
     setMelos({ progId:"", secs:{} }); setSecNar({}); setNarSel({ key:"", id:"" }); setNarUndo(null);
     setVarySt({ key:"", val:1 }); setNarSyncSt({ key:"", val:0 }); setNarInSt({ key:"", val:false });
@@ -6004,22 +6229,26 @@ export default function ProgressionWheel() {
                   secBeat[d.key] ? "● " + beatHits(secBeat[d.key]) : "",
                   "The drum grid — it opens on whatever is playing now, and painting it makes the pattern yours")}
                 {beatOpen && (() => {
-                  const bars = beatBars(d);
+                  const dLayer = activeLayerOf("drums", d.key);
+                  const dl = layered(d, dLayer);
+                  const gk = GROOVE + layerSuf(dl.key);
+                  const bars = beatBars(dl);
                   const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secBeat[d.key];
+                  const own = !!secBeat[dl.key];
                   const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  const cat = DRUMS[effDrum(d) || drum];
+                  const cat = DRUMS[effDrum(dl) || drum];
                   return (
                     <div style={{ marginTop:6 }}>
                       {/* the same control row shape the melody grid above uses, so the two blocks
                           read as one stack rather than two features that happen to be adjacent */}
                       <div className="row gridhdr">
-                        <span className="gridname">🥁 {own ? `${who}'s own drums`
-                          : (!effDrum(d) && d.key !== GROOVE && secBeat[GROOVE] && secBeat[GROOVE].length) ? "following the groove"
+                        <span className="gridname">🥁 {own ? `${who}'s own drums${dLayer ? " · " + LAYER_NAMES[dLayer] : ""}`
+                          : (!effDrum(dl) && dl.key !== gk && secBeat[gk] && secBeat[gk].length) ? "following the groove"
                           : "following " + ((cat && cat.name) || "the song's drums")}</span>
+                        {trackTabStrip("drums", d)}
                         {/* the pattern menu lives inside the section, so the collapsed page shows
                             no dropdowns — open the bar and the choice is here */}
-                        {view.groove && <label className="secopt" title="The drum pattern the grid opens on — paint the grid and the pattern is yours">
+                        {view.groove && dLayer === 0 && <label className="secopt" title="The drum pattern the grid opens on — paint the grid and the pattern is yours">
                           <span className="optlbl">starts from</span>
                           <select value={drum} onChange={e => { setDrumSt({ key: progId, val: e.target.value });
                               if (secBeat[GROOVE]) resetBeat(GROOVE); }}>
@@ -6032,10 +6261,10 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
-                        {view.groove && wholeSongBtn("drums")}
-                        {own && <button className="mini" onClick={() => resetBeat(d.key)}
+                        {view.groove && dLayer === 0 && wholeSongBtn("drums")}
+                        {own && <button className="mini" onClick={() => resetBeat(dl.key)}
                           title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(d, sameRole)}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(dl, sameRole.map(o => layered(o, dLayer)))}
                           title={"Put these drums on the other " + sameRole.length + " " + d.word.toLowerCase()
                             + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
                       </div>
@@ -6060,11 +6289,11 @@ export default function ProgressionWheel() {
                               const bar = Math.floor(c / n), step = c % n;
                               const on = bars[bar][step].includes(ch);
                               return (
-                                <div key={c} data-dk={d.key} data-bar={bar} data-step={step} data-ch={ch}
-                                  onPointerDown={e => beatDown(e, d, bar, step, ch)}
+                                <div key={c} data-dk={dl.key} data-bar={bar} data-step={step} data-ch={ch}
+                                  onPointerDown={e => beatDown(e, dl, bar, step, ch)}
                                   onClick={() => {
                                     if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapBeat(d, bar, step, ch);
+                                    tapBeat(dl, bar, step, ch);
                                   }}
                                   style={on ? { background: ink, borderColor: ink } : null}
                                   className={"mcell dcell" + (on ? " on" : "")
@@ -6090,19 +6319,22 @@ export default function ProgressionWheel() {
                   secPercBeat[d.key] ? "● " + beatHits(secPercBeat[d.key]) : "",
                   "A second layer over the drums — shakers, congas and offbeat hats")}
                 {percOpen && (() => {
-                  const bars = percGridBars(d);
+                  const pLayer = activeLayerOf("perc", d.key);
+                  const dl = layered(d, pLayer);
+                  const bars = percGridBars(dl);
                   const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secPercBeat[d.key];
+                  const own = !!secPercBeat[dl.key];
                   const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  const src = percSrcOf(d);
+                  const src = percSrcOf(dl);
                   const cat = src && src.pat ? (PERCS[src.pat] || DRUMS[src.pat]) : null;
                   return (
                     <div style={{ marginTop:6 }}>
                       <div className="row gridhdr">
-                        <span className="gridname">🥁 {own ? `${who}'s own perc layer`
+                        <span className="gridname">🥁 {own ? `${who}'s own perc layer${pLayer ? " · " + LAYER_NAMES[pLayer] : ""}`
                           : src ? (src.loop ? "following the groove" : "following " + ((cat && cat.name) || "the section's perc"))
                           : "no perc here — paint some"}</span>
-                        {view.groove && <label className="secopt" title="The percussion pattern the groove starts from — shakers, congas and offbeat hats over the drums">
+                        {trackTabStrip("perc", d)}
+                        {view.groove && pLayer === 0 && <label className="secopt" title="The percussion pattern the groove starts from — shakers, congas and offbeat hats over the drums">
                           <span className="optlbl">starts from</span>
                           <select value={perc} onChange={e => { setPercSt({ key: progId, val: e.target.value || "off" });
                               if (secPercBeat[GROOVE]) resetPercBeat(GROOVE); }}>
@@ -6116,10 +6348,10 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
-                        {view.groove && wholeSongBtn("perc")}
-                        {own && <button className="mini" onClick={() => resetPercBeat(d.key)}
+                        {view.groove && pLayer === 0 && wholeSongBtn("perc")}
+                        {own && <button className="mini" onClick={() => resetPercBeat(dl.key)}
                           title="Hand this section back to the perc menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPercBeat(d, sameRole)}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPercBeat(dl, sameRole.map(o => layered(o, pLayer)))}
                           title={"Put this perc on the other " + sameRole.length + " " + d.word.toLowerCase()
                             + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
                       </div>
@@ -6140,11 +6372,11 @@ export default function ProgressionWheel() {
                               const bar = Math.floor(c / n), step = c % n;
                               const on = bars[bar][step].includes(ch);
                               return (
-                                <div key={c} data-pk={d.key} data-bar={bar} data-step={step} data-ch={ch}
-                                  onPointerDown={e => percDown(e, d, bar, step, ch)}
+                                <div key={c} data-pk={dl.key} data-bar={bar} data-step={step} data-ch={ch}
+                                  onPointerDown={e => percDown(e, dl, bar, step, ch)}
                                   onClick={() => {
                                     if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapPerc(d, bar, step, ch);
+                                    tapPerc(dl, bar, step, ch);
                                   }}
                                   style={on ? { background: ink, borderColor: ink } : null}
                                   className={"mcell dcell" + (on ? " on" : "")
@@ -6168,19 +6400,22 @@ export default function ProgressionWheel() {
                   secBassBeat[d.key] ? "●" : "",
                   "The bassline — root, fifth and octave of whatever chord each bar holds, so the line follows the changes by itself")}
                 {bassOpen && (() => {
-                  const bars = bassGridBars(d);
+                  const bLayer = activeLayerOf("bass", d.key);
+                  const dl = layered(d, bLayer);
+                  const bars = bassGridBars(dl);
                   const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secBassBeat[d.key];
+                  const own = !!secBassBeat[dl.key];
                   const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  const src = bassSrcOf(d);
+                  const src = bassSrcOf(dl);
                   const cat = src && src.pat ? BASS[src.pat] : null;
                   return (
                     <div style={{ marginTop:6 }}>
                       <div className="row gridhdr">
-                        <span className="gridname">🎸 {own ? `${who}'s own bassline`
+                        <span className="gridname">🎸 {own ? `${who}'s own bassline${bLayer ? " · " + LAYER_NAMES[bLayer] : ""}`
                           : src ? (src.loop ? "following the groove" : "following " + ((cat && cat.name) || "the section's bass"))
                           : "no bass here — paint a line"}</span>
-                        {view.groove && <label className="secopt" title="The bassline pattern the groove starts from — paint the bass grid to make the line your own">
+                        {trackTabStrip("bass", d)}
+                        {view.groove && bLayer === 0 && <label className="secopt" title="The bassline pattern the groove starts from — paint the bass grid to make the line your own">
                           <span className="optlbl">starts from</span>
                           <select value={bass} onChange={e => { setBassSt({ key: progId, val: e.target.value });
                               if (secBassBeat[GROOVE]) resetBassBeat(GROOVE); }}>
@@ -6194,25 +6429,25 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
-                        {view.groove && wholeSongBtn("bass")}
+                        {view.groove && bLayer === 0 && wholeSongBtn("bass")}
                         {/* Bass-as-hook: a riff written into the sixteenths the kick leaves free, from
                             this section's own resolved drums — so it interlocks with the groove
                             instead of doubling it. Press again for the next riff; the grid stays
                             yours to edit, and ↺ Reset hands it back to the menu. */}
                         <button className="mini" onClick={() => {
-                            const seed = riffSeed[d.key] || 0;
+                            const seed = riffSeed[dl.key] || 0;
                             const riff = bassRiffBars(beatBars(d), n, barBeats, d.nbars, seed);
-                            setSecBassBeat({ ...secBassBeat, [d.key]: riff });
-                            setRiffSeed({ ...riffSeed, [d.key]: seed + 1 });
+                            setSecBassBeat({ ...secBassBeat, [dl.key]: riff });
+                            setRiffSeed({ ...riffSeed, [dl.key]: seed + 1 });
                             setIoNote(`Bass riff written into the kick's holes — ${riffShapeName(seed)}. Press again for another.`);
                           }}
                           title={"Write a bass riff into the holes this " + (view.groove ? "groove" : d.word.toLowerCase())
                             + "'s kick leaves — in house and garage the hook is as often the bassline, and what makes it groove "
                             + "is answering the kick rather than doubling it. Every press writes a different riff."}>
                           ✦ Riff the holes</button>
-                        {own && <button className="mini" onClick={() => resetBassBeat(d.key)}
+                        {own && <button className="mini" onClick={() => resetBassBeat(dl.key)}
                           title="Hand this section back to the bass menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBassBeat(d, sameRole)}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBassBeat(dl, sameRole.map(o => layered(o, bLayer)))}
                           title={"Put this bassline on the other " + sameRole.length + " " + d.word.toLowerCase()
                             + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
                       </div>
@@ -6233,11 +6468,11 @@ export default function ProgressionWheel() {
                               const bar = Math.floor(c / n), step = c % n;
                               const on = bars[bar][step] === tok;
                               return (
-                                <div key={c} data-bk={d.key} data-bar={bar} data-step={step} data-tok={tok}
-                                  onPointerDown={e => bassDown(e, d, bar, step, tok)}
+                                <div key={c} data-bk={dl.key} data-bar={bar} data-step={step} data-tok={tok}
+                                  onPointerDown={e => bassDown(e, dl, bar, step, tok)}
                                   onClick={() => {
                                     if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapBass(d, bar, step, tok);
+                                    tapBass(dl, bar, step, tok);
                                   }}
                                   style={on ? { background: ink, borderColor: ink } : null}
                                   className={"mcell dcell" + (on ? " on" : "")
@@ -6262,18 +6497,21 @@ export default function ProgressionWheel() {
                   secPadBeat[d.key] ? "●" : "",
                   "The pad's rhythm — holds that ring to the next hit, and short stabs")}
                 {padGOpen && (() => {
-                  const bars = padGridBars(d);
+                  const qLayer = activeLayerOf("pad", d.key);
+                  const dl = layered(d, qLayer);
+                  const bars = padGridBars(dl);
                   const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secPadBeat[d.key];
+                  const own = !!secPadBeat[dl.key];
                   const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
                   return (
                     <div style={{ marginTop:6 }}>
                       <div className="row gridhdr">
-                        <span className="gridname">🌫️ {own ? `${who}'s own pad rhythm`
-                          : (padBeatOf(d) || {}).loop ? "following the groove"
-                          : padOnOf(d) ? "one hold a bar — the pad's natural state"
+                        <span className="gridname">🌫️ {own ? `${who}'s own pad rhythm${qLayer ? " · " + LAYER_NAMES[qLayer] : ""}`
+                          : (padBeatOf(dl) || {}).loop ? "following the groove"
+                          : padOnOf(dl) ? "one hold a bar — the pad's natural state"
                           : "no pad here — paint a rhythm"}</span>
-                        {view.groove && <label className="secopt" title="The pad voice — the chord's upper voicing held a bar at a time. Write its rhythm on this grid.">
+                        {trackTabStrip("pad", d)}
+                        {view.groove && qLayer === 0 && <label className="secopt" title="The pad voice — the chord's upper voicing held a bar at a time. Write its rhythm on this grid.">
                           <span className="optlbl">voice</span>
                           <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}>
                             <option value="">No pad</option>
@@ -6286,10 +6524,10 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
-                        {view.groove && wholeSongBtn("pad")}
-                        {own && <button className="mini" onClick={() => resetPadBeat(d.key)}
+                        {view.groove && qLayer === 0 && wholeSongBtn("pad")}
+                        {own && <button className="mini" onClick={() => resetPadBeat(dl.key)}
                           title="Back to the pad's one-hold-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(d, sameRole)}
+                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(dl, sameRole.map(o => layered(o, qLayer)))}
                           title={"Put this pad rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
                             + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
                       </div>
@@ -6310,11 +6548,11 @@ export default function ProgressionWheel() {
                               const bar = Math.floor(c / n), step = c % n;
                               const on = bars[bar][step] === tok;
                               return (
-                                <div key={c} data-qk={d.key} data-bar={bar} data-step={step} data-tok={tok}
-                                  onPointerDown={e => padDown(e, d, bar, step, tok)}
+                                <div key={c} data-qk={dl.key} data-bar={bar} data-step={step} data-tok={tok}
+                                  onPointerDown={e => padDown(e, dl, bar, step, tok)}
                                   onClick={() => {
                                     if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapPad(d, bar, step, tok);
+                                    tapPad(dl, bar, step, tok);
                                   }}
                                   style={on ? { background: ink, borderColor: ink } : null}
                                   className={"mcell dcell" + (on ? " on" : "")
@@ -6732,6 +6970,30 @@ export default function ProgressionWheel() {
                   });
                   setSecPadVoice(next);
                 } }] : []),
+              /* Extra tracks (#1, #2, …): the same mute lane as track 0, one per additional
+                 drums/perc/bass/pad track a section carries — see the note beside TRACKS_FX. Unlike
+                 track 0, an extra track has no "inherit a sensible default" state to fall back to —
+                 it only ever carries what was explicitly drawn on it — so muting just writes "off"
+                 and unmuting deletes the override, resuming whatever that leaves resolvable. */
+              ...["bass", "perc", "pad", "drums"].flatMap(type => {
+                const srcFn = type === "bass" ? bassSrcOf : type === "perc" ? percSrcOf
+                  : type === "pad" ? padOnOf : drumSrcOf;
+                const label = type === "bass" ? "Bass" : type === "perc" ? "Perc" : type === "pad" ? "Pad" : "Drums";
+                const nEx = Math.max(0, trackLayerCount(type, GROOVE),
+                  ...sections.insts.map(x => trackLayerCount(type, x.key))) - 1;
+                return Array.from({ length: nEx }, (_, k) => {
+                  const li = k + 1;
+                  const on = d => !!srcFn(layered(d, li));
+                  if (!sections.insts.some(on)) return null;
+                  return { name: label + " " + LAYER_NAMES[li], on, scope: runScope,
+                    toggle: r => {
+                      const anyIn = r.items.some(on), next = { ...TRACK_PAT_MAPS[type] };
+                      r.items.forEach(x => { const lk = x.key + LSEP + li;
+                        if (anyIn) next[lk] = "off"; else delete next[lk]; });
+                      TRACK_PAT_SETTER[type](next);
+                    } };
+                }).filter(Boolean);
+              }),
               ...Array.from({ length: nParts }, (_, i) => ({
                 name: LAYER_NAMES[i], on: d => partIn(d, i),
                 scope: runScope,
@@ -6753,8 +7015,8 @@ export default function ProgressionWheel() {
             /* Top to bottom as a mixer reads — melody parts, then bass, chords, pad, perc, and the
                drums as the floor of the stack — the same order the Sketch tab's draft matrix uses.
                A stable sort, so the parts keep their A, B, C order. */
-            const laneRank = l => l.name === "Drums" ? 5 : l.name === "Perc" ? 4 : l.name === "Pad" ? 3
-              : l.name === "Chords" ? 2 : l.name === "Bass" ? 1 : 0;
+            const laneRank = l => l.name.startsWith("Drums") ? 5 : l.name.startsWith("Perc") ? 4
+              : l.name.startsWith("Pad") ? 3 : l.name === "Chords" ? 2 : l.name.startsWith("Bass") ? 1 : 0;
             lanes.sort((la, lb) => laneRank(la) - laneRank(lb));
             /* The drawable lanes: the master four, then one low-pass lane per melody part. A part
                lane is that part's Low-pass knob written across the song — the pad opens through

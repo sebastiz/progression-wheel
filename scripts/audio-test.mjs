@@ -1222,13 +1222,16 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   /* An edited drum bar has to be resolved the same way in three places, or the file and the bounce
      stop being what you heard. */
   {
-    const tick = code.slice(code.indexOf("let dpat = drumRef.current"), code.indexOf("const dstep ="));
-    if (!/secBeatRef\.current\[b\.inst\]/.test(tick))
+    // drums resolve through `resolveDrumPat`/`drumForBarL` now — one function, called once per
+    // track (track 0 with the song-wide fallback, an extra track without it) rather than the
+    // logic being duplicated inline for each — so the check reads the function body, not the call.
+    const tick = code.slice(code.indexOf("const resolveDrumPat = "), code.indexOf("const dstep ="));
+    if (!/secBeatRef\.current\[inst\]/.test(tick))
       problems.push("src: playback ignores a section's own drum bars");
     if (!/Math\.min\(b\.mb, own\.length - 1\)/.test(tick))
       problems.push("src: playback does not repeat the last written bar when a section is stretched");
-    const midi = code.slice(code.indexOf("const drumForBar = bi =>"), code.indexOf("const anyDrum ="));
-    if (!/secBeat\[b\.inst\]/.test(midi))
+    const midi = code.slice(code.indexOf("const drumForBarL = "), code.indexOf("const anyDrum ="));
+    if (!/secBeat\[b\.inst \+ suf\]/.test(midi))
       problems.push("src: the MIDI export ignores a section's own drum bars — the file would not be what plays");
     if (!/bars\[0\]\.length/.test(code.slice(code.indexOf("const tickCount = useMemo"), code.indexOf("subRef.current = meloSub"))))
       problems.push("src: the tick count does not account for an edited bar — its sixteenths would fall between ticks");
@@ -2998,7 +3001,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const tickBody = code.slice(code.indexOf("const emitTick ="), code.indexOf("const startMetro ="));
   const GATES = [
     [/if \(chord && [^)]*\(!m\.stem \|\| m\.stem\.kind === "chords"\)\)/, "chords are not gated on m.stem"],
-    [/if \(!m\.stem \|\| m\.stem\.kind === "drums"\)\s*\n\s*for \(const ch of dstep\)/, "drum voices are not gated on m.stem"],
+    [/if \(!m\.stem \|\| \(m\.stem\.kind === "drums" && \(m\.stem\.i \|\| 0\) === 0\)\)\s*\n\s*for \(const ch of dstep\)/, "drum voices are not gated on m.stem"],
     [/if \(m\.stem && !\(m\.stem\.kind === "part" && m\.stem\.i === li\)\) return;/, "melody parts are not gated on m.stem"],
     [/if \(clickRef\.current && !m\.stem\)/, "the metronome click is not excluded from stems"],
   ];

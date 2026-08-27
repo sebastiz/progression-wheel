@@ -80,38 +80,56 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
     cpend += barT - cursor;
   });
   // drumPat may be one pattern (array) shared by every bar, or a function (barIndex) → pattern|null
-  // so each section can carry its own kit (or fall silent) in the exported file
-  const drumFn = typeof drumPat === "function" ? drumPat : () => drumPat;
-  const drumHas = typeof drumPat === "function" ? bars.some((_, i) => drumFn(i)) : !!drumPat;
-  const drumsT = [];
-  if (drumHas) {
+  // so each section can carry its own kit (or fall silent) in the exported file. Written through
+  // `buildKitTrack`, the shared shape drums, perc and their extra tracks (meta.drumsExtra /
+  // meta.percExtra — the same pat/fn shape, one entry per track beyond the first) all use, so an
+  // extra track lands in the file exactly the way the first one always has.
+  const buildKitTrack = (pat, label, noteMap, velOf, program) => {
+    const fn = typeof pat === "function" ? pat : () => pat;
+    const has = typeof pat === "function" ? bars.some((_, i) => fn(i)) : !!pat;
+    if (!has) return null;
+    const arr = [];
     let pend = 0;
-    ev(drumsT, 0, 0xff, 0x03, 5, 0x44, 0x72, 0x75, 0x6d, 0x73);            // track name "Drums"
-    if (KIT_PROGRAM[kit] != null) ev(drumsT, 0, 0xc9, KIT_PROGRAM[kit]);   // machine kit on channel 10
+    ev(arr, 0, 0xff, 0x03, label.length, ...[...label].map(c => c.charCodeAt(0) & 0x7f));
+    if (program != null) ev(arr, 0, 0xc9, program);   // channel 10 — shared by every kit-ish track
     for (let bar = 0; bar < bars.length; bar++) {
-      const pat = drumFn(bar);
+      const pat2 = fn(bar);
       // each bar's pattern sets its own step count, so a sixteenth-note kit and an eighth-note
       // one can sit in the same exported file and both come out at the right speed
-      const steps = (pat && pat.length) || beatsPerBar * 2;
+      const steps = (pat2 && pat2.length) || beatsPerBar * 2;
       const stepT = beatsPerBar * T / steps;
       const gate = Math.min(60, stepT * 0.5);            // note length; short enough to fit a 16th step
       for (let s = 0; s < steps; s++) {
-        const notes = [...((pat && pat[s]) || "")].map(c => DRUM_MIDI[c] || 42);
+        const notes = [...((pat2 && pat2[s]) || "")].map(noteMap);
         if (!notes.length) { pend += stepT; continue; }
-        // cymbals and rim sit behind the kick/snare/clap, as they do in the app
         // the same positional accent the app plays, so the file grooves rather than sitting flat
         const acc = accentAt(s, steps / beatsPerBar);
-        notes.forEach((n, i) => ev(drumsT, i ? 0 : pend, 0x99, n,
-          Math.max(1, Math.round(([42,46,51,37].includes(n) ? 62 : 92) * acc))));
-        notes.forEach((n, i) => ev(drumsT, i ? 0 : gate, 0x89, n, 0));
+        notes.forEach((n, i) => ev(arr, i ? 0 : pend, 0x99, n, Math.max(1, Math.round(velOf(n) * acc))));
+        notes.forEach((n, i) => ev(arr, i ? 0 : gate, 0x89, n, 0));
         pend = stepT - gate;
       }
     }
-  }
+    return arr;
+  };
+  // cymbals and rim sit behind the kick/snare/clap, as they do in the app
+  const drumNoteMap = c => DRUM_MIDI[c] || 42;
+  const drumVel = n => ([42,46,51,37].includes(n) ? 62 : 92);
+  const percNoteMap = c => PERC_MIDI[c] || DRUM_MIDI[c] || 70;
+  const percVel = () => 68;                                          // under the kit
+  const NAMES = "ABCDEF";
+  const drumsT = buildKitTrack(drumPat, "Drums", drumNoteMap, drumVel, KIT_PROGRAM[kit]);
+  const drumHas = !!drumsT;
+  // extra drums tracks (#1, #2, …) — a second, third… pattern on the same kit and channel, exactly
+  // the way the perc layer already rides alongside the drums
+  const drumsExtraT = (meta.drumsExtra || [])
+    .map((pat, i) => buildKitTrack(pat, "Drums " + (NAMES[i + 1] || (i + 2)), drumNoteMap, drumVel, null))
+    .filter(Boolean);
   /* The bass and pad tracks, when the song has them: each is { notes: [{ t, dur, note, vel }],
      program } with times in beats — already resolved against patterns and per-section mutes, so
      this writer only lays the notes out. Channels 11 and 12: clear of the melody parts (1..8)
-     and of percussion (9), so several exported files opened together stay on their own channels. */
+     and of percussion (9), so several exported files opened together stay on their own channels.
+     Extra tracks (meta.bassExtra / meta.padExtra, same spec shape) share their instrument's
+     channel — several tracks on one channel, the same way drums and perc already do. */
   const noteTrack = (spec, ch, label) => {
     const arr = [];
     if (!spec || !spec.notes || !spec.notes.length) return null;
@@ -130,30 +148,17 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
   };
   const bassT = noteTrack(meta.bass, 11, "Bass");
   const padT = noteTrack(meta.pad, 12, "Pad");
+  const bassExtraT = (meta.bassExtra || [])
+    .map((spec, i) => noteTrack(spec, 11, "Bass " + (NAMES[i + 1] || (i + 2)))).filter(Boolean);
+  const padExtraT = (meta.padExtra || [])
+    .map((spec, i) => noteTrack(spec, 12, "Pad " + (NAMES[i + 1] || (i + 2)))).filter(Boolean);
   /* The percussion layer: a second channel-10 track from its own bar-by-bar pattern, written
      exactly the way the drums are so the two layers land on one drum kit in a DAW. */
-  const percFn = typeof meta.perc === "function" ? meta.perc : () => meta.perc || null;
-  const percHas = !!meta.perc && bars.some((_, i) => percFn(i));
-  const percT = [];
-  if (percHas) {
-    let pend = 0;
-    ev(percT, 0, 0xff, 0x03, 10, ...[...("Percussion")].map(c => c.charCodeAt(0)));
-    for (let bar = 0; bar < bars.length; bar++) {
-      const pat = percFn(bar);
-      const steps = (pat && pat.length) || beatsPerBar * 2;
-      const stepT = beatsPerBar * T / steps;
-      const gate = Math.min(60, stepT * 0.5);
-      for (let s = 0; s < steps; s++) {
-        const notes = [...((pat && pat[s]) || "")].map(c => PERC_MIDI[c] || DRUM_MIDI[c] || 70);
-        if (!notes.length) { pend += stepT; continue; }
-        const acc = accentAt(s, steps / beatsPerBar);
-        notes.forEach((n, i) => ev(percT, i ? 0 : pend, 0x99, n,
-          Math.max(1, Math.round(68 * acc))));                                      // under the kit
-        notes.forEach((n, i) => ev(percT, i ? 0 : gate, 0x89, n, 0));
-        pend = stepT - gate;
-      }
-    }
-  }
+  const percT = buildKitTrack(meta.perc || null, "Percussion", percNoteMap, percVel, null);
+  const percHas = !!percT;
+  const percExtraT = (meta.percExtra || [])
+    .map((pat, i) => buildKitTrack(pat, "Percussion " + (NAMES[i + 1] || (i + 2)), percNoteMap, percVel, null))
+    .filter(Boolean);
   // build one melody track from its grid columns; each layer gets its own channel
   const buildMelo = (cols, chOn, chOff, gain = 1) => {
     const colsPerBar = Math.max(1, beatsPerBar * sub);
@@ -180,7 +185,6 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
   // one track per melody part, on its own channel. Channels 1.. skip 9 (percussion is channel 10
   // in 1-based terms, 9 here), so a part is never voiced as a drum kit by mistake.
   const chanFor = p => { const c = p + 1; return c >= 9 ? c + 1 : c; };
-  const NAMES = "ABCDEF";
   const mels = (melParts || []).map((part, p) => {
     const ch = chanFor(p) & 0x0f;
     const cols = part && part.cols !== undefined ? part.cols : part;      // a bare column list still works
@@ -197,11 +201,15 @@ function midiBytes(bpm, beatsPerBar, bars, drumPat, melParts, kit, sub = 2, chor
      on a timeline still lands it at the right speed and with the sections marked. */
   const withChords = !meta.skipChords;
   const nTrk = 1 + (withChords ? 1 : 0) + (drumHas ? 1 : 0) + (percHas ? 1 : 0)
-    + (bassT ? 1 : 0) + (padT ? 1 : 0) + mels.length;
+    + (bassT ? 1 : 0) + (padT ? 1 : 0) + mels.length
+    + drumsExtraT.length + percExtraT.length + bassExtraT.length + padExtraT.length;
   const head = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0, nTrk, (T>>8)&255, T&255];
   return new Uint8Array([...head, ...trk(tempo), ...(withChords ? trk(chordsT) : []),
-    ...(drumHas ? trk(drumsT) : []), ...(percHas ? trk(percT) : []),
-    ...(bassT ? trk(bassT) : []), ...(padT ? trk(padT) : []), ...mels.flatMap(m => trk(m.arr))]);
+    ...(drumHas ? trk(drumsT) : []), ...drumsExtraT.flatMap(trk),
+    ...(percHas ? trk(percT) : []), ...percExtraT.flatMap(trk),
+    ...(bassT ? trk(bassT) : []), ...bassExtraT.flatMap(trk),
+    ...(padT ? trk(padT) : []), ...padExtraT.flatMap(trk),
+    ...mels.flatMap(m => trk(m.arr))]);
 }
 
 /* ===== midi import ===== */
