@@ -427,6 +427,37 @@ The riser and the impact are *added sources*, not processing, so they go to the 
 `fx` bus rather than the master. On the master they landed in every stem, and four stems summed to
 four risers — the one place the "stems add back up to the mix" invariant was quietly broken.
 
+#### Part moves and drum moves
+
+`MOVES` shapes the master mix; `PART_MOVES` and `DRUM_MOVES` (both in `melody.js`) shape an
+individual instrument or the kit, keyed by the same move id — picking "Build · arp speeds up" from
+the group's one Move dropdown does both jobs. Unlike the master filter, which Web Audio ramps
+natively once scheduled, a part's own notes are discrete choices made per tick, so these two read
+live off the scheduler's own `mb`/`nbars` every tick rather than being scheduled once — `rampAt(from,
+to, mb, nbars)` is the same section-relative fraction Swell (the `ramp` mod) already measures itself
+by, 0 at the section's first bar and 1 at its last, so it re-times itself when the arrangement
+changes exactly as Swell does.
+
+A `PART_MOVES` entry ramps one or more of a layer's own mods (`arpRate`, `euclid`, `gateLen`,
+`ratchet`, `rpitch`, `octJump`, `echo`, `echoFade`…) via `partMoveOf`, which patches a shallow copy of
+the layer for that tick — every downstream reader (`colFor`, `playArp`, `applyMods`…) goes on calling
+`modOf` as if the ramp were just another saved setting. `enable` turns on the one governing mod a
+ramp needs to be heard (`arp` for `arpRate`, `gate` for `gateLen`) only for a layer that had not
+already turned it on itself, so a part already arpeggiating keeps its own pattern and just inherits
+the move's ramp.
+
+A `DRUM_MOVES` entry is a generative fill rather than a hand-authored bar-by-bar pattern (a section's
+own written drum grid, `secBeat`): `fillHitAt` adds extra hits on one channel, spread by the same
+Euclidean spacing `euclid` uses on a melody part, sparse at the section's first bar and packed by its
+last, without silencing whatever the section already plays. Unlike `euclid`'s own 0 ("off — play
+every note"), a fill's 0 hits is genuinely off — a fill only ever adds hits, never removes them.
+
+Both read `moveRef.current.instBars`, the arrangement's own bar count per section instance, rather
+than the melody's own written bar count (which can be shorter than the instance if a section is
+stretched and repeats its last written bar) — so a part move's ramp and a drum move's fill measure
+themselves identically, and match the master filter's own moveSpan-driven duration on any section
+that has not been stretched.
+
 ### Transitions
 
 A move shapes a section; a **transition** shapes the boundary *into* one, which is a different job

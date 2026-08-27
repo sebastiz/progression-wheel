@@ -165,6 +165,23 @@ const MOVES = {};
 ["under",    "Underwater · stays shut",      { from: 600, to: 600 }],
 ["phone",    "Telephone · mids only",        { from: 2600, to: 2600, hp: { from: 560, to: 560 } }],
 ["swell",    "Swell · opens then shuts",     { from: 400, to: 400, peak: 14000 }],
+/* From here down, every id also has a PART_MOVES and/or DRUM_MOVES entry in melody.js — this
+   table still holds the name (so the id shows up in the group's one Move dropdown) and, where one
+   makes sense, a master-filter half to go with it; several are pure instrument/drum moves and carry
+   no filter spec at all (null), same as "no move". */
+["arpspeedup",   "Build · arp speeds up",           null],
+["arpforce",     "Build · everything arpeggiates",  { from: 3000, to: 16000 }],
+["thicken",      "Build · fills back in",           null],
+["thinout",      "Fade · thins out",                { from: 16000, to: 2000 }],
+["stutterbuild", "Build · stutter tightens",        { from: 6000, to: 16000 }],
+["stutterunwind","Drop · stutter unwinds",          { from: 16000, to: 16000, impact: true }],
+["gatetighten",  "Build · gate walks off the grid", null],
+["chaosrise",    "Build · chaos rises",             { from: 16000, to: 16000, hp: { from: 30, to: 500 } }],
+["echocascade",  "Build · echoes cascade",          null],
+["snaproll",     "Build · snare rolls in",          { from: 4000, to: 16000, riser: true, riserSpan: 0.5 }],
+["kickstutter",  "Build · kick stutters",           null],
+["hatrun",       "Build · hats run to sixteenths",  null],
+["megabuild",    "Build · everything intensifies",  { from: 260, to: 16000, riser: true, riserSpan: 0.4 }],
 ].forEach(([id, name, spec]) => { MOVES[id] = { name, spec }; });
 const FILTER_OPEN = 18000;                       // "no filtering", still inside Nyquist at 44.1k
 
