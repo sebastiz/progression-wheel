@@ -46,6 +46,13 @@ const planInsts = (plan, barsOf, letterOf) => {
 const idAll = n => Array.from({ length: n }, (_, i) => i);
 const MAX_ROWS = 24;          // a song with more sections than this is a different kind of document
 
+/* The Session view's clips live in these same per-instance maps, under a key no plan can ever
+   produce (`letterFor()` only ever returns letters — see docs/ARCHITECTURE.md). Keys carrying this
+   prefix name a clip, not an arrangement instance, so they ride through every plan edit exactly as
+   the groove's "*" does, rather than being pruned as an orphaned instance key. */
+const SESSION_PREFIX = "$";
+const isSurvivorKey = k => k.length === 1 || k[0] === SESSION_PREFIX;
+
 // swap a row with its neighbour
 const planMove = (rows, i, dir) => {
   const j = i + dir;
@@ -95,8 +102,9 @@ const planAdd = (rows, at, sec, nums = "LOOP") => {
 const remapSecs = (secs, oldPlan, newPlan, origin, letterOf, clone) => {
   const oldKeys = instKeysOf(oldPlan, letterOf), newKeys = instKeysOf(newPlan, letterOf);
   const out = {};
-  // the groove sketch ("*") belongs to the song, not to any plan row — it rides through every edit
-  for (const [k, s] of Object.entries(secs || {})) if (k.length === 1 && s)
+  // the groove sketch ("*") and any Session clip belong to the song, not to any plan row — both
+  // ride through every edit
+  for (const [k, s] of Object.entries(secs || {})) if (isSurvivorKey(k) && s)
     out[k] = { ids: [...(s.ids || [])], layers: (s.layers || []).map(clone) };
   newKeys.forEach((ks, i) => {
     const from = origin[i];
@@ -117,10 +125,10 @@ const remapSecs = (secs, oldPlan, newPlan, origin, letterOf, clone) => {
    was set on. Section-*type* keys (a bare letter) are left as they are, since types don't renumber. */
 const remapKeyed = (map, oldPlan, newPlan, origin, letterOf, clone = v => v) => {
   const entries = Object.entries(map || {});
-  if (!entries.some(([k]) => k.length > 1)) return map;      // nothing keyed to an instance
+  if (!entries.some(([k]) => !isSurvivorKey(k))) return map;  // nothing keyed to an instance
   const oldKeys = instKeysOf(oldPlan, letterOf), newKeys = instKeysOf(newPlan, letterOf);
   const out = {};
-  for (const [k, v] of entries) if (k.length === 1) out[k] = v;
+  for (const [k, v] of entries) if (isSurvivorKey(k)) out[k] = v;
   newKeys.forEach((ks, i) => {
     const from = origin[i];
     if (from == null || from < 0) return;                    // a new section starts with no move
@@ -181,7 +189,7 @@ const transCues = (insts, presetOf, barBeats) => {
   return cues;
 };
 
-export { MAX_ROWS, idAll, instKeysOf, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues };
+export { MAX_ROWS, SESSION_PREFIX, idAll, instKeysOf, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues };
 
 /* ---- automation lanes ----
    A section move is a preset applied to a whole section. Automation is the other half: a curve you

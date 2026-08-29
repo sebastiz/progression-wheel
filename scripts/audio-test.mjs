@@ -3096,7 +3096,9 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     problems.push("stem gating: the voicing is computed inside the chords-only branch — an arp in a part stem would follow the wrong chord");
   // the pump is deliberately outside the drum gate — it shapes the pitched bus, so it belongs in
   // every pitched stem even though the kick triggering it does not
-  const pumpLines = [...tickBody.matchAll(/^.*duckAt\(m\.(cduck|wetDuck|partDuck\[li\]).*$/gm)].map(x => x[0]);
+  // partDuck is indexed by li for an arrangement part, or chainLi for a Session track's clip —
+  // both are the same chain-slot idea, just offset clear of each other (see SESSION_LI_BASE)
+  const pumpLines = [...tickBody.matchAll(/^.*duckAt\(m\.(cduck|wetDuck|partDuck\[(li|chainLi)\]).*$/gm)].map(x => x[0]);
   if (pumpLines.length < 3) problems.push(`stem gating: expected the pump on the chord bus, the reverb return and each part; found ${pumpLines.length}`);
   for (const ln of pumpLines)
     if (/m\.stem/.test(ln)) problems.push("stem gating: a sidechain duck is gated on m.stem — that stem would lose its pumping");
