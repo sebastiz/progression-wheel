@@ -13,6 +13,7 @@ import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeN
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
+import { TRACK_TYPES, TRACK_TYPE_BY_ID, newClip, newTrack, nextClipNum, sessionKey } from "./session.js";
 import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 import { TRACK_PRESETS } from "./track-presets.js";
 // The Progression Wheel — v3 (slim)
@@ -521,7 +522,7 @@ export default function ProgressionWheel() {
   /* The page used to be one five-screen scroll that mixed choosing a key with drawing automation.
      Four modes instead, each about a screen: what the song is, what it sounds like, how it is laid
      out, and keeping it. The transport and the global actions stay outside them. */
-  const TABS = [["write", "Write"], ["sound", "Sound"], ["sketch", "Sketch"], ["arrange", "Arrange"], ["save", "Save"]];
+  const TABS = [["write", "Write"], ["sound", "Sound"], ["sketch", "Sketch"], ["arrange", "Arrange"], ["session", "Session"], ["save", "Save"]];
   const [tab, setTab] = useState("write");
   const [wheelOpen, setWheelOpen] = useState(true);
   const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
@@ -607,6 +608,20 @@ export default function ProgressionWheel() {
      loops while the shape is drafted, and the arrangement only changes when it is asked to. */
   const [sketchArr, setSketchArr] = useState([]);
   const [sketchSel, setSketchSel] = useState(0);      // which draft row the toolbar edits (UI-only)
+  /* The Session view: tracks (columns), each holding numbered clips. A clip's content lives in
+     the same per-instance maps a section's own track does (melos.secs, secBeat, secBassBeat, …),
+     keyed by sessionKey(trackId, clipId) — see session.js and the SESSION_PREFIX note in
+     arrange.js. Only the roster — which tracks exist, which clip numbers each has — is its own
+     state, the same division sketchArr draws for the groove sketch's draft rows. */
+  const [sessionTracks, setSessionTracks] = useState([]);
+  const [sessionSel, setSessionSel] = useState({ trackId:"", clipId:"" });   // which clip the editor below the grid shows
+  const [sessionModGrp, setSessionModGrp] = useState("pattern");   // which mod group tab the clip editor shows, for a melody clip
+  const [sessionPlaying, setSessionPlaying] = useState(false);
+  const [sessionLive, setSessionLive] = useState({});    // UI mirror of sessionLiveRef, { trackId: clipId } — which clip is actually sounding
+  const [sessionQueued, setSessionQueued] = useState({}); // UI mirror of sessionQueueRef, { trackId: clipId } — armed for the next bar
+  const sessionModeRef = useRef(false);        // true while the Session transport (not the song's) is playing
+  const sessionLiveRef = useRef({});           // { trackId: { clipId, startStep } } — the clip each track is actually playing, and when it started
+  const sessionQueueRef = useRef({});          // { trackId: clipId } — queued to take over at the next bar
   const [percKitSt, setPercKitSt] = useState({ key:"", val:"" });   // hand vs machine percussion voicing
   /* Each track's effect panel: a sparse object of the same modulation keys the melody parts use
      (only values that differ from their default are stored), one per track. */
@@ -1850,8 +1865,27 @@ export default function ProgressionWheel() {
       });
       out[d.key] = { ids: own.ids, layers, inhParts, inherited: !plays(saved) };
     });
+    /* Session view melody clips: each is its own single-layer pseudo-section, keyed
+       sessionKey(trackId, clipId) — no chord-id adaptation and no groove inheritance, since a
+       clip is not anchored to a position in the progression the way an arrangement instance is,
+       it just plays over whichever chord happens to be sounding. Reusing this shape (rather than
+       a parallel one) is what lets putSec/putLayer/tapMelo and the mod panels edit a clip with
+       no code of their own — see session.js's own note. */
+    sessionTracks.forEach(tr => {
+      if (tr.type !== "melody") return;
+      tr.clips.forEach(clip => {
+        const key = sessionKey(tr.id, clip.id);
+        const saved = melos.secs[key];
+        const ly = (saved && saved.layers && saved.layers[0]) || {};
+        const bars = (ly.bars && ly.bars.length) ? ly.bars : blankBars(clip.nbars || 4, meloBeats);
+        out[key] = { ids: [], layers: [{ bars, flat: bars.flat(), instr: ly.instr || null,
+          oct: ly.oct != null ? ly.oct : (LAYER_DEFAULT_OCT[0] || 0),
+          vol: ly.vol != null ? ly.vol : (LAYER_DEFAULT_VOL[0] != null ? LAYER_DEFAULT_VOL[0] : 1),
+          mute: !!ly.mute, solo: !!ly.solo, send: ly.send || 0, ...layerFx(ly) }] };
+      });
+    });
     return out;
-  }, [melos, progId, sections, meloBeats, grooveInst, secPartOut]);
+  }, [melos, progId, sections, meloBeats, grooveInst, secPartOut, sessionTracks]);
   /* An arp or a note gate is a rhythm too, and can be finer than anything else in the song: a 1/32
      arp wants eight ticks a beat, a gate four. Folded into the scheduler's resolution here rather
      than in `tickCount` above, because the parts that carry them are only known once `secMelos` has
@@ -2190,6 +2224,94 @@ export default function ProgressionWheel() {
       (_, b) => [...bars[Math.min(b, bars.length - 1)]]);
     setSecChordBeat(next);
   };
+  /* ---- Session view: track + clip management ----
+     A clip's content lives in the same per-instance maps a section's own track already uses
+     (melos.secs for melody, secBeat/secBassBeat/secPadBeat/secPercBeat/secChordBeat for the
+     grid tracks), under sessionKey(trackId, clipId) — see the note in session.js. This block
+     only ever touches the roster (sessionTracks) plus, on delete, cleaning up whichever of those
+     maps the deleted track or clip could have written into. */
+  const SESSION_BEAT_MAPS = {
+    drums:  [secBeat, setSecBeat], bass: [secBassBeat, setSecBassBeat],
+    pad:    [secPadBeat, setSecPadBeat], perc: [secPercBeat, setSecPercBeat],
+    chords: [secChordBeat, setSecChordBeat],
+  };
+  const dropSessionKeys = (type, keys) => {
+    if (type === "melody") {
+      const secs = melos.progId === progId ? melos.secs : {};
+      const next = { ...secs }; let changed = false;
+      for (const k of keys) if (k in next) { delete next[k]; changed = true; }
+      if (changed) setMelos({ progId, secs: next });
+      return;
+    }
+    const pair = SESSION_BEAT_MAPS[type]; if (!pair) return;
+    const [map, setter] = pair;
+    const next = { ...map }; let changed = false;
+    for (const k of keys) if (k in next) { delete next[k]; changed = true; }
+    if (changed) setter(next);
+  };
+  const clearSessionUI = (trackId, clipId) => {
+    const live = sessionLiveRef.current[trackId];
+    if (live && (clipId == null || live.clipId === clipId)) {
+      delete sessionLiveRef.current[trackId];
+      setSessionLive(sl => { const n = { ...sl }; delete n[trackId]; return n; });
+    }
+    if (sessionQueueRef.current[trackId] != null && (clipId == null || sessionQueueRef.current[trackId] === clipId)) {
+      delete sessionQueueRef.current[trackId];
+      setSessionQueued(sq => { const n = { ...sq }; delete n[trackId]; return n; });
+    }
+  };
+  const addSessionTrack = type => {
+    const tr = newTrack(type);
+    setSessionTracks([...sessionTracks, tr]);
+    setSessionSel({ trackId: tr.id, clipId: tr.clips[0].id });
+  };
+  const removeSessionTrack = trackId => {
+    const track = sessionTracks.find(t => t.id === trackId); if (!track) return;
+    setSessionTracks(sessionTracks.filter(t => t.id !== trackId));
+    dropSessionKeys(track.type, track.clips.map(c => sessionKey(trackId, c.id)));
+    clearSessionUI(trackId);
+    if (sessionSel.trackId === trackId) setSessionSel({ trackId:"", clipId:"" });
+  };
+  const renameSessionTrack = (trackId, name) =>
+    setSessionTracks(sessionTracks.map(t => t.id === trackId ? { ...t, name } : t));
+  const addSessionClip = trackId => {
+    const track = sessionTracks.find(t => t.id === trackId); if (!track) return;
+    const clip = newClip(nextClipNum(track), track.clips[track.clips.length - 1].nbars);
+    setSessionTracks(sessionTracks.map(t => t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t));
+    setSessionSel({ trackId, clipId: clip.id });
+  };
+  const removeSessionClip = (trackId, clipId) => {
+    const track = sessionTracks.find(t => t.id === trackId);
+    if (!track || track.clips.length <= 1) return;   // a track keeps at least one clip
+    setSessionTracks(sessionTracks.map(t => t.id === trackId
+      ? { ...t, clips: t.clips.filter(c => c.id !== clipId) } : t));
+    dropSessionKeys(track.type, [sessionKey(trackId, clipId)]);
+    clearSessionUI(trackId, clipId);
+    if (sessionSel.trackId === trackId && sessionSel.clipId === clipId) {
+      const remain = track.clips.find(c => c.id !== clipId);
+      setSessionSel({ trackId, clipId: remain ? remain.id : "" });
+    }
+  };
+  const setSessionClipLen = (trackId, clipId, nbars) => setSessionTracks(sessionTracks.map(t => t.id === trackId
+    ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, nbars: Math.max(1, Math.min(32, nbars)) } : c) } : t));
+  /* Click a clip to launch it: queued for the next bar if the Session transport is already
+     running (a quantized launch, the point of the whole view), or armed to start at bar 0 and
+     the transport started if it is not — the same "clicking a clip starts the room" a launcher
+     always does. */
+  const launchSessionClip = (trackId, clipId) => {
+    if (!sessionPlaying) {
+      // sessionPlay's own startMetro resets every clip to "nothing live" on the way up (there is
+      // no prior state to preserve — this is the first clip of the room), so the actual arming
+      // happens after it returns, not before, or this write would be the one getting reset.
+      sessionPlay();
+      sessionLiveRef.current = { ...sessionLiveRef.current, [trackId]: { clipId, startStep: 0 } };
+      setSessionLive(sl => ({ ...sl, [trackId]: clipId }));
+      return;
+    }
+    sessionQueueRef.current = { ...sessionQueueRef.current, [trackId]: clipId };
+    setSessionQueued(sq => ({ ...sq, [trackId]: clipId }));
+  };
+  const stopSessionTrack = trackId => clearSessionUI(trackId);
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
     if (!from) return;
@@ -2986,6 +3108,11 @@ export default function ProgressionWheel() {
     const m = metroRef.current;
     if (m) { clearInterval(m.timer); try { m.ctx.close(); } catch (e) {} metroRef.current = null; }
     setPlaying(false); setCurStep(-1); setCurBar(-1); setCurLabel(null); setCurQ(null); setCurInst(null); setCurSongBar(-1);
+    // whichever transport was running, a full stop clears every clip that was live or queued —
+    // there is no "paused, waiting to resume" state for the Session view
+    sessionModeRef.current = false; setSessionPlaying(false);
+    sessionLiveRef.current = {}; sessionQueueRef.current = {};
+    setSessionLive({}); setSessionQueued({});
   };
   // The audio graph, built into whatever context it is given — a live AudioContext for playback,
   // an OfflineAudioContext for rendering the song to a file. Everything downstream of `master`
@@ -3204,7 +3331,10 @@ export default function ProgressionWheel() {
          the subtractive workflow, and it must not depend on which section happens to be biggest. */
       const gvLoop = !!(loop && loop.groove);
       let chord, pillIdx = -1, label = null, instNow = "L1", structBar = -1;
-      if (struct && struct.length && !gvLoop) {
+      /* The Session view has its own transport: the plain chord loop plays underneath it exactly
+         as it does when looping the groove, whatever structure happens to be loaded — every track
+         it drives is a session clip, not an arrangement instance, so there is no structBar to be. */
+      if (struct && struct.length && !gvLoop && !sessionModeRef.current) {
         // confine to the toggled section's bar window when a loop is active
         const useLoop = loop && loop.len > 0 && loop.from + loop.len <= struct.length;
         structBar = useLoop
@@ -3222,6 +3352,26 @@ export default function ProgressionWheel() {
         pillIdx = seq.length ? seq[bar] : 0;
         chord = list[pillIdx];
         if (gvLoop) { instNow = "*"; label = `groove · bar ${bar + 1} of ${seq.length || 1} · 🔁 loop`; }
+      }
+      /* Session view: bar-quantized clip launching. At the top of every bar, whatever was queued
+         for a track takes over from whatever it was playing — this is what makes a click land on
+         the beat instead of firing the instant it happened. `startStep` is this promotion's own
+         tick, so the clip's local bar position always starts at its own bar 0. */
+      if (sessionModeRef.current && i === 0) {
+        const queue = sessionQueueRef.current;
+        const promoted = Object.keys(queue).length > 0;
+        for (const trackId in queue) {
+          sessionLiveRef.current[trackId] = { clipId: queue[trackId], startStep: m.step };
+          delete queue[trackId];
+        }
+        if (live && promoted) {
+          const delayMs = Math.max(0, (m.nextTime - m.ctx.currentTime) * 1000);
+          setTimeout(() => {
+            setSessionLive(Object.fromEntries(
+              Object.entries(sessionLiveRef.current).map(([k, v]) => [k, v.clipId])));
+            setSessionQueued({});
+          }, delayMs);
+        }
       }
       let sym = (patStep == null ? null : patRef.current[patStep]) || "-";
       let t = m.nextTime;
@@ -3307,18 +3457,42 @@ export default function ProgressionWheel() {
       const bassOn = bassSrcs.some(Boolean);
       if (sym !== "-") {
         if (clickRef.current && !m.stem) clickSound(m.ctx, t, sym, m.master);   // metronome click, off by default; never in a stem
+      }
+      if (sym !== "-" && !sessionModeRef.current) {
         if (chord && !quiet && (!m.stem || m.stem.kind === "chords")) {
           // while the bass track carries the root, the chords stop doubling it an octave down
           const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.chordBus, m.voicing, bassOn);
           if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.chordBus, m.voicing, bassOn);
         }
       }
+      /* Session view: each session track resolves against its own live clip's own bars, looped
+         at the clip's own length from the tick it was launched — independent of every other
+         track, which is the whole point of a launcher over the arrangement's one shared bar
+         pointer. A track with nothing live is silent, exactly like an unlit clip slot. */
+      const sessionBassOn = sessionModeRef.current
+        && sessionTracks.some(tr => tr.type === "bass" && sessionLiveRef.current[tr.id]);
+      if (sessionModeRef.current && chord) sessionTracks.forEach(tr => {
+        const live = sessionLiveRef.current[tr.id]; if (!live) return;
+        const key = sessionKey(tr.id, live.clipId);
+        const localBar = n => Math.floor((m.step - live.startStep) / L) % Math.max(1, n);
+        if (tr.type === "chords") {
+          if (m.stem && m.stem.kind !== "chords") return;
+          const bars = secChordBeatRef.current[key]; if (!bars || !bars.length) return;
+          const bar = bars[localBar(bars.length)] || [];
+          const cs = stepAt(bar.length, i, L);
+          const tok = cs == null ? "-" : (bar[cs] || "-");
+          if (tok !== "-" && !quiet) {
+            const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, tok, eighth, m.chordBus, m.voicing, sessionBassOn);
+            if (!played) playHit(m.ctx, t, chord, tok, inst, eighth, m.chordBus, m.voicing, sessionBassOn);
+          }
+        }
+      });
       /* The bass track. A written grid plays bar by bar exactly as the drums' own bars do; a
          "follow" pattern plays the root under the strum's hits — the note the chords used to
          carry, made separable; a catalogue pattern plays its own sixteenths. Every note is held
          until the next hit, so a lone hit is a whole-bar sub. It sounds through `quiet`: chords
          out with the bassline running is the disco filter-edit move the track exists for. */
-      if (chord) bassSrcs.forEach((bassSrc, li) => {
+      if (chord && !sessionModeRef.current) bassSrcs.forEach((bassSrc, li) => {
         if (!bassSrc || (m.stem && !(m.stem.kind === "bass" && (m.stem.i || 0) === li))) return;
         const bbar = srcBar(bassSrc);
         const bpat = bbar || (BASS[bassSrc.pat] || {}).pattern;
@@ -3336,6 +3510,23 @@ export default function ProgressionWheel() {
               bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
           }
         }
+      });
+      if (sessionModeRef.current && chord) sessionTracks.forEach(tr => {
+        if (tr.type !== "bass") return;
+        const live = sessionLiveRef.current[tr.id]; if (!live) return;
+        if (m.stem && m.stem.kind !== "bass") return;
+        const key = sessionKey(tr.id, live.clipId);
+        const bars = secBassBeatRef.current[key]; if (!bars || !bars.length) return;
+        const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
+        const bpat = bars[localBar] || [];
+        const bs = stepAt(bpat.length, i, L);
+        const tok = bs == null ? "" : bpat[bs];
+        if (!tok || tok === "-") return;
+        let gap = 1;
+        while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
+        const stepDur = tick * (L / bpat.length);
+        playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
+          bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
       });
       /* The pad track: the chord's upper voicing held a bar at a time, legato, into its own
          filter and the reverb bus. Upper voicing only — the low root belongs to the bass or the
@@ -3356,7 +3547,25 @@ export default function ProgressionWheel() {
         }
         return { voice, own, loop };
       };
-      if (chord) for (let li = 0; li < nLayersOf("pad"); li++) {
+      if (chord && sessionModeRef.current) sessionTracks.forEach(tr => {
+        if (tr.type !== "pad") return;
+        const live = sessionLiveRef.current[tr.id]; if (!live) return;
+        if (m.stem && m.stem.kind !== "pad") return;
+        const key = sessionKey(tr.id, live.clipId);
+        const bars = secPadBeatRef.current[key]; if (!bars || !bars.length) return;
+        const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
+        const pbar = bars[localBar] || [];
+        const ps2 = stepAt(pbar.length, i, L);
+        const tok = ps2 == null ? "" : pbar[ps2];
+        if (!tok) return;
+        let gap = 1;
+        while (gap < pbar.length && !pbar[(ps2 + gap) % pbar.length]) gap++;
+        const stepDur = tick * (L / pbar.length);
+        const dur = tok === "S" ? Math.min(stepDur * 1.8, beat * 0.45) : Math.max(0.15, gap * stepDur * 0.95);
+        for (const mid of (m.voicing || voiceChord(chord)))
+          leadNote(m.ctx, t, mid, dur, padRef.current || "strings", tok !== "S", m.trPad.in, { lvl: 0.8 });
+      });
+      if (chord && !sessionModeRef.current) for (let li = 0; li < nLayersOf("pad"); li++) {
         if (m.stem && !(m.stem.kind === "pad" && (m.stem.i || 0) === li)) continue;
         const suf = li ? LSEP + li : "";
         const { voice: padV, own: padOwn, loop: padLoop } = resolvePad(
@@ -3385,7 +3594,7 @@ export default function ProgressionWheel() {
       /* The percussion layer: a second pattern from the drum table riding over the main groove on
          the same kit, slightly under it in level, through its own drawn filter. It never triggers
          the pump — that belongs to the song's kick. */
-      for (let li = 0; li < nLayersOf("perc"); li++) {
+      if (!sessionModeRef.current) for (let li = 0; li < nLayersOf("perc"); li++) {
         if (m.stem && !(m.stem.kind === "perc" && (m.stem.i || 0) === li)) continue;
         const suf = li ? LSEP + li : "";
         const percSrc = srcOf(secPercBeatRef.current, secPercPatRef.current, secPercRef.current, li ? null : percRef.current,
@@ -3402,6 +3611,17 @@ export default function ProgressionWheel() {
             else percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
           }
       }
+      if (sessionModeRef.current) sessionTracks.forEach(tr => {
+        if (tr.type !== "perc") return;
+        const live = sessionLiveRef.current[tr.id]; if (!live) return;
+        if (m.stem && m.stem.kind !== "perc") return;
+        const key = sessionKey(tr.id, live.clipId);
+        const bars = secPercBeatRef.current[key]; if (!bars || !bars.length) return;
+        const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
+        const pstep = sampleAt(bars[localBar], i, L);
+        if (pstep) for (const ch of pstep)
+          percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
+      });
       let b = null;                                     // this bar's struct entry, kept for the drum fill below
       const inStruct = struct && struct.length && structBar >= 0 && !gvLoop;
       if (inStruct) b = struct[structBar];
@@ -3591,7 +3811,7 @@ export default function ProgressionWheel() {
               maxPre: c.maxPre, maxPost: c.maxPost });
         }
       }
-      let dstep = sampleAt(dpat, i, L);            // the drum pattern resampled onto the bar's ticks
+      let dstep = sessionModeRef.current ? null : sampleAt(dpat, i, L);   // the drum pattern resampled onto the bar's ticks
       // a drum move adds extra hits on one channel, on top of whatever this section already plays —
       // see DRUM_MOVES in melody.js. Only live inside an arrangement, same as a section move itself.
       if (b) {
@@ -3605,7 +3825,7 @@ export default function ProgressionWheel() {
         }
       }
       const accent = accentAt(i, ticksPerBeat);    // lean on the pulse rather than hitting flat
-      const kickNow = !!dstep && /[KB]/.test(dstep);
+      let kickNow = !!dstep && /[KB]/.test(dstep);
       if (dstep) {
         if (!m.stem || (m.stem.kind === "drums" && (m.stem.i || 0) === 0))
           for (const ch of dstep) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
@@ -3620,42 +3840,80 @@ export default function ProgressionWheel() {
           const dstepL = sampleAt(dpatL, i, L);
           if (dstepL) for (const ch of dstepL) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
         }
-        // Pump the pitched sources under every kick. Recovery stops just short of the next beat, so
-        // four-on-the-floor breathes fully back in right as the next kick hits. The pump belongs to
-        // the pitched sources, so it stays in every pitched stem even though the kick that triggers
-        // it does not — that is what makes the stems sum back to the mix. Melody parts duck on
-        // their own nodes further down, each by its own amount.
-        if (pumpRef.current && kickNow) {
-          duckAt(m.cduck, t, pumpRef.current, beat * 0.8);
-          duckAt(m.wetDuck, t, pumpRef.current, beat * 0.8);
-          /* Per-track pump. The panel's Pump knob overrides the genre defaults — the bass ducks
-             hardest (the kick and the bassline share a register), the pad barely moves, and the
-             perc doesn't duck at all unless its knob says so. */
-          const F2 = trackFxRef.current || {};
-          const dk = k => (F2[k] && F2[k].duck != null) ? F2[k].duck : null;
-          duckAt(m.bduck, t, dk("bass") != null ? dk("bass") : Math.min(1, pumpRef.current * 1.3), beat * 0.8);
-          duckAt(m.padDuck, t, dk("pad") != null ? dk("pad") : pumpRef.current * 0.5, beat * 0.8);
-          if (dk("perc")) duckAt(m.trPerc.duck, t, dk("perc"), beat * 0.8);
-        }
+      }
+      /* Session view: each live drums track is independent — its own written grid, its own local
+         bar position from the tick it was launched, no shared dpat. Any of them landing a kick
+         still pumps the pitched tracks, the same "kick opens a hole for everything else" rule. */
+      if (sessionModeRef.current) sessionTracks.forEach(tr => {
+        if (tr.type !== "drums") return;
+        const live = sessionLiveRef.current[tr.id]; if (!live) return;
+        if (m.stem && m.stem.kind !== "drums") return;
+        const key = sessionKey(tr.id, live.clipId);
+        const bars = secBeatRef.current[key]; if (!bars || !bars.length) return;
+        const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
+        const dstepS = sampleAt(bars[localBar], i, L);
+        if (!dstepS) return;
+        if (/[KB]/.test(dstepS)) kickNow = true;
+        for (const ch of dstepS) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
+      });
+      // Pump the pitched sources under every kick. Recovery stops just short of the next beat, so
+      // four-on-the-floor breathes fully back in right as the next kick hits. The pump belongs to
+      // the pitched sources, so it stays in every pitched stem even though the kick that triggers
+      // it does not — that is what makes the stems sum back to the mix. Melody parts duck on
+      // their own nodes further down, each by its own amount.
+      if (pumpRef.current && kickNow) {
+        duckAt(m.cduck, t, pumpRef.current, beat * 0.8);
+        duckAt(m.wetDuck, t, pumpRef.current, beat * 0.8);
+        /* Per-track pump. The panel's Pump knob overrides the genre defaults — the bass ducks
+           hardest (the kick and the bassline share a register), the pad barely moves, and the
+           perc doesn't duck at all unless its knob says so. */
+        const F2 = trackFxRef.current || {};
+        const dk = k => (F2[k] && F2[k].duck != null) ? F2[k].duck : null;
+        duckAt(m.bduck, t, dk("bass") != null ? dk("bass") : Math.min(1, pumpRef.current * 1.3), beat * 0.8);
+        duckAt(m.padDuck, t, dk("pad") != null ? dk("pad") : pumpRef.current * 0.5, beat * 0.8);
+        if (dk("perc")) duckAt(m.trPerc.duck, t, dk("perc"), beat * 0.8);
       }
       const mel = meloRef.current;
+      // Every arrangement part shares chain slots 0..MAX_LAYERS-1; a Session melody track's clip
+      // gets one starting well clear of that range, so the two schemes can never collide.
+      const SESSION_LI_BASE = 1000;
       if (mel) {
-        let sym = null, mb = 0, moveId = "";
-        if (gvLoop && mel.bySym[GROOVE]) {
-          sym = GROOVE;
-          const nb = (mel.bySym[GROOVE].layers[0].bars.length) || 1;
-          mb = Math.floor(m.step / L) % nb;
-        } else if (struct && struct.length) {
-          const e = struct[structBar];   // same bar the chord engine chose (honours the loop window)
-          sym = e.inst; mb = e.mb;
-          // a part move is structure-based, exactly like a section move: no arrangement, no move
-          moveId = (e.inst != null && moveRef.current.moves[e.inst])
-            || (e.base != null && moveRef.current.moves[e.base]) || "";
-        } else if (mel.bySym.L1) {
-          sym = "L1";
-          const nb = (mel.bySym.L1.layers[0].bars.length) || 1;
-          mb = Math.floor(m.step / L) % nb;
+        /* Normally one job: the section (or groove, or "L1" with no structure) the arrangement's
+           one shared bar pointer has landed on. In the Session view it is instead one job per
+           live melody track — its own sym/mb from its own clip and start tick, its own chain-slot
+           offset — so several independent instruments can play on the same tick through exactly
+           the note engine below, none of them fighting over a chain, a hash seed or a gate node. */
+        const melJobs = [];
+        if (sessionModeRef.current) {
+          sessionTracks.forEach((tr, idx) => {
+            if (tr.type !== "melody") return;
+            const live = sessionLiveRef.current[tr.id]; if (!live) return;
+            const key = sessionKey(tr.id, live.clipId);
+            const secX = mel.bySym[key]; if (!secX) return;
+            const nb = (secX.layers[0] && secX.layers[0].bars.length) || 1;
+            const mbX = Math.floor((m.step - live.startStep) / L) % nb;
+            melJobs.push({ sym: key, mb: mbX, moveId: "", liBase: SESSION_LI_BASE + idx });
+          });
+        } else {
+          let sym = null, mb = 0, moveId = "";
+          if (gvLoop && mel.bySym[GROOVE]) {
+            sym = GROOVE;
+            const nb = (mel.bySym[GROOVE].layers[0].bars.length) || 1;
+            mb = Math.floor(m.step / L) % nb;
+          } else if (struct && struct.length) {
+            const e = struct[structBar];   // same bar the chord engine chose (honours the loop window)
+            sym = e.inst; mb = e.mb;
+            // a part move is structure-based, exactly like a section move: no arrangement, no move
+            moveId = (e.inst != null && moveRef.current.moves[e.inst])
+              || (e.base != null && moveRef.current.moves[e.base]) || "";
+          } else if (mel.bySym.L1) {
+            sym = "L1";
+            const nb = (mel.bySym.L1.layers[0].bars.length) || 1;
+            mb = Math.floor(m.step / L) % nb;
+          }
+          if (sym) melJobs.push({ sym, mb, moveId, liBase: 0 });
         }
+        melJobs.forEach(({ sym, mb, moveId, liBase }) => {
         const sec = sym && mel.bySym[sym];
         // the section instance's own written bar count, from the arrangement rather than the
         // melody's own grid, so a part move's ramp matches the drum fill's exactly
@@ -4062,6 +4320,10 @@ export default function ProgressionWheel() {
           const anySolo = sec.layers.some(ly => ly.solo);
           sec.layers.forEach((ly, li) => {
             if (m.stem && !(m.stem.kind === "part" && m.stem.i === li)) return;
+            // this tick's chain slot — the arrangement's own parts use li itself (liBase 0); a
+            // Session track's clip gets a slot of its own, offset clear of every arrangement part
+            // (see the liBase note below), so the two never fight over the same nodes.
+            const chainLi = liBase + li;
             // a part move patches this tick's read of the layer's own mods — every reader below
             // (layerFx, modOf, colFor, playArp…) sees it as if the ramp were just another setting
             if (moveId) ly = partMoveOf(ly, moveId, mb, mvNbars);
@@ -4071,12 +4333,12 @@ export default function ProgressionWheel() {
                it. It is memoised, so the cost is one lookup; what it buys is that a part's LFOs
                and filter always start at the same moment in the song, whichever settings happen to
                be turned up — the property a stem bounce needs to line up with the mix. */
-            chainOf(li);
-            applyMods(li, ly, t);
+            chainOf(chainLi);
+            applyMods(chainLi, ly, t);
             // this part's own sidechain depth; null means "whatever the global Pump says"
             if (kickNow) {
               const amt = fx.duck == null ? pumpRef.current : fx.duck;
-              if (amt && m.partDuck[li]) duckAt(m.partDuck[li], t, amt, beat * 0.8);
+              if (amt && m.partDuck[chainLi]) duckAt(m.partDuck[chainLi], t, amt, beat * 0.8);
             }
             // The note gate, on a four-per-beat grid so one pattern reads the same in 3/4 as in
             // 4/4. setTargetAtTime rather than a step, or every edge clicks.
@@ -4093,24 +4355,29 @@ export default function ProgressionWheel() {
                 ? Math.floor(i * gsteps / L)
                 : Math.floor(m.step * gsteps / L);
               const open = pat[((gstep % len) + len) % len] === "x" ? 1 : 0;
-              m.partGate[li].gain.setTargetAtTime(open, t, 0.004);
-            } else if (m.partGate[li]) {
+              m.partGate[chainLi].gain.setTargetAtTime(open, t, 0.004);
+            } else if (m.partGate[chainLi]) {
               // Turning the gate off has to re-open it. Without this, switching the menu back to
               // "off" while the gate happened to be shut would leave the node at zero and the part
               // silent for the rest of the session.
-              m.partGate[li].gain.setTargetAtTime(1, t, 0.01);
+              m.partGate[chainLi].gain.setTargetAtTime(1, t, 0.01);
             }
             // how many bars this section runs for, so Swell can measure its way across it
             const nbars = (sec.layers[0] && sec.layers[0].bars.length) || 1;
-            if (fx.arp) playArp(ly, fx, voice, li, ly.oct || 0, gain, ly.send || 0, nbars);
-            else playLayer(ly, ly.flat, voice, li, ly.oct || 0, gain, ly.send || 0, nbars);
+            if (fx.arp) playArp(ly, fx, voice, chainLi, ly.oct || 0, gain, ly.send || 0, nbars);
+            else playLayer(ly, ly.flat, voice, chainLi, ly.oct || 0, gain, ly.send || 0, nbars);
           });
-          const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
-          if (melStep != null) {
-            const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
-            setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
+          // the piano-roll playhead is the arrangement's own; the Session view has no single
+          // "current column" across N independent tracks, so it stays out of this readout
+          if (liBase === 0) {
+            const Nq = (sec.layers.find(ly => ly.flat.length) || { flat: [] }).flat.length;
+            if (melStep != null) {
+              const q = { sym, col: Nq ? (mb * MB + melStep) % Nq : 0 };
+              setTimeout(() => setCurQ(q), Math.max(0, (t - m.ctx.currentTime) * 1000));
+            }
           }
         }
+        });
       }
       const delay = Math.max(0, (t - m.ctx.currentTime) * 1000);
       if (live && patStep != null) setTimeout(() => setCurStep(patStep), delay);   // playhead walks the strum pattern, not the ticks
@@ -4135,6 +4402,16 @@ export default function ProgressionWheel() {
     metroRef.current = m;
     setPlaying(true);
   };
+  /* The Session view's own transport. It shares the arrangement's metronome/audio-graph plumbing
+     (there is only ever one AudioContext playing) but none of its bar pointer: startMetro(0)'s
+     own stopMetro() clears sessionModeRef first, so it is set *after* — every track then resolves
+     against whatever was queued in sessionLiveRef/sessionQueueRef before Play was pressed, rather
+     than the arrangement or the groove. */
+  const sessionPlay = () => {
+    startMetro(0);
+    sessionModeRef.current = true;
+    setSessionPlaying(true);
+  };
   // toggle a single-section loop: while on, all playback confines to this section and repeats.
   // Turning it on also starts playback from the section if nothing is playing.
   const toggleLoopSec = d => {
@@ -4153,6 +4430,7 @@ export default function ProgressionWheel() {
      may have left armed (or the song could not be played at all). Space bar goes through here too. */
   const playTransport = () => {
     if (playing) { stopMetro(); return; }
+    if (tab === "session") { sessionPlay(); return; }
     if (tab === "sketch") {
       loopRef.current = { groove: true, len: grooveInst.nbars };
       setLoopSec(GROOVE);
@@ -5161,6 +5439,7 @@ export default function ProgressionWheel() {
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
+    session: sessionTracks,
   });
   /* ---- undo / redo ----
      One snapshot of the song document per change, taken from a debounced effect rather than at
@@ -5172,7 +5451,7 @@ export default function ProgressionWheel() {
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
       kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
       secBassPat, secPercPat, secPadVoice, secPartOut, secTrackLayers, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit, fxRack, secFx,
-      secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, sketchArr, ovMap, insList, qmap, remList, order, melos]);
+      secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, sketchArr, ovMap, insList, qmap, remList, order, melos, sessionTracks]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -5468,6 +5747,7 @@ export default function ProgressionWheel() {
     if (s.melInstr) setMelInstr(s.melInstr);
     // melodies were session-only before this; a sketch without them just loads an empty grid
     setMelos(s.melos ? songMelos(s) : { progId:"", secs:{} });
+    setSessionTracks(Array.isArray(s.session) ? s.session : []);
     setMelSel({ key:"", layer:0, notes:{} }); setNarUndo(null); setVaryIn({});
     setIoNote("Loaded “" + s.name + "”.");
   };
@@ -7580,6 +7860,23 @@ export default function ProgressionWheel() {
         .gridbar.on { border-color:var(--line-3); border-bottom-left-radius:0; border-bottom-right-radius:0; }
         .gridbarcaret { color:var(--muted); }
         .gridbarnote { margin-left:auto; font-size:var(--fs-sm); color:var(--muted); font-weight:400; }
+        /* ---- Session view: a track (column) of numbered clips, and the compact grid each one
+           opens with below — a plain HTML table rather than the Arrange grid's SVG, since a clip's
+           editor has no playhead or drag-paint of its own to draw. */
+        .sesstrack { background:var(--surface-2); border:1px solid var(--line-2); border-radius:var(--r-md); padding:8px; min-width:160px; }
+        .sessgridwrap { overflow-x:auto; margin-top:8px; }
+        .sessgrid { border-collapse:collapse; }
+        .sessgridrow { font-size:var(--fs-sm); color:var(--muted); text-align:right; padding-right:6px; white-space:nowrap; }
+        .sessgridcell { width:14px; height:14px; border:1px solid var(--line-2); background:var(--surface); cursor:pointer; padding:0; }
+        .sessgridcell.barstart { border-left:2px solid var(--line-3); }
+        .sessgridcell.on { border-color:var(--line-3); }
+        .sessgridcell:hover { border-color:var(--line-4); }
+        .clipbtn { font-size:var(--fs-sm); padding:3px 9px; border-radius:var(--r-pill); border:1px solid var(--line-2);
+          background:var(--surface); color:var(--muted); cursor:pointer; font-variant-numeric:tabular-nums; }
+        .clipbtn:hover { color:var(--text); }
+        .clipbtn.selopen { border-color:var(--line-3); color:var(--text); }
+        .clipbtn.queued { background:color-mix(in srgb, var(--blue) 22%, var(--surface)); border-color:var(--blue); color:var(--text); }
+        .clipbtn.live { background:var(--green); border-color:var(--green); color:var(--bg); font-weight:700; }
         .mcell.bt { border-left:1px solid var(--line-2); }
         .mcell.mv { touch-action:none; }
         .mscroll.mvmode { user-select:none; -webkit-user-select:none; touch-action:none; }
@@ -7709,9 +8006,10 @@ export default function ProgressionWheel() {
         <div className="toptransport">
           <button className={"playbtn" + (playing ? " on" : "")}
             title={tab === "sketch" ? "Play or stop the groove loop (space bar) — the Sketch tab plays its groove, not the song"
+              : tab === "session" ? "Start or stop the Session transport (space bar) — launches whatever clips are armed, not the song"
               : "Play or stop (space bar)"}
             onClick={playTransport}>
-            {playing ? "■ Stop" : tab === "sketch" ? "▶ Groove" : "▶ Play"}
+            {playing ? "■ Stop" : tab === "sketch" ? "▶ Groove" : tab === "session" ? "▶ Session" : "▶ Play"}
           </button>
           <div className="row" style={{ gap:7, alignItems:"center" }}>
             <button className="mini" onClick={() => nudgeBpm(-5)} title="Slower (⇧[)">−5</button>
@@ -8116,6 +8414,178 @@ export default function ProgressionWheel() {
           </p>}
           {sketchDraft()}
         </div>}
+
+        {/* ---- Session: a live, per-instrument clip launcher, à la Ableton's session view ---- */}
+        {tab === "session" && (() => {
+          const sessLeadOpts = () => (<>
+            <option value="">Lead default</option>
+            <optgroup label="Synth (no download)">
+              {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </optgroup>
+            {GM_CATS.map(([cat, list]) => (
+              <optgroup key={cat} label={"◈ " + cat}>
+                {list.map(([k, label]) => <option key={cat + k} value={k}>{label}</option>)}
+              </optgroup>
+            ))}
+          </>);
+          const selTrack = sessionTracks.find(t => t.id === sessionSel.trackId);
+          const selClip = selTrack && selTrack.clips.find(c => c.id === sessionSel.clipId);
+          const selD = selTrack && selClip
+            ? { key: sessionKey(selTrack.id, selClip.id), base: sessionKey(selTrack.id, selClip.id), nbars: selClip.nbars }
+            : null;
+          const beatCell = (bi, si, on, ink, onClick) => (
+            <td key={bi + "_" + si}
+              className={"sessgridcell" + (on ? " on" : "") + (si === 0 ? " barstart" : "")}
+              style={on ? { background: ink } : undefined} onClick={onClick} />
+          );
+          const beatGridUI = (rows, bars, onTap, multi) => (
+            <div className="sessgridwrap">
+              <table className="sessgrid"><tbody>
+                {rows.map(([ch, name, tip, ink]) => (
+                  <tr key={ch}>
+                    <td className="sessgridrow" style={{ color: ink }} title={tip}>{name}</td>
+                    {bars.map((bar, bi) => bar.map((step, si) =>
+                      beatCell(bi, si, multi ? step.includes(ch) : step === ch, ink, () => onTap(bi, si, ch))))}
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+          );
+          const TYPE_ROWS = { drums: DRUM_VOICES, perc: PERC_VOICES, bass: BASS_ROWS, pad: PAD_ROWS, chords: CHORD_ROWS };
+          const TYPE_BARS = { drums: beatBars, perc: percGridBars, bass: bassGridBars, pad: padGridBars, chords: chordGridBars };
+          const TYPE_TAP  = { drums: tapBeat, perc: tapPerc, bass: tapBass, pad: tapPad, chords: tapChordBeat };
+          const clipEditor = () => {
+            if (!selTrack || !selClip || !selD) return <p className="keytag">Pick a clip above to edit it.</p>;
+            const d = selD;
+            if (selTrack.type === "melody") {
+              const sec = secMelos[d.key] || EMPTY_SEC;
+              const ly = sec.layers[0];
+              const set = patch => setLayerProp(d.key, 0, patch);
+              const grp = sessionModGrp;
+              const cols = d.nbars * meloBeats;
+              return (<>
+                <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                  <select className="fxsel" value={ly.instr || ""}
+                    title="The instrument this clip plays" onChange={e => setSecInstr(d.key, 0, e.target.value)}>
+                    {sessLeadOpts()}
+                  </select>
+                  <span className="modlbl" style={{ marginLeft:2 }}>Octave</span>
+                  <div className="row" style={{ gap:4, alignItems:"center" }}>
+                    <button className="mini" disabled={(ly.oct || 0) <= LAYER_OCT_MIN}
+                      onClick={() => set({ oct: Math.max(LAYER_OCT_MIN, (ly.oct || 0) - 1) })}>−</button>
+                    <span className="modval">{ly.oct > 0 ? "+" + ly.oct : (ly.oct || 0)}</span>
+                    <button className="mini" disabled={(ly.oct || 0) >= LAYER_OCT_MAX}
+                      onClick={() => set({ oct: Math.min(LAYER_OCT_MAX, (ly.oct || 0) + 1) })}>＋</button>
+                  </div>
+                  <label className="modctl">
+                    <span className="modlbl">Level</span>
+                    <input className="lvl" type="range" min="0" max="100" value={Math.round((ly.vol == null ? 1 : ly.vol) * 100)}
+                      onChange={e => set({ vol: +e.target.value / 100 })} />
+                    <span className="modval">{Math.round((ly.vol == null ? 1 : ly.vol) * 100)}%</span>
+                  </label>
+                  <button className={"mini" + (ly.mute ? " mixon" : "")} onClick={() => set({ mute: !ly.mute })}>
+                    {ly.mute ? "muted" : "mute"}</button>
+                </div>
+                <div className="row modtabs">
+                  {MOD_GROUPS.map(g => {
+                    const n = g.mods.reduce((a, md) => a + (modOf(ly, md.k) !== md.dflt ? 1 : 0), 0);
+                    return (
+                      <button key={g.id} className={"modtab" + (grp === g.id ? " on" : "")} title={g.tip}
+                        onClick={() => setSessionModGrp(g.id)}>{g.name}{n > 0 && <i className="lydot">{n}</i>}</button>
+                    );
+                  })}
+                </div>
+                <div className="modgrid">
+                  {(MOD_GROUPS.find(g => g.id === grp) || MOD_GROUPS[0]).mods
+                    .filter(md => !md.needs || modOf(ly, md.needs) !== MOD_BY_KEY[md.needs].dflt)
+                    .map(md => <ModCtl key={md.k} mod={md} ly={ly} onSet={set}
+                      disabled={md.needsDelay && delayId === "off"} />)}
+                </div>
+                <div className="sessgridwrap">
+                  <table className="sessgrid"><tbody>
+                    {[6, 5, 4, 3, 2, 1, 0].map(deg => (
+                      <tr key={deg}>
+                        <td className="sessgridrow">{deg + 1}</td>
+                        {Array.from({ length: cols }, (_, c) =>
+                          beatCell(Math.floor(c / meloBeats), c % meloBeats, noteOn(sec, c, deg, 0), LAYER_INK[0],
+                            () => tapMelo(d.key, c, deg, 0)))}
+                      </tr>
+                    ))}
+                  </tbody></table>
+                </div>
+              </>);
+            }
+            const rows = TYPE_ROWS[selTrack.type], getBars = TYPE_BARS[selTrack.type], tapFn = TYPE_TAP[selTrack.type];
+            if (!rows) return null;
+            const multi = selTrack.type === "drums" || selTrack.type === "perc";
+            return beatGridUI(rows, getBars(d), (bi, si, ch) => tapFn(d, bi, si, ch), multi);
+          };
+          return (
+            <div className="panel">
+              <p className="sub">A live clip launcher, in the spirit of Ableton's Session view. Add an
+                instrument, drums, bass, pad, perc or the chord rhythm as a column, give it a few
+                numbered clips — different notes, a different sound, a different mod setting — then
+                click one to launch it. A launch is quantized to the next bar once the room is
+                running; click <b>▶ Session</b> (or the space bar) to start it. The clip open below
+                edits exactly the way a section does on the Arrange tab, just detached from any one
+                place in the song.</p>
+              <div className="row" style={{ gap:6, flexWrap:"wrap", margin:"8px 0" }}>
+                {TRACK_TYPES.map(tt => (
+                  <button key={tt.id} className="mini" title={tt.tip} onClick={() => addSessionTrack(tt.id)}>
+                    {tt.icon} + {tt.name}</button>
+                ))}
+              </div>
+              {!sessionTracks.length && <p className="keytag">No tracks yet — add one above to start building the room.</p>}
+              <div className="row" style={{ gap:10, alignItems:"flex-start", flexWrap:"wrap" }}>
+                {sessionTracks.map(tr => {
+                  const type = TRACK_TYPE_BY_ID[tr.type] || {};
+                  const liveClip = sessionLive[tr.id], queuedClip = sessionQueued[tr.id];
+                  return (
+                    <div key={tr.id} className="sesstrack">
+                      <div className="row" style={{ gap:4, alignItems:"center" }}>
+                        <span title={type.tip} aria-hidden="true">{type.icon}</span>
+                        <input className="txt" style={{ width:88 }} value={tr.name}
+                          onChange={e => renameSessionTrack(tr.id, e.target.value)} />
+                        <button className="mini" onClick={() => stopSessionTrack(tr.id)} title="Stop this track">■</button>
+                        <button className="mini" onClick={() => removeSessionTrack(tr.id)} title="Remove this track">🗑</button>
+                      </div>
+                      <div className="row" style={{ gap:4, flexWrap:"wrap", marginTop:6 }}>
+                        {tr.clips.map(c => {
+                          const isLive = liveClip === c.id, isQueued = queuedClip === c.id;
+                          const isSel = sessionSel.trackId === tr.id && sessionSel.clipId === c.id;
+                          return (
+                            <button key={c.id}
+                              className={"clipbtn" + (isLive ? " live" : "") + (isQueued ? " queued" : "") + (isSel ? " selopen" : "")}
+                              title={`Clip ${c.num} · ${c.nbars} bar${c.nbars === 1 ? "" : "s"} — click to launch, or open its editor below`}
+                              onClick={() => { setSessionSel({ trackId: tr.id, clipId: c.id }); launchSessionClip(tr.id, c.id); }}>
+                              {isLive ? "▶ " : isQueued ? "… " : ""}{c.num}
+                            </button>
+                          );
+                        })}
+                        <button className="mini" onClick={() => addSessionClip(tr.id)} title="Add another clip to this track">＋</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {sessionSel.trackId && selTrack && (
+                <div className="panel" style={{ marginTop:10 }}>
+                  <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                    <span className="partname">{selTrack.name}{selClip ? " · clip " + selClip.num : ""}</span>
+                    {selClip && <label className="modctl" style={{ marginLeft:"auto" }} title="How many bars this clip loops over">
+                      <span className="modlbl">Bars</span>
+                      <input type="number" min="1" max="32" value={selClip.nbars} style={{ width:48 }}
+                        onChange={e => setSessionClipLen(selTrack.id, selClip.id, +e.target.value || 1)} />
+                    </label>}
+                    {selClip && selTrack.clips.length > 1 &&
+                      <button className="mini" onClick={() => removeSessionClip(selTrack.id, selClip.id)}>🗑 clip</button>}
+                  </div>
+                  {clipEditor()}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ---- Save: naming, keeping, sharing — and judging cold ---- */}
         {tab === "save" && <div className="panel">
