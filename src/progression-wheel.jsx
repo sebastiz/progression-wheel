@@ -2299,7 +2299,11 @@ export default function ProgressionWheel() {
      the transport started if it is not — the same "clicking a clip starts the room" a launcher
      always does. */
   const launchSessionClip = (trackId, clipId) => {
-    if (!sessionPlaying) {
+    // sessionModeRef, not the sessionPlaying *state* — a scene launch calls this once per track
+    // in one synchronous handler, and state set moments earlier in that same handler is not yet
+    // visible through a stale closure; the ref is, so every track after the first correctly sees
+    // the room as already running and queues instead of each one restarting it in turn.
+    if (!sessionModeRef.current) {
       // sessionPlay's own startMetro resets every clip to "nothing live" on the way up (there is
       // no prior state to preserve — this is the first clip of the room), so the actual arming
       // happens after it returns, not before, or this write would be the one getting reset.
@@ -7860,10 +7864,27 @@ export default function ProgressionWheel() {
         .gridbar.on { border-color:var(--line-3); border-bottom-left-radius:0; border-bottom-right-radius:0; }
         .gridbarcaret { color:var(--muted); }
         .gridbarnote { margin-left:auto; font-size:var(--fs-sm); color:var(--muted); font-weight:400; }
-        /* ---- Session view: a track (column) of numbered clips, and the compact grid each one
-           opens with below — a plain HTML table rather than the Arrange grid's SVG, since a clip's
-           editor has no playhead or drag-paint of its own to draw. */
-        .sesstrack { background:var(--surface-2); border:1px solid var(--line-2); border-radius:var(--r-md); padding:8px; min-width:160px; }
+        /* ---- Session view: tracks as columns, clip slots as aligned rows — Ableton's own session
+           grid shape, so a track's clip 3 lines up with every other track's clip 3 whether or not
+           they're the same length or ever meant to play together. Track headers sit above the
+           grid; a scene button in the gutter fires every track's clip at that row at once. Below,
+           a plain HTML table for the open clip's own grid — no playhead or drag-paint to draw, so
+           it needs none of the Arrange grid's SVG. */
+        .sessgridview { display:grid; gap:5px; margin:8px 0; overflow-x:auto; align-items:stretch; }
+        .sesscolhdr { background:var(--surface-2); border:1px solid var(--line-2); border-radius:var(--r-md); padding:6px; min-width:0; }
+        .sesscolhdr input.txt { width:100%; min-width:0; box-sizing:border-box; }
+        .scenebtn { background:var(--surface); border:1px solid var(--line-2); border-radius:var(--r-sm);
+          color:var(--muted); cursor:pointer; font-size:var(--fs-xs); padding:0; }
+        .scenebtn:hover { color:var(--text); border-color:var(--line-3); }
+        .sessslot { font-size:var(--fs-sm); border-radius:var(--r-sm); border:1px solid var(--line-2);
+          background:var(--surface); color:var(--muted); cursor:pointer; padding:6px 4px; min-width:0;
+          font-variant-numeric:tabular-nums; }
+        .sessslot:hover { color:var(--text); border-color:var(--line-4); }
+        .sessslot.selopen { border-color:var(--line-3); color:var(--text); }
+        .sessslot.queued { background:color-mix(in srgb, var(--blue) 22%, var(--surface)); border-color:var(--blue); color:var(--text); }
+        .sessslot.live { background:var(--green); border-color:var(--green); color:var(--bg); font-weight:700; }
+        .sessslot.add { color:var(--muted-2); border-style:dashed; }
+        .sessslot.empty { border:1px dashed var(--line-2); background:transparent; cursor:default; }
         .sessgridwrap { overflow-x:auto; margin-top:8px; }
         .sessgrid { border-collapse:collapse; }
         .sessgridrow { font-size:var(--fs-sm); color:var(--muted); text-align:right; padding-right:6px; white-space:nowrap; }
@@ -7871,12 +7892,6 @@ export default function ProgressionWheel() {
         .sessgridcell.barstart { border-left:2px solid var(--line-3); }
         .sessgridcell.on { border-color:var(--line-3); }
         .sessgridcell:hover { border-color:var(--line-4); }
-        .clipbtn { font-size:var(--fs-sm); padding:3px 9px; border-radius:var(--r-pill); border:1px solid var(--line-2);
-          background:var(--surface); color:var(--muted); cursor:pointer; font-variant-numeric:tabular-nums; }
-        .clipbtn:hover { color:var(--text); }
-        .clipbtn.selopen { border-color:var(--line-3); color:var(--text); }
-        .clipbtn.queued { background:color-mix(in srgb, var(--blue) 22%, var(--surface)); border-color:var(--blue); color:var(--text); }
-        .clipbtn.live { background:var(--green); border-color:var(--green); color:var(--bg); font-weight:700; }
         .mcell.bt { border-left:1px solid var(--line-2); }
         .mcell.mv { touch-action:none; }
         .mscroll.mvmode { user-select:none; -webkit-user-select:none; touch-action:none; }
@@ -8536,38 +8551,61 @@ export default function ProgressionWheel() {
                 ))}
               </div>
               {!sessionTracks.length && <p className="keytag">No tracks yet — add one above to start building the room.</p>}
-              <div className="row" style={{ gap:10, alignItems:"flex-start", flexWrap:"wrap" }}>
-                {sessionTracks.map(tr => {
-                  const type = TRACK_TYPE_BY_ID[tr.type] || {};
-                  const liveClip = sessionLive[tr.id], queuedClip = sessionQueued[tr.id];
-                  return (
-                    <div key={tr.id} className="sesstrack">
-                      <div className="row" style={{ gap:4, alignItems:"center" }}>
-                        <span title={type.tip} aria-hidden="true">{type.icon}</span>
-                        <input className="txt" style={{ width:88 }} value={tr.name}
-                          onChange={e => renameSessionTrack(tr.id, e.target.value)} />
-                        <button className="mini" onClick={() => stopSessionTrack(tr.id)} title="Stop this track">■</button>
-                        <button className="mini" onClick={() => removeSessionTrack(tr.id)} title="Remove this track">🗑</button>
-                      </div>
-                      <div className="row" style={{ gap:4, flexWrap:"wrap", marginTop:6 }}>
-                        {tr.clips.map(c => {
-                          const isLive = liveClip === c.id, isQueued = queuedClip === c.id;
-                          const isSel = sessionSel.trackId === tr.id && sessionSel.clipId === c.id;
-                          return (
-                            <button key={c.id}
-                              className={"clipbtn" + (isLive ? " live" : "") + (isQueued ? " queued" : "") + (isSel ? " selopen" : "")}
-                              title={`Clip ${c.num} · ${c.nbars} bar${c.nbars === 1 ? "" : "s"} — click to launch, or open its editor below`}
-                              onClick={() => { setSessionSel({ trackId: tr.id, clipId: c.id }); launchSessionClip(tr.id, c.id); }}>
-                              {isLive ? "▶ " : isQueued ? "… " : ""}{c.num}
-                            </button>
+              {sessionTracks.length > 0 && (() => {
+                // one more row than the deepest track, so every column always shows its own
+                // "add a clip" slot below its last one — Ableton's own end-of-track empty stack
+                const maxRows = Math.max(0, ...sessionTracks.map(t => t.clips.length)) + 1;
+                const launchScene = row => sessionTracks.forEach(tr => {
+                  const c = tr.clips[row]; if (c) launchSessionClip(tr.id, c.id);
+                });
+                return (
+                  <div className="sessgridview"
+                    style={{ gridTemplateColumns: `26px repeat(${sessionTracks.length}, minmax(104px, 1fr))` }}>
+                    <div aria-hidden="true" />
+                    {sessionTracks.map(tr => {
+                      const type = TRACK_TYPE_BY_ID[tr.type] || {};
+                      return (
+                        <div key={tr.id} className="sesscolhdr">
+                          <div className="row" style={{ gap:4, alignItems:"center" }}>
+                            <span title={type.tip} aria-hidden="true">{type.icon}</span>
+                            <input className="txt" value={tr.name} onChange={e => renameSessionTrack(tr.id, e.target.value)} />
+                          </div>
+                          <div className="row" style={{ gap:4, marginTop:4 }}>
+                            <button className="mini" onClick={() => stopSessionTrack(tr.id)} title="Stop this track">■</button>
+                            <button className="mini" onClick={() => removeSessionTrack(tr.id)} title="Remove this track">🗑</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {Array.from({ length: maxRows }, (_, row) => (
+                      <div key={row} style={{ display:"contents" }}>
+                        <button className="scenebtn" title={`Launch row ${row + 1} — every track's clip ${row + 1} at once, on the next bar`}
+                          onClick={() => launchScene(row)}>▶</button>
+                        {sessionTracks.map(tr => {
+                          const c = tr.clips[row];
+                          if (c) {
+                            const isLive = sessionLive[tr.id] === c.id, isQueued = sessionQueued[tr.id] === c.id;
+                            const isSel = sessionSel.trackId === tr.id && sessionSel.clipId === c.id;
+                            return (
+                              <button key={tr.id}
+                                className={"sessslot" + (isLive ? " live" : "") + (isQueued ? " queued" : "") + (isSel ? " selopen" : "")}
+                                title={`Clip ${c.num} · ${c.nbars} bar${c.nbars === 1 ? "" : "s"} — click to launch, or open its editor below`}
+                                onClick={() => { setSessionSel({ trackId: tr.id, clipId: c.id }); launchSessionClip(tr.id, c.id); }}>
+                                {isLive ? "▶ " : isQueued ? "… " : ""}{c.num}
+                              </button>
+                            );
+                          }
+                          if (row === tr.clips.length) return (
+                            <button key={tr.id} className="sessslot add" onClick={() => addSessionClip(tr.id)}
+                              title="Add another clip to this track">＋</button>
                           );
+                          return <div key={tr.id} className="sessslot empty" aria-hidden="true" />;
                         })}
-                        <button className="mini" onClick={() => addSessionClip(tr.id)} title="Add another clip to this track">＋</button>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    ))}
+                  </div>
+                );
+              })()}
               {sessionSel.trackId && selTrack && (
                 <div className="panel" style={{ marginTop:10 }}>
                   <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
