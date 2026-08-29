@@ -4434,7 +4434,15 @@ export default function ProgressionWheel() {
      may have left armed (or the song could not be played at all). Space bar goes through here too. */
   const playTransport = () => {
     if (playing) { stopMetro(); return; }
-    if (tab === "session") { sessionPlay(); return; }
+    if (tab === "session") {
+      // `playing` was false to get here, so stopMetro's own reset means nothing is live or
+      // queued yet — sessionPlay alone would start an empty, silent room. Launching every
+      // track's first clip (scene row 0) is what makes pressing Play here behave like every
+      // other tab's Play: it plays what is already set up, not nothing until you click a clip.
+      sessionPlay();
+      sessionTracks.forEach(tr => { if (tr.clips[0]) launchSessionClip(tr.id, tr.clips[0].id); });
+      return;
+    }
     if (tab === "sketch") {
       loopRef.current = { groove: true, len: grooveInst.nbars };
       setLoopSec(GROOVE);
