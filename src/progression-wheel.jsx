@@ -1865,23 +1865,30 @@ export default function ProgressionWheel() {
       });
       out[d.key] = { ids: own.ids, layers, inhParts, inherited: !plays(saved) };
     });
-    /* Session view melody clips: each is its own single-layer pseudo-section, keyed
-       sessionKey(trackId, clipId) — no chord-id adaptation and no groove inheritance, since a
-       clip is not anchored to a position in the progression the way an arrangement instance is,
-       it just plays over whichever chord happens to be sounding. Reusing this shape (rather than
-       a parallel one) is what lets putSec/putLayer/tapMelo and the mod panels edit a clip with
-       no code of their own — see session.js's own note. */
+    /* Session view melody clips: each is its own pseudo-section (one or more parts, exactly like
+       a section can hold more than one instrument), keyed sessionKey(trackId, clipId) — no
+       chord-id adaptation and no groove inheritance, since a clip is not anchored to a position
+       in the progression the way an arrangement instance is, it just plays over whichever chord
+       happens to be sounding. Reusing this shape (rather than a parallel one) is what lets
+       putSec/putLayer/addLayer/tapMelo and the mod panels edit a clip with no code of their own —
+       see session.js's own note. Every saved layer has to be mapped here, not just the first: a
+       memo that only ever emitted one layer would silently undo addLayer's own write on the very
+       next render, since this out[key] is what secMelos actually is by the time anything re-reads it. */
     sessionTracks.forEach(tr => {
       if (tr.type !== "melody") return;
       tr.clips.forEach(clip => {
         const key = sessionKey(tr.id, clip.id);
         const saved = melos.secs[key];
-        const ly = (saved && saved.layers && saved.layers[0]) || {};
-        const bars = (ly.bars && ly.bars.length) ? ly.bars : blankBars(clip.nbars || 4, meloBeats);
-        out[key] = { ids: [], layers: [{ bars, flat: bars.flat(), instr: ly.instr || null,
-          oct: ly.oct != null ? ly.oct : (LAYER_DEFAULT_OCT[0] || 0),
-          vol: ly.vol != null ? ly.vol : (LAYER_DEFAULT_VOL[0] != null ? LAYER_DEFAULT_VOL[0] : 1),
-          mute: !!ly.mute, solo: !!ly.solo, send: ly.send || 0, ...layerFx(ly) }] };
+        const src = (saved && saved.layers && saved.layers.length) ? saved.layers : [{}];
+        const layers = src.map((ly0, li) => {
+          const ly = ly0 || {};
+          const bars = (ly.bars && ly.bars.length) ? ly.bars : blankBars(clip.nbars || 4, meloBeats);
+          return { bars, flat: bars.flat(), instr: ly.instr || null,
+            oct: ly.oct != null ? ly.oct : (LAYER_DEFAULT_OCT[li] || 0),
+            vol: ly.vol != null ? ly.vol : (LAYER_DEFAULT_VOL[li] != null ? LAYER_DEFAULT_VOL[li] : 1),
+            mute: !!ly.mute, solo: !!ly.solo, send: ly.send || 0, ...layerFx(ly) };
+        });
+        out[key] = { ids: [], layers };
       });
     });
     return out;
