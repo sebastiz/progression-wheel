@@ -2878,14 +2878,18 @@ export default function ProgressionWheel() {
     if (!pool.length) { setIoNote("This melody resists variation — nothing to duel against."); return; }
     setDuel({ key: d.key, L, seed, base, pool, champ: base, champLbl: "the original",
       chalIdx: 0, round: 0, side: null, loopWas: loopSec });
-    if (loopSec !== d.key) toggleLoopSec(d);
+    // a Session clip is not on the song's timeline, so it loops by being launched — the clip's
+    // own d.launch — where a section loops by confining playback to its bar window
+    if (d.launch) d.launch();
+    else if (loopSec !== d.key) toggleLoopSec(d);
   };
   const duelHear = (d, side) => {
     if (!duel) return;
     const bars = side === "A" ? duel.champ : duel.pool[duel.chalIdx];
     putLayer(d.key, duel.L, dupBars(bars));
     setDuel({ ...duel, side });
-    if (loopSec !== d.key) toggleLoopSec(d);
+    if (d.launch) d.launch();
+    else if (loopSec !== d.key) toggleLoopSec(d);
     else if (!playing) startMetro(d.key === GROOVE ? 0 : d.startBar);
   };
   const duelPick = (d, side) => {
@@ -2904,7 +2908,8 @@ export default function ProgressionWheel() {
   const endDuel = (d, keepChamp) => {
     if (!duel) return;
     putLayer(d.key, duel.L, dupBars(keepChamp ? duel.champ : duel.base));
-    if (loopSec === d.key && duel.loopWas !== d.key) toggleLoopSec(d);   // hand the loop back
+    // a clip never took the section loop, so there is nothing to hand back for one
+    if (!d.launch && loopSec === d.key && duel.loopWas !== d.key) toggleLoopSec(d);   // hand the loop back
     setIoNote(keepChamp
       ? (duel.round ? `Kept ${duel.champLbl} after ${duel.round} duel${duel.round > 1 ? "s" : ""}.` : "Kept the original.")
       : "Duel cancelled — the melody is back as it was.");
@@ -3537,8 +3542,11 @@ export default function ProgressionWheel() {
         // section gets); only the first falls back to the song's own pattern when untouched —
         // an extra sub-track has no song-level default to speak for it
         for (let li = 0; li < sessionLayerCount("bass", key); li++) {
-          const bars = secBassBeatRef.current[key + (li ? LSEP + li : "")];
+          const k2 = key + (li ? LSEP + li : "");
+          const bars = secBassBeatRef.current[k2];
+          const pick = secBassPatRef.current[k2];
           const bpat = (bars && bars.length) ? (bars[localBar(bars)] || [])
+            : pick ? (pick === "off" ? [] : ((BASS[pick] || {}).pattern || []))
             : li === 0 ? ((BASS[bassRef.current] || {}).pattern || []) : [];
           if (!bpat.length) continue;
           const bs = stepAt(bpat.length, i, L);
@@ -3578,7 +3586,12 @@ export default function ProgressionWheel() {
         // extra pad sub-tracks of a clip's own; only the first falls back to the song's own held
         // chord when untouched
         for (let li = 0; li < sessionLayerCount("pad", key); li++) {
-          const bars = secPadBeatRef.current[key + (li ? LSEP + li : "")];
+          const k2 = key + (li ? LSEP + li : "");
+          const bars = secPadBeatRef.current[k2];
+          // the clip's own voice pick beats the song's pad; "off" silences an unwritten
+          // sub-track but never a written rhythm — the rule a section already follows
+          const pick = secPadVoiceRef.current[k2];
+          const voice = pick && pick !== "off" ? pick : padRef.current;
           if (bars && bars.length) {
             const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
             const pbar = bars[localBar] || [];
@@ -3590,13 +3603,13 @@ export default function ProgressionWheel() {
             const stepDur = tick * (L / pbar.length);
             const dur = tok === "S" ? Math.min(stepDur * 1.8, beat * 0.45) : Math.max(0.15, gap * stepDur * 0.95);
             for (const mid of (m.voicing || voiceChord(chord)))
-              leadNote(m.ctx, t, mid, dur, padRef.current || "strings", tok !== "S", m.trPad.in, { lvl: 0.8 });
-          } else if (li === 0 && padRef.current && i === 0) {
-            // an untouched clip plays the song's own pad the same way an untouched section does:
-            // one hold on the downbeat
+              leadNote(m.ctx, t, mid, dur, voice || "strings", tok !== "S", m.trPad.in, { lvl: 0.8 });
+          } else if ((pick ? pick !== "off" : li === 0 && padRef.current) && voice && i === 0) {
+            // an untouched clip plays a held chord on the downbeat, the way an untouched
+            // section does — in its own picked voice, or (first sub-track) the song's
             const barDur = barBeatsRef.current * beat;
             for (const mid of (m.voicing || voiceChord(chord)))
-              leadNote(m.ctx, t, mid, barDur * 0.98, padRef.current, true, m.trPad.in, { lvl: 0.8 });
+              leadNote(m.ctx, t, mid, barDur * 0.98, voice, true, m.trPad.in, { lvl: 0.8 });
           }
         }
       });
@@ -3654,9 +3667,12 @@ export default function ProgressionWheel() {
         // extra perc sub-tracks of a clip's own; only the first falls back to the song's own perc
         // pattern — the same one its grid shows as a preview until you tap a cell
         for (let li = 0; li < sessionLayerCount("perc", key); li++) {
-          const bars = secPercBeatRef.current[key + (li ? LSEP + li : "")];
+          const k2 = key + (li ? LSEP + li : "");
+          const bars = secPercBeatRef.current[k2];
+          const pick = secPercPatRef.current[k2];
           const ppat = (bars && bars.length)
             ? bars[Math.floor((m.step - live.startStep) / L) % bars.length]
+            : pick ? (pick === "off" ? null : ((PERCS[pick] || DRUMS[pick] || {}).pattern))
             : li === 0 ? ((PERCS[percRef.current] || DRUMS[percRef.current] || {}).pattern) : null;
           const pstep = sampleAt(ppat, i, L);
           if (pstep) for (const ch of pstep)
@@ -3894,9 +3910,14 @@ export default function ProgressionWheel() {
         // only the first falls back to the song's own pattern when untouched — an extra
         // sub-track has no song-level default to speak for it, same as a section's own extras
         for (let li = 0; li < sessionLayerCount("drums", key); li++) {
-          const bars = secBeatRef.current[key + (li ? LSEP + li : "")];
+          const k2 = key + (li ? LSEP + li : "");
+          const bars = secBeatRef.current[k2];
+          // grid first, then the clip's own "starts from" pick, then (first sub-track only) the
+          // song's pattern — the same order a section resolves in
+          const pick = secDrumRef.current[k2];
           const dpatS = (bars && bars.length)
             ? bars[Math.floor((m.step - live.startStep) / L) % bars.length]
+            : pick ? (DRUMS[pick] ? DRUMS[pick].pattern : null)
             : li === 0 ? drumRef.current : null;
           const dstepS = sampleAt(dpatS, i, L);
           if (!dstepS) continue;
@@ -5885,6 +5906,289 @@ export default function ProgressionWheel() {
      machinery, and a second implementation of them would immediately drift. `view.groove`
      hides what has no meaning off the song's timeline (play-from-here, seams, moves) and
      swaps the loop button for the groove's own. */
+  /* ---- the melody workbench ----
+     Write (draw / move / vary / syncopate), Suggest, Check and Duel, plus the note grid itself —
+     extracted from sectionCard so the Session view's clip editor renders the exact same tools
+     against a clip's own key: the same putLayer/tapMelo/duel machinery, not a second
+     implementation (the same move that carved sectionCard itself out for the groove sketch).
+     `d` carries key, cs (one chord per bar — a clip repeats the loop), nbars and startBar, plus
+     optionally `launch`: how the duel loops a clip, since a clip is not on the song's timeline
+     and toggleLoopSec has no bar window to loop. */
+  const melodyWorkbench = (d, sec, secL) => {
+    const tab = melTab[d.key] || "write";
+    const pick = sugSel[d.key] || { pat: MELODY_PATTERNS[0].id, start: 0 };
+    const curPat = MELODY_PATTERNS.find(p => p.id === pick.pat) || MELODY_PATTERNS[0];
+    const rhy = rhySel[d.key] || "straight";
+    const curRhy = RHYTHMS.find(r => r.id === rhy) || RHYTHMS[0];
+    const cols = d.cs.length * meloBeats;
+    return (<>
+                    {/* Write/Suggest and Draw/Move were two button rows stacked, which is two rows
+                        of chrome above a grid that is the actual work. One row, and the second
+                        switch appears only in the mode that has it. */}
+                    <div className="melmodebar">
+                      <div className="seg">
+                        <button className={tab === "write" ? "on" : ""}
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
+                        <button className={tab === "suggest" ? "on" : ""}
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
+                        <button className={tab === "check" ? "on" : ""}
+                          title="The hook report card — this part's melody scored against the shapes that make tunes stick, each line with a one-tap fix"
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "check" })}>🩺 Check</button>
+                        <button className={tab === "duel" ? "on" : ""}
+                          title="The hook duel — breed rivals of this melody and audition them pairwise; the winner takes the grid"
+                          onClick={() => setMelTab({ ...melTab, [d.key]: "duel" })}>⚔ Duel</button>
+                      </div>
+                      {tab === "write" && <div className="seg">
+                          <button className={!melMove ? "on" : ""} title="Write notes. Hold the button down and drag to paint a run of them — press an empty cell to draw, a full one to rub out."
+                            onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
+                          <button className={melMove ? "on" : ""} title="Drag a box to select notes, then drag a selected one to move the group"
+                            onClick={() => setMelMove(true)}>✋ Move</button>
+                        </div>}
+                        {/* Varying the repeats is about the whole melody rather than a selection, so it
+                            sits with the mode switch and not among the note tools below. */}
+                        {tab === "write" && (() => {
+                          const vst = varyIn[varyKeyOf(d.key, secL)];
+                          const lv = (vst && vst.level) || 0;
+                          return (<>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => varyRepeats(d, secL)}
+                              title={"Vary the repeats inside this section — the motif is found where it restates itself, "
+                                + "the first statement is left alone, and every one after it gets a different landing note, "
+                                + "an extra note, a phrase pushed early. Tap again for more; one past the top puts the "
+                                + "melody back as you wrote it."}>
+                              ✦ Vary repeats{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
+                          </>);
+                        })()}
+                        {tab === "write" && (() => {
+                          const sst = syncIn[varyKeyOf(d.key, secL)];
+                          const lv = (sst && sst.level) || 0;
+                          return (<>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => syncopateMel(d, secL)}
+                              title={"Syncopate — push this part's on-beat notes half a beat early, held through the beat they "
+                                + "left. The anticipation that makes a line lean forward. One tap pushes the backbeats, two "
+                                + "pushes every beat, three puts it back."}>
+                              ⇢ Syncopate{lv === 2 ? " ××" : lv ? " ×" : ""}</button>
+                            {sst && sst.note && lv > 0 && <span className="rlbl" style={{ opacity:.75 }}>{sst.note}</span>}
+                          </>);
+                        })()}
+                        {tab === "write" && melMove && (() => {
+                          const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
+                          return (<>
+                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
+                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
+                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
+                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
+                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
+                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
+                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
+                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
+                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
+                            <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
+                          </>);
+                        })()}
+                    </div>
+
+                    {tab === "suggest" && (
+                      <div className="sugmel">
+                        <div className="selrow" style={{ flexWrap:"wrap", gap:8 }}>
+                          <div className="selwrap" style={{ minWidth:170 }}>
+                            <span className="keytag">Melody pattern</span>
+                            <select value={pick.pat}
+                              onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, pat:e.target.value } })}>
+                              {MELODY_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="selwrap" style={{ minWidth:150, flex:"0 0 auto" }}>
+                            <span className="keytag">Rhythm</span>
+                            <select value={rhy}
+                              onChange={e => setRhySel({ ...rhySel, [d.key]: e.target.value })}
+                              title="Where the notes fall in the bar, and how long each lasts — separately from the shape of the tune">
+                              {RHYTHMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="selwrap" style={{ minWidth:120, flex:"0 0 auto" }}>
+                            <span className="keytag">Start note</span>
+                            <select value={pick.start}
+                              onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, start:+e.target.value } })}>
+                              {scaleSemis.map((s, i) => (
+                                <option key={i} value={i}>{spell((tonic + s) % 12, tonic, effMode)} · degree {i + 1}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <p className="arrnote" style={{ marginTop:7 }}>Writing to melody <b>{LAYER_NAMES[secL]}</b>. {curPat.desc}</p>
+                        <p className="arrnote" style={{ marginTop:3 }}><b>{curRhy.name}</b> — {curRhy.desc}</p>
+                        {(() => {
+                          // a counter-melody is written against another part; with nothing to
+                          // answer it would write an empty grid, so say so rather than doing that
+                          const leadL = sec.layers.findIndex((ly, i) => i !== secL && ly.flat.some(c => c.length));
+                          const stuck = curPat.needs === "lead" && leadL < 0;
+                          return (<>
+                            {curPat.needs === "lead" && !stuck &&
+                              <p className="arrnote" style={{ marginTop:3, color:GOLD }}>
+                                Writing against part <b>{LAYER_NAMES[leadL]}</b>.
+                              </p>}
+                            {stuck &&
+                              <p className="arrnote" style={{ marginTop:3, color:"#E9B3AB" }}>
+                                This one is written against another part, and nothing else in this
+                                section has any notes yet. Write a lead first.
+                              </p>}
+                            <div className="row" style={{ gap:6, marginTop:8 }}>
+                              <button className="btn" disabled={stuck}
+                                onClick={() => applyPattern(d, sec, pick.pat, pick.start, secL, rhy)}>
+                                Write to grid</button>
+                              <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {LAYER_NAMES[secL]}</button>
+                            </div>
+                          </>);
+                        })()}
+                      </div>
+                    )}
+
+                    {/* The hook report card: this part's melody scored against the shapes that make
+                        tunes stick, one line per property, each failing line with a one-tap fix. The
+                        number is a shape check, not taste — but a 45 and an 85 differ in ways the
+                        lines can name, which is what makes it worth printing. */}
+                    {tab === "check" && (() => {
+                      const bars = barsOf(sec, secL);
+                      const any = bars && bars.some(b => b.some(c => c.length));
+                      if (!any) return (
+                        <div className="sugmel"><p className="arrnote">
+                          Nothing on part <b>{LAYER_NAMES[secL]}</b>'s grid yet — write or suggest a
+                          melody first, then check it here.</p></div>);
+                      const u = { bars, nd: scaleSemis.length, sub: meloSub, chordDegs: chordDegsOf(d.cs) };
+                      const rep = hookReport(u);
+                      const inkOf = s => s >= 0.99 ? "#54B79D" : s >= 0.6 ? "#E8A33D" : "#E0687F";
+                      return (
+                        <div className="sugmel">
+                          <div className="row" style={{ gap:10, alignItems:"baseline" }}>
+                            <span style={{ fontSize:26, fontWeight:700, color: inkOf(rep.score / 100) }}>{rep.score}</span>
+                            <span className="keytag">{rep.grade}</span>
+                            <span className="rlbl" style={{ opacity:.6 }}>part {LAYER_NAMES[secL]} · the shapes that make tunes stick</span>
+                          </div>
+                          {rep.checks.map(c => (
+                            <div key={c.id} className="row" title={c.tip}
+                              style={{ gap:8, marginTop:6, alignItems:"center", flexWrap:"wrap" }}>
+                              <span aria-hidden="true" style={{ width:8, height:8, borderRadius:99,
+                                background: inkOf(c.score), flex:"0 0 auto" }} />
+                              <b style={{ flex:"0 0 auto" }}>{c.name}</b>
+                              <span className="rlbl" style={{ opacity:.8 }}>{c.detail}</span>
+                              {c.fix && c.score < 0.99 &&
+                                <button className="mini" onClick={() => putLayer(d.key, secL, c.fix(bars, u))}
+                                  title={c.tip + " — one deterministic edit; undo puts it back"}>✎ {c.fixLabel}</button>}
+                            </div>
+                          ))}
+                          <p className="arrnote" style={{ marginTop:8 }}>
+                            A shape check, not taste: these are the properties the earworm studies keep
+                            finding. A fix edits the grid once — listen, and ⌘Z if it lost the point.
+                          </p>
+                        </div>);
+                    })()}
+
+                    {/* The hook duel: the melody against a family of its own rivals, two at a time.
+                        Volume and selection is how hooks actually get good. */}
+                    {tab === "duel" && (() => {
+                      const my = duel && duel.key === d.key && duel.L === secL ? duel : null;
+                      const bars = barsOf(sec, secL);
+                      const any = bars && bars.some(b => b.some(c => c.length));
+                      if (!my) return (
+                        <div className="sugmel">
+                          <p className="arrnote">
+                            Eight rivals are bred from the melody on the grid — same tune, small
+                            mutations. Hear <b>A</b>, hear <b>B</b>, tap the winner; the loser's place
+                            goes to the next rival, and when the pool runs out the champion breeds
+                            fresh challengers. The section loops while you judge. Keep the champion,
+                            or cancel and the melody comes back exactly as it was.
+                          </p>
+                          <div className="row" style={{ gap:6, marginTop:8 }}>
+                            <button className="btn" disabled={!any} onClick={() => startDuel(d, sec, secL)}>⚔ Start the duel</button>
+                            {!any && <span className="rlbl" style={{ opacity:.7 }}>write a melody on part {LAYER_NAMES[secL]} first</span>}
+                          </div>
+                        </div>);
+                      return (
+                        <div className="sugmel">
+                          <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                            <button className={"btn" + (my.side === "A" ? " on" : "")} style={{ padding:"5px 11px" }}
+                              onClick={() => duelHear(d, "A")}
+                              title="Put the champion on the grid and loop this section">▶ A · {my.champLbl}</button>
+                            <button className={"btn" + (my.side === "B" ? " on" : "")} style={{ padding:"5px 11px" }}
+                              onClick={() => duelHear(d, "B")}
+                              title="Put the challenger on the grid and loop this section">▶ B · rival {my.chalIdx + 1}</button>
+                            <span className="keytag">duel {my.round + 1}</span>
+                          </div>
+                          <div className="row" style={{ gap:6, marginTop:7, alignItems:"center", flexWrap:"wrap" }}>
+                            <span className="rlbl" style={{ opacity:.7 }}>who sticks?</span>
+                            <button className="mini" onClick={() => duelPick(d, "A")}>A wins</button>
+                            <button className="mini" onClick={() => duelPick(d, "B")}>B wins</button>
+                            <span className="rlbl" style={{ opacity:.5 }}>·</span>
+                            <button className="mini" onClick={() => endDuel(d, true)}
+                              title="Keep the reigning champion on the grid and end the duel">✓ Keep champion</button>
+                            <button className="mini" onClick={() => endDuel(d, false)}
+                              title="End the duel and put the melody back exactly as it was">✕ Cancel</button>
+                          </div>
+                          {my.side == null && <p className="arrnote" style={{ marginTop:6 }}>
+                            Hear both before judging — the grid below shows whichever played last.</p>}
+                        </div>);
+                    })()}
+
+                    <div className={"mscroll" + (melMove ? " mvmode" : "")}
+                      data-sync={d.key} onScroll={syncScroll}>
+                      <div className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
+                        <span />
+                        {d.cs.map((c, b) => (
+                          <span key={b} className="mbar" style={{ gridColumn:`span ${meloBeats}`,
+                            background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                        ))}
+                      </div>
+                      {[...scaleSemis.keys()].reverse().map(deg => (
+                        <div key={deg} className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
+                          <span className="mnote">{spell((tonic + scaleSemis[deg]) % 12, tonic, effMode)}</span>
+                          {Array.from({ length: cols }, (_, c) => {
+                            // which parts sound this note here; the cell takes the first one's ink,
+                            // and a note shared by two parts is split diagonally between them
+                            const hits = sec.layers.reduce((a, ly, li) =>
+                              ((ly.flat[c] || []).includes(deg) ? [...a, li] : a), []);
+                            const onA = hits.length > 0;
+                            const inkA = onA ? LAYER_INK[hits[0]] : null;
+                            const inkB = hits.length > 1 ? LAYER_INK[hits[1]] : null;
+                            const isSel = melMove && melSel.key === d.key && melSel.layer === secL && melSel.notes[nKey(c, deg)];
+                            const inBox = melBox && melBox.key === d.key && c >= melBox.c0 && c <= melBox.c1 && deg >= melBox.d0 && deg <= melBox.d1;
+                            const isGhost = melGhost && melGhost.key === d.key && melSel.key === d.key && melSel.layer === secL
+                              && melSel.notes[nKey(c - melGhost.dc, deg - melGhost.dd)];
+                            return (
+                            <div key={c} data-mk={d.key} data-c={c} data-deg={deg}
+                              onClick={() => {
+                                if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                if (!melMove) tapMelo(d.key, c, deg, secL);
+                              }}
+                              onPointerDown={e => melDown(e, d.key, c, deg, sec, secL)}
+                              // the inline colour would beat the .colnow CSS, so the playhead
+                              // highlight has to be decided here too
+                              style={!onA ? null : (playing && curQ && curQ.sym === d.key && curQ.col === c)
+                                ? { background: inkB ? "linear-gradient(135deg, #EAE2CC 0 55%, #d9c2ff 55% 100%)" : "#EAE2CC",
+                                    borderColor: "#EAE2CC" }
+                                : { background: inkB ? `linear-gradient(135deg, ${inkA} 0 55%, ${inkB} 55% 100%)` : inkA,
+                                    borderColor: inkB || inkA }}
+                              className={"mcell" + (onA ? " on" : "") + (melMove ? " mv" : "")
+                                + (isSel ? " msel" : "") + (isGhost ? " mghost" : "") + (inBox ? " mbox" : "")
+                                + (playing && curQ && curQ.sym === d.key && curQ.col === c ? " colnow" : "")
+                                + (c % meloBeats === 0 && c > 0 ? " b0" : c % meloSub === 0 && c > 0 ? " bt" : "")} />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+    </>);
+  };
   const sectionCard = (d, di, view = {}) => {
             const who = view.groove ? "the groove" : d.key;
             // this section's own copy of a track's insert-fx rack, for trackFxRow's FX tab
@@ -6314,271 +6618,7 @@ export default function ProgressionWheel() {
                       </>);
                     })()}
 
-                    {/* Write/Suggest and Draw/Move were two button rows stacked, which is two rows
-                        of chrome above a grid that is the actual work. One row, and the second
-                        switch appears only in the mode that has it. */}
-                    <div className="melmodebar">
-                      <div className="seg">
-                        <button className={tab === "write" ? "on" : ""}
-                          onClick={() => setMelTab({ ...melTab, [d.key]: "write" })}>✎ Write</button>
-                        <button className={tab === "suggest" ? "on" : ""}
-                          onClick={() => setMelTab({ ...melTab, [d.key]: "suggest" })}>✨ Suggest</button>
-                        <button className={tab === "check" ? "on" : ""}
-                          title="The hook report card — this part's melody scored against the shapes that make tunes stick, each line with a one-tap fix"
-                          onClick={() => setMelTab({ ...melTab, [d.key]: "check" })}>🩺 Check</button>
-                        <button className={tab === "duel" ? "on" : ""}
-                          title="The hook duel — breed rivals of this melody and audition them pairwise; the winner takes the grid"
-                          onClick={() => setMelTab({ ...melTab, [d.key]: "duel" })}>⚔ Duel</button>
-                      </div>
-                      {tab === "write" && <div className="seg">
-                          <button className={!melMove ? "on" : ""} title="Write notes. Hold the button down and drag to paint a run of them — press an empty cell to draw, a full one to rub out."
-                            onClick={() => { setMelMove(false); setMelSel({ key:"", layer:0, notes:{} }); }}>✎ Draw</button>
-                          <button className={melMove ? "on" : ""} title="Drag a box to select notes, then drag a selected one to move the group"
-                            onClick={() => setMelMove(true)}>✋ Move</button>
-                        </div>}
-                        {/* Varying the repeats is about the whole melody rather than a selection, so it
-                            sits with the mode switch and not among the note tools below. */}
-                        {tab === "write" && (() => {
-                          const vst = varyIn[varyKeyOf(d.key, secL)];
-                          const lv = (vst && vst.level) || 0;
-                          return (<>
-                            <button className={"mini" + (lv ? " on" : "")} onClick={() => varyRepeats(d, secL)}
-                              title={"Vary the repeats inside this section — the motif is found where it restates itself, "
-                                + "the first statement is left alone, and every one after it gets a different landing note, "
-                                + "an extra note, a phrase pushed early. Tap again for more; one past the top puts the "
-                                + "melody back as you wrote it."}>
-                              ✦ Vary repeats{lv ? " ×" + lv : ""}</button>
-                            {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
-                              title="Put this melody back as it was before the first tap">↺</button>}
-                            {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
-                          </>);
-                        })()}
-                        {tab === "write" && (() => {
-                          const sst = syncIn[varyKeyOf(d.key, secL)];
-                          const lv = (sst && sst.level) || 0;
-                          return (<>
-                            <button className={"mini" + (lv ? " on" : "")} onClick={() => syncopateMel(d, secL)}
-                              title={"Syncopate — push this part's on-beat notes half a beat early, held through the beat they "
-                                + "left. The anticipation that makes a line lean forward. One tap pushes the backbeats, two "
-                                + "pushes every beat, three puts it back."}>
-                              ⇢ Syncopate{lv === 2 ? " ××" : lv ? " ×" : ""}</button>
-                            {sst && sst.note && lv > 0 && <span className="rlbl" style={{ opacity:.75 }}>{sst.note}</span>}
-                          </>);
-                        })()}
-                        {tab === "write" && melMove && (() => {
-                          const nSel = (melSel.key === d.key && melSel.layer === secL) ? Object.keys(melSel.notes).length : 0;
-                          return (<>
-                            <span className="rlbl">{nSel ? `${nSel} note${nSel > 1 ? "s" : ""} selected` : "drag a box over notes to select"}</span>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, 1)} title="Move up a scale step">▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(0, -1)} title="Move down a scale step">▼</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(-1, 0)} title="Move earlier">◀</button>
-                            <button className="mini" disabled={!nSel} onClick={() => nudgeMel(1, 0)} title="Move later">▶</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" disabled={!nSel} onClick={() => timeMel(0.5)} title="Double-time — pack the selection into half the space (plays twice as fast)">½× time</button>
-                            <button className="mini" disabled={!nSel} onClick={() => timeMel(2)} title="Half-time — stretch the selection over twice the space (plays half as fast)">2× time</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(0)} title="Repeat — copy the selection right after itself at the same pitch">⧉ Repeat</button>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(1)} title="Sequence up — copy right after, one scale step higher (a rising sequence; tap again to keep climbing)">Seq ▲</button>
-                            <button className="mini" disabled={!nSel} onClick={() => echoMel(-1)} title="Sequence down — copy right after, one scale step lower">Seq ▼</button>
-                            <button className="mini" disabled={nSel < 2} onClick={invertMel} title="Invert — flip the melody's shape upside-down around its first note">⤯ Invert</button>
-                            <button className="mini" disabled={nSel < 2} onClick={reverseMel} title="Reverse — play the selection backwards (retrograde)">↤ Reverse</button>
-                            <button className="mini" disabled={!nSel} onClick={callResponseMel} title="Call & response — echo the phrase right after itself as an answer that resolves home to the tonic">↩ Answer</button>
-                            <span className="rlbl" style={{ opacity:.6 }}>·</span>
-                            <button className="mini" onClick={() => selectAllMel(d.key, secL)} title="Select every note in this melody (even off-screen)">Select all</button>
-                            <button className="mini" disabled={!nSel} onClick={deleteMelSel} title="Delete selected">🗑</button>
-                          </>);
-                        })()}
-                    </div>
-
-                    {tab === "suggest" && (
-                      <div className="sugmel">
-                        <div className="selrow" style={{ flexWrap:"wrap", gap:8 }}>
-                          <div className="selwrap" style={{ minWidth:170 }}>
-                            <span className="keytag">Melody pattern</span>
-                            <select value={pick.pat}
-                              onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, pat:e.target.value } })}>
-                              {MELODY_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                          </div>
-                          <div className="selwrap" style={{ minWidth:150, flex:"0 0 auto" }}>
-                            <span className="keytag">Rhythm</span>
-                            <select value={rhy}
-                              onChange={e => setRhySel({ ...rhySel, [d.key]: e.target.value })}
-                              title="Where the notes fall in the bar, and how long each lasts — separately from the shape of the tune">
-                              {RHYTHMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                            </select>
-                          </div>
-                          <div className="selwrap" style={{ minWidth:120, flex:"0 0 auto" }}>
-                            <span className="keytag">Start note</span>
-                            <select value={pick.start}
-                              onChange={e => setSugSel({ ...sugSel, [d.key]: { ...pick, start:+e.target.value } })}>
-                              {scaleSemis.map((s, i) => (
-                                <option key={i} value={i}>{spell((tonic + s) % 12, tonic, effMode)} · degree {i + 1}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                        <p className="arrnote" style={{ marginTop:7 }}>Writing to melody <b>{LAYER_NAMES[secL]}</b>. {curPat.desc}</p>
-                        <p className="arrnote" style={{ marginTop:3 }}><b>{curRhy.name}</b> — {curRhy.desc}</p>
-                        {(() => {
-                          // a counter-melody is written against another part; with nothing to
-                          // answer it would write an empty grid, so say so rather than doing that
-                          const leadL = sec.layers.findIndex((ly, i) => i !== secL && ly.flat.some(c => c.length));
-                          const stuck = curPat.needs === "lead" && leadL < 0;
-                          return (<>
-                            {curPat.needs === "lead" && !stuck &&
-                              <p className="arrnote" style={{ marginTop:3, color:GOLD }}>
-                                Writing against part <b>{LAYER_NAMES[leadL]}</b>.
-                              </p>}
-                            {stuck &&
-                              <p className="arrnote" style={{ marginTop:3, color:"#E9B3AB" }}>
-                                This one is written against another part, and nothing else in this
-                                section has any notes yet. Write a lead first.
-                              </p>}
-                            <div className="row" style={{ gap:6, marginTop:8 }}>
-                              <button className="btn" disabled={stuck}
-                                onClick={() => applyPattern(d, sec, pick.pat, pick.start, secL, rhy)}>
-                                Write to grid</button>
-                              <button className="mini" onClick={() => clearMelody(d, sec, secL)}>Clear melody {LAYER_NAMES[secL]}</button>
-                            </div>
-                          </>);
-                        })()}
-                      </div>
-                    )}
-
-                    {/* The hook report card: this part's melody scored against the shapes that make
-                        tunes stick, one line per property, each failing line with a one-tap fix. The
-                        number is a shape check, not taste — but a 45 and an 85 differ in ways the
-                        lines can name, which is what makes it worth printing. */}
-                    {tab === "check" && (() => {
-                      const bars = barsOf(sec, secL);
-                      const any = bars && bars.some(b => b.some(c => c.length));
-                      if (!any) return (
-                        <div className="sugmel"><p className="arrnote">
-                          Nothing on part <b>{LAYER_NAMES[secL]}</b>'s grid yet — write or suggest a
-                          melody first, then check it here.</p></div>);
-                      const u = { bars, nd: scaleSemis.length, sub: meloSub, chordDegs: chordDegsOf(d.cs) };
-                      const rep = hookReport(u);
-                      const inkOf = s => s >= 0.99 ? "#54B79D" : s >= 0.6 ? "#E8A33D" : "#E0687F";
-                      return (
-                        <div className="sugmel">
-                          <div className="row" style={{ gap:10, alignItems:"baseline" }}>
-                            <span style={{ fontSize:26, fontWeight:700, color: inkOf(rep.score / 100) }}>{rep.score}</span>
-                            <span className="keytag">{rep.grade}</span>
-                            <span className="rlbl" style={{ opacity:.6 }}>part {LAYER_NAMES[secL]} · the shapes that make tunes stick</span>
-                          </div>
-                          {rep.checks.map(c => (
-                            <div key={c.id} className="row" title={c.tip}
-                              style={{ gap:8, marginTop:6, alignItems:"center", flexWrap:"wrap" }}>
-                              <span aria-hidden="true" style={{ width:8, height:8, borderRadius:99,
-                                background: inkOf(c.score), flex:"0 0 auto" }} />
-                              <b style={{ flex:"0 0 auto" }}>{c.name}</b>
-                              <span className="rlbl" style={{ opacity:.8 }}>{c.detail}</span>
-                              {c.fix && c.score < 0.99 &&
-                                <button className="mini" onClick={() => putLayer(d.key, secL, c.fix(bars, u))}
-                                  title={c.tip + " — one deterministic edit; undo puts it back"}>✎ {c.fixLabel}</button>}
-                            </div>
-                          ))}
-                          <p className="arrnote" style={{ marginTop:8 }}>
-                            A shape check, not taste: these are the properties the earworm studies keep
-                            finding. A fix edits the grid once — listen, and ⌘Z if it lost the point.
-                          </p>
-                        </div>);
-                    })()}
-
-                    {/* The hook duel: the melody against a family of its own rivals, two at a time.
-                        Volume and selection is how hooks actually get good. */}
-                    {tab === "duel" && (() => {
-                      const my = duel && duel.key === d.key && duel.L === secL ? duel : null;
-                      const bars = barsOf(sec, secL);
-                      const any = bars && bars.some(b => b.some(c => c.length));
-                      if (!my) return (
-                        <div className="sugmel">
-                          <p className="arrnote">
-                            Eight rivals are bred from the melody on the grid — same tune, small
-                            mutations. Hear <b>A</b>, hear <b>B</b>, tap the winner; the loser's place
-                            goes to the next rival, and when the pool runs out the champion breeds
-                            fresh challengers. The section loops while you judge. Keep the champion,
-                            or cancel and the melody comes back exactly as it was.
-                          </p>
-                          <div className="row" style={{ gap:6, marginTop:8 }}>
-                            <button className="btn" disabled={!any} onClick={() => startDuel(d, sec, secL)}>⚔ Start the duel</button>
-                            {!any && <span className="rlbl" style={{ opacity:.7 }}>write a melody on part {LAYER_NAMES[secL]} first</span>}
-                          </div>
-                        </div>);
-                      return (
-                        <div className="sugmel">
-                          <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
-                            <button className={"btn" + (my.side === "A" ? " on" : "")} style={{ padding:"5px 11px" }}
-                              onClick={() => duelHear(d, "A")}
-                              title="Put the champion on the grid and loop this section">▶ A · {my.champLbl}</button>
-                            <button className={"btn" + (my.side === "B" ? " on" : "")} style={{ padding:"5px 11px" }}
-                              onClick={() => duelHear(d, "B")}
-                              title="Put the challenger on the grid and loop this section">▶ B · rival {my.chalIdx + 1}</button>
-                            <span className="keytag">duel {my.round + 1}</span>
-                          </div>
-                          <div className="row" style={{ gap:6, marginTop:7, alignItems:"center", flexWrap:"wrap" }}>
-                            <span className="rlbl" style={{ opacity:.7 }}>who sticks?</span>
-                            <button className="mini" onClick={() => duelPick(d, "A")}>A wins</button>
-                            <button className="mini" onClick={() => duelPick(d, "B")}>B wins</button>
-                            <span className="rlbl" style={{ opacity:.5 }}>·</span>
-                            <button className="mini" onClick={() => endDuel(d, true)}
-                              title="Keep the reigning champion on the grid and end the duel">✓ Keep champion</button>
-                            <button className="mini" onClick={() => endDuel(d, false)}
-                              title="End the duel and put the melody back exactly as it was">✕ Cancel</button>
-                          </div>
-                          {my.side == null && <p className="arrnote" style={{ marginTop:6 }}>
-                            Hear both before judging — the grid below shows whichever played last.</p>}
-                        </div>);
-                    })()}
-
-                    <div className={"mscroll" + (melMove ? " mvmode" : "")}
-                      data-sync={d.key} onScroll={syncScroll}>
-                      <div className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
-                        <span />
-                        {d.cs.map((c, b) => (
-                          <span key={b} className="mbar" style={{ gridColumn:`span ${meloBeats}`,
-                            background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
-                        ))}
-                      </div>
-                      {[...scaleSemis.keys()].reverse().map(deg => (
-                        <div key={deg} className="mline" style={{ gridTemplateColumns:`${GRID_GUT}px repeat(${cols}, minmax(${melCell}px,1fr))` }}>
-                          <span className="mnote">{spell((tonic + scaleSemis[deg]) % 12, tonic, effMode)}</span>
-                          {Array.from({ length: cols }, (_, c) => {
-                            // which parts sound this note here; the cell takes the first one's ink,
-                            // and a note shared by two parts is split diagonally between them
-                            const hits = sec.layers.reduce((a, ly, li) =>
-                              ((ly.flat[c] || []).includes(deg) ? [...a, li] : a), []);
-                            const onA = hits.length > 0;
-                            const inkA = onA ? LAYER_INK[hits[0]] : null;
-                            const inkB = hits.length > 1 ? LAYER_INK[hits[1]] : null;
-                            const isSel = melMove && melSel.key === d.key && melSel.layer === secL && melSel.notes[nKey(c, deg)];
-                            const inBox = melBox && melBox.key === d.key && c >= melBox.c0 && c <= melBox.c1 && deg >= melBox.d0 && deg <= melBox.d1;
-                            const isGhost = melGhost && melGhost.key === d.key && melSel.key === d.key && melSel.layer === secL
-                              && melSel.notes[nKey(c - melGhost.dc, deg - melGhost.dd)];
-                            return (
-                            <div key={c} data-mk={d.key} data-c={c} data-deg={deg}
-                              onClick={() => {
-                                if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                if (!melMove) tapMelo(d.key, c, deg, secL);
-                              }}
-                              onPointerDown={e => melDown(e, d.key, c, deg, sec, secL)}
-                              // the inline colour would beat the .colnow CSS, so the playhead
-                              // highlight has to be decided here too
-                              style={!onA ? null : (playing && curQ && curQ.sym === d.key && curQ.col === c)
-                                ? { background: inkB ? "linear-gradient(135deg, #EAE2CC 0 55%, #d9c2ff 55% 100%)" : "#EAE2CC",
-                                    borderColor: "#EAE2CC" }
-                                : { background: inkB ? `linear-gradient(135deg, ${inkA} 0 55%, ${inkB} 55% 100%)` : inkA,
-                                    borderColor: inkB || inkA }}
-                              className={"mcell" + (onA ? " on" : "") + (melMove ? " mv" : "")
-                                + (isSel ? " msel" : "") + (isGhost ? " mghost" : "") + (inBox ? " mbox" : "")
-                                + (playing && curQ && curQ.sym === d.key && curQ.col === c ? " colnow" : "")
-                                + (c % meloBeats === 0 && c > 0 ? " b0" : c % meloSub === 0 && c > 0 ? " bt" : "")} />
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
+                    {melodyWorkbench(d, sec, secL)}
                   </div>
                   );
                 })()}
@@ -8500,8 +8540,22 @@ export default function ProgressionWheel() {
           </>);
           const selTrack = sessionTracks.find(t => t.id === sessionSel.trackId);
           const selClip = selTrack && selTrack.clips.find(c => c.id === sessionSel.clipId);
+          // one chord per clip bar — the plain loop repeated, padded even exactly as the
+          // scheduler's own seq is, so the workbench's chord headers and chord-aware suggestions
+          // describe what a launched clip actually plays over
+          const sessSeq = chords.length % 2
+            ? [...chords.map((_, i) => i), chords.length - 1] : chords.map((_, i) => i);
           const selD = selTrack && selClip
-            ? { key: sessionKey(selTrack.id, selClip.id), base: sessionKey(selTrack.id, selClip.id), nbars: selClip.nbars }
+            ? { key: sessionKey(selTrack.id, selClip.id), base: sessionKey(selTrack.id, selClip.id),
+                nbars: selClip.nbars, startBar: 0,
+                cs: Array.from({ length: selClip.nbars }, (_, b) =>
+                  chords[sessSeq.length ? sessSeq[b % sessSeq.length] : 0]).filter(Boolean),
+                // how the duel (or anything else) loops this clip: launch it — idempotent when
+                // it is already the track's live clip
+                launch: () => {
+                  if (!sessionPlaying || sessionLive[selTrack.id] !== selClip.id)
+                    launchSessionClip(selTrack.id, selClip.id);
+                } }
             : null;
           const beatCell = (bi, si, on, ink, onClick) => (
             <td key={bi + "_" + si}
@@ -8537,7 +8591,6 @@ export default function ProgressionWheel() {
               const ly = layerOf(sec, secL) || {};
               const set = patch => setLayerProp(d.key, secL, patch);
               const grp = sessionModGrp;
-              const cols = d.nbars * meloBeats;
               return (<>
                 <div className="row lytabs" style={{ gap:5, marginBottom:6 }}>
                   {sec.layers.map((l, li) => (
@@ -8593,29 +8646,53 @@ export default function ProgressionWheel() {
                     .map(md => <ModCtl key={md.k} mod={md} ly={ly} onSet={set}
                       disabled={md.needsDelay && delayId === "off"} />)}
                 </div>
-                <div className="sessgridwrap">
-                  <table className="sessgrid"><tbody>
-                    {[6, 5, 4, 3, 2, 1, 0].map(deg => (
-                      <tr key={deg}>
-                        <td className="sessgridrow">{deg + 1}</td>
-                        {Array.from({ length: cols }, (_, c) =>
-                          beatCell(Math.floor(c / meloBeats), c % meloBeats, noteOn(sec, c, deg, secL), LAYER_INK[secL] || "#8B94A3",
-                            () => tapMelo(d.key, c, deg, secL)))}
-                      </tr>
-                    ))}
-                  </tbody></table>
-                </div>
+                {/* the full melody workbench a section gets — Write with draw/move/vary/syncopate,
+                    Suggest, Check and Duel, and the real note grid — shared, not re-implemented */}
+                {melodyWorkbench(d, sec, secL)}
               </>);
             }
             const rows = TYPE_ROWS[selTrack.type], getBars = TYPE_BARS[selTrack.type], tapFn = TYPE_TAP[selTrack.type];
             if (!rows) return null;
-            const multi = selTrack.type === "drums" || selTrack.type === "perc";
+            const type = selTrack.type;
+            const multi = type === "drums" || type === "perc";
             // a clip can hold extra drums/bass/pad/perc sub-tracks of its own — the same "add a
             // 2nd bassline" a section gets — via the exact tab strip a section's own track uses;
             // it only needs d.key, which a clip's synthetic key satisfies just as well
-            const subD = layered(d, activeLayerOf(selTrack.type, d.key));
+            const subLi = activeLayerOf(type, d.key);
+            const subD = layered(d, subLi);
+            // …and, like a section, a "starts from" pattern of its own per sub-track, plus the
+            // Reset that hands the grid back to that menu. Chords has no catalogue to pick from —
+            // its rhythm is the strum, and the grid is the way to change it.
+            const TYPE_RESET = { drums: resetBeat, perc: resetPercBeat, bass: resetBassBeat, pad: resetPadBeat, chords: resetChordBeat };
+            const TYPE_PICK_OPTS = {
+              // the drum catalogue carries its own "off" row — the header already offers one
+              drums: () => metricDrums.filter(([id]) => id !== "off").map(([id, dd]) => [id, dd.name]),
+              perc: () => Object.entries(PERCS).map(([id, p]) => [id, p.name]),
+              bass: () => Object.entries(BASS).map(([id, b]) => [id, b.name]),
+              pad: () => PAD_VOICES.map(([id, name]) => [id, name]),
+            };
+            const patMap = TRACK_PAT_MAPS[type], patSet = TRACK_PAT_SETTER[type];
+            const beatMap = type === "chords" ? secChordBeat : TRACK_BEAT_MAPS[type];
+            const own = !!(beatMap && beatMap[subD.key] && beatMap[subD.key].length);
+            const pickNow = (patMap && patMap[subD.key]) || "";
             return (<>
-              {trackTabStrip(selTrack.type, d)}
+              <div className="row gridhdr">
+                {trackTabStrip(type, d)}
+                {patMap && <label className="secopt"
+                  title={"The " + (type === "pad" ? "voice" : "pattern") + " this "
+                    + (subLi ? "sub-track" : "clip") + " starts from — paint the grid to make it your own"}>
+                  <span className="optlbl">starts from</span>
+                  <select value={pickNow}
+                    onChange={e => { patSet(prev => ({ ...prev, [subD.key]: e.target.value }));
+                      if (own) TYPE_RESET[type](subD.key); }}>
+                    <option value="">{subLi ? "— silent —" : "song default"}</option>
+                    <option value="off">off — silent</option>
+                    {TYPE_PICK_OPTS[type]().map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                  </select>
+                </label>}
+                {own && <button className="mini" onClick={() => TYPE_RESET[type](subD.key)}
+                  title="Hand this grid back to the menu — unwritten, it plays the pattern chosen above">↺ Reset</button>}
+              </div>
               {beatGridUI(rows, getBars(subD), (bi, si, ch) => tapFn(subD, bi, si, ch), multi)}
             </>);
           };
