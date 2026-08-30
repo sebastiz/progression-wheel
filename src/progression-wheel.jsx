@@ -621,11 +621,13 @@ export default function ProgressionWheel() {
   // { trackId: bars-since-launch }, mirrored once per session bar — what lets a live slot show
   // how far through its loop it is, the way Ableton's clips visibly spin
   const [sessionPos, setSessionPos] = useState({});
-  /* Launch quantize: how many bars apart the launch points sit. 1 is the classic next-bar
-     launch; 2 and 4 land changes on phrase boundaries; 0 means a whole pass of the chord loop.
-     A performance setting, not a document one — deliberately unsaved, like the capture buffer. */
-  const [launchQuant, setLaunchQuant] = useState(1);
-  const launchQuantRef = useRef(1);
+  /* Launch quantize: when a queued clip takes over. -1 — the default — waits for the playing
+     clip to finish its own loop, so a launch never cuts a clip off mid-phrase and the handover
+     is seamless; 1 is the classic next-bar launch; 2 and 4 land changes on fixed phrase
+     boundaries; 0 means a whole pass of the chord loop. A performance setting, not a document
+     one — deliberately unsaved, like the capture buffer. */
+  const [launchQuant, setLaunchQuant] = useState(-1);
+  const launchQuantRef = useRef(-1);
   const [sessionQueued, setSessionQueued] = useState({}); // UI mirror of sessionQueueRef, { trackId: clipId } — armed for the next bar
   /* Capture: record a session performance so it can be written into the arrangement. While the
      toggle is on, every session bar logs which clip each track had live — one snapshot per bar,
@@ -3435,14 +3437,32 @@ export default function ProgressionWheel() {
          tick, so the clip's local bar position always starts at its own bar 0. */
       if (sessionModeRef.current && i === 0) {
         const queue = sessionQueueRef.current;
-        // promotion waits for the launch grid — every bar by default, every 2 or 4 for phrase
-        // launches, or a whole pass of the chord loop (quant 0). The queue just holds until then.
-        const qBars = launchQuantRef.current || (seq.length || 4);
-        const onGrid = Math.floor(m.step / L) % qBars === 0;
-        const promoted = onGrid && Object.keys(queue).length > 0;
-        if (onGrid) for (const trackId in queue) {
+        /* Promotion waits for the launch setting. The default (-1, "clip's end") is per track:
+           a queued clip takes over only on the bar where the track's playing clip completes a
+           full pass of its own length — nothing is ever cut off mid-loop, and because the
+           handover happens on the same scheduled downbeat the old clip's last bar ends on,
+           there is no break either. A track with nothing playing takes the very next bar.
+           The fixed grids (1/2/4 bars, or a whole pass of the chord loop for 0) are global. */
+        const q = launchQuantRef.current;
+        const bar = Math.floor(m.step / L);
+        const onGrid = bar % (q > 0 ? q : (seq.length || 4)) === 0;
+        let promoted = false;
+        for (const trackId in queue) {
+          let ready;
+          if (q === -1) {
+            const lv = sessionLiveRef.current[trackId];
+            if (!lv) ready = true;
+            else {
+              const tr2 = sessionTracks.find(t2 => t2.id === trackId);
+              const cur = tr2 && tr2.clips.find(c => c.id === lv.clipId);
+              const len = Math.max(1, (cur && cur.nbars) || 1);
+              ready = (bar - Math.floor(lv.startStep / L)) % len === 0;
+            }
+          } else ready = onGrid;
+          if (!ready) continue;
           sessionLiveRef.current[trackId] = { clipId: queue[trackId], startStep: m.step };
           delete queue[trackId];
+          promoted = true;
         }
         if (live && promoted) {
           const delayMs = Math.max(0, (m.nextTime - m.ctx.currentTime) * 1000);
@@ -8917,8 +8937,9 @@ export default function ProgressionWheel() {
               <p className="sub">A live clip launcher, in the spirit of Ableton's Session view. Add an
                 instrument, drums, bass, pad, perc or the chord rhythm as a column, give it a few
                 numbered clips — different notes, a different sound, a different mod setting — then
-                click one to launch it. A launch lands on the launch grid (the next bar, unless you
-                widen it) once the room is running; click <b>▶ Session</b> (or the space bar) to
+                click one to launch it. Once the room is running, a launched clip waits for the
+                playing one to finish its loop and takes over with no break (or lands on a fixed
+                grid — the launch menu chooses); click <b>▶ Session</b> (or the space bar) to
                 start it, and the number keys 1–8 fire whole scene rows. The clip open below
                 edits exactly the way a section does on the Arrange tab, just detached from any one
                 place in the song.</p>
@@ -8929,10 +8950,11 @@ export default function ProgressionWheel() {
                 ))}
                 <span style={{ marginLeft:"auto" }} />
                 <label className="secopt"
-                  title="How far apart the launch points sit. Next bar is the classic; 2 or 4 bars lands every change on a phrase boundary; whole loop waits for the top of the chord loop.">
+                  title="When a launched clip takes over. Clip's end lets whatever is playing finish its whole loop first — seamless, nothing cut off; next bar / 2 / 4 land on fixed grids; whole loop waits for the top of the chord loop.">
                   <span className="optlbl">launch</span>
                   <select value={launchQuant}
                     onChange={e => { const v = +e.target.value; launchQuantRef.current = v; setLaunchQuant(v); }}>
+                    <option value={-1}>clip's end</option>
                     <option value={1}>next bar</option>
                     <option value={2}>2 bars</option>
                     <option value={4}>4 bars</option>
