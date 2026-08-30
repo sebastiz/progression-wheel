@@ -621,6 +621,11 @@ export default function ProgressionWheel() {
   // { trackId: bars-since-launch }, mirrored once per session bar — what lets a live slot show
   // how far through its loop it is, the way Ableton's clips visibly spin
   const [sessionPos, setSessionPos] = useState({});
+  /* Launch quantize: how many bars apart the launch points sit. 1 is the classic next-bar
+     launch; 2 and 4 land changes on phrase boundaries; 0 means a whole pass of the chord loop.
+     A performance setting, not a document one — deliberately unsaved, like the capture buffer. */
+  const [launchQuant, setLaunchQuant] = useState(1);
+  const launchQuantRef = useRef(1);
   const [sessionQueued, setSessionQueued] = useState({}); // UI mirror of sessionQueueRef, { trackId: clipId } — armed for the next bar
   /* Capture: record a session performance so it can be written into the arrangement. While the
      toggle is on, every session bar logs which clip each track had live — one snapshot per bar,
@@ -2371,6 +2376,11 @@ export default function ProgressionWheel() {
     setSessionQueued(sq => ({ ...sq, [trackId]: clipId }));
   };
   const stopSessionTrack = trackId => clearSessionUI(trackId);
+  // fire a whole scene row — every track's clip at that row, landing together on the launch grid.
+  // Component-level rather than inline in the grid, because the number keys reach for it too.
+  const launchScene = row => sessionTracks.forEach(tr => {
+    const c = tr.clips[row]; if (c) launchSessionClip(tr.id, c.id);
+  });
   const copyMelody = (fromKey, toKey) => {
     const from = melos.progId === progId ? melos.secs[fromKey] : null;
     if (!from) return;
@@ -3425,8 +3435,12 @@ export default function ProgressionWheel() {
          tick, so the clip's local bar position always starts at its own bar 0. */
       if (sessionModeRef.current && i === 0) {
         const queue = sessionQueueRef.current;
-        const promoted = Object.keys(queue).length > 0;
-        for (const trackId in queue) {
+        // promotion waits for the launch grid — every bar by default, every 2 or 4 for phrase
+        // launches, or a whole pass of the chord loop (quant 0). The queue just holds until then.
+        const qBars = launchQuantRef.current || (seq.length || 4);
+        const onGrid = Math.floor(m.step / L) % qBars === 0;
+        const promoted = onGrid && Object.keys(queue).length > 0;
+        if (onGrid) for (const trackId in queue) {
           sessionLiveRef.current[trackId] = { clipId: queue[trackId], startStep: m.step };
           delete queue[trackId];
         }
@@ -5650,6 +5664,7 @@ export default function ProgressionWheel() {
   const SHORTCUTS = [
     ["Space", "play / stop"], ["Esc", "stop"], ["[  ]", "tempo −/+ 1"],
     ["⇧[  ⇧]", "tempo −/+ 5"], ["⌘Z / ⌘⇧Z", "undo / redo"],
+    ["1–8", "launch scene (Session)"],
   ];
   useEffect(() => {
     const onKey = e => {
@@ -5665,6 +5680,13 @@ export default function ProgressionWheel() {
       if (e.key === "Escape") { if (playing) { e.preventDefault(); stopMetro(); } return; }
       if (e.key === "[" || e.key === "{") { e.preventDefault(); nudgeBpm(e.shiftKey ? -5 : -1); return; }
       if (e.key === "]" || e.key === "}") { e.preventDefault(); nudgeBpm(e.shiftKey ? 5 : 1); return; }
+      // performance keys: on the Session tab the number row fires scenes, so the grid can be
+      // played without aiming a mouse — key 1 is scene row 1
+      if (tab === "session" && /^[1-8]$/.test(e.key)) {
+        const row = +e.key - 1;
+        if (sessionTracks.some(tr => tr.clips[row])) { e.preventDefault(); launchScene(row); }
+        return;
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -8895,8 +8917,9 @@ export default function ProgressionWheel() {
               <p className="sub">A live clip launcher, in the spirit of Ableton's Session view. Add an
                 instrument, drums, bass, pad, perc or the chord rhythm as a column, give it a few
                 numbered clips — different notes, a different sound, a different mod setting — then
-                click one to launch it. A launch is quantized to the next bar once the room is
-                running; click <b>▶ Session</b> (or the space bar) to start it. The clip open below
+                click one to launch it. A launch lands on the launch grid (the next bar, unless you
+                widen it) once the room is running; click <b>▶ Session</b> (or the space bar) to
+                start it, and the number keys 1–8 fire whole scene rows. The clip open below
                 edits exactly the way a section does on the Arrange tab, just detached from any one
                 place in the song.</p>
               <div className="row" style={{ gap:6, flexWrap:"wrap", margin:"8px 0" }}>
@@ -8905,6 +8928,17 @@ export default function ProgressionWheel() {
                     {tt.icon} + {tt.name}</button>
                 ))}
                 <span style={{ marginLeft:"auto" }} />
+                <label className="secopt"
+                  title="How far apart the launch points sit. Next bar is the classic; 2 or 4 bars lands every change on a phrase boundary; whole loop waits for the top of the chord loop.">
+                  <span className="optlbl">launch</span>
+                  <select value={launchQuant}
+                    onChange={e => { const v = +e.target.value; launchQuantRef.current = v; setLaunchQuant(v); }}>
+                    <option value={1}>next bar</option>
+                    <option value={2}>2 bars</option>
+                    <option value={4}>4 bars</option>
+                    <option value={0}>whole loop</option>
+                  </select>
+                </label>
                 <button className={"mini" + (sessionCapture ? " mixon" : "")} onClick={toggleCapture}
                   disabled={!sessionTracks.length}
                   title={"Record the performance: while this is on, every bar remembers which clip each track had live. "
@@ -8924,9 +8958,6 @@ export default function ProgressionWheel() {
                 // one more row than the deepest track, so every column always shows its own
                 // "add a clip" slot below its last one — Ableton's own end-of-track empty stack
                 const maxRows = Math.max(0, ...sessionTracks.map(t => t.clips.length)) + 1;
-                const launchScene = row => sessionTracks.forEach(tr => {
-                  const c = tr.clips[row]; if (c) launchSessionClip(tr.id, c.id);
-                });
                 return (
                   <div className="sessgridview"
                     style={{ gridTemplateColumns: `26px repeat(${sessionTracks.length}, minmax(104px, 1fr))` }}>
@@ -8948,7 +8979,9 @@ export default function ProgressionWheel() {
                     })}
                     {Array.from({ length: maxRows }, (_, row) => (
                       <div key={row} style={{ display:"contents" }}>
-                        <button className="scenebtn" title={`Launch row ${row + 1} — every track's clip ${row + 1} at once, on the next bar`}
+                        <button className="scenebtn"
+                          title={`Launch row ${row + 1} — every track's clip at this row at once, landing on the launch grid`
+                            + (row < 8 ? ` (key ${row + 1})` : "")}
                           onClick={() => launchScene(row)}>▶</button>
                         {sessionTracks.map(tr => {
                           const c = tr.clips[row];
