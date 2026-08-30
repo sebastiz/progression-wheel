@@ -3453,6 +3453,10 @@ export default function ProgressionWheel() {
          case, which has to keep sounding byte-for-byte as it did before extra tracks existed. */
       const nLayersOf = type => Math.max(1, tInst != null
         && secTrackLayersRef.current[tInst] && secTrackLayersRef.current[tInst][type] || 1);
+      // the same "add a 2nd/3rd track" a section gets, for a Session clip: how many drums/perc/
+      // bass/pad sub-tracks this clip has of its own, capped the same way a section's are
+      const sessionLayerCount = (type, key) => Math.max(1, Math.min(MAX_LAYERS,
+        (secTrackLayersRef.current[key] && secTrackLayersRef.current[key][type]) || 1));
       const bassSrcs = chord ? Array.from({ length: nLayersOf("bass") }, (_, li) => {
         const suf = li ? LSEP + li : "";
         return srcOf(secBassBeatRef.current, secBassPatRef.current, secBassRef.current, li ? null : bassRef.current,
@@ -3521,21 +3525,24 @@ export default function ProgressionWheel() {
         const live = sessionLiveRef.current[tr.id]; if (!live) return;
         if (m.stem && m.stem.kind !== "bass") return;
         const key = sessionKey(tr.id, live.clipId);
-        const bars = secBassBeatRef.current[key];
-        // an untouched clip plays the song's own bass pattern — the same one its grid shows as
-        // a preview until you tap a cell
-        const bpat = (bars && bars.length)
-          ? (bars[Math.floor((m.step - live.startStep) / L) % bars.length] || [])
-          : ((BASS[bassRef.current] || {}).pattern || []);
-        if (!bpat.length) return;
-        const bs = stepAt(bpat.length, i, L);
-        const tok = bs == null ? "" : bpat[bs];
-        if (!tok || tok === "-") return;
-        let gap = 1;
-        while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
-        const stepDur = tick * (L / bpat.length);
-        playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
-          bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
+        const localBar = bars => Math.floor((m.step - live.startStep) / L) % bars.length;
+        // a clip can hold extra bass sub-tracks of its own (the same "add a 2nd bassline" a
+        // section gets); only the first falls back to the song's own pattern when untouched —
+        // an extra sub-track has no song-level default to speak for it
+        for (let li = 0; li < sessionLayerCount("bass", key); li++) {
+          const bars = secBassBeatRef.current[key + (li ? LSEP + li : "")];
+          const bpat = (bars && bars.length) ? (bars[localBar(bars)] || [])
+            : li === 0 ? ((BASS[bassRef.current] || {}).pattern || []) : [];
+          if (!bpat.length) continue;
+          const bs = stepAt(bpat.length, i, L);
+          const tok = bs == null ? "" : bpat[bs];
+          if (!tok || tok === "-") continue;
+          let gap = 1;
+          while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
+          const stepDur = tick * (L / bpat.length);
+          playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
+            bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
+        }
       });
       /* The pad track: the chord's upper voicing held a bar at a time, legato, into its own
          filter and the reverb bus. Upper voicing only — the low root belongs to the bass or the
@@ -3561,25 +3568,29 @@ export default function ProgressionWheel() {
         const live = sessionLiveRef.current[tr.id]; if (!live) return;
         if (m.stem && m.stem.kind !== "pad") return;
         const key = sessionKey(tr.id, live.clipId);
-        const bars = secPadBeatRef.current[key];
-        if (bars && bars.length) {
-          const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
-          const pbar = bars[localBar] || [];
-          const ps2 = stepAt(pbar.length, i, L);
-          const tok = ps2 == null ? "" : pbar[ps2];
-          if (!tok) return;
-          let gap = 1;
-          while (gap < pbar.length && !pbar[(ps2 + gap) % pbar.length]) gap++;
-          const stepDur = tick * (L / pbar.length);
-          const dur = tok === "S" ? Math.min(stepDur * 1.8, beat * 0.45) : Math.max(0.15, gap * stepDur * 0.95);
-          for (const mid of (m.voicing || voiceChord(chord)))
-            leadNote(m.ctx, t, mid, dur, padRef.current || "strings", tok !== "S", m.trPad.in, { lvl: 0.8 });
-        } else if (padRef.current && i === 0) {
-          // an untouched clip plays the song's own pad the same way an untouched section does:
-          // one hold on the downbeat
-          const barDur = barBeatsRef.current * beat;
-          for (const mid of (m.voicing || voiceChord(chord)))
-            leadNote(m.ctx, t, mid, barDur * 0.98, padRef.current, true, m.trPad.in, { lvl: 0.8 });
+        // extra pad sub-tracks of a clip's own; only the first falls back to the song's own held
+        // chord when untouched
+        for (let li = 0; li < sessionLayerCount("pad", key); li++) {
+          const bars = secPadBeatRef.current[key + (li ? LSEP + li : "")];
+          if (bars && bars.length) {
+            const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
+            const pbar = bars[localBar] || [];
+            const ps2 = stepAt(pbar.length, i, L);
+            const tok = ps2 == null ? "" : pbar[ps2];
+            if (!tok) continue;
+            let gap = 1;
+            while (gap < pbar.length && !pbar[(ps2 + gap) % pbar.length]) gap++;
+            const stepDur = tick * (L / pbar.length);
+            const dur = tok === "S" ? Math.min(stepDur * 1.8, beat * 0.45) : Math.max(0.15, gap * stepDur * 0.95);
+            for (const mid of (m.voicing || voiceChord(chord)))
+              leadNote(m.ctx, t, mid, dur, padRef.current || "strings", tok !== "S", m.trPad.in, { lvl: 0.8 });
+          } else if (li === 0 && padRef.current && i === 0) {
+            // an untouched clip plays the song's own pad the same way an untouched section does:
+            // one hold on the downbeat
+            const barDur = barBeatsRef.current * beat;
+            for (const mid of (m.voicing || voiceChord(chord)))
+              leadNote(m.ctx, t, mid, barDur * 0.98, padRef.current, true, m.trPad.in, { lvl: 0.8 });
+          }
         }
       });
       if (chord && !sessionModeRef.current) for (let li = 0; li < nLayersOf("pad"); li++) {
@@ -3633,15 +3644,17 @@ export default function ProgressionWheel() {
         const live = sessionLiveRef.current[tr.id]; if (!live) return;
         if (m.stem && m.stem.kind !== "perc") return;
         const key = sessionKey(tr.id, live.clipId);
-        const bars = secPercBeatRef.current[key];
-        // an untouched clip plays the song's own perc pattern — the same one its grid shows as
-        // a preview until you tap a cell
-        const ppat = (bars && bars.length)
-          ? bars[Math.floor((m.step - live.startStep) / L) % bars.length]
-          : ((PERCS[percRef.current] || DRUMS[percRef.current] || {}).pattern);
-        const pstep = sampleAt(ppat, i, L);
-        if (pstep) for (const ch of pstep)
-          percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
+        // extra perc sub-tracks of a clip's own; only the first falls back to the song's own perc
+        // pattern — the same one its grid shows as a preview until you tap a cell
+        for (let li = 0; li < sessionLayerCount("perc", key); li++) {
+          const bars = secPercBeatRef.current[key + (li ? LSEP + li : "")];
+          const ppat = (bars && bars.length)
+            ? bars[Math.floor((m.step - live.startStep) / L) % bars.length]
+            : li === 0 ? ((PERCS[percRef.current] || DRUMS[percRef.current] || {}).pattern) : null;
+          const pstep = sampleAt(ppat, i, L);
+          if (pstep) for (const ch of pstep)
+            percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
+        }
       });
       let b = null;                                     // this bar's struct entry, kept for the drum fill below
       const inStruct = struct && struct.length && structBar >= 0 && !gvLoop;
@@ -3870,15 +3883,19 @@ export default function ProgressionWheel() {
         const live = sessionLiveRef.current[tr.id]; if (!live) return;
         if (m.stem && m.stem.kind !== "drums") return;
         const key = sessionKey(tr.id, live.clipId);
-        const bars = secBeatRef.current[key];
-        // an untouched clip plays the song's own drum pattern — the same one its grid shows as
-        // a preview until you tap a cell, so what you see in the grid is what you hear
-        const dpatS = (bars && bars.length)
-          ? bars[Math.floor((m.step - live.startStep) / L) % bars.length] : drumRef.current;
-        const dstepS = sampleAt(dpatS, i, L);
-        if (!dstepS) return;
-        if (/[KB]/.test(dstepS)) kickNow = true;
-        for (const ch of dstepS) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
+        // extra drums sub-tracks of a clip's own (the same "add a 2nd/3rd kit" a section gets);
+        // only the first falls back to the song's own pattern when untouched — an extra
+        // sub-track has no song-level default to speak for it, same as a section's own extras
+        for (let li = 0; li < sessionLayerCount("drums", key); li++) {
+          const bars = secBeatRef.current[key + (li ? LSEP + li : "")];
+          const dpatS = (bars && bars.length)
+            ? bars[Math.floor((m.step - live.startStep) / L) % bars.length]
+            : li === 0 ? drumRef.current : null;
+          const dstepS = sampleAt(dpatS, i, L);
+          if (!dstepS) continue;
+          if (/[KB]/.test(dstepS)) kickNow = true;
+          for (const ch of dstepS) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
+        }
       });
       // Pump the pitched sources under every kick. Recovery stops just short of the next beat, so
       // four-on-the-floor breathes fully back in right as the next kick hits. The pump belongs to
@@ -3916,7 +3933,10 @@ export default function ProgressionWheel() {
             const secX = mel.bySym[key]; if (!secX) return;
             const nb = (secX.layers[0] && secX.layers[0].bars.length) || 1;
             const mbX = Math.floor((m.step - live.startStep) / L) % nb;
-            melJobs.push({ sym: key, mb: mbX, moveId: "", liBase: SESSION_LI_BASE + idx });
+            // a clip can hold up to MAX_LAYERS parts of its own (the same "add another instrument"
+            // a section has), so each track reserves a full MAX_LAYERS-wide slice of chain slots —
+            // one track's li 1 must never land on the next track's own li 0
+            melJobs.push({ sym: key, mb: mbX, moveId: "", liBase: SESSION_LI_BASE + idx * MAX_LAYERS });
           });
         } else {
           let sym = null, mb = 0, moveId = "";
@@ -8501,15 +8521,35 @@ export default function ProgressionWheel() {
             if (!selTrack || !selClip || !selD) return <p className="keytag">Pick a clip above to edit it.</p>;
             const d = selD;
             if (selTrack.type === "melody") {
+              // a clip can hold more than one instrument of its own, exactly like a section can
+              // ("add another instrument") — the same tabs, the same addLayer/removeLayer, just
+              // pointed at the clip's own key instead of a section's
               const sec = secMelos[d.key] || EMPTY_SEC;
-              const ly = sec.layers[0];
-              const set = patch => setLayerProp(d.key, 0, patch);
+              const nL = nLayers(sec);
+              const secL = Math.min(secPart[d.key] || 0, nL - 1);
+              const ly = layerOf(sec, secL) || {};
+              const set = patch => setLayerProp(d.key, secL, patch);
               const grp = sessionModGrp;
               const cols = d.nbars * meloBeats;
               return (<>
+                <div className="row lytabs" style={{ gap:5, marginBottom:6 }}>
+                  {sec.layers.map((l, li) => (
+                    <button key={li} className={"lytab" + (secL === li ? " on" : "")} style={{ "--ly": LAYER_INK[li] }}
+                      title={"Part " + LAYER_NAMES[li]} onClick={() => setSecPart({ ...secPart, [d.key]: li })}>
+                      {LAYER_NAMES[li]}
+                      {l.mute ? <i className="lyflag">m</i> : l.solo ? <i className="lyflag">s</i> : null}
+                    </button>
+                  ))}
+                  {nL < MAX_LAYERS &&
+                    <button className="lytab lyadd" onClick={() => addLayer(d.key)}
+                      title="Add another instrument to this clip">＋</button>}
+                  {secL > 0 &&
+                    <button className="mini" onClick={() => removeLayer(d.key, secL)}
+                      title={"Remove part " + LAYER_NAMES[secL]}>🗑</button>}
+                </div>
                 <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
                   <select className="fxsel" value={ly.instr || ""}
-                    title="The instrument this clip plays" onChange={e => setSecInstr(d.key, 0, e.target.value)}>
+                    title="The instrument this part plays" onChange={e => setSecInstr(d.key, secL, e.target.value)}>
                     {sessLeadOpts()}
                   </select>
                   <span className="modlbl" style={{ marginLeft:2 }}>Octave</span>
@@ -8528,6 +8568,8 @@ export default function ProgressionWheel() {
                   </label>
                   <button className={"mini" + (ly.mute ? " mixon" : "")} onClick={() => set({ mute: !ly.mute })}>
                     {ly.mute ? "muted" : "mute"}</button>
+                  {nL > 1 && <button className={"mini" + (ly.solo ? " mixon" : "")} onClick={() => set({ solo: !ly.solo })}>
+                    {ly.solo ? "soloed" : "solo"}</button>}
                 </div>
                 <div className="row modtabs">
                   {MOD_GROUPS.map(g => {
@@ -8550,8 +8592,8 @@ export default function ProgressionWheel() {
                       <tr key={deg}>
                         <td className="sessgridrow">{deg + 1}</td>
                         {Array.from({ length: cols }, (_, c) =>
-                          beatCell(Math.floor(c / meloBeats), c % meloBeats, noteOn(sec, c, deg, 0), LAYER_INK[0],
-                            () => tapMelo(d.key, c, deg, 0)))}
+                          beatCell(Math.floor(c / meloBeats), c % meloBeats, noteOn(sec, c, deg, secL), LAYER_INK[secL] || "#8B94A3",
+                            () => tapMelo(d.key, c, deg, secL)))}
                       </tr>
                     ))}
                   </tbody></table>
@@ -8561,7 +8603,14 @@ export default function ProgressionWheel() {
             const rows = TYPE_ROWS[selTrack.type], getBars = TYPE_BARS[selTrack.type], tapFn = TYPE_TAP[selTrack.type];
             if (!rows) return null;
             const multi = selTrack.type === "drums" || selTrack.type === "perc";
-            return beatGridUI(rows, getBars(d), (bi, si, ch) => tapFn(d, bi, si, ch), multi);
+            // a clip can hold extra drums/bass/pad/perc sub-tracks of its own — the same "add a
+            // 2nd bassline" a section gets — via the exact tab strip a section's own track uses;
+            // it only needs d.key, which a clip's synthetic key satisfies just as well
+            const subD = layered(d, activeLayerOf(selTrack.type, d.key));
+            return (<>
+              {trackTabStrip(selTrack.type, d)}
+              {beatGridUI(rows, getBars(subD), (bi, si, ch) => tapFn(subD, bi, si, ch), multi)}
+            </>);
           };
           return (
             <div className="panel">
