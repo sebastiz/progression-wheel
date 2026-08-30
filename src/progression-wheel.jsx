@@ -618,6 +618,9 @@ export default function ProgressionWheel() {
   const [sessionModGrp, setSessionModGrp] = useState("pattern");   // which mod group tab the clip editor shows, for a melody clip
   const [sessionPlaying, setSessionPlaying] = useState(false);
   const [sessionLive, setSessionLive] = useState({});    // UI mirror of sessionLiveRef, { trackId: clipId } — which clip is actually sounding
+  // { trackId: bars-since-launch }, mirrored once per session bar — what lets a live slot show
+  // how far through its loop it is, the way Ableton's clips visibly spin
+  const [sessionPos, setSessionPos] = useState({});
   const [sessionQueued, setSessionQueued] = useState({}); // UI mirror of sessionQueueRef, { trackId: clipId } — armed for the next bar
   /* Capture: record a session performance so it can be written into the arrangement. While the
      toggle is on, every session bar logs which clip each track had live — one snapshot per bar,
@@ -2310,6 +2313,40 @@ export default function ProgressionWheel() {
       setSessionSel({ trackId, clipId: remain ? remain.id : "" });
     }
   };
+  /* Duplicate a clip WITH its content — notes, grids, mods, picks, sub-track count — inserted
+     right after the source, numbered next. This is how numbered variations of one part actually
+     get made: copy clip 1, edit the copy, rather than rebuilding from an empty grid. */
+  const duplicateSessionClip = (trackId, clipId) => {
+    const track = sessionTracks.find(t => t.id === trackId); if (!track) return;
+    const at = track.clips.findIndex(c => c.id === clipId); if (at < 0) return;
+    const src = track.clips[at];
+    const clip = newClip(nextClipNum(track), src.nbars);
+    setSessionTracks(sessionTracks.map(t => t.id === trackId
+      ? { ...t, clips: [...t.clips.slice(0, at + 1), clip, ...t.clips.slice(at + 1)] } : t));
+    const from = sessionKey(trackId, clipId), to = sessionKey(trackId, clip.id);
+    if (track.type === "melody") {
+      const secs = melos.progId === progId ? melos.secs : {};
+      const e = secs[from];
+      if (e) setMelos({ progId, secs: { ...secs,
+        [to]: { ids: [...(e.ids || [])], layers: (e.layers || []).map(cloneLayer) } } });
+    } else if (track.type === "chords") {
+      if (secChordBeat[from]) setSecChordBeat({ ...secChordBeat, [to]: secChordBeat[from].map(b => [...b]) });
+    } else {
+      const beatMap = TRACK_BEAT_MAPS[track.type], patMap = TRACK_PAT_MAPS[track.type];
+      const nSub = Math.max(1, Math.min(MAX_LAYERS, (secTrackLayers[from] && secTrackLayers[from][track.type]) || 1));
+      const nb = { ...beatMap }, np = { ...patMap };
+      let anyB = false, anyP = false;
+      for (let li = 0; li < nSub; li++) {
+        const suf = li ? LSEP + li : "";
+        if (beatMap[from + suf]) { nb[to + suf] = beatMap[from + suf].map(b => [...b]); anyB = true; }
+        if (patMap[from + suf] != null) { np[to + suf] = patMap[from + suf]; anyP = true; }
+      }
+      if (anyB) TRACK_BEAT_SETTER[track.type](nb);
+      if (anyP) TRACK_PAT_SETTER[track.type](np);
+      if (nSub > 1) setSecTrackLayers({ ...secTrackLayers, [to]: { ...(secTrackLayers[to] || {}), [track.type]: nSub } });
+    }
+    setSessionSel({ trackId, clipId: clip.id });
+  };
   const setSessionClipLen = (trackId, clipId, nbars) => setSessionTracks(sessionTracks.map(t => t.id === trackId
     ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, nbars: Math.max(1, Math.min(32, nbars)) } : c) } : t));
   /* Click a clip to launch it: queued for the next bar if the Session transport is already
@@ -3139,7 +3176,7 @@ export default function ProgressionWheel() {
     // there is no "paused, waiting to resume" state for the Session view
     sessionModeRef.current = false; setSessionPlaying(false);
     sessionLiveRef.current = {}; sessionQueueRef.current = {};
-    setSessionLive({}); setSessionQueued({});
+    setSessionLive({}); setSessionQueued({}); setSessionPos({});
     // stopping ends a capture but keeps the take — writing it to the arrangement is its own step
     sessionCaptureRef.current = false; setSessionCapture(false);
   };
@@ -3400,6 +3437,14 @@ export default function ProgressionWheel() {
               Object.entries(sessionLiveRef.current).map(([k, v]) => [k, v.clipId])));
             setSessionQueued({});
           }, delayMs);
+        }
+        // every live clip's position, once a bar — bars since launch, the UI does the % against
+        // the clip's own length. Scheduled at the bar's own downbeat like the mirrors above.
+        if (live) {
+          const pos = {};
+          for (const tid in sessionLiveRef.current)
+            pos[tid] = Math.floor((m.step - sessionLiveRef.current[tid].startStep) / L);
+          setTimeout(() => setSessionPos(pos), Math.max(0, (m.nextTime - m.ctx.currentTime) * 1000));
         }
         // capture logs the bar as promoted — what is live now is what this bar will sound like
         if (sessionCaptureRef.current) {
@@ -8115,7 +8160,14 @@ export default function ProgressionWheel() {
         .scenebtn:hover { color:var(--text); border-color:var(--line-3); }
         .sessslot { font-size:var(--fs-sm); border-radius:var(--r-sm); border:1px solid var(--line-2);
           background:var(--surface); color:var(--muted); cursor:pointer; padding:6px 4px; min-width:0;
-          font-variant-numeric:tabular-nums; }
+          font-variant-numeric:tabular-nums; position:relative; overflow:hidden; }
+        /* a live clip visibly makes its way round its own loop — the sliver is the playhead */
+        .slotprog { position:absolute; left:0; bottom:0; height:3px; background:rgba(0,0,0,.32);
+          pointer-events:none; transition:width .3s linear; }
+        /* queued reads as "about to happen", not merely selected */
+        @keyframes slotpulse { 0%, 100% { opacity:1; } 50% { opacity:.55; } }
+        .sessslot.queued { animation:slotpulse 1s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) { .sessslot.queued { animation:none; } }
         .sessslot:hover { color:var(--text); border-color:var(--line-4); }
         .sessslot.selopen { border-color:var(--line-3); color:var(--text); }
         .sessslot.queued { background:color-mix(in srgb, var(--blue) 22%, var(--surface)); border-color:var(--blue); color:var(--text); }
@@ -8909,6 +8961,8 @@ export default function ProgressionWheel() {
                                 title={`Clip ${c.num} · ${c.nbars} bar${c.nbars === 1 ? "" : "s"} — click to launch, or open its editor below`}
                                 onClick={() => { setSessionSel({ trackId: tr.id, clipId: c.id }); launchSessionClip(tr.id, c.id); }}>
                                 {isLive ? "▶ " : isQueued ? "… " : ""}{c.num}
+                                {isLive && sessionPos[tr.id] != null &&
+                                  <i className="slotprog" style={{ width: (((sessionPos[tr.id] % c.nbars) + 1) / c.nbars * 100) + "%" }} />}
                               </button>
                             );
                           }
@@ -8932,6 +8986,8 @@ export default function ProgressionWheel() {
                       <input type="number" min="1" max="32" value={selClip.nbars} style={{ width:48 }}
                         onChange={e => setSessionClipLen(selTrack.id, selClip.id, +e.target.value || 1)} />
                     </label>}
+                    {selClip && <button className="mini" onClick={() => duplicateSessionClip(selTrack.id, selClip.id)}
+                      title="Copy this clip — notes, sounds, settings and all — to the next number, ready to vary">⧉ Duplicate</button>}
                     {selClip && selTrack.clips.length > 1 &&
                       <button className="mini" onClick={() => removeSessionClip(selTrack.id, selClip.id)}>🗑 clip</button>}
                   </div>
