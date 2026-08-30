@@ -13,7 +13,7 @@ import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeN
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
-import { TRACK_TYPES, TRACK_TYPE_BY_ID, newClip, newTrack, nextClipNum, sessionKey } from "./session.js";
+import { SESSION_PREFIX, TRACK_TYPES, TRACK_TYPE_BY_ID, newClip, newTrack, nextClipNum, sessionKey } from "./session.js";
 import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 import { TRACK_PRESETS } from "./track-presets.js";
 // The Progression Wheel — v3 (slim)
@@ -619,6 +619,17 @@ export default function ProgressionWheel() {
   const [sessionPlaying, setSessionPlaying] = useState(false);
   const [sessionLive, setSessionLive] = useState({});    // UI mirror of sessionLiveRef, { trackId: clipId } — which clip is actually sounding
   const [sessionQueued, setSessionQueued] = useState({}); // UI mirror of sessionQueueRef, { trackId: clipId } — armed for the next bar
+  /* Capture: record a session performance so it can be written into the arrangement. While the
+     toggle is on, every session bar logs which clip each track had live — one snapshot per bar,
+     taken in the same promotion block that makes launches land on bars, so the log IS the
+     performance. Writing it out goes through the sketch commit's own pathway (a custom plan of
+     LOOP sections plus per-instance state), so a captured take becomes an ordinary arrangement
+     with no memory of having been performed. The log is a performance buffer, not a document —
+     deliberately unsaved. */
+  const [sessionCapture, setSessionCapture] = useState(false);
+  const [captureBars, setCaptureBars] = useState(0);      // UI mirror of the log's length
+  const sessionCaptureRef = useRef(false);
+  const captureLogRef = useRef([]);            // one { trackId: clipId } snapshot per captured bar
   const sessionModeRef = useRef(false);        // true while the Session transport (not the song's) is playing
   const sessionLiveRef = useRef({});           // { trackId: { clipId, startStep } } — the clip each track is actually playing, and when it started
   const sessionQueueRef = useRef({});          // { trackId: clipId } — queued to take over at the next bar
@@ -3129,6 +3140,8 @@ export default function ProgressionWheel() {
     sessionModeRef.current = false; setSessionPlaying(false);
     sessionLiveRef.current = {}; sessionQueueRef.current = {};
     setSessionLive({}); setSessionQueued({});
+    // stopping ends a capture but keeps the take — writing it to the arrangement is its own step
+    sessionCaptureRef.current = false; setSessionCapture(false);
   };
   // The audio graph, built into whatever context it is given — a live AudioContext for playback,
   // an OfflineAudioContext for rendering the song to a file. Everything downstream of `master`
@@ -3387,6 +3400,16 @@ export default function ProgressionWheel() {
               Object.entries(sessionLiveRef.current).map(([k, v]) => [k, v.clipId])));
             setSessionQueued({});
           }, delayMs);
+        }
+        // capture logs the bar as promoted — what is live now is what this bar will sound like
+        if (sessionCaptureRef.current) {
+          const snap = {};
+          for (const tid in sessionLiveRef.current) snap[tid] = sessionLiveRef.current[tid].clipId;
+          captureLogRef.current.push(snap);
+          if (live) {
+            const n = captureLogRef.current.length;
+            setTimeout(() => setCaptureBars(n), Math.max(0, (m.nextTime - m.ctx.currentTime) * 1000));
+          }
         }
       }
       let sym = (patStep == null ? null : patRef.current[patStep]) || "-";
@@ -4480,9 +4503,13 @@ export default function ProgressionWheel() {
      against whatever was queued in sessionLiveRef/sessionQueueRef before Play was pressed, rather
      than the arrangement or the groove. */
   const sessionPlay = () => {
+    // arming ⦿ Capture before pressing Play must survive startMetro's own stopMetro reset —
+    // that reset ends a capture on a real stop, but starting the room is not stopping it
+    const armed = sessionCaptureRef.current;
     startMetro(0);
     sessionModeRef.current = true;
     setSessionPlaying(true);
+    if (armed) { sessionCaptureRef.current = true; setSessionCapture(true); }
   };
   // toggle a single-section loop: while on, all playback confines to this section and repeats.
   // Turning it on also starts playback from the section if nothing is playing.
@@ -7145,6 +7172,121 @@ export default function ProgressionWheel() {
     setTab("arrange");
     setIoNote(`Wrote the sketch to the arrangement — ${plan.length} section${plan.length > 1 ? "s" : ""}, every one playing exactly what you filled in. Refine each pass here.`);
   };
+  /* ---- write a captured Session performance to the arrangement ----
+     The sketch commit's third sibling (templates and the draft being the first two): the capture
+     log — one clip-combination snapshot per performed bar — collapses into segments of constant
+     combination, each segment becomes a "Take n" row of LOOP passes, and every track's clip
+     content is MATERIALISED into the new instances' own maps: grids copied in, melody layers
+     copied in, a clip's "starts from" pick carried as the instance's own pick, silence written as
+     the instance's mute. Copied, not referenced — the arrangement that comes out is ordinary in
+     every way, exactly like a committed draft, and editing it never reaches back into the clips.
+     The one wrinkle over the sketch commit: the choice and grid maps here are replaced wholesale
+     as a commit demands, EXCEPT the keys that are material rather than arrangement — the groove's
+     "*" and every $-prefixed clip — which ride through, the same survivor rule remapSecs applies
+     on a plan edit. Segments snap to whole passes of the loop, because a section is the
+     arrangement's atom; the io note says so rather than hiding it. */
+  const writeCaptureToArrange = () => {
+    const log = captureLogRef.current;
+    if (!log.length || !sessionTracks.length) return;
+    stopMetro();
+    const segKeyOf = s => sessionTracks.map(tr => s[tr.id] || "").join("|");
+    const segs = [];
+    for (const s of log) {
+      const k = segKeyOf(s);
+      if (segs.length && segs[segs.length - 1].k === k) segs[segs.length - 1].bars++;
+      else segs.push({ k, snap: s, bars: 1 });
+    }
+    const passBars = Math.max(1, barsOfRow({ sec: "Take 1", nums: "LOOP", reps: 1 }));
+    const plan = segs.map((sg, i) => ({ sec: "Take " + (i + 1), nums: "LOOP",
+      reps: Math.max(1, Math.round(sg.bars / passBars)), note: null }));
+    const insts = planInsts(plan, barsOfRow, letterFor);
+    const nDrum = {}, nQuiet = {}, nBassP = {}, nPercP = {}, nPadV = {}, nCnt = {};
+    const nBeat = {}, nBassB = {}, nPercB = {}, nPadB = {}, nChordB = {};
+    const secsPatch = {};
+    const BEAT_OF = {
+      drums: { beat: secBeat, nBeat, pat: secDrum, nPat: nDrum, dflt: drum },
+      perc:  { beat: secPercBeat, nBeat: nPercB, pat: secPercPat, nPat: nPercP, dflt: perc },
+      bass:  { beat: secBassBeat, nBeat: nBassB, pat: secBassPat, nPat: nBassP, dflt: bass },
+      pad:   { beat: secPadBeat, nBeat: nPadB, pat: secPadVoice, nPat: nPadV, dflt: pad },
+    };
+    insts.forEach(x => {
+      const snap = segs[x.row].snap;
+      const melLayers = [];
+      const cursor = { drums: 0, perc: 0, bass: 0, pad: 0 };   // next free sub-slot per type
+      let chordsOn = false, hasChordTrack = false;
+      for (const tr of sessionTracks) {
+        const clipId = snap[tr.id];
+        const key = clipId ? sessionKey(tr.id, clipId) : null;
+        if (tr.type === "melody") {
+          const sec = key && secMelos[key];
+          if (sec) for (const ly of sec.layers) {
+            if (melLayers.length >= MAX_LAYERS) break;
+            melLayers.push(cloneLayer(ly));
+          }
+          continue;
+        }
+        if (tr.type === "chords") {
+          hasChordTrack = true;
+          if (!key) continue;
+          chordsOn = true;
+          const bars = secChordBeat[key];
+          if (bars && bars.length) nChordB[x.key] = bars.map(b => [...b]);
+          continue;
+        }
+        const M = BEAT_OF[tr.type]; if (!M) continue;
+        if (!key) continue;                              // silence is written once per type, below
+        const nSub = Math.max(1, Math.min(MAX_LAYERS, (secTrackLayers[key] && secTrackLayers[key][tr.type]) || 1));
+        for (let li = 0; li < nSub && cursor[tr.type] < MAX_LAYERS; li++) {
+          const at = cursor[tr.type]++;
+          const suf = at ? LSEP + at : "";
+          const bars = M.beat[key + (li ? LSEP + li : "")];
+          const pick = M.pat[key + (li ? LSEP + li : "")];
+          if (bars && bars.length) M.nBeat[x.key + suf] = bars.map(b => [...b]);
+          else if (pick) M.nPat[x.key + suf] = pick;
+          // an unwritten, unpicked first sub-track played the song's default — pin what was heard
+          else if (li === 0 && M.dflt) M.nPat[x.key + suf] = M.dflt;
+          else M.nPat[x.key + suf] = "off";
+        }
+      }
+      for (const type in cursor) {
+        if (cursor[type] > 1) nCnt[x.key] = { ...(nCnt[x.key] || {}), [type]: cursor[type] };
+        // a type with nothing live this segment (or no track at all) was silent — write the mute
+        if (!cursor[type]) BEAT_OF[type].nPat[x.key] = "off";
+      }
+      // no chords track, or its slot empty: the session had no strums here
+      if (!chordsOn || !hasChordTrack) nQuiet[x.key] = true;
+      if (melLayers.length) secsPatch[x.key] = { ids: [], layers: melLayers };
+    });
+    // material keys ride through a commit; arrangement keys are replaced wholesale, as ever
+    const keepMaterial = map => Object.fromEntries(
+      Object.entries(map).filter(([k]) => k.length === 1 || k[0] === SESSION_PREFIX));
+    const keepClips = map => Object.fromEntries(
+      Object.entries(map).filter(([k]) => k[0] === SESSION_PREFIX));
+    setSelStruct("");
+    setCustom({ key: progId + "|", plan });
+    setSecDrum({ ...keepClips(secDrum), ...nDrum }); setSecQuiet(nQuiet);
+    setSecBassPat({ ...keepClips(secBassPat), ...nBassP });
+    setSecPercPat({ ...keepClips(secPercPat), ...nPercP });
+    setSecPadVoice({ ...keepClips(secPadVoice), ...nPadV });
+    setSecTrackLayers({ ...keepClips(secTrackLayers), ...nCnt });
+    setSecBeat({ ...keepMaterial(secBeat), ...nBeat });
+    setSecBassBeat({ ...keepMaterial(secBassBeat), ...nBassB });
+    setSecPercBeat({ ...keepMaterial(secPercBeat), ...nPercB });
+    setSecPadBeat({ ...keepMaterial(secPadBeat), ...nPadB });
+    setSecChordBeat({ ...keepMaterial(secChordBeat), ...nChordB });
+    setMelos({ progId, secs: { ...keepMaterial(melos.progId === progId ? melos.secs : {}), ...secsPatch } });
+    setSecBass({}); setSecPerc({}); setSecPad({}); setSecPartOut({});
+    captureLogRef.current = []; setCaptureBars(0);
+    setSelRow(0); setFocusRow(0);
+    setTab("arrange");
+    setIoNote(`Wrote the performance to the arrangement — ${log.length} bars as ${plan.length} take${plan.length > 1 ? "s" : ""}, snapped to whole passes of the loop. Each take is an ordinary section now — refine it here.`);
+  };
+  const toggleCapture = () => {
+    const on = !sessionCapture;
+    sessionCaptureRef.current = on;
+    setSessionCapture(on);
+    if (on) { captureLogRef.current = []; setCaptureBars(0); }   // a new take starts clean
+  };
   // the draft on screen: section blocks over one row per groove track, a cell per (track, section)
   const sketchDraft = () => {
     const rows = sketchTracks();
@@ -8710,6 +8852,20 @@ export default function ProgressionWheel() {
                   <button key={tt.id} className="mini" title={tt.tip} onClick={() => addSessionTrack(tt.id)}>
                     {tt.icon} + {tt.name}</button>
                 ))}
+                <span style={{ marginLeft:"auto" }} />
+                <button className={"mini" + (sessionCapture ? " mixon" : "")} onClick={toggleCapture}
+                  disabled={!sessionTracks.length}
+                  title={"Record the performance: while this is on, every bar remembers which clip each track had live. "
+                    + "Launch clips and scenes as the room plays, turn it off (or stop), then write the take to the Arrange tab."}>
+                  ⦿ Capture{sessionCapture ? " · on" : ""}</button>
+                {captureBars > 0 && <span className="keytag" style={{ margin:0 }}>
+                  {captureBars} bar{captureBars > 1 ? "s" : ""} captured</span>}
+                {captureBars > 0 && <button className="btn" style={{ padding:"5px 11px" }}
+                  onClick={writeCaptureToArrange}
+                  title={"Turn the captured performance into the song's arrangement: each stretch of the take with the same "
+                    + "clips live becomes a section, and every clip's content is copied into it — an ordinary arrangement, "
+                    + "editable on the Arrange tab, with no link back to the clips it came from."}>
+                  ✍ Write take to Arrange</button>}
               </div>
               {!sessionTracks.length && <p className="keytag">No tracks yet — add one above to start building the room.</p>}
               {sessionTracks.length > 0 && (() => {
