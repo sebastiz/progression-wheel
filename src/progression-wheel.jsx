@@ -3481,10 +3481,11 @@ export default function ProgressionWheel() {
         const localBar = n => Math.floor((m.step - live.startStep) / L) % Math.max(1, n);
         if (tr.type === "chords") {
           if (m.stem && m.stem.kind !== "chords") return;
-          const bars = secChordBeatRef.current[key]; if (!bars || !bars.length) return;
-          const bar = bars[localBar(bars.length)] || [];
-          const cs = stepAt(bar.length, i, L);
-          const tok = cs == null ? "-" : (bar[cs] || "-");
+          // an untouched clip plays the song's own strum rhythm — the same pattern its grid
+          // shows as a preview until you tap a cell, so what you see is what you hear
+          const bars = secChordBeatRef.current[key];
+          const bar = (bars && bars.length) ? (bars[localBar(bars.length)] || []) : null;
+          const tok = bar ? (bar[stepAt(bar.length, i, L)] || "-") : (sampleAt(patRef.current, i, L) || "-");
           if (tok !== "-" && !quiet) {
             const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, tok, eighth, m.chordBus, m.voicing, sessionBassOn);
             if (!played) playHit(m.ctx, t, chord, tok, inst, eighth, m.chordBus, m.voicing, sessionBassOn);
@@ -3520,9 +3521,13 @@ export default function ProgressionWheel() {
         const live = sessionLiveRef.current[tr.id]; if (!live) return;
         if (m.stem && m.stem.kind !== "bass") return;
         const key = sessionKey(tr.id, live.clipId);
-        const bars = secBassBeatRef.current[key]; if (!bars || !bars.length) return;
-        const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
-        const bpat = bars[localBar] || [];
+        const bars = secBassBeatRef.current[key];
+        // an untouched clip plays the song's own bass pattern — the same one its grid shows as
+        // a preview until you tap a cell
+        const bpat = (bars && bars.length)
+          ? (bars[Math.floor((m.step - live.startStep) / L) % bars.length] || [])
+          : ((BASS[bassRef.current] || {}).pattern || []);
+        if (!bpat.length) return;
         const bs = stepAt(bpat.length, i, L);
         const tok = bs == null ? "" : bpat[bs];
         if (!tok || tok === "-") return;
@@ -3556,18 +3561,26 @@ export default function ProgressionWheel() {
         const live = sessionLiveRef.current[tr.id]; if (!live) return;
         if (m.stem && m.stem.kind !== "pad") return;
         const key = sessionKey(tr.id, live.clipId);
-        const bars = secPadBeatRef.current[key]; if (!bars || !bars.length) return;
-        const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
-        const pbar = bars[localBar] || [];
-        const ps2 = stepAt(pbar.length, i, L);
-        const tok = ps2 == null ? "" : pbar[ps2];
-        if (!tok) return;
-        let gap = 1;
-        while (gap < pbar.length && !pbar[(ps2 + gap) % pbar.length]) gap++;
-        const stepDur = tick * (L / pbar.length);
-        const dur = tok === "S" ? Math.min(stepDur * 1.8, beat * 0.45) : Math.max(0.15, gap * stepDur * 0.95);
-        for (const mid of (m.voicing || voiceChord(chord)))
-          leadNote(m.ctx, t, mid, dur, padRef.current || "strings", tok !== "S", m.trPad.in, { lvl: 0.8 });
+        const bars = secPadBeatRef.current[key];
+        if (bars && bars.length) {
+          const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
+          const pbar = bars[localBar] || [];
+          const ps2 = stepAt(pbar.length, i, L);
+          const tok = ps2 == null ? "" : pbar[ps2];
+          if (!tok) return;
+          let gap = 1;
+          while (gap < pbar.length && !pbar[(ps2 + gap) % pbar.length]) gap++;
+          const stepDur = tick * (L / pbar.length);
+          const dur = tok === "S" ? Math.min(stepDur * 1.8, beat * 0.45) : Math.max(0.15, gap * stepDur * 0.95);
+          for (const mid of (m.voicing || voiceChord(chord)))
+            leadNote(m.ctx, t, mid, dur, padRef.current || "strings", tok !== "S", m.trPad.in, { lvl: 0.8 });
+        } else if (padRef.current && i === 0) {
+          // an untouched clip plays the song's own pad the same way an untouched section does:
+          // one hold on the downbeat
+          const barDur = barBeatsRef.current * beat;
+          for (const mid of (m.voicing || voiceChord(chord)))
+            leadNote(m.ctx, t, mid, barDur * 0.98, padRef.current, true, m.trPad.in, { lvl: 0.8 });
+        }
       });
       if (chord && !sessionModeRef.current) for (let li = 0; li < nLayersOf("pad"); li++) {
         if (m.stem && !(m.stem.kind === "pad" && (m.stem.i || 0) === li)) continue;
@@ -3620,9 +3633,13 @@ export default function ProgressionWheel() {
         const live = sessionLiveRef.current[tr.id]; if (!live) return;
         if (m.stem && m.stem.kind !== "perc") return;
         const key = sessionKey(tr.id, live.clipId);
-        const bars = secPercBeatRef.current[key]; if (!bars || !bars.length) return;
-        const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
-        const pstep = sampleAt(bars[localBar], i, L);
+        const bars = secPercBeatRef.current[key];
+        // an untouched clip plays the song's own perc pattern — the same one its grid shows as
+        // a preview until you tap a cell
+        const ppat = (bars && bars.length)
+          ? bars[Math.floor((m.step - live.startStep) / L) % bars.length]
+          : ((PERCS[percRef.current] || DRUMS[percRef.current] || {}).pattern);
+        const pstep = sampleAt(ppat, i, L);
         if (pstep) for (const ch of pstep)
           percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
       });
@@ -3853,9 +3870,12 @@ export default function ProgressionWheel() {
         const live = sessionLiveRef.current[tr.id]; if (!live) return;
         if (m.stem && m.stem.kind !== "drums") return;
         const key = sessionKey(tr.id, live.clipId);
-        const bars = secBeatRef.current[key]; if (!bars || !bars.length) return;
-        const localBar = Math.floor((m.step - live.startStep) / L) % bars.length;
-        const dstepS = sampleAt(bars[localBar], i, L);
+        const bars = secBeatRef.current[key];
+        // an untouched clip plays the song's own drum pattern — the same one its grid shows as
+        // a preview until you tap a cell, so what you see in the grid is what you hear
+        const dpatS = (bars && bars.length)
+          ? bars[Math.floor((m.step - live.startStep) / L) % bars.length] : drumRef.current;
+        const dstepS = sampleAt(dpatS, i, L);
         if (!dstepS) return;
         if (/[KB]/.test(dstepS)) kickNow = true;
         for (const ch of dstepS) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
