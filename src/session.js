@@ -26,6 +26,9 @@ let uidSeed = 0;
 // short, readable, unique within a browser session — these ids are never shown, only used as keys
 const uid = prefix => prefix + (Date.now().toString(36)) + (uidSeed++).toString(36);
 
+// a clip may also carry a follow action: `fa` ("next" | "prev" | "first" | "rand" | "stop",
+// absent = keep looping) and `fn` (full passes before it fires, absent = 1) — set in the
+// Session tab's clip editor, read by the scheduler's promotion block
 const newClip = (num, nbars = 4) => ({ id: uid("c"), num, nbars });
 
 const newTrack = (type, name) => ({
