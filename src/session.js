@@ -19,6 +19,7 @@ const TRACK_TYPES = [
   { id: "pad",    name: "Pad",    icon: "🌫", tip: "Held chords. Each clip is its own written grid." },
   { id: "perc",   name: "Perc",   icon: "🪘", tip: "A second, independent percussion grid. Each clip is its own pattern." },
   { id: "chords", name: "Chords", icon: "🎼", tip: "The strum rhythm over the song's own progression. Each clip is its own written rhythm." },
+  { id: "audio",  name: "Audio",  icon: "🎧", tip: "A real sound file — drop a .wav or .mp3 into a clip and launch it beat-matched to the song's tempo. Sound files live for this browser session only; they are not in saves or share links." },
 ];
 const TRACK_TYPE_BY_ID = Object.fromEntries(TRACK_TYPES.map(t => [t.id, t]));
 

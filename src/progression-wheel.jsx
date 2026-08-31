@@ -638,6 +638,11 @@ export default function ProgressionWheel() {
   // shut right down. Ridden live from the column header; the scheduler reads the ref each beat.
   const [sessionFx, setSessionFx] = useState({});
   const sessionFxRef = useRef({});
+  /* Decoded sound files for the Session view's Audio clips, keyed sessionKey(trackId, clipId).
+     A ref, never state or a save: an AudioBuffer is tens of MB of raw samples and belongs to
+     this browser session only. The clip itself keeps small metadata ({ name, dur }) so the
+     editor can say what was loaded — and say it needs re-loading after a reload or share. */
+  const audioClipsRef = useRef({});
   const [sessionQueued, setSessionQueued] = useState({}); // UI mirror of sessionQueueRef, { trackId: clipId } — armed for the next bar
   /* Capture: record a session performance so it can be written into the arrangement. While the
      toggle is on, every session bar logs which clip each track had live — one snapshot per bar,
@@ -2274,6 +2279,10 @@ export default function ProgressionWheel() {
     chords: [secChordBeat, setSecChordBeat],
   };
   const dropSessionKeys = (type, keys) => {
+    if (type === "audio") {
+      for (const k of keys) delete audioClipsRef.current[k];
+      return;
+    }
     if (type === "melody") {
       const secs = melos.progId === progId ? melos.secs : {};
       const next = { ...secs }; let changed = false;
@@ -2337,7 +2346,10 @@ export default function ProgressionWheel() {
     const track = sessionTracks.find(t => t.id === trackId); if (!track) return;
     const at = track.clips.findIndex(c => c.id === clipId); if (at < 0) return;
     const src = track.clips[at];
-    const clip = newClip(nextClipNum(track), src.nbars);
+    const clip = { ...newClip(nextClipNum(track), src.nbars),
+      // "settings and all": the follow action and, for an Audio clip, its file metadata,
+      // stretch mode and level ride along with the copy
+      fa: src.fa, fn: src.fn, stretch: src.stretch, gain: src.gain, audio: src.audio };
     setSessionTracks(sessionTracks.map(t => t.id === trackId
       ? { ...t, clips: [...t.clips.slice(0, at + 1), clip, ...t.clips.slice(at + 1)] } : t));
     const from = sessionKey(trackId, clipId), to = sessionKey(trackId, clip.id);
@@ -2348,6 +2360,9 @@ export default function ProgressionWheel() {
         [to]: { ids: [...(e.ids || [])], layers: (e.layers || []).map(cloneLayer) } } });
     } else if (track.type === "chords") {
       if (secChordBeat[from]) setSecChordBeat({ ...secChordBeat, [to]: secChordBeat[from].map(b => [...b]) });
+    } else if (track.type === "audio") {
+      // the decoded buffer is immutable, so the copy can share it — only the key is new
+      if (audioClipsRef.current[from]) audioClipsRef.current[to] = audioClipsRef.current[from];
     } else {
       const beatMap = TRACK_BEAT_MAPS[track.type], patMap = TRACK_PAT_MAPS[track.type];
       const nSub = Math.max(1, Math.min(MAX_LAYERS, (secTrackLayers[from] && secTrackLayers[from][track.type]) || 1));
@@ -2363,6 +2378,29 @@ export default function ProgressionWheel() {
       if (nSub > 1) setSecTrackLayers({ ...secTrackLayers, [to]: { ...(secTrackLayers[to] || {}), [track.type]: nSub } });
     }
     setSessionSel({ trackId, clipId: clip.id });
+  };
+  /* ---- Session audio clips: loading a sound file ----
+     Decode, then guess the beat-match: how many whole bars the file spans at the song's tempo
+     (nearest, clamped to the clip-length range). The clip's Bars box stays the authority — the
+     guess just saves typing when the loop really is a loop. */
+  const loadAudioClip = async (track, clip, file) => {
+    if (!file || !track || !clip) return;
+    try {
+      const raw = await file.arrayBuffer();
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const dctx = new AC();
+      const buf = await dctx.decodeAudioData(raw);
+      try { dctx.close(); } catch (e) {}
+      const barSecs = barBeats * 60 / effBpm;
+      const guess = Math.max(1, Math.min(32, Math.round(buf.duration / barSecs) || 1));
+      audioClipsRef.current[sessionKey(track.id, clip.id)] = { buf };
+      setSessionTracks(ts => ts.map(t2 => t2.id === track.id
+        ? { ...t2, clips: t2.clips.map(c => c.id === clip.id
+            ? { ...c, nbars: guess, audio: { name: file.name, dur: buf.duration } } : c) } : t2));
+      setIoNote(`Loaded ${file.name} — ${buf.duration.toFixed(2)}s ≈ ${guess} bar${guess > 1 ? "s" : ""} at ${effBpm} bpm.`);
+    } catch (e) {
+      setIoNote("Could not read that file as audio — a .wav or .mp3 works best.");
+    }
   };
   /* ---- Arrange ↔ Session bridges ----
      Import copies what a section instance actually plays for this track's type into the clip —
@@ -3634,6 +3672,47 @@ export default function ProgressionWheel() {
             setTimeout(() => setCaptureBars(n), Math.max(0, (m.nextTime - m.ctx.currentTime) * 1000));
           }
         }
+        /* Audio clips: real sound files, one looping AudioBufferSourceNode per track. Beat-matched
+           by varispeed — the clip declares how many bars it is, so playbackRate =
+           fileDuration / (bars × barSeconds) makes one loop of the buffer exactly that many bars,
+           started on this scheduled downbeat: locked to the grid for as long as it plays.
+           A node is (re)started whenever its clip, launch, length, tempo or stretch toggle changes
+           the required rate — joining at the phase the clip would be at, so a re-lock or a
+           mid-take offline render lands in time rather than from the top. */
+        {
+          const pool = m.sessAudio || (m.sessAudio = {});
+          const tSA = m.nextTime;
+          const barSecs = (barBeatsRef.current || 4) * 60 / (bpmRef.current || 120);
+          sessionTracksRef.current.forEach(tr => {
+            if (tr.type !== "audio") return;
+            const lv = sessionLiveRef.current[tr.id];
+            const clip = lv && tr.clips.find(c => c.id === lv.clipId);
+            const key = clip && sessionKey(tr.id, clip.id);
+            const entry = key && audioClipsRef.current[key];
+            const nbA = clip ? Math.max(1, clip.nbars || 1) : 1;
+            const rate = entry ? (clip.stretch === false ? 1 : entry.buf.duration / (nbA * barSecs)) : 1;
+            const cur = pool[tr.id];
+            const stale = cur && (!entry || cur.key !== key
+              || cur.startStep !== lv.startStep || Math.abs(cur.rate - rate) > 1e-6);
+            if (stale) { try { cur.src.stop(tSA); } catch (e) {} delete pool[tr.id]; }
+            if (!entry || pool[tr.id]) return;
+            const src = m.ctx.createBufferSource();
+            src.buffer = entry.buf; src.loop = true; src.playbackRate.value = rate;
+            const g = m.ctx.createGain(); g.gain.value = clip.gain == null ? 1 : clip.gain;
+            const lp = m.ctx.createBiquadFilter();
+            lp.type = "lowpass"; lp.frequency.value = FILTER_OPEN; lp.Q.value = 0.7;
+            src.connect(g); g.connect(lp); lp.connect(m.master);
+            const barsIn = Math.max(0, Math.floor((m.step - lv.startStep) / L)) % nbA;
+            src.start(tSA, ((barsIn / nbA) * entry.buf.duration) % Math.max(entry.buf.duration, 1e-6));
+            pool[tr.id] = { src, g, lp, key, startStep: lv.startStep, rate };
+          });
+          // a track whose clip stopped (or whose column was stopped) goes quiet on the downbeat
+          for (const tid in pool) {
+            if (sessionTracksRef.current.some(tr => tr.id === tid && sessionLiveRef.current[tr.id])) continue;
+            try { pool[tid].src.stop(tSA); } catch (e) {}
+            delete pool[tid];
+          }
+        }
       }
       let sym = (patStep == null ? null : patRef.current[patStep]) || "-";
       let t = m.nextTime;
@@ -4061,6 +4140,18 @@ export default function ProgressionWheel() {
         // the chords' own node — nothing else writes it, so a plain set per beat is enough
         if (m.chordLp) m.chordLp.frequency.setValueAtTime(
           nyq(m, Math.max(120, FILTER_OPEN * sessCutMul("chords"))), t);
+        // session audio chains: the clip's level and its column's performance filter, once a
+        // beat like every other track — so both respond while the file loops
+        for (const tid in (m.sessAudio || {})) {
+          const e2 = m.sessAudio[tid];
+          const tr2 = sessionTracksRef.current.find(t2 => t2.id === tid);
+          const lv2 = sessionLiveRef.current[tid];
+          const clip2 = tr2 && lv2 && tr2.clips.find(c => c.id === lv2.clipId);
+          if (clip2) e2.g.gain.setValueAtTime(clip2.gain == null ? 1 : clip2.gain, t);
+          const amt2 = sessionModeRef.current ? (sessionFxRef.current[tid] || 0) : 0;
+          e2.lp.frequency.setValueAtTime(
+            nyq(m, Math.max(120, FILTER_OPEN * (amt2 ? Math.pow(120 / FILTER_OPEN, amt2 / 100) : 1))), t);
+        }
         /* The insert rack's own knobs, same cadence as the track panel above — plus, now, the
            active *type* itself. Each bus's rack was built (back in buildGraph) with one node chain
            per type id the song could need for that bus/slot, every chain silent except the one
@@ -9124,6 +9215,54 @@ export default function ProgressionWheel() {
                 {melodyWorkbench(d, sec, secL)}
               </>);
             }
+            if (selTrack.type === "audio") {
+              const entry = audioClipsRef.current[d.key];
+              const meta = selClip.audio;
+              const barSecs = barBeats * 60 / effBpm;
+              const rate = entry && selClip.stretch !== false
+                ? entry.buf.duration / (Math.max(1, selClip.nbars) * barSecs) : 1;
+              return (
+                <div onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault();
+                    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+                    if (f) loadAudioClip(selTrack, selClip, f); }}>
+                  <div className="row" style={{ gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                    <label className="mini" style={{ cursor:"pointer" }}
+                      title="Load a sound file into this clip — .wav, .mp3, anything the browser can decode. Or drop the file anywhere on this panel.">
+                      🎧 {meta ? "Replace file…" : "Load a sound file…"}
+                      <input type="file" accept="audio/*" hidden
+                        onChange={e => { const f = e.target.files && e.target.files[0];
+                          if (f) loadAudioClip(selTrack, selClip, f); e.target.value = ""; }} />
+                    </label>
+                    {meta && <span className="keytag" style={{ margin:0 }}>
+                      {meta.name} · {meta.dur.toFixed(2)}s
+                      {entry ? (selClip.stretch === false ? " · played at its own speed"
+                        : ` · ${selClip.nbars} bar${selClip.nbars > 1 ? "s" : ""} · resped ${rate >= 1 ? "+" : ""}${((rate - 1) * 100).toFixed(1)}%`)
+                        : " · re-load the file — sound files stay only for this browser session"}
+                    </span>}
+                    {meta && <button className={"mini" + (selClip.stretch !== false ? " mixon" : "")}
+                      title={"Beat-match: play the file at whatever speed makes it exactly its Bars long at the song's tempo, "
+                        + "launched on the downbeat — locked to the grid. Off plays it at its own speed (only the start is quantized)."}
+                      onClick={() => setSessionClipFollow(selTrack.id, selClip.id, { stretch: selClip.stretch === false })}>
+                      {selClip.stretch !== false ? "🧲 beat-matched" : "beat-match off"}</button>}
+                    {meta && <label className="modctl">
+                      <span className="modlbl">Level</span>
+                      <input className="lvl" type="range" min="0" max="100"
+                        value={Math.round((selClip.gain == null ? 1 : selClip.gain) * 100)}
+                        onChange={e => setSessionClipFollow(selTrack.id, selClip.id, { gain: +e.target.value / 100 })} />
+                      <span className="modval">{Math.round((selClip.gain == null ? 1 : selClip.gain) * 100)}%</span>
+                    </label>}
+                  </div>
+                  {tips && <p className="keytag" style={{ marginTop:6 }}>
+                    Beat-matching: set <b>Bars</b> above to how long the loop really is — the guess on
+                    load is the nearest whole bar at the song's tempo — and the clip is resped so one
+                    pass is exactly that many bars, starting on the downbeat. A big respeed shifts
+                    pitch (varispeed, like a record); files made within ~10% of the song's tempo stay
+                    natural-sounding. Trim the file to a clean loop for seamless joins.
+                  </p>}
+                </div>
+              );
+            }
             const rows = TYPE_ROWS[selTrack.type], getBars = TYPE_BARS[selTrack.type], tapFn = TYPE_TAP[selTrack.type];
             if (!rows) return null;
             const type = selTrack.type;
@@ -9317,13 +9456,13 @@ export default function ProgressionWheel() {
                     </label>}
                     {selClip && <button className="mini" onClick={() => duplicateSessionClip(selTrack.id, selClip.id)}
                       title="Copy this clip — notes, sounds, settings and all — to the next number, ready to vary">⧉ Duplicate</button>}
-                    {selClip && sections.insts.length > 0 && <select className="fxsel" value=""
+                    {selClip && selTrack.type !== "audio" && sections.insts.length > 0 && <select className="fxsel" value=""
                       title="Pull a section of the arrangement into this clip: what that pass plays for this instrument becomes the clip's own content (replacing what it had), ready to vary against the song."
                       onChange={e => { if (e.target.value) importSectionToClip(selTrack, selClip, e.target.value); }}>
                       <option value="">⇠ from section…</option>
                       {sections.insts.map(x => <option key={x.key} value={x.key}>{x.sec} · bar {x.startBar + 1}</option>)}
                     </select>}
-                    {selClip && sections.insts.length > 0 && <select className="fxsel" value=""
+                    {selClip && selTrack.type !== "audio" && sections.insts.length > 0 && <select className="fxsel" value=""
                       title="Send this clip into a section of the arrangement: that pass then plays the clip's content for this instrument — the way ✍ Write take commits a whole performance, for one clip."
                       onChange={e => { if (e.target.value) sendClipToSection(selTrack, selClip, e.target.value); }}>
                       <option value="">⇢ to section…</option>
