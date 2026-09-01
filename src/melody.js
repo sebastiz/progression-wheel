@@ -1359,6 +1359,31 @@ const varyWithinPick = (bars, { id, nd = 7, seed = 0, level = 1 } = {}) => {
   return { bars: out, span: best.span, repeats: best.repeats, varied };
 };
 
+/* The fallback for a section with nothing repeated inside it to preserve as the reference statement
+   — a one-off 8-bar arch, say, rather than a riff said four times. varyWithin(Pick) has no first
+   statement to leave alone there and quite rightly finds nothing to do; but "this melody doesn't
+   repeat itself" is not the same as "there is nothing here worth varying", and a writer who presses
+   ✦ Vary repeats wants their notes nudged either way. This edits every bar directly rather than
+   hunting for restatements — the same small, targeted edits (a different landing note, a note added
+   or thinned, a phrase pushed early), just without a first statement held back from them. `id` picks
+   one named edit exactly as varyWithinPick does; left unset it is the auto mix varyWithin uses,
+   applied here with varyPass directly (the same engine a later section's own pass is varied with —
+   see varyBars). `level` is both "how many edits" for the auto mix and "how many times to try, at
+   a different spot each time" for a picked one, so pressing again always has somewhere new to go. */
+const varyWhole = (bars, { id, nd = 7, seed = 0, level = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  if (!level || !out.length) return { bars: out, varied: 0 };
+  if (!id) return { bars: out, varied: varyPass(out, { pass: level, seed, nd, amount: level }) };
+  const v = VARIATIONS.find(x => x.id === id);
+  if (!v) return { bars: out, varied: 0 };
+  let varied = 0;
+  for (let p = 1; p <= level; p++) {
+    const snap = barsKey(out);
+    if (v.apply(out, nd, hash01(seed + p * 977), p) && barsKey(out) !== snap) varied++;
+  }
+  return { bars: out, varied };
+};
+
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
 
 const NARRATIVES = [
@@ -1527,4 +1552,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };

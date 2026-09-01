@@ -7,13 +7,20 @@
   make-up the instant the first note sounded — the melody was never as loud as it looked, whatever
   the Level slider read. The per-note gain now carries the make-up too, on both the written grid and
   the arpeggiator.
-- **Pick a specific variation for ✦ Vary repeats, instead of only the auto mix.** A dropdown beside
-  the button — in the melody workbench, so it's there wherever a section's melody is being edited —
-  now lists all thirteen named edits (Different ending, Add a passing note, Push a note early, Split
-  a long note, Add a turn…), each with a one-line description of what it does. Left on "auto mix" the
-  button behaves exactly as before, walking the whole catalogue; pick one and it writes only that
-  edit on every repeat that has somewhere for it to go, and tapping again lands the same kind of edit
-  on a different note or column rather than repeating itself.
+- **✦ Vary these notes (was ✦ Vary repeats) now varies every section, not just the ones that repeat
+  a phrase.** It used to find the motif a section restates and edit only the repeats, reporting
+  "nothing repeats in this melody" and doing nothing on anything through-composed — which is most
+  melodies a narrative or pattern writes, so the button read as broken more often than not. It now
+  falls back to editing the section's own notes directly when nothing restates itself: the same
+  small, deliberate changes (a different landing note, a note added or thinned, a phrase pushed
+  early), just applied straight to the tune instead of hunting for a repeat first. Same melody
+  either way, never a different one and never a silent no-op.
+- **Pick a specific variation, instead of only the auto mix.** A dropdown beside the button — in the
+  melody workbench, so it's there wherever a section's melody is being edited — lists all thirteen
+  named edits (Different ending, Add a passing note, Push a note early, Split a long note, Add a
+  turn…), each with a one-line description of what it does. Left on "auto mix" the button behaves as
+  before, picking from the whole catalogue itself; pick one and it writes only that edit, and tapping
+  again lands the same kind of edit on a different note or column rather than repeating itself.
 - **Every style on the Arrange tab now sets its own tone, feel and melody, not just its groove.**
   Picking a style already set tempo, drum kit, pump and bassline; it now also sets the pad voice,
   percussion kit, delay time and swing, the chord and lead instrument, the humanise (feel) amount,

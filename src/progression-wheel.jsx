@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, VARIATIONS, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -722,7 +722,7 @@ export default function ProgressionWheel() {
      is gone. It is deliberately not part of the song document: the notes are the song, this is just
      where the writer had got to with the control. */
   const [varyIn, setVaryIn] = useState({});
-  /* Which single variation ✦ Vary repeats writes, per section+part — "" is the auto mix (the
+  /* Which single variation ✦ Vary these notes writes, per section+part — "" is the auto mix (the
      original behaviour, walking every variation in the catalogue); anything else pins the button
      to one named edit (Different ending, Add a passing note, …) so a writer chasing one particular
      kind of change does not have to keep tapping past ones they don't want. UI state, not song
@@ -2915,19 +2915,24 @@ export default function ProgressionWheel() {
     const res = pick
       ? varyWithinPick(base, { id: pick, nd: scaleSemis.length, seed, level })
       : varyWithin(base, { nd: scaleSemis.length, amount: level, seed });
-    // nothing restates itself here, so there is nothing to make less boring — say so rather than
-    // quietly editing a through-composed melody the writer never asked to have rewritten
-    if (!res.repeats) {
-      setVaryIn({ ...varyIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing repeats in this melody" } });
+    /* A section with no restatement inside it (a one-off arch rather than a riff said four times)
+       still has notes worth varying — "nothing repeats" is not "nothing to do". Fall back to editing
+       the whole section directly rather than leaving the button a dead end for exactly the melodies
+       most likely to sound flat: the ones that never repeat a phrase in the first place. */
+    const whole = !res.repeats;
+    const out = whole ? varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level }) : res;
+    if (whole && !out.varied) {
+      setVaryIn({ ...varyIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing here to vary" } });
       return;
     }
     // one past the top is the way back: the melody as it was, and the next press starts again
     const back = level > VARY_IN_MAX;
-    const bars = back ? dupBars(base) : res.bars;
+    const bars = back ? dupBars(base) : out.bars;
     putLayer(d.key, L, bars);
     setVaryIn({ ...varyIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick,
       note: back ? "back to the melody you wrote"
-        : `${res.varied} of ${res.repeats} repeat${res.repeats > 1 ? "s" : ""} varied`
+        : whole ? `${out.varied} note${out.varied === 1 ? "" : "s"} changed`
+        : `${out.varied} of ${res.repeats} repeat${res.repeats > 1 ? "s" : ""} varied`
           + (pick ? "" : ` · ${res.span > 1 ? `${res.span}-bar motif` : "1-bar motif"}`) } });
   };
   // back to the melody as it was before the first press, with the counter cleared
@@ -2940,7 +2945,7 @@ export default function ProgressionWheel() {
 
   /* ---- syncopate: anticipation as a one-tap edit ----
      The single most reliable catchiness trick there is — a note arriving half a beat before the
-     beat it was written on, held through it. Same baseline discipline as ✦ Vary repeats: each press
+     beat it was written on, held through it. Same baseline discipline as ✦ Vary these notes: each press
      re-derives from the melody as it stood before the first one, so press two pushes harder rather
      than pushing the pushed, and the third press is the way back. */
   const syncopateMel = (d, L) => {
@@ -6107,18 +6112,18 @@ export default function ProgressionWheel() {
                           const curV = VARIATIONS.find(v => v.id === pick);
                           return (<>
                             <select className="fxsel" style={{ maxWidth:150 }} value={pick}
-                              title="Which edit ✦ Vary repeats writes. Left on the auto mix it walks the whole catalogue of edits by itself; picked to one, the button writes only that edit — the one to reach for when you know the change you want rather than a general refresh."
+                              title="Which edit ✦ Vary these notes writes into this melody's own notes. Left on the auto mix it picks from the whole catalogue of edits itself; picked to one, the button writes only that edit — same tune, small deliberate changes to the notes, never a different melody."
                               onChange={e => setVaryPick({ ...varyPick, [vk]: e.target.value })}>
-                              <option value="">Vary repeats — auto mix</option>
+                              <option value="">Vary these notes — auto mix</option>
                               {VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
                             </select>
                             <button className={"mini" + (lv ? " on" : "")} onClick={() => varyRepeats(d, secL)}
-                              title={curV ? curV.tip + " Tap again for a different spot; one past the top puts the melody back as you wrote it."
-                                : "Vary the repeats inside this section — the motif is found where it restates itself, "
-                                + "the first statement is left alone, and every one after it gets a different landing note, "
-                                + "an extra note, a phrase pushed early. Tap again for more; one past the top puts the "
-                                + "melody back as you wrote it."}>
-                              ✦ {curV ? curV.name : "Vary repeats"}{lv ? " ×" + lv : ""}</button>
+                              title={(curV ? curV.tip : "Nudge a handful of this melody's own notes — a different landing note, "
+                                + "a note added or thinned, a phrase pushed early. Same tune, not a different one: where a phrase "
+                                + "restates itself the first statement is always left alone and only the repeats change; where "
+                                + "nothing repeats, the notes are edited directly instead.")
+                                + " Tap again for more; one past the top puts the melody back as you wrote it."}>
+                              ✦ {curV ? curV.name : "Vary these notes"}{lv ? " ×" + lv : ""}</button>
                             {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
