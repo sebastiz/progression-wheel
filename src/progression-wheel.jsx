@@ -545,8 +545,8 @@ export default function ProgressionWheel() {
   const [curLabel, setCurLabel] = useState(null);
   const [bpmSt, setBpmSt] = useState({ key:"", val:0 });
   const [nChordsSt, setNChordsSt] = useState({ key:"", val:0 });   // chords in the loop (0 = the progression's own length)
-  const [instr, setInstr] = useState("acoustic_guitar_steel");   // chord instrument (GM key)
-  const [melInstr, setMelInstr] = useState("flute");        // melody lead voice — a real sampled instrument by default (synth id or GM key)
+  const [instrSt, setInstrSt] = useState({ key:"", val:"acoustic_guitar_steel" });   // chord instrument (GM key), keyed by progression so a style can set it
+  const [melInstrSt, setMelInstrSt] = useState({ key:"", val:"flute" });        // melody lead voice — a real sampled instrument by default (synth id or GM key), keyed by progression
   const [legato, setLegato] = useState(true);               // merge/flow melody notes
   const [clickOn, setClickOn] = useState(false);            // metronome click on each hit (off by default)
   const [patSel, setPatSel] = useState({ key:"", id:"" });
@@ -690,7 +690,7 @@ export default function ProgressionWheel() {
   const [gridSt, setGridSt] = useState({ key:"", val:"" });     // melody grid resolution, keyed by progression
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
   const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
-  const [humanise, setHumanise] = useState(0);                  // timing + velocity looseness, 0..1
+  const [humaniseSt, setHumaniseSt] = useState({ key:"", val:0 });   // timing + velocity looseness, 0..1, keyed by progression
   // Undo/redo over the whole song document. Snapshots are cheap (the same shape the sketch and the
   // link use) and taken after the fact, so a tool you experiment in can always be walked back.
   const [past, setPast] = useState([]);
@@ -1283,7 +1283,19 @@ export default function ProgressionWheel() {
     // track", not "whatever the last template left running under a different genre"
     setBassSt({ key: progId, val: tpl.bass && BASS[tpl.bass] ? tpl.bass : "" });
     setBassVoiceSt({ key: progId, val: tpl.bassVoice || "" });
+    setPadSt({ key: progId, val: tpl.pad && PAD_VOICES.some(([id]) => id === tpl.pad) ? tpl.pad : "" });
+    setPercKitSt({ key: progId, val: tpl.percKit || "" });
+    setDelaySt({ key: progId, val: tpl.delay || "" });
+    setSwingSt({ key: progId, val: tpl.swing != null ? tpl.swing : 0 });
+    setInstrSt({ key: progId, val: tpl.instr || "acoustic_guitar_steel" });
+    setMelInstrSt({ key: progId, val: tpl.melInstr || "flute" });
+    setHumaniseSt({ key: progId, val: tpl.humanise != null ? tpl.humanise : 0 });
+    setTrackFx(tpl.trackFx || {});
     applyArrangement(tpl.plan, v);
+    // the narrative write must land a render later, for the same reason applyTrackPreset stages
+    // it — it also calls setMelos, and a second setMelos issued in this same breath as
+    // applyArrangement's would silently overwrite it rather than stack
+    trackPresetRef.current = tpl.narrative ? { stage: "melody", preset: tpl } : null;
   };
 
   /* ---- track presets: "recreate a famous track" ----
@@ -1359,10 +1371,22 @@ export default function ProgressionWheel() {
     const bassId = preset.bass || (tpl && tpl.bass);
     setBassSt({ key: pid, val: bassId && BASS[bassId] ? bassId : "" });
     setBassVoiceSt({ key: pid, val: preset.bassVoice || (tpl && tpl.bassVoice) || "" });
-    if (preset.pad) setPadSt({ key: pid, val: preset.pad });
-    if (preset.percKit) setPercKitSt({ key: pid, val: preset.percKit });
-    if (preset.delay) setDelaySt({ key: pid, val: preset.delay });
-    if (preset.swing != null) setSwingSt({ key: pid, val: preset.swing });
+    // a track preset that doesn't state its own pad/perc/delay/swing/instruments/feel falls back to
+    // its style's defaults, exactly as it already does for bpm/drum/kit/pump above — a famous track
+    // is a specific reading of its style, not a departure from it
+    const padId = preset.pad || (tpl && tpl.pad);
+    if (padId) setPadSt({ key: pid, val: padId });
+    const pkId = preset.percKit || (tpl && tpl.percKit);
+    if (pkId) setPercKitSt({ key: pid, val: pkId });
+    const delayId = preset.delay || (tpl && tpl.delay);
+    if (delayId) setDelaySt({ key: pid, val: delayId });
+    const swingVal = preset.swing != null ? preset.swing : (tpl ? tpl.swing : null);
+    if (swingVal != null) setSwingSt({ key: pid, val: swingVal });
+    setInstrSt({ key: pid, val: preset.instr || (tpl && tpl.instr) || "acoustic_guitar_steel" });
+    setMelInstrSt({ key: pid, val: preset.melInstr || (tpl && tpl.melInstr) || "flute" });
+    const humaniseVal = preset.humanise != null ? preset.humanise : (tpl && tpl.humanise != null ? tpl.humanise : 0);
+    setHumaniseSt({ key: pid, val: humaniseVal });
+    setTrackFx(preset.trackFx || (tpl && tpl.trackFx) || {});
     setSelRow(0); setCustom({ key:"", plan:null });
     const selVal = tplIdx >= 0 ? pid + ":t:" + tplIdx : "";
     setSelStruct(selVal);
@@ -1421,6 +1445,9 @@ export default function ProgressionWheel() {
   // Swing is a dial now, not a switch. The rhythm pattern's own `swing` flag sets the starting
   // point; the user can then push it anywhere from straight to nearly triplet.
   const swingAmt = swingSt.key === progId ? swingSt.val : (rhythm.swing ? 0.33 : 0);
+  const instr = instrSt.key === progId ? instrSt.val : "acoustic_guitar_steel";
+  const melInstr = melInstrSt.key === progId ? melInstrSt.val : "flute";
+  const humanise = humaniseSt.key === progId ? humaniseSt.val : 0;
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = swingAmt;
   humRef.current = humanise;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
@@ -5904,7 +5931,7 @@ export default function ProgressionWheel() {
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
-    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
+    setColour(s.colour || "triads"); setInstrSt({ key:s.progId, val:s.instr || "acoustic_guitar_steel" }); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
     setSecMove(s.secMove || {}); setSecTrans(s.secTrans || {}); setSecBeat(songBeats(s));
     setSecNar(s.secNar || {});
     setGridSt({ key:s.progId, val:s.grid || "" });                                 // absent in sketches saved before the grid was its own choice
@@ -5939,7 +5966,7 @@ export default function ProgressionWheel() {
     setEdits({ key:eKey, map:s.edits || {} }); setInserts({ key:eKey, list:s.inserts || [] });
     setQuals({ key:eKey, map:s.quals || {} }); setRemoved({ key:eKey, list:s.removed || [] });
     setOrder(s.order ? { key:eKey, list:s.order } : { key:"", list:null }); setPillSel([]);
-    if (s.melInstr) setMelInstr(s.melInstr);
+    if (s.melInstr) setMelInstrSt({ key:s.progId, val:s.melInstr });
     // melodies were session-only before this; a sketch without them just loads an empty grid
     setMelos(s.melos ? songMelos(s) : { progId:"", secs:{} });
     setSessionTracks(Array.isArray(s.session) ? s.session : []);
@@ -5972,9 +5999,9 @@ export default function ProgressionWheel() {
     setRemoved({ key:"", list:[] }); setOrder({ key:"", list:null }); setPillSel([]); setSel(null);
     setReorder(false); setAdding(false); setRemoving(false); setFingerIdx(null); setSelSong("");
     // sound: instruments, rhythm, tempo, feel and the whole rhythm section
-    setInstr("acoustic_guitar_steel"); setMelInstr("flute");
+    setInstrSt({ key:"", val:"acoustic_guitar_steel" }); setMelInstrSt({ key:"", val:"flute" });
     setPatSel({ key:"", id:"" }); setBpmSt({ key:"", val:0 }); setNChordsSt({ key:"", val:0 });
-    setGridSt({ key:"", val:"" }); setDelaySt({ key:"", val:"" }); setSwingSt({ key:"", val:0 }); setHumanise(0);
+    setGridSt({ key:"", val:"" }); setDelaySt({ key:"", val:"" }); setSwingSt({ key:"", val:0 }); setHumaniseSt({ key:"", val:0 });
     setDrumSt({ key:"", val:"" }); setKitSt({ key:"", val:"" }); setPumpSt({ key:"", val:"" });
     setBassSt({ key:"", val:"" }); setBassVoiceSt({ key:"", val:"" }); setSecBass({});
     setPercSt({ key:"", val:"" }); setSecPerc({}); setPercKitSt({ key:"", val:"" });
@@ -8559,7 +8586,7 @@ export default function ProgressionWheel() {
           <div className="selrow">
             <label className="selwrap">
               <span className="lbl" style={{ margin:0 }}>Chords</span>
-              <select value={gmKey(instr)} onChange={e => setInstr(e.target.value)}>
+              <select value={gmKey(instr)} onChange={e => setInstrSt({ key:progId, val:e.target.value })}>
                 {GM_CATS.map(([cat, list]) => (
                   <optgroup key={cat} label={cat}>
                     {list.map(([k, label]) => <option key={cat + k} value={k}>{label}</option>)}
@@ -8569,7 +8596,7 @@ export default function ProgressionWheel() {
             </label>
             <label className="selwrap">
               <span className="lbl" style={{ margin:0 }}>Lead</span>
-              <select value={melInstr} onChange={e => setMelInstr(e.target.value)}>
+              <select value={melInstr} onChange={e => setMelInstrSt({ key:progId, val:e.target.value })}>
                 <optgroup label="Synth (no download)">
                   {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                 </optgroup>
@@ -8694,7 +8721,7 @@ export default function ProgressionWheel() {
             <label className="selwrap" style={{ minWidth:118 }}>
               <span className="lbl" style={{ margin:0 }}>Feel {Math.round(humanise * 100)}%</span>
               <input className="lvl" type="range" min="0" max="100" value={Math.round(humanise * 100)}
-                onChange={e => setHumanise(+e.target.value / 100)}
+                onChange={e => setHumaniseSt({ key: progId, val: +e.target.value / 100 })}
                 title="Humanise — nudges every hit a few milliseconds early or late and varies how hard it lands, so the grid stops sounding typed. The variation is fixed, not random, so a render sounds like what you heard." />
             </label>
             <div className={"tog" + (realSounds ? " on" : "")} onClick={() => setRealSounds(v => !v)} style={{ paddingBottom:6 }}
