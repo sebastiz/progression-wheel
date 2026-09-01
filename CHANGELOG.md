@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **Ten famous tracks for every style on the Arrange tab.** "Recreate a famous track" now covers all
+  68 styles (previously only 13 had any, and just 1-2 tracks each) — 658 new real, researched tracks
+  bringing the catalogue to 678, each with its own key/tempo/chord-progression match and a melodic
+  narrative steered toward the record's real character (never a transcribed melody — see the note at
+  the top of `src/track-presets.js`). Two of the rarest, newest sub-genres (psytrance, full-on
+  psytrance) land on 9 rather than 10, since a couple of candidate tracks couldn't be verified as
+  real and were dropped rather than shipped as a guess. Once a style is picked, the dropdown now
+  shows just that style's own tracks instead of the full list (see the previous entry below).
 - **68 dance-music styles on the Arrange tab, up from 13.** Every style in the "Dance Music Family
   Tree" — the whole disco/house branch (Balearic Beat, Italo Disco, Hi-NRG, Acid House, Deep House,
   Afro House, Amapiano, Gqom, Tribal House, French/Filter House, Deep Tech, Electro House, Dutch
