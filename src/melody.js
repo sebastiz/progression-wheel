@@ -993,7 +993,8 @@ const wouldMerge = (ns, i) => {
 
 const VARIATIONS = [
   // the classic: same phrase, different landing note. Strongest single change for the least damage.
-  { id:"ending", apply(bars, nd, r, pass) {
+  { id:"ending", name:"Different ending", tip:"Land the repeat on a different note than last time — the strongest single change for the least damage.",
+    apply(bars, nd, r, pass) {
       const bar = bars[bars.length - 1], ns = barNotes(bar);
       if (!ns.length) return false;
       const i = ns.length - 1, last = ns[i], merge = wouldMerge(ns, i);
@@ -1004,7 +1005,8 @@ const VARIATIONS = [
       return true;
     } },
   // the same idea at the other end: start the repeat from somewhere else and walk back into the tune
-  { id:"opening", apply(bars, nd, r, pass) {
+  { id:"opening", name:"Different opening", tip:"Start the repeat from a different note and walk back into the tune.",
+    apply(bars, nd, r, pass) {
       const bar = bars[0], ns = barNotes(bar);
       if (ns.length < 2) return false;                       // leave a one-note bar its one note
       const merge = wouldMerge(ns, 0);
@@ -1016,7 +1018,8 @@ const VARIATIONS = [
   /* Release a held note early. Pure rhythm — the pitches are untouched — which makes it the one
      edit that still has somewhere to go in a bar of two long notes, where every variation that
      needs an interior note or a gap has already given up. */
-  { id:"clip", apply(bars, nd, r, pass) {
+  { id:"clip", name:"Cut a note short", tip:"Release a held note early — a pure rhythm change, the pitches are untouched.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const held = ns.filter(n => n.len > 1);
         if (!held.length) return false;
@@ -1026,7 +1029,8 @@ const VARIATIONS = [
       });
     } },
   // the mirror: let a note run on into the space after it. The phrase leans instead of stepping.
-  { id:"extend", apply(bars, nd, r, pass) {
+  { id:"extend", name:"Let a note ring on", tip:"Run a note into the empty space right after it — the phrase leans instead of stepping.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const can = ns.filter(n => n.c + n.len < bar.length && !(bar[n.c + n.len] || []).length);
         if (!can.length) return false;
@@ -1036,7 +1040,8 @@ const VARIATIONS = [
       });
     } },
   // a passing note through a leap the phrase already makes
-  { id:"passing", apply(bars, nd, r, pass) {
+  { id:"passing", name:"Add a passing note", tip:"Fill a leap the phrase already makes with a note halfway between.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         for (let i = 0; i + 1 < ns.length; i++) {
           const a = ns[i], c = ns[i + 1];
@@ -1053,7 +1058,8 @@ const VARIATIONS = [
     } },
   /* One more note than last time. `passing` only fires through a leap; this fills any space the
      phrase leaves, a step away from the note before it, so a repeat can simply be busier. */
-  { id:"add", apply(bars, nd, r, pass) {
+  { id:"add", name:"Add an extra note", tip:"Fill any free space in the bar with a note a step away from its neighbour — the repeat gets busier.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const spots = [];
         for (let i = 0; i < ns.length; i++) {
@@ -1071,7 +1077,8 @@ const VARIATIONS = [
     } },
   /* A long note breaks in two and the second half steps away — the same onset, one more note. The
      way a held note turns into a phrase without the bar getting any busier at the start. */
-  { id:"split", apply(bars, nd, r, pass) {
+  { id:"split", name:"Split a long note", tip:"Break a held note in two, the second half a step away — the same onset, one more note.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const held = ns.filter(n => n.len >= 2);
         if (!held.length) return false;
@@ -1084,7 +1091,8 @@ const VARIATIONS = [
     } },
   /* The ornament: a held note dips to its neighbour and comes back, so one note becomes three.
      Needs room on both sides of the middle, which is why it wants a note three columns long. */
-  { id:"turn", apply(bars, nd, r, pass) {
+  { id:"turn", name:"Add a turn", tip:"An ornament: a held note dips to its neighbour and comes back, so one note becomes three.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const long = ns.filter(n => n.len >= 3);
         if (!long.length) return false;
@@ -1095,7 +1103,8 @@ const VARIATIONS = [
       });
     } },
   // push a phrase early — the anticipation that makes a repeat feel restless
-  { id:"push", apply(bars, nd, r, pass) {
+  { id:"push", name:"Push a note early", tip:"Move a note one column earlier — the anticipation that makes a repeat feel restless.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         // every note with a free column in front of it, then step along them by pass — always
         // pushing the same note would give two repeats the same edit whenever they pick the same bar
@@ -1108,7 +1117,8 @@ const VARIATIONS = [
       });
     } },
   // and the other way: a note arrives late, off the beat it was written on
-  { id:"delay", apply(bars, nd, r, pass) {
+  { id:"delay", name:"Arrive late", tip:"Move a note one column later, off the beat it was written on.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const can = ns.filter((n, i) => i > 0 && n.c + n.len < bar.length && !(bar[n.c + n.len] || []).length);
         if (!can.length) return false;
@@ -1119,7 +1129,8 @@ const VARIATIONS = [
       });
     } },
   // lift one interior note to its neighbour — the smallest change that is still audible
-  { id:"neighbour", apply(bars, nd, r, pass) {
+  { id:"neighbour", name:"Nudge a note", tip:"Lift one interior note to its neighbour — the smallest change that is still audible.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         if (ns.length < 3) return false;
         // any note, not only the interior ones: a three-note bar has one interior note, so
@@ -1133,7 +1144,8 @@ const VARIATIONS = [
       });
     } },
   // take a note away: space is a variation too, and it stops later passes getting busier and busier
-  { id:"thin", apply(bars, nd, r, pass) {
+  { id:"thin", name:"Thin one out", tip:"Take a note away — space is a variation too, and it stops later repeats getting busier and busier.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         if (ns.length < 3) return false;                     // never empty a bar out entirely
         const n = ns[(Math.floor(r * ns.length) + pass) % ns.length];
@@ -1143,7 +1155,8 @@ const VARIATIONS = [
     } },
   /* Two notes become one. The mirror of `split`, and the edit that gives a fourth chorus somewhere
      to go once the earlier passes have all got busier. */
-  { id:"merge", apply(bars, nd, r, pass) {
+  { id:"merge", name:"Merge two notes", tip:"Two adjacent notes become one, holding the pitch of the first — the mirror of Split a long note.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         // adjacent pairs with no gap between them: the second is absorbed into the first
         const pairs = ns.filter((n, i) => i > 0 && n.c === ns[i - 1].c + ns[i - 1].len);
@@ -1283,21 +1296,27 @@ const motifRuns = (bars, span) => {
   return out;
 };
 
-const varyWithin = (bars, { nd = 7, amount = 1, seed = 0 } = {}) => {
-  const out = bars.map(bar => bar.map(col => [...(col || [])]));
-  const none = { bars: out, span: 0, repeats: 0, varied: 0, edits: 0 };
-  if (!amount || out.length < 2) return none;
-  /* Which slice length the section is actually built from is not something to guess — a verse made
-     of a one-bar riff and a chorus made of a two-bar hook both look like eight bars of melody. Try
-     every plausible length and keep the one that finds the most restatements, longest first when two
-     agree: a two-bar phrase varied as a phrase keeps its opening and changes its ending, which is
-     what a writer would do, where varying it bar by bar changes both halves. */
+/* Which slice length a section is actually built from is not something to guess — a verse made of a
+   one-bar riff and a chorus made of a two-bar hook both look like eight bars of melody. Try every
+   plausible length and keep the one that finds the most restatements, longest first when two agree:
+   a two-bar phrase varied as a phrase keeps its opening and changes its ending, which is what a
+   writer would do, where varying it bar by bar changes both halves. Shared by varyWithin and
+   varyWithinPick — the two ways of varying the repeats inside one section. */
+const bestMotifSpan = out => {
   let best = null;
   for (const span of unitSpans(out.length)) {
     const runs = motifRuns(out, span);
     const repeats = runs.filter(r => r.occ).length;
     if (!best || repeats > best.repeats) best = { span, runs, repeats };
   }
+  return best;
+};
+
+const varyWithin = (bars, { nd = 7, amount = 1, seed = 0 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0, edits: 0 };
+  if (!amount || out.length < 2) return none;
+  const best = bestMotifSpan(out);
   if (!best || !best.repeats) return none;
   let varied = 0, edits = 0;
   best.runs.forEach(r => {
@@ -1314,6 +1333,30 @@ const varyWithin = (bars, { nd = 7, amount = 1, seed = 0 } = {}) => {
     if (n) { varied++; edits += n; }
   });
   return { bars: out, span: best.span, repeats: best.repeats, varied, edits };
+};
+
+/* The same idea, pinned to one named edit from VARIATIONS instead of the auto mix varyWithin walks.
+   A writer who wants "push the hook early" rather than whatever the rotation lands on next picks it
+   from a dropdown and gets exactly that edit, on every repeat it has somewhere to go. `level` plays
+   the part `amount` plays in varyWithin: each press hands `apply` a different `pass`, so a second tap
+   of the same variation lands on a different note or column rather than repeating the first tap's
+   no-op. The first statement is never touched, same as varyWithin. */
+const varyWithinPick = (bars, { id, nd = 7, seed = 0, level = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0 };
+  const v = VARIATIONS.find(x => x.id === id);
+  if (!v || !level || out.length < 2) return none;
+  const best = bestMotifSpan(out);
+  if (!best || !best.repeats) return none;
+  let varied = 0;
+  best.runs.forEach(r => {
+    if (!r.occ) return;
+    const slice = out.slice(r.at, r.at + best.span);
+    const snap = barsKey(slice);
+    const rnd = hash01(seed + r.first * 331 + best.span * 17);
+    if (v.apply(slice, nd, rnd, r.occ + level - 1) && barsKey(slice) !== snap) varied++;
+  });
+  return { bars: out, span: best.span, repeats: best.repeats, varied };
 };
 
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
@@ -1484,4 +1527,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };

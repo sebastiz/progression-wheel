@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **Fixed: melody parts were quieter than their Level slider promised.** Every melody part's chain
+  was built with a make-up gain (so a 100% Level part reads as loud as the drums), but every note
+  the part played re-set that same gain to just its own level and velocity, silently dropping the
+  make-up the instant the first note sounded — the melody was never as loud as it looked, whatever
+  the Level slider read. The per-note gain now carries the make-up too, on both the written grid and
+  the arpeggiator.
+- **Pick a specific variation for ✦ Vary repeats, instead of only the auto mix.** A dropdown beside
+  the button — in the melody workbench, so it's there wherever a section's melody is being edited —
+  now lists all thirteen named edits (Different ending, Add a passing note, Push a note early, Split
+  a long note, Add a turn…), each with a one-line description of what it does. Left on "auto mix" the
+  button behaves exactly as before, walking the whole catalogue; pick one and it writes only that
+  edit on every repeat that has somewhere for it to go, and tapping again lands the same kind of edit
+  on a different note or column rather than repeating itself.
 - **Every style on the Arrange tab now sets its own tone, feel and melody, not just its groove.**
   Picking a style already set tempo, drum kit, pump and bassline; it now also sets the pad voice,
   percussion kit, delay time and swing, the chord and lead instrument, the humanise (feel) amount,
