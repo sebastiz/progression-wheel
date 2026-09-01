@@ -1260,6 +1260,11 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // a section with nothing repeated inside it must still get its notes varied, not silently ignored
     if (!/varyWhole\(/.test(fn))
       problems.push("src: varyRepeats has no fallback for a section that never repeats itself — the button would do nothing to it");
+    // the fallback has to trigger on "the picked edit landed nowhere" (varied), not just "no repeat
+    // was found at all" (repeats) — a section that repeats but whose repeat slot happens not to fit
+    // the picked edit is the same dead end, and reads as "the dropdown does nothing" to whoever hits it
+    if (!/const whole = !res\.varied/.test(fn))
+      problems.push("src: varyRepeats falls back on !res.repeats rather than !res.varied — a picked edit with nowhere to land inside an actual repeat would still silently do nothing");
   }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
@@ -2595,6 +2600,25 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const blank = M.blankBars(4, 8);
   if (M.varyWhole(blank, { nd: ND, seed: 1, level: 3 }).varied) problems.push("varyWhole found something to vary in an empty grid");
   console.log(`whole-section fallback: ${everFired}/${M.VARIATIONS.length + 1} edits (incl. auto mix) fire on a through-composed section, ${(worstKeep * 100) | 0}% survives at worst`);
+
+  /* The trickier trigger: a section DOES repeat, so varyWithinPick finds a repeat slot to work in —
+     but the picked edit needs a structure (an adjacent pair for Merge, a held note for Add a turn…)
+     that happens not to be in that particular slot, even though the section has it elsewhere (often
+     in the first statement, which varyWithinPick is right to leave alone). `repeats > 0` is not the
+     same question as "did the picked edit actually land anywhere", and ✦ Vary these notes has to
+     fall back on the second as much as the first — a picker that only rescues the "never repeats"
+     case still reads as broken the moment someone picks Merge on a melody that happens to repeat. */
+  {
+    const pair = [[0], [1], [], [3], [], [5], [], []];        // an adjacent pair at col0-1
+    const noPair = [[2], [], [4], [], [6], [], [1], []];      // no two occupied columns back to back
+    const base = [pair, noPair, noPair];                      // noPair is what repeats; pair does not
+    const within = M.varyWithinPick(base, { id: "merge", nd: ND, seed: 3, level: 1 });
+    if (!within.repeats) problems.push("fixture does not exercise the case — no repeat was found at all");
+    if (within.varied) problems.push("fixture does not exercise the case — merge already landed inside the repeat");
+    const whole = M.varyWhole(base, { id: "merge", nd: ND, seed: 3, level: 1 });
+    if (!whole.varied)
+      problems.push("varyWhole(merge) found nothing on a section that plainly has an adjacent pair in it");
+  }
 }
 
 /* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----

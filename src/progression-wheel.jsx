@@ -2915,11 +2915,15 @@ export default function ProgressionWheel() {
     const res = pick
       ? varyWithinPick(base, { id: pick, nd: scaleSemis.length, seed, level })
       : varyWithin(base, { nd: scaleSemis.length, amount: level, seed });
-    /* A section with no restatement inside it (a one-off arch rather than a riff said four times)
-       still has notes worth varying — "nothing repeats" is not "nothing to do". Fall back to editing
-       the whole section directly rather than leaving the button a dead end for exactly the melodies
-       most likely to sound flat: the ones that never repeat a phrase in the first place. */
-    const whole = !res.repeats;
+    /* Two different ways the repeat-based edit can land nothing: the section has no restatement to
+       treat as a variation of the first one (a one-off arch rather than a riff said four times), or
+       it does repeat but the *picked* edit has nowhere to go inside those particular repeats — Merge
+       two notes needs an adjacent pair, Add a turn needs a held note three columns long, and the
+       repeated slice just might not have one even though the section as a whole does. Either way,
+       `res.varied` is 0 and the grid would otherwise sit there unchanged with the dropdown looking
+       broken. Fall back to editing the whole section directly, which searches every bar rather than
+       only the repeat slots, so the picked edit gets every chance the section actually offers it. */
+    const whole = !res.varied;
     const out = whole ? varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level }) : res;
     if (whole && !out.varied) {
       setVaryIn({ ...varyIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing here to vary" } });

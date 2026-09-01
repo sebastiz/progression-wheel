@@ -8,13 +8,17 @@
   the Level slider read. The per-note gain now carries the make-up too, on both the written grid and
   the arpeggiator.
 - **✦ Vary these notes (was ✦ Vary repeats) now varies every section, not just the ones that repeat
-  a phrase.** It used to find the motif a section restates and edit only the repeats, reporting
-  "nothing repeats in this melody" and doing nothing on anything through-composed — which is most
-  melodies a narrative or pattern writes, so the button read as broken more often than not. It now
-  falls back to editing the section's own notes directly when nothing restates itself: the same
-  small, deliberate changes (a different landing note, a note added or thinned, a phrase pushed
-  early), just applied straight to the tune instead of hunting for a repeat first. Same melody
-  either way, never a different one and never a silent no-op.
+  a phrase — and not just when the specific edit picked happens to fit the repeat it finds.** It used
+  to find the motif a section restates and edit only the repeats, reporting "nothing repeats in this
+  melody" and doing nothing on anything through-composed — which is most melodies a narrative or
+  pattern writes, so the button read as broken more often than not. Worse, picking a named edit from
+  the dropdown could look broken even on a section that *does* repeat: Merge two notes needs an
+  adjacent pair, Add a turn needs a long held note, and the particular repeat found might not have
+  one even though the section does, elsewhere. Both cases now fall back to editing the section's own
+  notes directly — the same small, deliberate changes (a different landing note, a note added or
+  thinned, a phrase pushed early), just applied straight to the tune, searching every bar rather than
+  only the repeat it first tried. Same melody either way, never a different one and never a silent
+  no-op.
 - **Pick a specific variation, instead of only the auto mix.** A dropdown beside the button — in the
   melody workbench, so it's there wherever a section's melody is being edited — lists all thirteen
   named edits (Different ending, Add a passing note, Push a note early, Split a long note, Add a
