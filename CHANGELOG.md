@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- **Every style on the Arrange tab now sets its own tone, feel and melody, not just its groove.**
+  Picking a style already set tempo, drum kit, pump and bassline; it now also sets the pad voice,
+  percussion kit, delay time and swing, the chord and lead instrument, the humanise (feel) amount,
+  and a default melodic narrative — so choosing Dubstep reaches for a Reese lead over a wobbling
+  bass and Trance reaches for a supersaw over a breathing pad, rather than leaving those on
+  whatever the last style left behind. Lead instrument, chord instrument and humanise were global
+  settings shared by every song; they are now remembered per progression like tempo and drums
+  already were. A handful of styles with a genuinely signature use of movement or drive — dubstep's
+  wobble, acid house and psytrance's resonant squelch, EBM and industrial techno's distortion —
+  also set that track's Tone/Movement FX, rather than adding it everywhere it wouldn't earn its
+  keep. "Recreate a famous track" inherits all of this from its style the same way it already
+  inherits tempo and drums, so a track preset that doesn't specify its own sound gets its style's.
 - **Ten famous tracks for every style on the Arrange tab.** "Recreate a famous track" now covers all
   68 styles (previously only 13 had any, and just 1-2 tracks each) — 658 new real, researched tracks
   bringing the catalogue to 678, each with its own key/tempo/chord-progression match and a melodic

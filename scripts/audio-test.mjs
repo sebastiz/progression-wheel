@@ -3121,6 +3121,9 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     return n % 2 ? n + 1 : n;
   };
   const kits = new Set(M.DRUM_KITS.map(([k]) => k)), pumps = new Set(M.PUMPS.map(([k]) => k));
+  const padVoices = new Set(M.PAD_VOICES.map(([v]) => v)), percKits = new Set(M.PERC_KITS.map(([v]) => v));
+  const delayTimes = new Set(M.DELAY_TIMES.map(([v]) => v)), syncLevels = new Set(M.SYNC_LEVELS.map(([v]) => v));
+  const leadVoices = new Set(M.LEAD_VOICES.map(([v]) => v)), narrativeIds = new Set(M.NARRATIVES.map(n => n.id));
   let rows = 0, subtractions = 0, silences = 0;
   for (const t of M.DANCE_TEMPLATES) {
     const where = `template ${t.id}`;
@@ -3132,6 +3135,24 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // the whole template has to fit the 4/4 dance world it is written for, or the bars do not line up
     if (M.meterOf(M.PATTERNS[t.pat]) !== "4/4") problems.push(`${where}: "${t.pat}" is not a 4/4 rhythm`);
     if (M.DRUMS[t.drum] && !M.drumFitsMeter(M.DRUMS[t.drum], "4/4")) problems.push(`${where}: "${t.drum}" does not fit 4/4`);
+    // the sound-shaping and melodic-narrative defaults every style now carries
+    if (t.pad && !padVoices.has(t.pad)) problems.push(`${where}: unknown pad voice "${t.pad}"`);
+    if (t.percKit && !percKits.has(t.percKit)) problems.push(`${where}: unknown perc kit "${t.percKit}"`);
+    if (t.delay && !delayTimes.has(t.delay)) problems.push(`${where}: unknown delay time "${t.delay}"`);
+    if (t.swing != null && !(t.swing >= 0 && t.swing <= 0.6)) problems.push(`${where}: swing ${t.swing} is outside 0–0.6`);
+    if (t.instr && !M.isGM(t.instr)) problems.push(`${where}: unknown chord instrument "${t.instr}"`);
+    if (t.melInstr && !(M.isGM(t.melInstr) || leadVoices.has(t.melInstr))) problems.push(`${where}: unknown lead voice "${t.melInstr}"`);
+    if (t.humanise != null && !(t.humanise >= 0 && t.humanise <= 1)) problems.push(`${where}: humanise ${t.humanise} is outside 0–1`);
+    if (t.narrative && !narrativeIds.has(t.narrative)) problems.push(`${where}: unknown narrative "${t.narrative}"`);
+    if (t.vary != null && !(Number.isFinite(t.vary) && t.vary >= 0)) problems.push(`${where}: vary ${t.vary} is not a non-negative number`);
+    if (t.sync != null && !syncLevels.has(t.sync)) problems.push(`${where}: unknown syncopation level ${t.sync}`);
+    if (t.trackFx) for (const [trId, patch] of Object.entries(t.trackFx))
+      for (const [k, v] of Object.entries(patch)) {
+        const mod = M.MOD_BY_KEY[k];
+        if (!mod) problems.push(`${where}: trackFx.${trId} names an unknown mod "${k}"`);
+        else if (mod.kind === "amt" && !(v >= 0 && v <= (mod.max || 100))) problems.push(`${where}: trackFx.${trId}.${k} = ${v} is outside 0–${mod.max || 100}`);
+        else if (mod.kind === "bi" && !(v >= mod.min && v <= mod.max)) problems.push(`${where}: trackFx.${trId}.${k} = ${v} is outside ${mod.min}–${mod.max}`);
+      }
 
     for (const row of t.plan) {
       rows++;

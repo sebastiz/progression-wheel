@@ -45,7 +45,7 @@ const PARTS = ["A", "B", "C", "D", "E", "F"];
 const DEFS = [
 
 ["house", "Chicago House", "Four-on-the-floor, sixteen-bar phrases and a drop that is the groove returning rather than anything being added. Thirty-two bars of drums at each end for a DJ to mix through.",
- { bpm: 128, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "offbeat", bassVoice: "saw" }, [
+ { bpm: 128, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "offbeat", bassVoice: "saw", pad:"strings", percKit:"hand", delay:"8d", swing:0.12, instr:"electric_piano_1", melInstr:"stab", humanise:0.15, narrative:"wave", vary:0.6, sync:1 }, [
  ["DJ intro|LOOP|4|drums and one hook — a DJ mixes in over these sixteen bars",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.45] }],
  ["Groove|LOOP|4|the chords arrive, still filtered — nothing is at full size yet",
@@ -67,7 +67,7 @@ const DEFS = [
 ]],
 
 ["nudisco", "Nu-Disco", "Filter-disco groove: a chugging offbeat guitar and a house pump under a genuinely funky bassline. The filter does the arranging — sweeping open into the drop and shut into the breakdown — more than layers being added or removed.",
- { bpm: 120, drum: "disco909", kit: "909", pump: "classic", pat: "disco16", bass: "disco", bassVoice: "pluck" }, [
+ { bpm: 120, drum: "disco909", kit: "909", pump: "classic", pat: "disco16", bass: "disco", bassVoice: "pluck", pad:"strings", percKit:"hand", delay:"8d", swing:0.15, instr:"clavinet", melInstr:"pluck", humanise:0.2, narrative:"terraced", vary:0.6, sync:0 }, [
  ["DJ intro|LOOP|4|drums and the chug, filtered right down — the mix-in",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.5] }],
  ["Groove|LOOP|4|the bassline and chords arrive, filter still climbing",
@@ -89,7 +89,7 @@ const DEFS = [
 ]],
 
 ["techhouse", "Tech House", "Minimal and relentless: two very long grooves, and the interest is in what drops out rather than what gets added. A tool for a set more than a song.",
- { bpm: 126, drum: "techhouse", kit: "909", pump: "classic", pat: "stab16", bass: "offbeat", bassVoice: "sub" }, [
+ { bpm: 126, drum: "techhouse", kit: "909", pump: "classic", pat: "stab16", bass: "offbeat", bassVoice: "sub", pad:"glass", percKit:"machine", delay:"16", swing:0.05, instr:"lead_2_sawtooth", melInstr:"stab", humanise:0.05, narrative:"ostinato", vary:0.3, sync:0 }, [
  ["DJ intro|LOOP|4|drums and a rim — sixteen bars of nothing but groove",
   { chords: 0, bass: 0, parts: "" }],
  ["Groove|LOOP|8|thirty-two bars, almost no change. The stab enters filtered and opens slowly",
@@ -107,7 +107,7 @@ const DEFS = [
 ]],
 
 ["techno", "Detroit Techno", "Layering is the arrangement: one element every sixteen bars, the filter doing the rest, and a release that arrives rather than drops. Harmony is nearly static by design.",
- { bpm: 132, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "saw" }, [
+ { bpm: 132, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "saw", pad:"glass", percKit:"machine", delay:"16", swing:0, instr:"lead_2_sawtooth", melInstr:"stab", humanise:0, narrative:"ostinato", vary:0.3, sync:0 }, [
  ["Intro|LOOP|4|kick alone. Sixteen bars of it, and it should feel like fifteen too many",
   { drums: "kickonly", chords: 0, bass: 0, parts: "", filter: [0.35, 0.35] }],
  ["Pulse|LOOP|4|the full pattern, chords barely there under it",
@@ -127,7 +127,7 @@ const DEFS = [
 ]],
 
 ["trance", "Trance", "The breakdown is the song: everything before it is setup and everything after is release. The longest breakdown and the widest dynamic swing of any dance form.",
- { bpm: 138, drum: "trance", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "saw" }, [
+ { bpm: 138, drum: "trance", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "saw", pad:"supersaw", percKit:"hand", delay:"8d", swing:0, instr:"synth_strings_1", melInstr:"supersaw", humanise:0.05, narrative:"climb", vary:1, sync:1, trackFx:{ pad:{ wob:35, wobRate:1 } } }, [
  ["Intro|LOOP|4|drums and a filtered pad",
   { chords: 0, bass: 0, parts: "", filter: [0.32, 0.5] }],
  ["Groove|LOOP|4|the loop, held back",
@@ -147,7 +147,7 @@ const DEFS = [
 ]],
 
 ["bigroom", "Big Room / Festival House", "The main-stage shape. The drop is deliberately sparse — often kick and lead alone — which only works because the build stacked everything on top of everything.",
- { bpm: 128, drum: "bigroom", kit: "909", pump: "hard", pat: "stab16", bass: "offbeat", bassVoice: "saw" }, [
+ { bpm: 128, drum: "bigroom", kit: "909", pump: "hard", pat: "stab16", bass: "offbeat", bassVoice: "saw", pad:"supersaw", percKit:"machine", delay:"off", swing:0, instr:"synth_brass_1", melInstr:"supersaw", humanise:0, narrative:"peak", vary:1, sync:1 }, [
  ["DJ intro|LOOP|4|beat only, filtered — sixteen bars for the mix-in",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.45] }],
  ["Build|HALF1|4|snare roll and riser, the filter opening all the way",
@@ -165,7 +165,7 @@ const DEFS = [
 ]],
 
 ["proghouse", "Progressive House", "Nothing arrives all at once. Layers enter one at a time, the filter climbs across five sections rather than eight bars, and the main groove is a groove, not an event.",
- { bpm: 124, drum: "deep", kit: "909", pump: "classic", pat: "house16", bass: "eighths", bassVoice: "saw" }, [
+ { bpm: 124, drum: "deep", kit: "909", pump: "classic", pat: "house16", bass: "eighths", bassVoice: "saw", pad:"strings", percKit:"hand", delay:"8d", swing:0.1, instr:"synth_strings_1", melInstr:"pluck", humanise:0.1, narrative:"expand", vary:0.7, sync:1 }, [
  ["Intro|LOOP|4|one element, heavily filtered",
   { chords: 0, bass: 0, parts: "", filter: [0.22, 0.34] }],
  ["Groove|LOOP|4|the chords underneath, still shut",
@@ -183,7 +183,7 @@ const DEFS = [
 ]],
 
 ["melotech", "Melodic Techno", "A long climb that never quite pays off — the tension is the point. One filter line across the whole record instead of a sweep per section, and a release that opens rather than lands.",
- { bpm: 122, drum: "techno", kit: "909", pump: "classic", pat: "quarters", bass: "eighths", bassVoice: "reese" }, [
+ { bpm: 122, drum: "techno", kit: "909", pump: "classic", pat: "quarters", bass: "eighths", bassVoice: "reese", pad:"glass", percKit:"hand", delay:"8d", swing:0.05, instr:"electric_piano_1", melInstr:"saw", humanise:0.1, narrative:"motif", vary:0.7, sync:1 }, [
  ["Intro|LOOP|4|kick and a hint of the pad behind a shut filter",
   { drums: "kickonly", bass: 0, parts: "", filter: [0.25, 0.38] }],
  ["Pulse|LOOP|4|the pattern proper, the arp entering",
@@ -201,7 +201,7 @@ const DEFS = [
 ]],
 
 ["dnb", "Drum & Bass", "A half-time feel over double-time drums. The atmosphere is stated first, the drop is often only the break and the sub, and the roll-out between the two drops strips it to the bare break.",
- { bpm: 174, drum: "dnb", kit: "acoustic", pump: "subtle", pat: "halftime", bass: "subhold", bassVoice: "reese" }, [
+ { bpm: 174, drum: "dnb", kit: "acoustic", pump: "subtle", pat: "halftime", bass: "subhold", bassVoice: "reese", pad:"strings", percKit:"machine", delay:"16", swing:0, instr:"electric_piano_1", melInstr:"reese", humanise:0.05, narrative:"cascade", vary:0.7, sync:2 }, [
  ["Intro|LOOP|8|thirty-two bars of break for the mix-in — no harmony, no theme",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.5] }],
  ["Breakdown|LOOP|4|drums out, pads and the theme. The mood is set before the drop, not after it",
@@ -217,7 +217,7 @@ const DEFS = [
 ]],
 
 ["dubstep", "Dubstep", "Half-time drops where the mid-range movement *replaces* the harmony rather than sitting on top of it — so the chords come out at the drop, which is the opposite of every other form here.",
- { bpm: 140, drum: "dubstep16", kit: "808", pump: "hard", pat: "trap16", bass: "subhold", bassVoice: "reese" }, [
+ { bpm: 140, drum: "dubstep16", kit: "808", pump: "hard", pat: "trap16", bass: "subhold", bassVoice: "reese", pad:"voice", percKit:"machine", delay:"off", swing:0.08, instr:"synth_brass_1", melInstr:"reese", humanise:0.05, narrative:"gapfill", vary:0.8, sync:2, trackFx:{ bass:{ wob:70, wobRate:0.5 } } }, [
  ["Intro|LOOP|2|tops and the chords, filtered",
   { drums: "ohats", bass: 0, parts: "", filter: [0.35, 0.55] }],
  ["Build|HALF1|4|eight bars, kick withheld, riser over the top",
@@ -237,7 +237,7 @@ const DEFS = [
 ]],
 
 ["futurebass", "Future Bass", "The drop *is* the chords, which is the one dance form this app is built for. Short, bright, and the verses are deliberately thin so the chorus has somewhere to arrive from.",
- { bpm: 150, drum: "trap16d", kit: "808", pump: "classic", pat: "trap16", bass: "subhold", bassVoice: "sub" }, [
+ { bpm: 150, drum: "trap16d", kit: "808", pump: "classic", pat: "trap16", bass: "subhold", bassVoice: "sub", pad:"voice", percKit:"machine", delay:"8", swing:0.1, instr:"synth_choir", melInstr:"bell", humanise:0.15, narrative:"peak", vary:0.8, sync:1 }, [
  ["Intro|HALF1|2|four bars, filtered, no drums",
   { drums: "off", bass: 0, parts: "", filter: [0.4, 0.6] }],
  ["Verse|LOOP|2|thin on purpose — drums and the vocal line",
@@ -257,7 +257,7 @@ const DEFS = [
 ]],
 
 ["trap", "Trap (EDM)", "Hook-led and repetitive by design. The verses carry no melody at all — the hook is the only thing that ever enters — and the bridge is the one place anything is taken away.",
- { bpm: 140, drum: "trap16d", kit: "808", pump: "subtle", pat: "trap16" }, [
+ { bpm: 140, drum: "trap16d", kit: "808", pump: "subtle", pat: "trap16", pad:"voice", percKit:"machine", delay:"8", swing:0.1, instr:"synth_brass_1", melInstr:"bell", humanise:0.1, narrative:"motif", vary:0.6, sync:1 }, [
  ["Intro|HOLD1|4|no drums. One chord and the melody, underwater",
   { drums: "off", parts: "A", move: "under" }],
  ["Verse|LOOP|4|drums in, melody out — sixteen bars for a vocal that is not written here",
@@ -275,7 +275,7 @@ const DEFS = [
 ]],
 
 ["garage", "UK Garage (2-step)", "Two-step, swung, with the vocal as the only real melodic layer and short breaks that keep it moving rather than building anything.",
- { bpm: 134, drum: "garage16d", kit: "909", pump: "classic", pat: "garage16", bass: "offbeat", bassVoice: "sub" }, [
+ { bpm: 134, drum: "garage16d", kit: "909", pump: "classic", pat: "garage16", bass: "offbeat", bassVoice: "sub", pad:"voice", percKit:"hand", delay:"8d", swing:0.3, instr:"electric_piano_1", melInstr:"pluck", humanise:0.2, narrative:"qanda", vary:0.6, sync:1 }, [
  ["Intro|LOOP|2|the shuffle alone",
   { chords: 0, bass: 0, parts: "", filter: [0.35, 0.55] }],
  ["Groove|LOOP|4|chords in, filtered",
@@ -293,7 +293,7 @@ const DEFS = [
 ]],
 
 ["disco", "Disco", "Live band, not machine: strings and horn stabs land on trans hits rather than a synth filter, and the walking bass never repeats itself the way a house offbeat does. There is no pump here — the dynamics come from the arrangement, not a sidechain.",
- { bpm: 114, drum: "disco", kit: "acoustic", pump: "subtle", pat: "disco16", bass: "disco", bassVoice: "pluck" }, [
+ { bpm: 114, drum: "disco", kit: "acoustic", pump: "subtle", pat: "disco16", bass: "disco", bassVoice: "pluck", pad:"strings", percKit:"hand", delay:"8d", swing:0.15, instr:"clavinet", melInstr:"pluck", humanise:0.25, narrative:"terraced", vary:0.6, sync:0 }, [
  ["Intro|LOOP|2|eight bars of hi-hats and guitar — the band count-in before the horns land",
   { drums: "ohats", chords: 0, bass: 0, parts: "" }],
  ["Verse|LOOP|4|the walking bass carries the verse, syncopated against the four-on-the-floor kick, strings answering in the gaps",
@@ -311,7 +311,7 @@ const DEFS = [
 ]],
 
 ["balearic", "Balearic Beat", "Long slow builds and nothing arrives with force — the filter opens across whole sections rather than one bar, and a guitar or pad texture is always drifting somewhere underneath the arp.",
- { bpm: 112, drum: "disco909", kit: "909", pump: "subtle", pat: "arp", bass: "walk", bassVoice: "pluck" }, [
+ { bpm: 112, drum: "disco909", kit: "909", pump: "subtle", pat: "arp", bass: "walk", bassVoice: "pluck", pad:"glass", percKit:"hand", delay:"8d", swing:0.1, instr:"electric_piano_1", melInstr:"flute", humanise:0.2, narrative:"wave", vary:0.7, sync:0 }, [
  ["Intro|LOOP|4|sixteen bars of arpeggio and shaker — no kick yet, just a guitar texture drifting in",
   { drums: "ohats", bass: 0, parts: "", filter: [0.2, 0.35] }],
  ["Groove|LOOP|4|the kick and walking bass settle in, still filtered low — nothing here is in a hurry",
@@ -331,7 +331,7 @@ const DEFS = [
 ]],
 
 ["postdisco", "Post-Disco / Boogie", "The bassline is the lead instrument here — it gets solo bars with the chords muted, and everything else, drums included, exists to leave room for it.",
- { bpm: 113, drum: "funk", kit: "acoustic", pump: "subtle", pat: "funk16", bass: "funk16", bassVoice: "square" }, [
+ { bpm: 113, drum: "funk", kit: "acoustic", pump: "subtle", pat: "funk16", bass: "funk16", bassVoice: "square", pad:"brass", percKit:"hand", delay:"8d", swing:0.15, instr:"clavinet", melInstr:"pluck", humanise:0.2, narrative:"motif", vary:0.6, sync:0 }, [
  ["Intro|LOOP|2|eight bars of drum machine and bassline alone — the hook is bass, and it states itself before anything else gets a turn",
   { chords: 0, parts: "" }],
  ["Groove|LOOP|4|the chord stabs enter, but they sit under the bassline, not over it",
@@ -351,7 +351,7 @@ const DEFS = [
 ]],
 
 ["italodisco", "Italo Disco", "The octave-bounce bassline is the arrangement's engine — it never rests, and the drama comes entirely from a melodramatic lead melting in and out over the top of it, gated hard by the pump.",
- { bpm: 123, drum: "disco909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "saw" }, [
+ { bpm: 123, drum: "disco909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "saw", pad:"strings", percKit:"hand", delay:"8d", swing:0.1, instr:"synth_brass_1", melInstr:"supersaw", humanise:0.1, narrative:"terraced", vary:0.6, sync:0 }, [
  ["Intro|LOOP|4|sixteen bars of the octave-bounce bass against the gated drums — the engine starts running before the song does",
   { chords: 0, parts: "", filter: [0.4, 0.55] }],
  ["Groove|LOOP|4|the melodramatic lead enters over the bass, filtered down — it rides the engine, it does not replace it",
@@ -371,7 +371,7 @@ const DEFS = [
 ]],
 
 ["hinrg", "Hi-NRG", "The octave bass pulses without a single rest from the first bar to the last — this is the record that proves disco's bassline could survive being sped up into something closer to trance.",
- { bpm: 132, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "square" }, [
+ { bpm: 132, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "square", pad:"strings", percKit:"hand", delay:"8d", swing:0.05, instr:"synth_strings_1", melInstr:"supersaw", humanise:0.05, narrative:"peak", vary:0.8, sync:1 }, [
  ["Intro|LOOP|4|sixteen bars of drums and the pulsing bass alone — the tempo is the first sign this isn't disco anymore",
   { chords: 0, parts: "", filter: [0.35, 0.5] }],
  ["Groove|LOOP|4|the chords arrive as a filtered wash — the bass pulse underneath never once lets up",
@@ -391,7 +391,7 @@ const DEFS = [
 ]],
 
 ["acidhouse", "Acid House", "The squelching 303 line is the arrangement — the drums lock into a four-on-the-floor at bar one and never move again, so every section change here is really just the acid filter and resonance being pushed somewhere new.",
- { bpm: 126, drum: "house909", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "acid" }, [
+ { bpm: 126, drum: "house909", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "acid", pad:"glass", percKit:"hand", delay:"8d", swing:0.1, instr:"lead_2_sawtooth", melInstr:"acid", humanise:0.1, narrative:"ostinato", vary:0.5, sync:0, trackFx:{ bass:{ res:65, drive:25 } } }, [
  ["Intro|LOOP|4|sixteen bars, the 303 already squelching with the filter shut tight — the acid line introduces itself before the groove even starts",
   { chords: 0, parts: "", filter: [0.15, 0.25] }],
  ["Groove|LOOP|4|the four-on-the-floor locks in and will not move again — the 303 filter creeps open instead, doing all the work",
@@ -411,7 +411,7 @@ const DEFS = [
 ]],
 
 ["deephouse", "Deep House", "Nothing here arrives on a slam — the filter opens across whole sixteen-bar sections instead of snapping, and the chords are sustained keys, not the percussive stabs a harder house record would use.",
- { bpm: 122, drum: "deep", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "pluck" }, [
+ { bpm: 122, drum: "deep", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "pluck", pad:"voice", percKit:"hand", delay:"8d", swing:0.12, instr:"electric_piano_1", melInstr:"pluck", humanise:0.2, narrative:"wave", vary:0.6, sync:0 }, [
  ["Intro|LOOP|4|sixteen bars of drums and a held pad wash — the chords are sustained keys from the first bar, never stabs",
   { bass: 0, parts: "", filter: [0.3, 0.45] }],
  ["Groove|LOOP|4|the bass eases in under the pads — the filter opens only a fraction, this record is not in a hurry",
@@ -431,7 +431,7 @@ const DEFS = [
 ]],
 
 ["brokenbeat", "Broken Beat", "The kick lands everywhere except where a house kick would — this is dance music built on a stumble, and the chords carry as much of the groove's weight as the drums do.",
- { bpm: 112, drum: "funk", kit: "acoustic", pump: "subtle", pat: "funk16", bass: "funk16", bassVoice: "pluck" }, [
+ { bpm: 112, drum: "funk", kit: "acoustic", pump: "subtle", pat: "funk16", bass: "funk16", bassVoice: "pluck", pad:"strings", percKit:"hand", delay:"8d", swing:0.25, instr:"electric_piano_1", melInstr:"pluck", humanise:0.3, narrative:"converse", vary:0.7, sync:1 }, [
  ["Intro|LOOP|2|eight bars of the stumbling drum pattern alone, no harmony yet to explain it",
   { chords: 0, bass: 0, parts: "", move: "build" }],
  ["Groove|LOOP|4|the jazz chords enter inside the syncopation, implying more than they state",
@@ -449,7 +449,7 @@ const DEFS = [
 ]],
 
 ["afrohouse", "Afro House", "Percussion arrives one hand-drum layer at a time across thirty-two patient bars before the bassline is even allowed in; the drop is the groove finally reaching full density, not a filter slam.",
- { bpm: 120, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "pluck" }, [
+ { bpm: 120, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "pluck", pad:"voice", percKit:"hand", delay:"8d", swing:0.15, instr:"kalimba", melInstr:"pluck", humanise:0.25, narrative:"chant", vary:0.6, sync:1 }, [
  ["DJ intro|LOOP|4|sixteen bars of percussion alone, no harmony to mix in over",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.45] }],
  ["Groove|LOOP|4|the chords arrive, filtered and patient, bass still withheld",
@@ -469,7 +469,7 @@ const DEFS = [
 ]],
 
 ["amapiano", "Amapiano", "The bassline behaves like a struck bell left to ring rather than a stabbed pattern — it holds and slides under jazzy chords, and the 'drop' is the whole groove quietly settling into its pocket, not a slam.",
- { bpm: 112, drum: "deep", kit: "909", pump: "subtle", pat: "house16", bass: "walk", bassVoice: "sub" }, [
+ { bpm: 112, drum: "deep", kit: "909", pump: "subtle", pat: "house16", bass: "walk", bassVoice: "sub", pad:"voice", percKit:"hand", delay:"8d", swing:0.2, instr:"electric_piano_1", melInstr:"pluck", humanise:0.25, narrative:"motif", vary:0.6, sync:1 }, [
  ["Intro|LOOP|4|sixteen bars of soft shaker and spacious kick, no harmony yet",
   { chords: 0, bass: 0, parts: "", filter: [0.4, 0.55] }],
  ["Groove|LOOP|4|the jazzy chords enter over the space, the log-drum still held back",
@@ -489,7 +489,7 @@ const DEFS = [
 ]],
 
 ["gqom", "Gqom", "Tension comes from what is missing, not what is added — the off-kilter kick sits mostly alone, chords barely register, and the arrangement is built to never fully resolve.",
- { bpm: 112, drum: "techhouse", kit: "909", pump: "subtle", pat: "garage16", bass: "subhold", bassVoice: "sub" }, [
+ { bpm: 112, drum: "techhouse", kit: "909", pump: "subtle", pat: "garage16", bass: "subhold", bassVoice: "sub", pad:"voice", percKit:"machine", delay:"off", swing:0.1, instr:"synth_choir", melInstr:"sub", humanise:0.15, narrative:"ostinato", vary:0.4, sync:0 }, [
  ["Intro|LOOP|4|sixteen bars of the broken kick pattern alone, everything else silent",
   { chords: 0, bass: 0, parts: "" }],
  ["Groove|LOOP|4|a held sub enters beneath the kick — the only addition for sixteen bars",
@@ -507,7 +507,7 @@ const DEFS = [
 ]],
 
 ["tribalhouse", "Tribal House", "Long, driving loops let percussion carry the arrangement almost alone, with harmony and bass held back for whole thirty-two bar stretches before the room-filling drop lands.",
- { bpm: 126, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "saw" }, [
+ { bpm: 126, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "saw", pad:"voice", percKit:"hand", delay:"8d", swing:0.15, instr:"marimba", melInstr:"pluck", humanise:0.2, narrative:"chant", vary:0.6, sync:1 }, [
  ["DJ intro|LOOP|4|sixteen bars of drums and percussion, no harmony, a driving loop to mix in over",
   { chords: 0, bass: 0, parts: "", filter: [0.35, 0.5] }],
  ["Groove|LOOP|8|thirty-two bars under filter — a long hypnotic loop before anything else moves",
@@ -529,7 +529,7 @@ const DEFS = [
 ]],
 
 ["filterhouse", "French / Filter House", "The filter sweep is the arrangement — one disco loop opens and closes across each section while almost nothing else is ever added or taken away.",
- { bpm: 125, drum: "disco909", kit: "909", pump: "classic", pat: "disco16", bass: "disco", bassVoice: "saw" }, [
+ { bpm: 125, drum: "disco909", kit: "909", pump: "classic", pat: "disco16", bass: "disco", bassVoice: "saw", pad:"strings", percKit:"hand", delay:"8d", swing:0.1, instr:"clavinet", melInstr:"pluck", humanise:0.15, narrative:"terraced", vary:0.6, sync:0 }, [
  ["Intro|LOOP|4|sixteen bars, the loop shut tight and barely audible",
   { parts: "", filter: [0.1, 0.25] }],
  ["Open up|LOOP|4|the filter climbs open across the whole section — this is the entire drama",
@@ -547,7 +547,7 @@ const DEFS = [
 ]],
 
 ["deeptech", "Deep Tech", "Tech house's loop length and drive stay intact, but the chords are voiced long and lush instead of stabbed — the groove pushes while the harmony just sits and glows.",
- { bpm: 124, drum: "techhouse", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "sub" }, [
+ { bpm: 124, drum: "techhouse", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "sub", pad:"glass", percKit:"hand", delay:"8d", swing:0.08, instr:"electric_piano_1", melInstr:"stab", humanise:0.1, narrative:"ostinato", vary:0.5, sync:0 }, [
  ["DJ intro|LOOP|4|sixteen bars of groove only, no harmony yet to mix in over",
   { chords: 0, bass: 0, parts: "", filter: [0.35, 0.5] }],
  ["Groove|LOOP|8|thirty-two bars: the lush pad enters and just sits there while the groove keeps driving",
@@ -569,7 +569,7 @@ const DEFS = [
 ]],
 
 ["organichouse", "Organic / Melodic House", "Layers in like progressive house but at a housier tempo and a warmer palette — every entrance is gradual and nothing ever slams; the biggest event in the record is a swell, not a drop.",
- { bpm: 122, drum: "deep", kit: "909", pump: "subtle", pat: "house16", bass: "eighths", bassVoice: "pluck" }, [
+ { bpm: 122, drum: "deep", kit: "909", pump: "subtle", pat: "house16", bass: "eighths", bassVoice: "pluck", pad:"strings", percKit:"hand", delay:"8d", swing:0.15, instr:"acoustic_guitar_nylon", melInstr:"pluck", humanise:0.25, narrative:"wave", vary:0.6, sync:0 }, [
  ["Intro|LOOP|4|sixteen bars of pad and texture alone, no rhythm yet",
   { drums: "off", bass: 0, parts: "A", move: "swell" }],
  ["Groove|LOOP|4|drums enter softly, the bass still held out",
@@ -591,7 +591,7 @@ const DEFS = [
 ]],
 
 ["electrohouse", "Electro House", "The build is short and the drop lands blunt — a bar or two of riser, then the full saw-stab hits at once rather than sweeping in.",
- { bpm: 128, drum: "electro", kit: "909", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "saw" }, [
+ { bpm: 128, drum: "electro", kit: "909", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "saw", pad:"supersaw", percKit:"machine", delay:"off", swing:0, instr:"synth_brass_1", melInstr:"supersaw", humanise:0, narrative:"peak", vary:0.9, sync:1 }, [
  ["DJ intro|LOOP|4|sixteen bars of chunky drums alone",
   { chords: 0, bass: 0, parts: "", filter: [0.4, 0.5] }],
  ["Groove|LOOP|4|the stabs come in near full volume — this genre doesn't sweep, it arrives",
@@ -613,7 +613,7 @@ const DEFS = [
 ]],
 
 ["dutchhouse", "Dutch House", "The fidgety, syncopated bassline is the hook itself — foregrounded rather than buried, with the saw stabs punctuating around it instead of sustaining through it.",
- { bpm: 128, drum: "electro", kit: "909", pump: "hard", pat: "funk16", bass: "funk16", bassVoice: "saw" }, [
+ { bpm: 128, drum: "electro", kit: "909", pump: "hard", pat: "funk16", bass: "funk16", bassVoice: "saw", pad:"supersaw", percKit:"machine", delay:"off", swing:0.05, instr:"lead_2_sawtooth", melInstr:"supersaw", humanise:0.05, narrative:"motif", vary:0.7, sync:1 }, [
  ["DJ intro|LOOP|4|sixteen bars of drums alone, no bass yet",
   { chords: 0, bass: 0, parts: "", filter: [0.4, 0.5] }],
  ["Groove|LOOP|4|the fidget bassline enters alone, ahead of any chord — this is the hook",
@@ -635,7 +635,7 @@ const DEFS = [
 ]],
 
 ["basshouse", "Bass House / Future House", "The groove is tech-house but the hook is the bass stab itself — filtered, bouncing, funk16-patterned — so the drop is that pattern arriving at full width rather than a lead landing on top of it.",
- { bpm: 126, drum: "techhouse", kit: "909", pump: "hard", pat: "garage16", bass: "funk16", bassVoice: "square" }, [
+ { bpm: 126, drum: "techhouse", kit: "909", pump: "hard", pat: "garage16", bass: "funk16", bassVoice: "square", pad:"voice", percKit:"machine", delay:"8", swing:0.15, instr:"synth_brass_1", melInstr:"reese", humanise:0.1, narrative:"ostinato", vary:0.6, sync:1, trackFx:{ bass:{ drive:35 } } }, [
  ["DJ intro|LOOP|4|sixteen bars of drums alone, the bass stab still muted — nothing to mix in but groove",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.45] }],
  ["Groove|LOOP|4|the bass stab enters filtered down — it's the hook, so it has to be heard before it's dropped",
@@ -657,7 +657,7 @@ const DEFS = [
 ]],
 
 ["moombahton", "Moombahton", "The 3-3-2 tresillo pattern runs through drums, chords and bass alike — house-tempo synths riding a half-time reggaeton skip — so nothing here is a filter sweep, the identity is the rhythm itself repeating unchanged.",
- { bpm: 108, drum: "tresillo", kit: "909", pump: "classic", pat: "tresillo", bass: "walk", bassVoice: "square" }, [
+ { bpm: 108, drum: "tresillo", kit: "909", pump: "classic", pat: "tresillo", bass: "walk", bassVoice: "square", pad:"voice", percKit:"hand", delay:"8d", swing:0.1, instr:"synth_brass_1", melInstr:"reese", humanise:0.15, narrative:"motif", vary:0.6, sync:1 }, [
  ["Intro|LOOP|2|eight bars of the tresillo alone — drums and bass locked, no chords yet",
   { chords: 0, parts: "", filter: [0.4, 0.55] }],
  ["Groove|LOOP|4|the chord stab joins the pattern, still filtered — the skip is doing all the work",
@@ -675,7 +675,7 @@ const DEFS = [
 ]],
 
 ["nygarage", "New York Garage", "Four-on-the-floor built for a piano riff and a vocal, not a bass drop — the hook is played, not filtered in, so the arrangement's big moment is the piano and voice arriving together rather than a low end returning.",
- { bpm: 124, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "pluck" }, [
+ { bpm: 124, drum: "house909", kit: "909", pump: "classic", pat: "house16", bass: "octaves", bassVoice: "pluck", pad:"voice", percKit:"hand", delay:"8d", swing:0.25, instr:"electric_piano_1", melInstr:"pluck", humanise:0.2, narrative:"qanda", vary:0.6, sync:1 }, [
  ["DJ intro|LOOP|4|sixteen bars of drums and pluck bass for the mix-in, piano still held back",
   { chords: 0, parts: "", filter: [0.35, 0.5] }],
  ["Groove|LOOP|4|the piano pattern enters under a soft filter — warmth before size",
@@ -697,7 +697,7 @@ const DEFS = [
 ]],
 
 ["speedgarage", "Speed Garage", "UK garage's skipping 16th-pattern sits over a sub that never moves — held, not syncopated — and that mismatch between a busy top and a static, heavy low end is what turns garage into speed garage.",
- { bpm: 132, drum: "garage16d", kit: "909", pump: "classic", pat: "garage16", bass: "subhold", bassVoice: "sub" }, [
+ { bpm: 132, drum: "garage16d", kit: "909", pump: "classic", pat: "garage16", bass: "subhold", bassVoice: "sub", pad:"voice", percKit:"hand", delay:"8", swing:0.3, instr:"electric_piano_1", melInstr:"reese", humanise:0.15, narrative:"converse", vary:0.7, sync:1 }, [
  ["DJ intro|LOOP|4|sixteen bars of the skip alone, sub still muted — the four-on-the-floor is the only weight so far",
   { chords: 0, bass: 0, parts: "", filter: [0.35, 0.5] }],
  ["Groove|LOOP|4|the sub holds in underneath, filtered low — heavy before it's loud",
@@ -719,7 +719,7 @@ const DEFS = [
 ]],
 
 ["grime", "Grime", "Built from short 8-bar loops with almost nothing sustaining — the square-wave bass stab and the space around it are the arrangement. There's no filter sweep to speak of: energy comes from what's cut, not what opens.",
- { bpm: 140, drum: "trap16d", kit: "808", pump: "hard", pat: "trap16", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 140, drum: "trap16d", kit: "808", pump: "hard", pat: "trap16", bass: "eighths", bassVoice: "square", pad:"brass", percKit:"machine", delay:"off", swing:0.1, instr:"synth_brass_1", melInstr:"square", humanise:0.05, narrative:"motif", vary:0.6, sync:1 }, [
  ["Intro|HOLD1|4|eight bars, one stab and space — no chords, no bass, just the hit and the hi-hats",
   { drums: "ohats", chords: 0, bass: 0, parts: "A" }],
  ["Verse|LOOP|2|eight bars: drums and bass stabs in, nothing sustained, everything hits and cuts",
@@ -735,7 +735,7 @@ const DEFS = [
 ]],
 
 ["bassline", "Bassline", "A rolling, syncopated square-bass hook is the entire drop — the four-on-the-floor and garage swing are just the frame it rolls over, so the arrangement exists to withhold that one riff and then let it run uninterrupted.",
- { bpm: 138, drum: "garage16d", kit: "909", pump: "classic", pat: "garage16", bass: "rolloff", bassVoice: "square" }, [
+ { bpm: 138, drum: "garage16d", kit: "909", pump: "classic", pat: "garage16", bass: "rolloff", bassVoice: "square", pad:"voice", percKit:"machine", delay:"8", swing:0.2, instr:"synth_brass_1", melInstr:"reese", humanise:0.1, narrative:"ostinato", vary:0.6, sync:1 }, [
  ["DJ intro|LOOP|4|sixteen bars of drums for the mix-in, the bassline still silent",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.45] }],
  ["Groove|LOOP|4|the bassline rolls in under a filter — heard but not yet loose",
@@ -755,7 +755,7 @@ const DEFS = [
 ]],
 
 ["ukfunky", "UK Funky", "The pulse is house-adjacent but the arrangement builds by layering percussion, not by dropping a bass hook — congas and off-beat pluck stack up gradually, and the release is a fuller groove rather than an impact.",
- { bpm: 128, drum: "garage16d", kit: "909", pump: "classic", pat: "house16", bass: "offbeat", bassVoice: "pluck" }, [
+ { bpm: 128, drum: "garage16d", kit: "909", pump: "classic", pat: "house16", bass: "offbeat", bassVoice: "pluck", pad:"voice", percKit:"hand", delay:"8d", swing:0.2, instr:"kalimba", melInstr:"pluck", humanise:0.25, narrative:"chant", vary:0.6, sync:1 }, [
  ["Intro|LOOP|4|sixteen bars of pulse and top percussion, chords and bass held out",
   { chords: 0, bass: 0, parts: "", filter: [0.4, 0.55] }],
  ["Groove|LOOP|4|the off-beat pluck bass joins, filtered warm rather than sharp",
@@ -775,7 +775,7 @@ const DEFS = [
 ]],
 
 ["brostep", "Brostep", "The same trick as dubstep — chords vanish entirely at the drop — but the payload is a growling mid-range square bass instead of a sub, and the build exists purely to make that growl land harder.",
- { bpm: 145, drum: "dubstep16", kit: "808", pump: "hard", pat: "trap16", bass: "subhold", bassVoice: "square" }, [
+ { bpm: 145, drum: "dubstep16", kit: "808", pump: "hard", pat: "trap16", bass: "subhold", bassVoice: "square", pad:"brass", percKit:"machine", delay:"off", swing:0.05, instr:"synth_brass_1", melInstr:"square", humanise:0.05, narrative:"peak", vary:0.9, sync:2, trackFx:{ bass:{ wob:85, wobRate:0.5, drive:30 } } }, [
  ["Intro|LOOP|4|sixteen bars of half-time drums for the mix-in, no chords, no growl yet",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.45] }],
  ["Breakdown|LOOP|2|drums thin out, the theme stated clean before anything gets ugly",
@@ -793,7 +793,7 @@ const DEFS = [
 ]],
 
 ["riddim", "Riddim", "Straighter than brostep — one held single-note sub riff repeats unchanged through the whole drop instead of modulating, so the tension comes from repetition itself, not from a growl that keeps moving.",
- { bpm: 145, drum: "dubstep16", kit: "808", pump: "hard", pat: "trap16", bass: "subhold", bassVoice: "sub" }, [
+ { bpm: 145, drum: "dubstep16", kit: "808", pump: "hard", pat: "trap16", bass: "subhold", bassVoice: "sub", pad:"voice", percKit:"machine", delay:"off", swing:0, instr:"synth_brass_1", melInstr:"sub", humanise:0, narrative:"ostinato", vary:0.5, sync:2, trackFx:{ bass:{ wob:60, wobRate:0.25 } } }, [
  ["Intro|LOOP|4|sixteen bars of half-time drums, no chords, no sub yet",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.4] }],
  ["Build|HALF1|4|eight bars: a snapping riser climbs while the drums stay locked",
@@ -809,7 +809,7 @@ const DEFS = [
 ]],
 
 ["futuregarage", "Future Garage / UK Bass", "Sparse 2-step syncopation under pads and a held sub — the pump stays subtle throughout, so the 'drop' is a mood settling into place rather than an impact, and the arrangement never asks for a slam.",
- { bpm: 138, drum: "garage16d", kit: "909", pump: "subtle", pat: "garage16", bass: "subhold", bassVoice: "sub" }, [
+ { bpm: 138, drum: "garage16d", kit: "909", pump: "subtle", pat: "garage16", bass: "subhold", bassVoice: "sub", pad:"glass", percKit:"hand", delay:"8d", swing:0.2, instr:"electric_piano_1", melInstr:"bell", humanise:0.2, narrative:"wave", vary:0.6, sync:0 }, [
  ["Intro|LOOP|4|sixteen bars of pad and space, no drums yet — the atmosphere arrives before anything moves",
   { drums: "off", chords: 0, bass: 0, parts: "A", move: "swell" }],
  ["Pulse|LOOP|4|the 2-step skip enters quiet, sub still held out",
@@ -827,7 +827,7 @@ const DEFS = [
 ]],
 
 ["ukhardcore", "UK Breakbeat Hardcore (Rave)", "Piano stabs and a rising pitch-stab are the drop — no filter sweep, just the amen-style break slamming in under a euphoric chord hit. Equidistant between jungle's break and happy hardcore's stab, because it is the ancestor of both.",
- { bpm: 155, drum: "amen", kit: "acoustic", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "saw" }, [
+ { bpm: 155, drum: "amen", kit: "acoustic", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "saw", pad:"supersaw", percKit:"machine", delay:"off", swing:0, instr:"synth_brass_1", melInstr:"hoover", humanise:0, narrative:"climb", vary:1, sync:1 }, [
  ["DJ intro|LOOP|4|sixteen bars of break alone, no stab yet — a DJ mixes in over the breakbeat",
   { chords: 0, bass: 0, parts: "A" }],
  ["Build|HALF1|4|the stab pattern creeps in under a kickless break, climbing toward the hit",
@@ -847,7 +847,7 @@ const DEFS = [
 ]],
 
 ["jungle", "Jungle", "The amen gets more chopped and more aggressive as the record goes on — the first drop is nearly whole, the second is stuttered into fragments. The bass sits half-time under double-time drums, and the vocal-chop slot never gets a filter, only a chop.",
- { bpm: 165, drum: "amen", kit: "acoustic", pump: "subtle", pat: "halftime", bass: "subhold", bassVoice: "reese" }, [
+ { bpm: 165, drum: "amen", kit: "acoustic", pump: "subtle", pat: "halftime", bass: "subhold", bassVoice: "reese", pad:"strings", percKit:"machine", delay:"16", swing:0, instr:"electric_piano_1", melInstr:"reese", humanise:0.1, narrative:"cascade", vary:0.7, sync:2 }, [
  ["Intro|LOOP|4|sixteen bars of break alone, unchopped, for the mix-in",
   { chords: 0, bass: 0, parts: "A" }],
  ["Breakdown|HOLD1|4|drums out, one held chord and the sub waiting underneath",
@@ -865,7 +865,7 @@ const DEFS = [
 ]],
 
 ["liquiddnb", "Liquid D&B", "Nothing here is aggressive, not even the drop — the sub stays round, the pads carry the tension, and the break is felt more than chopped. Melody leads the arrangement the way it would in a house record, just running at double the speed.",
- { bpm: 172, drum: "dnb", kit: "acoustic", pump: "subtle", pat: "quarters", bass: "subhold", bassVoice: "sub" }, [
+ { bpm: 172, drum: "dnb", kit: "acoustic", pump: "subtle", pat: "quarters", bass: "subhold", bassVoice: "sub", pad:"strings", percKit:"hand", delay:"8d", swing:0.05, instr:"electric_piano_1", melInstr:"flute", humanise:0.15, narrative:"wave", vary:0.6, sync:1 }, [
  ["Intro|LOOP|8|thirty-two bars of break and pad, no theme yet — the atmosphere is the intro",
   { chords: 0, bass: 0, parts: "A", move: "swell" }],
  ["Theme|LOOP|4|the chords and lead arrive over the break, still no sub",
@@ -885,7 +885,7 @@ const DEFS = [
 ]],
 
 ["neurofunk", "Neurofunk", "The reese is the lead — there is no melody competing with it, just a distorted bass carrying the drop while the break is programmed for precision rather than groove. Tension is engineered, not implied by a pad.",
- { bpm: 174, drum: "dnb", kit: "acoustic", pump: "hard", pat: "quarters", bass: "subhold", bassVoice: "reese" }, [
+ { bpm: 174, drum: "dnb", kit: "acoustic", pump: "hard", pat: "quarters", bass: "subhold", bassVoice: "reese", pad:"glass", percKit:"machine", delay:"off", swing:0, instr:"lead_2_sawtooth", melInstr:"reese", humanise:0, narrative:"ostinato", vary:0.5, sync:2, trackFx:{ bass:{ drive:40, res:30 } } }, [
  ["Intro|LOOP|4|break alone, sixteen bars, no reese yet — just the machine idling",
   { chords: 0, bass: 0, parts: "A" }],
  ["Build|HALF1|4|the reese creeps in under a kickless break, distortion rising with it",
@@ -903,7 +903,7 @@ const DEFS = [
 ]],
 
 ["halftimewave", "Halftime / Wave", "A drum & bass record felt at half the speed — the dubstep-style halftime drop is here, but the growl underneath it is a DnB reese, not a wobble. The arrangement withholds the kick more than it withholds anything else.",
- { bpm: 140, drum: "dubstep16", kit: "808", pump: "hard", pat: "trap16", bass: "subhold", bassVoice: "reese" }, [
+ { bpm: 140, drum: "dubstep16", kit: "808", pump: "hard", pat: "trap16", bass: "subhold", bassVoice: "reese", pad:"glass", percKit:"machine", delay:"off", swing:0.05, instr:"synth_brass_1", melInstr:"reese", humanise:0.05, narrative:"gapfill", vary:0.7, sync:2, trackFx:{ bass:{ wob:50, wobRate:1 } } }, [
  ["Intro|LOOP|4|halftime drums alone, no reese, sixteen bars to settle the tempo feel",
   { chords: 0, bass: 0, parts: "A" }],
  ["Build|HALF1|4|the reese enters under a kickless beat, growling before the drop arrives",
@@ -923,7 +923,7 @@ const DEFS = [
 ]],
 
 ["jumpup", "Jump-Up", "The bassline is the joke and the hook at once — comic, bouncy, built to make a room jump rather than nod. The arrangement gets out of its way fast: short build, then the bass lands and just keeps bouncing.",
- { bpm: 174, drum: "dnb", kit: "acoustic", pump: "classic", pat: "quarters", bass: "rolloff", bassVoice: "square" }, [
+ { bpm: 174, drum: "dnb", kit: "acoustic", pump: "classic", pat: "quarters", bass: "rolloff", bassVoice: "square", pad:"brass", percKit:"machine", delay:"off", swing:0, instr:"synth_brass_1", melInstr:"square", humanise:0, narrative:"motif", vary:0.6, sync:1 }, [
  ["Intro|LOOP|4|break alone, sixteen bars for the mix-in, no bass yet",
   { chords: 0, bass: 0, parts: "A" }],
  ["Build|HALF1|2|four bars only — this genre does not linger before the bounce arrives",
@@ -941,7 +941,7 @@ const DEFS = [
 ]],
 
 ["drumfunk", "Drumfunk", "The drum edit is the composition — funk-descended breaks re-cut into patterns too intricate to dance to simply. The bass stays understated on purpose, a walking line rather than a hook, so nothing competes with the programming.",
- { bpm: 172, drum: "breaks16", kit: "acoustic", pump: "subtle", pat: "funk16", bass: "walk", bassVoice: "sub" }, [
+ { bpm: 172, drum: "breaks16", kit: "acoustic", pump: "subtle", pat: "funk16", bass: "walk", bassVoice: "sub", pad:"strings", percKit:"hand", delay:"8d", swing:0.15, instr:"electric_piano_1", melInstr:"pluck", humanise:0.2, narrative:"converse", vary:0.7, sync:1 }, [
  ["Intro|LOOP|4|the break alone, sixteen bars, already intricate before anything else enters",
   { chords: 0, bass: 0, parts: "A" }],
  ["Groove|LOOP|4|the walking bass joins, understated, letting the break stay the focus",
@@ -961,7 +961,7 @@ const DEFS = [
 ]],
 
 ["breakcore", "Breakcore", "Nothing here builds smoothly — the break is chopped, stuttered and slammed back together bar by bar, and a section can be torn out from under itself without warning. Instability is the arrangement, not a flaw in it.",
- { bpm: 180, drum: "amen", kit: "acoustic", pump: "hard", pat: "four16", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 180, drum: "amen", kit: "acoustic", pump: "hard", pat: "four16", bass: "eighths", bassVoice: "square", pad:"glass", percKit:"machine", delay:"16", swing:0, instr:"lead_1_square", melInstr:"square", humanise:0, narrative:"cascade", vary:1, sync:2 }, [
  ["Intro|LOOP|2|eight bars of break already chopping — there is no calm entry point",
   { chords: 0, bass: 0, parts: "A", trans: "chop" }],
  ["Drop|LOOP|4|full chaos arrives immediately, chords and bass slammed in together",
@@ -981,7 +981,7 @@ const DEFS = [
 ]],
 
 ["digitalhardcore", "Digital Hardcore", "Breakcore's chop fused with punk aggression and pushed past it — sections are not transitioned into, they are torn into, with no riser or build ever softening the seam. Every entrance is a crash or a slam, never a lift.",
- { bpm: 190, drum: "breaks16", kit: "acoustic", pump: "hard", pat: "four16", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 190, drum: "breaks16", kit: "acoustic", pump: "hard", pat: "four16", bass: "eighths", bassVoice: "square", pad:"glass", percKit:"machine", delay:"off", swing:0, instr:"distortion_guitar", melInstr:"square", humanise:0, narrative:"climb", vary:1, sync:2 }, [
  ["Intro|LOOP|2|eight bars of break, distorted from the first bar — no clean entry exists here",
   { chords: 0, bass: 0, parts: "A", trans: "chopfast" }],
  ["Drop|LOOP|4|the full pattern is torn in with no build at all, chords and bass at once",
@@ -1001,7 +1001,7 @@ const DEFS = [
 ]],
 
 ["happyhardcore", "Happy Hardcore", "Four-on-the-floor at hardcore tempo with breakbeat fills stitched into the turnarounds — the piano stab is the entire emotional register, and even the breakdown stays major-key-bright rather than dropping the mood.",
- { bpm: 170, drum: "house909", kit: "909", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "saw" }, [
+ { bpm: 170, drum: "house909", kit: "909", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "saw", pad:"supersaw", percKit:"machine", delay:"8d", swing:0, instr:"synth_strings_1", melInstr:"supersaw", humanise:0.05, narrative:"peak", vary:1, sync:1 }, [
  ["DJ intro|LOOP|4|four-on-the-floor alone, sixteen bars, stab held back for the mix-in",
   { chords: 0, bass: 0, parts: "A" }],
  ["Build|HALF1|4|the stab enters under the kick, already bright, climbing toward the hit",
@@ -1021,7 +1021,7 @@ const DEFS = [
 ]],
 
 ["gabber", "Gabber", "The kick is the record — pounding, distorted, mixed louder than everything else — and the arrangement exists only to let it dominate. Chords and bass stay minimal throughout; nothing is ever allowed to compete with the four-on-the-floor.",
- { bpm: 180, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 180, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square", pad:"glass", percKit:"machine", delay:"off", swing:0, instr:"distortion_guitar", melInstr:"hoover", humanise:0, narrative:"ostinato", vary:0.6, sync:1, trackFx:{ bass:{ drive:70 } } }, [
  ["Intro|LOOP|4|the kick alone, sixteen bars, distorted from the first hit",
   { chords: 0, bass: 0, parts: "A" }],
  ["Build|HALF1|4|a single stab enters, kept quiet — it is there to frame the kick, not compete with it",
@@ -1041,7 +1041,7 @@ const DEFS = [
 ]],
 
 ["hardstyle", "Hardstyle", "The kick carries the bassline — a distorted screech with a pitched reverse-bass tail — so the drop is not a filter opening but a euphoric lead arriving on top of a low end that was already there.",
- { bpm: 150, drum: "bigroom", kit: "909", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "reese" }, [
+ { bpm: 150, drum: "bigroom", kit: "909", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "reese", pad:"brass", percKit:"machine", delay:"off", swing:0, instr:"synth_brass_1", melInstr:"reese", humanise:0, narrative:"climb", vary:1, sync:1, trackFx:{ bass:{ drive:55, res:40 } } }, [
  ["Intro|LOOP|4|the reverse-bass tail and a hint of the lead, no kick yet — the low end is being introduced before it has to carry anything",
   { drums: "nokick", parts: "A", move: "riser" }],
  ["Build|HALF1|4|eight bars: the screech kick enters under the reverse tail, tension stacking rather than a filter opening",
@@ -1061,7 +1061,7 @@ const DEFS = [
 ]],
 
 ["speedcore", "Speedcore", "At this tempo four-on-the-floor stops being a groove and becomes texture — nothing sustains long enough to earn a house-sized drop, so the arrangement is a string of short jolts rather than a curve.",
- { bpm: 200, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 200, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square", pad:"glass", percKit:"machine", delay:"off", swing:0, instr:"distortion_guitar", melInstr:"square", humanise:0, narrative:"ostinato", vary:0.5, sync:1 }, [
  ["Intro|HALF1|4|eight bars of distorted kick alone — anything longer than this is already too long at this tempo",
   { chords: 0, bass: 0, parts: "", move: "build" }],
  ["Surge|LOOP|2|eight bars: full kit and bass arrive at once, no filter ramp, because nothing here lasts long enough for a slow open",
@@ -1075,7 +1075,7 @@ const DEFS = [
 ]],
 
 ["electrofunk", "Electro-Funk", "A robotic, syncopated bassline is the lead instrument here — the arrangement exists to keep clearing space for it, and the stiff drum-machine groove underneath never once loosens into a human swing.",
- { bpm: 110, drum: "electro", kit: "808", pump: "subtle", pat: "funk16", bass: "funk16", bassVoice: "square" }, [
+ { bpm: 110, drum: "electro", kit: "808", pump: "subtle", pat: "funk16", bass: "funk16", bassVoice: "square", pad:"brass", percKit:"hand", delay:"8d", swing:0.2, instr:"clavinet", melInstr:"square", humanise:0.2, narrative:"motif", vary:0.6, sync:0 }, [
  ["Intro|LOOP|4|the 808 pattern alone, mechanically exact — sixteen bars before anything melodic is let in",
   { chords: 0, bass: 0, parts: "A" }],
  ["Groove|LOOP|4|the funk bassline enters and takes over as the main event, drums staying deliberately stiff behind it",
@@ -1093,7 +1093,7 @@ const DEFS = [
 ]],
 
 ["electro2000s", "Electro (2000s revival)", "Brasher and more song-like than the house it borrows its filter tricks from — the saw-bass is deliberately overdriven, and the hook is a vocal-shaped stab rather than a groove that simply returns.",
- { bpm: 128, drum: "electro", kit: "909", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "saw" }, [
+ { bpm: 128, drum: "electro", kit: "909", pump: "hard", pat: "stab16", bass: "eighths", bassVoice: "saw", pad:"supersaw", percKit:"machine", delay:"off", swing:0.05, instr:"lead_2_sawtooth", melInstr:"supersaw", humanise:0.05, narrative:"peak", vary:0.8, sync:1 }, [
  ["Intro|LOOP|4|filtered stabs and a hint of the distorted bass, sixteen bars building toward a verse rather than a drop",
   { parts: "", filter: [0.3, 0.55] }],
  ["Verse|LOOP|4|the saw-bass opens up dirty and upfront, rather than eased in with a slow filter sweep",
@@ -1113,7 +1113,7 @@ const DEFS = [
 ]],
 
 ["ebm", "EBM (Electronic Body Music)", "The sequencer bassline is the only hook there is, and it never varies — the arrangement changes what surrounds it, not the line itself, because a body moving to it does not want the pulse to change.",
- { bpm: 126, drum: "techno", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 126, drum: "techno", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square", pad:"brass", percKit:"machine", delay:"off", swing:0, instr:"distortion_guitar", melInstr:"square", humanise:0, narrative:"ostinato", vary:0.5, sync:0, trackFx:{ bass:{ drive:45 }, chords:{ drive:25 } } }, [
  ["Intro|LOOP|4|the sequencer alone, mechanical and dry, before the kick locks in behind it",
   { drums: "off", parts: "", filter: [0.15, 0.25] }],
  ["Pulse|LOOP|4|the kick enters, hard and mechanical, welded to the bassline",
@@ -1131,7 +1131,7 @@ const DEFS = [
 ]],
 
 ["newbeat", "New Beat", "EBM slowed until the pulse turns hypnotic — nothing here is fast enough to be aggressive, and the arrangement's only real trick is letting everything sit slightly behind the beat instead of on it.",
- { bpm: 108, drum: "techno", kit: "909", pump: "subtle", pat: "quarters", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 108, drum: "techno", kit: "909", pump: "subtle", pat: "quarters", bass: "eighths", bassVoice: "square", pad:"organ", percKit:"machine", delay:"8d", swing:0.1, instr:"rock_organ", melInstr:"square", humanise:0.15, narrative:"motif", vary:0.5, sync:0 }, [
  ["Intro|LOOP|4|the slow sequencer alone, weight before pulse — sixteen bars to let the tempo register as a choice",
   { chords: 0, parts: "", move: "under" }],
  ["Groove|LOOP|4|the kick enters, dragging slightly behind the bassline rather than driving it",
@@ -1149,7 +1149,7 @@ const DEFS = [
 ]],
 
 ["minimaltechno", "Minimal Techno", "The least that can change and still count as an arrangement — sections run long, and each one differs from the last by a single mutated element rather than a layer being added on top.",
- { bpm: 127, drum: "techno16", kit: "909", pump: "subtle", pat: "stab16", bass: "rolloff", bassVoice: "sub" }, [
+ { bpm: 127, drum: "techno16", kit: "909", pump: "subtle", pat: "stab16", bass: "rolloff", bassVoice: "sub", pad:"glass", percKit:"machine", delay:"16", swing:0, instr:"lead_2_sawtooth", melInstr:"stab", humanise:0.05, narrative:"ostinato", vary:0.3, sync:0 }, [
  ["Loop A|LOOP|8|thirty-two bars of the bare pattern — long enough that a small change later actually registers",
   { chords: 0, parts: "", filter: [0.35, 0.4] }],
  ["Loop B|LOOP|8|the same loop, one thing different: the bass rolls in underneath",
@@ -1167,7 +1167,7 @@ const DEFS = [
 ]],
 
 ["dubtechno", "Dub Techno", "Nothing here drops — a section dissolves into echo and reforms as the next one, chord stabs trailing reverb tails long enough to blur where one loop ends and the next begins.",
- { bpm: 122, drum: "techno", kit: "909", pump: "off", pat: "stab16", bass: "subhold", bassVoice: "sub" }, [
+ { bpm: 122, drum: "techno", kit: "909", pump: "off", pat: "stab16", bass: "subhold", bassVoice: "sub", pad:"glass", percKit:"hand", delay:"8d", swing:0, instr:"electric_piano_1", melInstr:"sine", humanise:0.1, narrative:"wave", vary:0.5, sync:0 }, [
  ["Intro|LOOP|8|thirty-two bars of kick and echo alone — the space is established before anything fills it",
   { chords: 0, parts: "", filter: [0.3, 0.4] }],
  ["Chord|LOOP|8|the stab enters, drenched, its reverb tail overlapping the next hit before the last one decays",
@@ -1185,7 +1185,7 @@ const DEFS = [
 ]],
 
 ["hardtechno", "Hard Techno", "The build is the payoff, because the drop that follows it is not new material — it is the same kick, the same pattern, simply louder with the pump pushed harder. There is almost no melodic release to arrive at.",
- { bpm: 150, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 150, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square", pad:"glass", percKit:"machine", delay:"off", swing:0, instr:"distortion_guitar", melInstr:"square", humanise:0, narrative:"ostinato", vary:0.6, sync:1 }, [
  ["Intro|LOOP|4|the raw kick pattern, sixteen bars before anything else is allowed near it",
   { chords: 0, bass: 0, parts: "A" }],
  ["Groove|LOOP|4|the bassline locks to the kick — dense and relentless from the first bar",
@@ -1203,7 +1203,7 @@ const DEFS = [
 ]],
 
 ["industrialtechno", "Industrial Techno", "Texture and noise do as much work as the kick — the arrangement stays narrow and mechanical throughout, and the drop is the same grinding pulse turned up rather than a euphoric arrival. The breakdown trades release for menace: thinner and colder, never warmer.",
- { bpm: 138, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square" }, [
+ { bpm: 138, drum: "techno16", kit: "909", pump: "hard", pat: "quarters", bass: "eighths", bassVoice: "square", pad:"brass", percKit:"machine", delay:"off", swing:0, instr:"distortion_guitar", melInstr:"square", humanise:0, narrative:"climb", vary:0.6, sync:1, trackFx:{ chords:{ drive:40, hp:20 } } }, [
  ["Intro|LOOP|4|sixteen bars of drums and metallic percussion alone — no chord, no bass, the machine warming up",
   { chords: 0, bass: 0, parts: "", filter: [0.15, 0.25] }],
  ["Groove|LOOP|4|the bass pulse enters low and tight — nothing here is meant to feel open",
@@ -1223,7 +1223,7 @@ const DEFS = [
 ]],
 
 ["progtrance", "Progressive Trance", "The build is long and driven by groove rather than melody — the payoff is the bassline locking into full stride, not a melodic peak landing. Sections run longer and the filter moves slower than uplifting trance; patience replaces spectacle.",
- { bpm: 130, drum: "trance", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "saw" }, [
+ { bpm: 130, drum: "trance", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "saw", pad:"supersaw", percKit:"hand", delay:"8d", swing:0, instr:"synth_strings_1", melInstr:"supersaw", humanise:0.05, narrative:"expand", vary:0.8, sync:1 }, [
  ["DJ intro|LOOP|8|thirty-two bars of drums alone — long enough for a DJ to work the mix, no rush to the theme",
   { chords: 0, bass: 0, parts: "", filter: [0.25, 0.4] }],
  ["Groove|LOOP|8|the rolling bass enters and just sits there for thirty-two bars — the groove is left to prove itself before anything else arrives",
@@ -1243,7 +1243,7 @@ const DEFS = [
 ]],
 
 ["upliftingtrance", "Uplifting / Anthem Trance", "The largest dynamic swing in dance music: an enormous breakdown, emptied almost to nothing, followed by the widest and most euphoric drop the template can produce. Every earlier section exists only to make that one arrival bigger.",
- { bpm: 138, drum: "trance", kit: "909", pump: "hard", pat: "stab16", bass: "rolloff", bassVoice: "saw" }, [
+ { bpm: 138, drum: "trance", kit: "909", pump: "hard", pat: "stab16", bass: "rolloff", bassVoice: "saw", pad:"supersaw", percKit:"hand", delay:"8d", swing:0, instr:"synth_strings_1", melInstr:"supersaw", humanise:0.05, narrative:"peak", vary:1, sync:1, trackFx:{ pad:{ wob:30, wobRate:1 } } }, [
  ["DJ intro|LOOP|4|drums alone for the mix-in — the anthem hasn't shown itself yet",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.4] }],
  ["Groove|LOOP|4|the bass and chords arrive filtered — held well below where they'll end up",
@@ -1263,7 +1263,7 @@ const DEFS = [
 ]],
 
 ["goatrance", "Goa Trance", "The acid-tinged rolling bassline is the hook the arrangement circles around, not a build toward a melodic peak — the bass is barely ever silent. The breakdown is spacious and trippy, echo and texture rather than an emotional high point.",
- { bpm: 145, drum: "trance", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "acid" }, [
+ { bpm: 145, drum: "trance", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "acid", pad:"supersaw", percKit:"hand", delay:"8d", swing:0, instr:"lead_2_sawtooth", melInstr:"acid", humanise:0.05, narrative:"ostinato", vary:0.6, sync:1, trackFx:{ bass:{ res:60, drive:20 } } }, [
  ["Intro|LOOP|4|the acid bassline starts almost immediately, low and half-filtered, before the drums fill in",
   { chords: 0, parts: "", filter: [0.2, 0.35] }],
  ["Groove|LOOP|4|the resonant filter starts sweeping the bass — this is the hook, not a lead line",
@@ -1283,7 +1283,7 @@ const DEFS = [
 ]],
 
 ["psytrance", "Psytrance", "A relentless sixteenth-note bassline is the engine the whole track rides on — it barely stops, even through the breakdown — and the arrangement is built by piling density on top of it rather than by any single melodic arrival.",
- { bpm: 145, drum: "trance", kit: "909", pump: "hard", pat: "stab16", bass: "rolloff", bassVoice: "acid" }, [
+ { bpm: 145, drum: "trance", kit: "909", pump: "hard", pat: "stab16", bass: "rolloff", bassVoice: "acid", pad:"glass", percKit:"hand", delay:"16", swing:0, instr:"lead_2_sawtooth", melInstr:"acid", humanise:0, narrative:"ostinato", vary:0.6, sync:1, trackFx:{ bass:{ res:70, drive:25 } } }, [
  ["Intro|LOOP|4|the rolling bassline starts under sparse drums — the engine is running before anything else exists",
   { chords: 0, parts: "", filter: [0.3, 0.4] }],
  ["Groove|LOOP|4|full drums lock in around the bass — nothing is added for texture yet, just weight",
@@ -1303,7 +1303,7 @@ const DEFS = [
 ]],
 
 ["fullonpsy", "Full-On Psytrance", "More layers stack on top of the rolling bass than plain psytrance — arps, plucks and percussion pile up bar by bar — and the energy stays bright and bouncy throughout. Even the breakdown holds its major-key euphoria rather than turning dark.",
- { bpm: 148, drum: "trance", kit: "909", pump: "hard", pat: "stab16", bass: "rolloff", bassVoice: "acid" }, [
+ { bpm: 148, drum: "trance", kit: "909", pump: "hard", pat: "stab16", bass: "rolloff", bassVoice: "acid", pad:"supersaw", percKit:"hand", delay:"16", swing:0, instr:"synth_strings_1", melInstr:"acid", humanise:0, narrative:"peak", vary:0.8, sync:1, trackFx:{ bass:{ res:65, drive:25 } } }, [
  ["Intro|LOOP|4|bass and drums bounce in together — bright from the first bar, nothing held moody or dark",
   { chords: 0, parts: "", filter: [0.35, 0.45] }],
  ["Groove|LOOP|4|the chords enter cheerful and open — this genre doesn't hide its major-key hook",
@@ -1323,7 +1323,7 @@ const DEFS = [
 ]],
 
 ["darkpsy", "Darkpsy", "Fast, minor-key and distorted throughout — the breakdown is built to disorient rather than to offer relief, and the drop that follows lands as an assault rather than a release. Nothing here resolves into brightness.",
- { bpm: 155, drum: "trance", kit: "909", pump: "hard", pat: "stab16", bass: "rolloff", bassVoice: "acid" }, [
+ { bpm: 155, drum: "trance", kit: "909", pump: "hard", pat: "stab16", bass: "rolloff", bassVoice: "acid", pad:"glass", percKit:"machine", delay:"16", swing:0, instr:"distortion_guitar", melInstr:"acid", humanise:0, narrative:"ostinato", vary:0.6, sync:2, trackFx:{ bass:{ res:75, drive:35 } } }, [
  ["Intro|LOOP|4|no chords, just the distorted bass grinding under sparse drums — the mood is set dark from bar one",
   { chords: 0, parts: "", filter: [0.25, 0.35] }],
  ["Groove|LOOP|4|full drums lock in around the grinding bass — minor and airless, nothing bright allowed in",
@@ -1343,7 +1343,7 @@ const DEFS = [
 ]],
 
 ["progpsy", "Progressive Psytrance", "The rolling bass sits back in a tech-house-ish pocket rather than dominating the mix, and the build is patient — depth and groove over full-on's frenzy, so even the drop lands understated rather than frantic.",
- { bpm: 138, drum: "trance", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "acid" }, [
+ { bpm: 138, drum: "trance", kit: "909", pump: "classic", pat: "stab16", bass: "rolloff", bassVoice: "acid", pad:"glass", percKit:"hand", delay:"8d", swing:0, instr:"synth_strings_1", melInstr:"acid", humanise:0.05, narrative:"expand", vary:0.7, sync:1 }, [
  ["DJ intro|LOOP|4|drums alone, unhurried — this genre never rushes toward its first idea",
   { chords: 0, bass: 0, parts: "", filter: [0.3, 0.4] }],
  ["Groove|LOOP|8|the bass enters low and sits back in the pocket for thirty-two bars — groove first, everything else later",
