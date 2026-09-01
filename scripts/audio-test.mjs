@@ -1265,6 +1265,12 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // the picked edit is the same dead end, and reads as "the dropdown does nothing" to whoever hits it
     if (!/const whole = !res\.varied/.test(fn))
       problems.push("src: varyRepeats falls back on !res.repeats rather than !res.varied — a picked edit with nowhere to land inside an actual repeat would still silently do nothing");
+    /* Picking a variation from the dropdown has to change the grid right there — a select that only
+       stores the choice and waits for a separate button press reads, to someone who just picked an
+       option and is watching the grid, as "this dropdown doesn't do anything". */
+    const dd = code.slice(code.indexOf("Vary these notes — auto mix") - 400, code.indexOf("Vary these notes — auto mix"));
+    if (!/onChange=/.test(dd) || !/setVaryPick\(/.test(dd) || !/varyRepeats\(d, secL, v\)/.test(dd))
+      problems.push("src: the Vary-these-notes dropdown stores the pick without applying it — selecting an option would visibly do nothing until a separate button press");
   }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
