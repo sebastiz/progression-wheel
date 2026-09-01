@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **68 dance-music styles on the Arrange tab, up from 13.** Every style in the "Dance Music Family
+  Tree" — the whole disco/house branch (Balearic Beat, Italo Disco, Hi-NRG, Acid House, Deep House,
+  Afro House, Amapiano, Gqom, Tribal House, French/Filter House, Deep Tech, Electro House, Dutch
+  House…), the bass/garage branch (Bass House, Moombahton, Speed Garage, Grime, Bassline, UK Funky,
+  Brostep, Riddim, Future Garage…), the breakbeat/jungle/hardcore branch (UK Breakbeat Hardcore,
+  Jungle, Liquid D&B, Neurofunk, Jump-Up, Drumfunk, Breakcore, Digital Hardcore, Happy Hardcore,
+  Gabber), the electro/EBM/techno branch (Hardstyle, Speedcore, Electro-Funk, EBM, New Beat, Minimal/
+  Dub/Hard/Industrial Techno) and the trance/psytrance branch (Progressive/Uplifting/Goa Trance,
+  Psytrance, Full-On, Darkpsy, Progressive Psytrance) — now has its own arrangement template: a
+  genre-appropriate tempo, drum kit and bassline plus a structure built for that style's actual
+  phrase lengths and energy curve, not a reskin of a nearby genre. The 13 existing templates keep
+  their ids and settings; a few picked up their more exact family-tree name (House → Chicago House,
+  Techno → Detroit Techno, Big room / festival → Big Room / Festival House, and so on).
 - **Recreate a famous track, on the Arrange tab.** A new dropdown beside the structure picker holds
   twenty real dance and electronic records — house, nu-disco, tech house, techno, trance, big room,
   progressive house, melodic techno, drum & bass, dubstep, future bass, trap and UK garage — and
