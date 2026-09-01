@@ -1257,6 +1257,14 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // and it is reachable: a variation engine nothing calls is not a feature
     if (!/varyRepeats\(d, secL\)/.test(code))
       problems.push("src: nothing in the melody grid offers to vary a section's repeats");
+    // a section with nothing repeated inside it must still get its notes varied, not silently ignored
+    if (!/varyWhole\(/.test(fn))
+      problems.push("src: varyRepeats has no fallback for a section that never repeats itself — the button would do nothing to it");
+    // the fallback has to trigger on "the picked edit landed nowhere" (varied), not just "no repeat
+    // was found at all" (repeats) — a section that repeats but whose repeat slot happens not to fit
+    // the picked edit is the same dead end, and reads as "the dropdown does nothing" to whoever hits it
+    if (!/const whole = !res\.varied/.test(fn))
+      problems.push("src: varyRepeats falls back on !res.repeats rather than !res.varied — a picked edit with nowhere to land inside an actual repeat would still silently do nothing");
   }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
@@ -2543,6 +2551,74 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (unknown.repeats || show(unknown.bars) !== before) problems.push("varyWithinPick did something for an unknown id");
   console.log(`variation picker: ${M.VARIATIONS.length} named edits, all fire on a motif built to give each one somewhere to go`);
   console.log(`  pressing it again lands somewhere new in ${steps - flat}/${steps} cases`);
+}
+
+/* ---- varying a section that never repeats itself ----
+   varyWithin(Pick) rightly does nothing to a through-composed melody — there is no restatement to
+   treat as a variation of the first one. But ✦ Vary repeats falls back to varyWhole for exactly that
+   melody, because "nothing repeats" was being read by writers as "the button does nothing to my
+   tune", not as "there was nothing to vary". This is what the fallback promises: the same melody,
+   most of it untouched, a few of its own notes nudged — never a rewrite and never a silent no-op. */
+{
+  const ND = 7;
+  const show = bars => bars.map(b => b.map(c => (c.length ? c[0] : ".")).join("")).join("|");
+  // busy and genuinely through-composed: no bar restates another, but with a held note (for Add a
+  // turn), a two-long note (for Split) and an adjacent pair (for Merge) so every edit has somewhere
+  // to go, the same way the picker test's motif does
+  const thru = [[[0], [0], [0], [1], [], [3], [], [5]], [[6], [4], [], [2], [2], [], [0], []],
+                [[3], [1], [], [6], [], [4], [], [2]], [[5], [], [4], [4], [], [1], [], [6]]];
+  if (M.varyWithin(thru, { nd: ND, amount: 2, seed: 9 }).repeats)
+    problems.push("the through-composed fixture accidentally repeats itself — it would not exercise the fallback");
+
+  // deterministic, in shape, and leaves most of the tune alone
+  let everFired = 0, worstKeep = 1;
+  const onsets = bars => bars.flatMap((b, i) => M.barNotes(b).map(n => i + ":" + n.c));
+  const keep = new Set(onsets(thru));
+  for (const id of [undefined, ...M.VARIATIONS.map(v => v.id)]) {
+    const res1 = M.varyWhole(thru, { id, nd: ND, seed: 13, level: 2 });
+    if (show(M.varyWhole(thru, { id, nd: ND, seed: 13, level: 2 }).bars) !== show(res1.bars))
+      problems.push(`varyWhole is not deterministic (${id || "auto mix"})`);
+    if (res1.bars.length !== thru.length) problems.push(`varyWhole changed the bar count (${id || "auto mix"})`);
+    for (const bar of res1.bars) {
+      if (bar.length !== thru[0].length) problems.push(`varyWhole changed a bar's width (${id || "auto mix"})`);
+      for (const col of bar) for (const d of col)
+        if (!(Number.isInteger(d) && d >= 0 && d < ND)) problems.push(`varyWhole wrote degree ${d} (${id || "auto mix"})`);
+    }
+    if (res1.varied > 0) {
+      everFired++;
+      const same = onsets(res1.bars).filter(o => keep.has(o)).length / keep.size;
+      worstKeep = Math.min(worstKeep, same);
+      if (same < 0.55) problems.push(`varyWhole(${id || "auto mix"}) rewrote the section — only ${(same * 100) | 0}% left`);
+    }
+  }
+  // clip/split/turn/merge want a held note or an adjacent pair to act on; every other listed edit
+  // has to fire on a fixture built to give it somewhere to go, same bar as the auto mix
+  if (everFired < M.VARIATIONS.length - 3)
+    problems.push(`${M.VARIATIONS.length + 1 - everFired}/${M.VARIATIONS.length + 1} whole-section variations (including the auto mix) never fired`);
+  // amount/level 0 and an empty grid are both a no-op, not a crash
+  if (M.varyWhole(thru, { nd: ND, seed: 1, level: 0 }).varied) problems.push("varyWhole did something at level 0");
+  const blank = M.blankBars(4, 8);
+  if (M.varyWhole(blank, { nd: ND, seed: 1, level: 3 }).varied) problems.push("varyWhole found something to vary in an empty grid");
+  console.log(`whole-section fallback: ${everFired}/${M.VARIATIONS.length + 1} edits (incl. auto mix) fire on a through-composed section, ${(worstKeep * 100) | 0}% survives at worst`);
+
+  /* The trickier trigger: a section DOES repeat, so varyWithinPick finds a repeat slot to work in —
+     but the picked edit needs a structure (an adjacent pair for Merge, a held note for Add a turn…)
+     that happens not to be in that particular slot, even though the section has it elsewhere (often
+     in the first statement, which varyWithinPick is right to leave alone). `repeats > 0` is not the
+     same question as "did the picked edit actually land anywhere", and ✦ Vary these notes has to
+     fall back on the second as much as the first — a picker that only rescues the "never repeats"
+     case still reads as broken the moment someone picks Merge on a melody that happens to repeat. */
+  {
+    const pair = [[0], [1], [], [3], [], [5], [], []];        // an adjacent pair at col0-1
+    const noPair = [[2], [], [4], [], [6], [], [1], []];      // no two occupied columns back to back
+    const base = [pair, noPair, noPair];                      // noPair is what repeats; pair does not
+    const within = M.varyWithinPick(base, { id: "merge", nd: ND, seed: 3, level: 1 });
+    if (!within.repeats) problems.push("fixture does not exercise the case — no repeat was found at all");
+    if (within.varied) problems.push("fixture does not exercise the case — merge already landed inside the repeat");
+    const whole = M.varyWhole(base, { id: "merge", nd: ND, seed: 3, level: 1 });
+    if (!whole.varied)
+      problems.push("varyWhole(merge) found nothing on a section that plainly has an adjacent pair in it");
+  }
 }
 
 /* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----
