@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, VARIATIONS, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -722,6 +722,12 @@ export default function ProgressionWheel() {
      is gone. It is deliberately not part of the song document: the notes are the song, this is just
      where the writer had got to with the control. */
   const [varyIn, setVaryIn] = useState({});
+  /* Which single variation ✦ Vary repeats writes, per section+part — "" is the auto mix (the
+     original behaviour, walking every variation in the catalogue); anything else pins the button
+     to one named edit (Different ending, Add a passing note, …) so a writer chasing one particular
+     kind of change does not have to keep tapping past ones they don't want. UI state, not song
+     state, like varyIn beside it. */
+  const [varyPick, setVaryPick] = useState({});
   /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
      early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
   const [syncIn, setSyncIn] = useState({});
@@ -2897,29 +2903,32 @@ export default function ProgressionWheel() {
     const sec = secMelos[d.key]; if (!sec) return;
     const cur = barsOf(sec, L); if (!cur) return;
     const k = varyKeyOf(d.key, L), st = varyIn[k];
-    /* The stored baseline is only good while the grid still holds what we last wrote to it. Draw a
-       note, undo, write a pattern over the top — and the melody in front of the writer is a new
-       first statement, not a varied old one. Comparing the notes rather than trusting the counter is
-       what keeps the button honest through an edit it never heard about. */
-    const fresh = !st || melKey(cur) !== st.grid;
+    const pick = varyPick[k] || "";                       // "" = the auto mix; else one VARIATIONS id
+    /* The stored baseline is only good while the grid still holds what we last wrote to it, and only
+       while it is being varied the same way — switching the dropdown to a different edit is as much
+       a change of mind as writing a new note, so it starts a fresh baseline too. Comparing rather
+       than trusting the counter is what keeps the button honest through either kind of change. */
+    const fresh = !st || melKey(cur) !== st.grid || st.pick !== pick;
     const base = fresh ? cur : st.base;
     const level = (fresh ? 0 : st.level) + 1;
     const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17;
-    const res = varyWithin(base, { nd: scaleSemis.length, amount: level, seed });
+    const res = pick
+      ? varyWithinPick(base, { id: pick, nd: scaleSemis.length, seed, level })
+      : varyWithin(base, { nd: scaleSemis.length, amount: level, seed });
     // nothing restates itself here, so there is nothing to make less boring — say so rather than
     // quietly editing a through-composed melody the writer never asked to have rewritten
     if (!res.repeats) {
-      setVaryIn({ ...varyIn, [k]: { base, grid: melKey(cur), level: 0, note: "nothing repeats in this melody" } });
+      setVaryIn({ ...varyIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing repeats in this melody" } });
       return;
     }
     // one past the top is the way back: the melody as it was, and the next press starts again
     const back = level > VARY_IN_MAX;
     const bars = back ? dupBars(base) : res.bars;
     putLayer(d.key, L, bars);
-    setVaryIn({ ...varyIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level,
+    setVaryIn({ ...varyIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick,
       note: back ? "back to the melody you wrote"
-        : `${res.varied} of ${res.repeats} repeat${res.repeats > 1 ? "s" : ""} varied · `
-          + (res.span > 1 ? `${res.span}-bar motif` : "1-bar motif") } });
+        : `${res.varied} of ${res.repeats} repeat${res.repeats > 1 ? "s" : ""} varied`
+          + (pick ? "" : ` · ${res.span > 1 ? `${res.span}-bar motif` : "1-bar motif"}`) } });
   };
   // back to the melody as it was before the first press, with the counter cleared
   const resetVaryIn = (d, L) => {
@@ -4431,7 +4440,9 @@ export default function ProgressionWheel() {
             const tp = timeFor(ly, li, melStep);
             const dest = chainOf(li).gain;
             const vel = velFor(ly, li, melStep, nbars);
-            dest.gain.setValueAtTime(gain * vel, tp);
+            // every note re-sets this node's gain, which would otherwise overwrite the
+            // MELODY_MAKEUP this chain was built with the moment the first note played
+            dest.gain.setValueAtTime(gain * vel * MELODY_MAKEUP, tp);
             if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, tp);
             const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
             if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
@@ -4504,7 +4515,7 @@ export default function ProgressionWheel() {
             const chain = chainOf(li);
             const tp = timeFor(ly, li, stepIdx);
             const vel = velFor(ly, li, stepIdx, nbars);
-            chain.gain.gain.setValueAtTime(gain * vel, tp);
+            chain.gain.gain.setValueAtTime(gain * vel * MELODY_MAKEUP, tp);
             if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, tp);
             const leadKey = isGM(voice) ? voice : null;
             if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
@@ -6089,15 +6100,25 @@ export default function ProgressionWheel() {
                         {/* Varying the repeats is about the whole melody rather than a selection, so it
                             sits with the mode switch and not among the note tools below. */}
                         {tab === "write" && (() => {
-                          const vst = varyIn[varyKeyOf(d.key, secL)];
+                          const vk = varyKeyOf(d.key, secL);
+                          const vst = varyIn[vk];
                           const lv = (vst && vst.level) || 0;
+                          const pick = varyPick[vk] || "";
+                          const curV = VARIATIONS.find(v => v.id === pick);
                           return (<>
+                            <select className="fxsel" style={{ maxWidth:150 }} value={pick}
+                              title="Which edit ✦ Vary repeats writes. Left on the auto mix it walks the whole catalogue of edits by itself; picked to one, the button writes only that edit — the one to reach for when you know the change you want rather than a general refresh."
+                              onChange={e => setVaryPick({ ...varyPick, [vk]: e.target.value })}>
+                              <option value="">Vary repeats — auto mix</option>
+                              {VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+                            </select>
                             <button className={"mini" + (lv ? " on" : "")} onClick={() => varyRepeats(d, secL)}
-                              title={"Vary the repeats inside this section — the motif is found where it restates itself, "
+                              title={curV ? curV.tip + " Tap again for a different spot; one past the top puts the melody back as you wrote it."
+                                : "Vary the repeats inside this section — the motif is found where it restates itself, "
                                 + "the first statement is left alone, and every one after it gets a different landing note, "
                                 + "an extra note, a phrase pushed early. Tap again for more; one past the top puts the "
                                 + "melody back as you wrote it."}>
-                              ✦ Vary repeats{lv ? " ×" + lv : ""}</button>
+                              ✦ {curV ? curV.name : "Vary repeats"}{lv ? " ×" + lv : ""}</button>
                             {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}

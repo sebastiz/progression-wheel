@@ -1388,6 +1388,23 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`part mix: octaves ${LAYER_DEFAULT_OCT.join(",")} · levels ${LAYER_DEFAULT_VOL.join(",")} · lowest MIDI ${lowest}`);
 }
 
+/* ---- the melody make-up gain actually reaches a note ----
+   MELODY_MAKEUP is written once onto a part's gain node when the chain is first built, but every
+   written note re-sets that same node's gain to `gain * vel` for its own duration — which silently
+   drops the make-up the moment the first note plays unless that line carries MELODY_MAKEUP itself.
+   (This is exactly what made the melody parts read 100% on the Level slider and still sit under the
+   drums and chords.) The component is not executed here, so this reads its source the way the other
+   source-shape guards do, rather than re-deriving the bug from first principles. */
+{
+  const layerFn = code.slice(code.indexOf("const playLayer = "), code.indexOf("const playArp = "));
+  const arpFn = code.slice(code.indexOf("const playArp = "), code.indexOf("const anySolo = sec.layers.some"));
+  if (!/dest\.gain\.setValueAtTime\(gain \* vel \* MELODY_MAKEUP, tp\)/.test(layerFn))
+    problems.push("src: playLayer sets a melody note's gain without MELODY_MAKEUP — the part loses its make-up gain on its first note");
+  if (!/chain\.gain\.gain\.setValueAtTime\(gain \* vel \* MELODY_MAKEUP, tp\)/.test(arpFn))
+    problems.push("src: playArp sets a melody note's gain without MELODY_MAKEUP — an arped part loses its make-up gain on its first note");
+  console.log("melody make-up gain: reaches playLayer and playArp's per-note automation");
+}
+
 /* ---- the file tells a DAW how to lay itself out ---- */
 {
   const bars4 = Array.from({ length: 8 }, (_, i) => ({ chord: { root: i % 2 ? 5 : 0, quality: "min" } }));
@@ -2463,6 +2480,69 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   }
   console.log(`in-section variation: ${secs} repeated-motif sections varied, ${(worstKeep * 100) | 0}% of the section survives at worst`);
   console.log(`  pressing it again changes the result in ${steps - flat}/${steps} cases`);
+}
+
+/* ---- picking one named variation, rather than the auto mix ----
+   varyWithinPick is varyWithin pinned to one VARIATIONS entry — the dropdown next to ✦ Vary repeats
+   writes with it when the writer wants a specific edit rather than whatever the rotation lands on. It
+   has to hold to the same contract varyWithin does (leave the first statement alone, stay in shape,
+   be deterministic) and, since a writer can pick something like "Merge two notes" that only fires
+   where two adjacent notes actually exist, it also has to say "0 varied" rather than fake a result on
+   a motif that gives it nowhere to go. */
+{
+  const ND = 7;
+  const show = bars => bars.map(b => b.map(c => (c.length ? c[0] : ".")).join("")).join("|");
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const rep = (unit, n) => Array.from({ length: n }, () => dup(unit)).flat();
+
+  // every entry the dropdown will render needs a label, and the tip is what the option's title reads
+  for (const v of M.VARIATIONS) {
+    if (!v.name) problems.push(`VARIATIONS.${v.id} has no name — the dropdown would show nothing for it`);
+    if (!v.tip) problems.push(`VARIATIONS.${v.id} has no tip — the dropdown option has no title`);
+  }
+  // and the ids stay unique, or the dropdown offers two options that write the same thing under
+  // different labels while a third silently never runs
+  const ids = M.VARIATIONS.map(v => v.id);
+  if (new Set(ids).size !== ids.length) problems.push("VARIATIONS has duplicate ids");
+
+  // a busy two-bar motif restated four times, with at least one held note three columns long (for
+  // Add a turn), one two columns long (for Split/Cut a note short) and a leap over a gap (for Add a
+  // passing note) — enough for every listed edit to have somewhere to land, so a variation that never
+  // fires here is a variation with a bug, not just a sparse motif
+  const motif = [[[0], [0], [0], [1], [], [3], [], [5]], [[5], [4], [], [2], [2], [], [0], []]];
+  const base = rep(motif, 4), before = show(base);
+  let steps = 0, flat = 0, everFired = 0;
+  for (const v of M.VARIATIONS) {
+    const res1 = M.varyWithinPick(base, { id: v.id, nd: ND, seed: 11, level: 1 });
+    if (show(base) !== before) problems.push(`varyWithinPick mutated the bars it was given (${v.id})`);
+    // deterministic: the same id, seed and level always lands the same edit
+    if (show(M.varyWithinPick(base, { id: v.id, nd: ND, seed: 11, level: 1 }).bars) !== show(res1.bars))
+      problems.push(`varyWithinPick is not deterministic (${v.id})`);
+    if (res1.varied > res1.repeats) problems.push(`varyWithinPick(${v.id}) claims more varied repeats than it found`);
+    if (res1.varied > 0) everFired++;
+    // shape holds: still the same bar count and width, still legal scale degrees
+    if (res1.bars.length !== base.length) problems.push(`varyWithinPick changed the bar count (${v.id})`);
+    for (const bar of res1.bars) for (const col of bar) for (const d of col)
+      if (!(Number.isInteger(d) && d >= 0 && d < ND)) problems.push(`varyWithinPick(${v.id}) wrote degree ${d}`);
+    // the first statement is the reference and is never touched
+    const runs = M.motifRuns(base, res1.span || 2);
+    const slice = (bars, r) => show(bars.slice(r.at, r.at + (res1.span || 2)));
+    for (const r of runs) if (!r.occ && slice(res1.bars, r) !== slice(base, r))
+      problems.push(`varyWithinPick(${v.id}) edited the first statement`);
+    // pressing again (level 2) has a real chance of landing somewhere new, since `pass` moves on
+    steps++;
+    const res2 = M.varyWithinPick(base, { id: v.id, nd: ND, seed: 11, level: 2 });
+    if (show(res2.bars) === show(res1.bars)) flat++;
+  }
+  if (everFired < M.VARIATIONS.length) problems.push(`${M.VARIATIONS.length - everFired}/${M.VARIATIONS.length} variations never fired on a motif built to give every one of them somewhere to go`);
+  if (flat > steps * 0.3) problems.push(`${flat}/${steps} variations show no change between level 1 and level 2`);
+  // level 0 (nothing picked yet) and an unknown id are both a no-op, not a crash
+  const off = M.varyWithinPick(base, { id: "ending", nd: ND, seed: 11, level: 0 });
+  if (off.repeats || show(off.bars) !== before) problems.push("varyWithinPick did something at level 0");
+  const unknown = M.varyWithinPick(base, { id: "not-a-real-id", nd: ND, seed: 11, level: 1 });
+  if (unknown.repeats || show(unknown.bars) !== before) problems.push("varyWithinPick did something for an unknown id");
+  console.log(`variation picker: ${M.VARIATIONS.length} named edits, all fire on a motif built to give each one somewhere to go`);
+  console.log(`  pressing it again lands somewhere new in ${steps - flat}/${steps} cases`);
 }
 
 /* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----
