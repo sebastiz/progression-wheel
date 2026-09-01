@@ -14,7 +14,7 @@ import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 import { SESSION_PREFIX, TRACK_TYPES, TRACK_TYPE_BY_ID, newClip, newTrack, nextClipNum, sessionKey } from "./session.js";
-import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
+import { DANCE_TEMPLATES, FAMILY_OF, FAMILY_ORDER, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 import { TRACK_PRESETS } from "./track-presets.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
@@ -525,6 +525,7 @@ export default function ProgressionWheel() {
   const TABS = [["write", "Write"], ["sound", "Sound"], ["sketch", "Sketch"], ["arrange", "Arrange"], ["session", "Session"], ["save", "Save"]];
   const [tab, setTab] = useState("write");
   const [wheelOpen, setWheelOpen] = useState(true);
+  const [styleRefOpen, setStyleRefOpen] = useState(false);
   const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
   const [adv, setAdv] = useState(false);    // reveal the advanced harmony controls (secondary doms, etc.)
   const [showPar, setShowPar] = useState(false);
@@ -8293,6 +8294,19 @@ export default function ProgressionWheel() {
         /* what a template did, said in words beside the strip that draws it */
         .tplnote { margin-top:9px; padding:8px 11px 9px; background:var(--bg);
           border:1px solid var(--line-2); border-left:3px solid ${GOLD}; border-radius:var(--r-lg); }
+        /* the full 68-style reference table — a lookup, so it favours density over the tplnote's
+           one-template-at-a-time prose; grouped and ordered exactly as the family tree groups them */
+        .styleref { margin-top:8px; max-height:420px; overflow-y:auto; overflow-x:auto;
+          border:1px solid var(--line-2); border-radius:var(--r-lg); padding:2px 11px; background:var(--bg); }
+        .styleref-fam + .styleref-fam { border-top:1px solid var(--line-2); margin-top:8px; padding-top:6px; }
+        .styleref-famname { font-size:var(--fs-md); color:${GOLD}; font-weight:600; margin:6px 0 4px; }
+        .styleref table { width:100%; border-collapse:collapse; margin-bottom:6px; }
+        .styleref th { text-align:left; font-size:var(--fs-micro); color:var(--muted); font-weight:500;
+          padding:2px 8px 4px 0; border-bottom:1px solid var(--line-2); white-space:nowrap; }
+        .styleref td { font-size:var(--fs-md); color:var(--muted); padding:5px 8px 5px 0;
+          border-bottom:1px solid var(--line); vertical-align:top; }
+        .styleref tr:last-child td { border-bottom:none; }
+        .styleref td.styleref-name { color:var(--ink); font-weight:600; white-space:nowrap; }
         .tlhead { position:absolute; top:14px; bottom:0; width:2px; background:${GOLD}; border-radius:var(--r-xs);
           pointer-events:none; box-shadow:0 0 6px ${GOLD}AA; z-index:4; }
         /* Section boundaries, drawn down the whole strip. Two sections that letter the same way get
@@ -9411,6 +9425,34 @@ export default function ProgressionWheel() {
             <span className="keytag" style={{ margin:0 }}>Recreate a famous track</span>
             {trackPicker()}
           </div>
+          <div className="row" style={{ marginTop:6 }}>
+            <button className="mini" onClick={() => setStyleRefOpen(v => !v)}
+              title="A reference table of every dance-arrangement style above, grouped the way the dance-music family tree groups them — for looking things up, not for picking one (use the dropdown above for that).">
+              {styleRefOpen ? "▾" : "▸"} All {DANCE_TEMPLATES.length} styles — family tree reference
+            </button>
+          </div>
+          {styleRefOpen && (
+            <div className="styleref">
+              {FAMILY_ORDER.map(fam => (
+                <div key={fam} className="styleref-fam">
+                  <div className="styleref-famname">{fam}</div>
+                  <table>
+                    <thead><tr><th>Style</th><th>BPM</th><th>Kit</th><th>What makes the arrangement distinctive</th></tr></thead>
+                    <tbody>
+                      {DANCE_TEMPLATES.filter(t => FAMILY_OF[t.id] === fam).map(t => (
+                        <tr key={t.id}>
+                          <td className="styleref-name">{t.name}</td>
+                          <td>{t.bpm}</td>
+                          <td>{(DRUM_KITS.find(([k]) => k === t.kit) || [])[1] || t.kit}</td>
+                          <td>{t.tip}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
           {curTrackPreset && (
             <div className="tplnote" style={{ marginTop:6 }}>
               <div className="row" style={{ gap:"6px 8px", alignItems:"baseline", flexWrap:"wrap" }}>
