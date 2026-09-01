@@ -1374,6 +1374,30 @@ const DANCE_TEMPLATES = DEFS.map(([id, name, tip, sound, rows]) => ({
   plan: mkPlan(rows.map(r => r[0])).map((row, i) => ({ ...row, arr: rows[i][1] || null })),
 }));
 
+/* ---- the family tree the catalogue is drawn from ----
+   The six branches are the dance-music family tree's own top-level categories — not something
+   invented for this app. Every template above traces back to exactly one of them, in the order the
+   tree lists them, so a reference view can group the 68 styles the way the tree itself does rather
+   than by catalogue-insertion order. */
+const FAMILY_ORDER = ["House / Disco", "Techno / Electro / EBM", "Trance", "Breakbeat / Jungle / D&B",
+  "Hardcore / Hardstyle", "Garage / Bass / Dubstep"];
+const FAMILY_OF = {};
+[
+ ["House / Disco", ["disco", "balearic", "postdisco", "italodisco", "hinrg", "house", "acidhouse",
+   "deephouse", "brokenbeat", "afrohouse", "amapiano", "gqom", "tribalhouse", "filterhouse", "nudisco",
+   "techhouse", "deeptech", "organichouse", "proghouse", "electrohouse", "bigroom", "basshouse",
+   "dutchhouse", "moombahton"]],
+ ["Techno / Electro / EBM", ["techno", "minimaltechno", "dubtechno", "hardtechno", "industrialtechno",
+   "melotech", "electrofunk", "electro2000s", "ebm", "newbeat"]],
+ ["Trance", ["trance", "progtrance", "upliftingtrance", "goatrance", "psytrance", "fullonpsy",
+   "darkpsy", "progpsy"]],
+ ["Breakbeat / Jungle / D&B", ["ukhardcore", "jungle", "dnb", "liquiddnb", "neurofunk", "halftimewave",
+   "jumpup", "drumfunk", "breakcore", "digitalhardcore"]],
+ ["Hardcore / Hardstyle", ["happyhardcore", "gabber", "hardstyle", "speedcore"]],
+ ["Garage / Bass / Dubstep", ["nygarage", "garage", "speedgarage", "grime", "bassline", "ukfunky",
+   "dubstep", "brostep", "trap", "riddim", "futurebass", "futuregarage"]],
+].forEach(([fam, ids]) => ids.forEach(id => { FAMILY_OF[id] = fam; }));
+
 /* ---- resolving a template onto a song ----
    The plan says what the sections are; `insts` says what they became once the progression had its
    say — four chords or eight, a row played twice or four times. Only here do the two meet, which is
@@ -1445,4 +1469,4 @@ const energyOf = ({ drums, chords, parts }) =>
    arrangement's half-measure — the tops left running while the floor is taken away. */
 const drumAmountOf = pat => !pat || !pat.length ? 0 : (pat.some(st => /[KB]/.test(st || "")) ? 1 : 0.5);
 
-export { DANCE_TEMPLATES, ENERGY_W, PARTS, drumAmountOf, energyOf, resolveArrangement };
+export { DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, resolveArrangement };
