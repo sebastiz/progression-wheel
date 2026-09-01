@@ -7489,12 +7489,25 @@ export default function ProgressionWheel() {
   const curTrackPreset = trackSt && TRACK_PRESETS.find(t => t.id === trackSt && t.progId === progId) || null;
   // "recreate a famous track" — sits beside structPicker() because picking one *is* picking a
   // structure (and a key, a tempo and a groove) at once; see applyTrackPreset for why it can't
-  // just call pickStruct and the narrative picker back to back
+  // just call pickStruct and the narrative picker back to back.
+  // Once a style is already picked (curTpl), the list narrows to that style's own famous tracks
+  // rather than all of them at once — ten relevant options beat scrolling past all the others.
+  // Nothing is lost with no style picked yet: every track is still there, grouped by style.
+  const stylePresets = curTpl ? TRACK_PRESETS.filter(t => t.baseTemplate === curTpl.id) : null;
   const trackPicker = () => (
     <select value={trackSt} onChange={e => applyTrackPreset(e.target.value)}
       title="Reconfigures the song — tempo, key, chords, arrangement and groove — to closely match a real record, so you can study how it's built. The melody is this app's own generated hook, steered toward the real track's character, never a copy of it.">
-      <option value="">Recreate a famous track…</option>
-      {TRACK_PRESETS.map(t => <option key={t.id} value={t.id}>{t.artist} — {t.name}</option>)}
+      <option value="">{stylePresets ? `${stylePresets.length} famous ${curTpl.name} tracks…` : "Recreate a famous track…"}</option>
+      {stylePresets
+        ? stylePresets.map(t => <option key={t.id} value={t.id}>{t.artist} — {t.name}</option>)
+        : DANCE_TEMPLATES.map(tpl => {
+            const ts = TRACK_PRESETS.filter(t => t.baseTemplate === tpl.id);
+            return ts.length ? (
+              <optgroup key={tpl.id} label={tpl.name}>
+                {ts.map(t => <option key={t.id} value={t.id}>{t.artist} — {t.name}</option>)}
+              </optgroup>
+            ) : null;
+          })}
     </select>
   );
   /* ---- the arrangement at a glance, and its editor ----
