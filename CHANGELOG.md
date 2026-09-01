@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **Fixed: picking a variation from the ✦ Vary these notes dropdown did nothing until you also
+  pressed the button.** Choosing a named edit only stored the choice; the grid stayed exactly as it
+  was until a separate tap on the button applied it, which read as the dropdown not working at all.
+  Picking an option now applies it immediately, the same tap that chose it — the button remains for
+  applying the current pick again, for another round of edits.
 - **Fixed: melody parts were quieter than their Level slider promised.** Every melody part's chain
   was built with a make-up gain (so a 100% Level part reads as loud as the drums), but every note
   the part played re-set that same gain to just its own level and velocity, silently dropping the

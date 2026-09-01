@@ -2899,11 +2899,14 @@ export default function ProgressionWheel() {
   const varyKeyOf = (key, L) => key + ":" + L;
   const melKey = bars => JSON.stringify(bars);
   const VARY_IN_MAX = 5;                                    // past this the motif stops being the motif
-  const varyRepeats = (d, L) => {
+  const varyRepeats = (d, L, pickNow) => {
     const sec = secMelos[d.key]; if (!sec) return;
     const cur = barsOf(sec, L); if (!cur) return;
     const k = varyKeyOf(d.key, L), st = varyIn[k];
-    const pick = varyPick[k] || "";                       // "" = the auto mix; else one VARIATIONS id
+    // "" = the auto mix; else one VARIATIONS id. `pickNow` lets the dropdown apply the instant it's
+    // changed, passing the value straight through rather than reading the state set alongside it —
+    // setVaryPick has not re-rendered yet at that point, so varyPick[k] would still read the old pick.
+    const pick = pickNow != null ? pickNow : (varyPick[k] || "");
     /* The stored baseline is only good while the grid still holds what we last wrote to it, and only
        while it is being varied the same way — switching the dropdown to a different edit is as much
        a change of mind as writing a new note, so it starts a fresh baseline too. Comparing rather
@@ -6116,8 +6119,8 @@ export default function ProgressionWheel() {
                           const curV = VARIATIONS.find(v => v.id === pick);
                           return (<>
                             <select className="fxsel" style={{ maxWidth:150 }} value={pick}
-                              title="Which edit ✦ Vary these notes writes into this melody's own notes. Left on the auto mix it picks from the whole catalogue of edits itself; picked to one, the button writes only that edit — same tune, small deliberate changes to the notes, never a different melody."
-                              onChange={e => setVaryPick({ ...varyPick, [vk]: e.target.value })}>
+                              title="Which edit gets written into this melody's own notes — picking one writes it immediately. Left on the auto mix, picking it again (or the ✦ button) picks from the whole catalogue itself; picked to one, every tap after writes only that edit — same tune, small deliberate changes to the notes, never a different melody."
+                              onChange={e => { const v = e.target.value; setVaryPick({ ...varyPick, [vk]: v }); varyRepeats(d, secL, v); }}>
                               <option value="">Vary these notes — auto mix</option>
                               {VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
                             </select>
