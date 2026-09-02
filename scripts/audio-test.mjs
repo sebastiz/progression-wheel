@@ -1328,6 +1328,28 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/onChange=\{e => setReshPick\(/.test(dd4)) problems.push("src: the Reshape dropdown does not just store its pick");
     if (/reshapeMel\(d, secL, v\)/.test(dd4)) problems.push("src: the Reshape dropdown applies on selection — only the button may change the grid");
   }
+  /* ⧉ copy notes to… — the mirror of ⧉ copy settings to…, added because a section varied, decorated,
+     rearranged, reshaped or shuffled had no way to push that result to its siblings: the existing
+     copy only ever carried instrument/register/level/mods, never the notes themselves. The two have
+     to stay strict mirrors of each other — copyPartNotes must reshape bars through adaptBars rather
+     than assuming every section is the same length, and it must never also carry settings, or a
+     writer copying notes to a sibling would silently overwrite whatever sound that sibling had
+     already dialled in for the part — exactly the failure mode copyPartSettings not touching notes
+     was built to avoid in the first place, in the other direction. */
+  {
+    const fn = code.slice(code.indexOf("const copyPartNotes = "), code.indexOf("const setSecInstr = "));
+    if (!fn) problems.push("src: copyPartNotes has moved — this guard no longer reads it");
+    if (!/adaptBars\(/.test(fn))
+      problems.push("src: copyPartNotes does not reshape bars through adaptBars — notes copied onto a section of a different length would not line up");
+    if (!/setMelos\(/.test(fn)) problems.push("src: copyPartNotes never writes the copied notes back");
+    // it must touch bars, and only bars — never instr/oct/vol/mute/solo/send, or it stops being the
+    // notes-only mirror of copyPartSettings and starts silently overwriting a sibling's own sound
+    if (!/\{ \.\.\.ly, bars \}/.test(fn))
+      problems.push("src: copyPartNotes writes more than just bars onto the destination layer — it should leave every setting alone");
+    if (!/copyPartNotes\(d\.key, secL,/.test(code))
+      problems.push("src: nothing in the melody grid offers to copy a part's notes to another section");
+    if (!/⧉ copy notes to…/.test(code)) problems.push("src: the copy-notes dropdown's label has moved or gone missing");
+  }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
      anyone has already made. Both the resolution and the run arithmetic live in the `moveSpan`
