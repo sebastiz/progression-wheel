@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- **🎛 Voice editor — build your own synth voice.** A new panel on the Sound tab, beside the Lead
+  picker: name it, stack up to four oscillator partials (waveform, harmonic ratio, level), shape
+  its attack/release/sustain, and give it an optional low-pass filter and vibrato. ▶ Preview plays
+  it live through the same engine a song does; ⚖ Normalise loudness renders it offline and matches
+  its level to the default synth lead — the same loudness every built-in voice is measured against
+  (`scripts/measure-loudness.mjs`), so a hand-built voice sits in the mix like any of them instead
+  of needing to be eyeballed. Saved voices appear under "My voices" in every Lead, Bass and Pad
+  picker in the app (Sound, per-section melody parts, Session), persist with the song (save,
+  share-link, undo/redo all carry them), and export into "Export for Claude" with their own name
+  rather than a raw id. This is the first genuinely user-authored instrument in the app — every
+  built-in voice up to now was hand-tuned in source; this is the same oscillator-stack model opened
+  up as a real editor.
 - **Six new synth voices, and 22 more General MIDI instruments.** The Lead menu's *Synth
   (no download)* list grows from 20 voices to 26: **Clav** (a percussive, metallic funk keys sound),
   **Moog lead** (a resonant mono lead), **Pizzicato** (short, plucked strings), **Chime** (a bright

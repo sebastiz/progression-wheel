@@ -771,6 +771,7 @@ const programOf = (key, fallback = 0) => {
   const k = gmKey(key);
   if (GM_PROGRAM[k] != null) return GM_PROGRAM[k];
   if (SYNTH_PROGRAM[key] != null) return SYNTH_PROGRAM[key];
+  if (isCustomVoice(key)) return 81;   // no GM equivalent to guess — nearest is a generic synth lead
   return fallback;
 };
 
@@ -1527,10 +1528,35 @@ const LEAD_SPECS = {
   growl:    { parts:[["sawtooth",1,1],["square",2.01,0.4],["sawtooth",3.98,0.25]],
               atk:0.01, rel:0.16, vol:0.076, sus:0.8, lp:750, q:7 },
 };
+/* ===== user-built voices (the "voice editor") =====
+   A user's own voices are saved with the song, not with the app, so they live in this plain,
+   mutable registry rather than as more LEAD_SPECS entries — the component resyncs it from the
+   song's own `voices` state (see resetCustomVoices) every time the song loads or a voice is
+   edited, the same "audio.js holds the live copy, React state is the source of truth" split the
+   FX rack and every other imperative part of the graph already uses. Ids are always "custom:…",
+   which can never collide with a GM_CATS folder key (isGM stays false for them, correctly) or a
+   future built-in LEAD_SPECS id. A record has the same shape as a LEAD_SPECS entry, plus `name`
+   for the dropdowns and export — leadNote reads only the fields it already knows about, so the
+   extra key is harmless. */
+let CUSTOM_SPECS = {};
+const isCustomVoice = id => Object.prototype.hasOwnProperty.call(CUSTOM_SPECS, id);
+// the one lookup every call site should use instead of touching LEAD_SPECS directly — a user
+// voice shadows nothing (its id can't collide) and always wins if it somehow did
+const specFor = kind => CUSTOM_SPECS[kind] || LEAD_SPECS[kind];
+const customVoiceName = id => (CUSTOM_SPECS[id] && CUSTOM_SPECS[id].name) || id;
+function setCustomVoice(id, spec) { CUSTOM_SPECS[id] = spec; }
+function deleteCustomVoice(id) { delete CUSTOM_SPECS[id]; }
+// one call, on song load or any edit: replaces the whole registry so a voice deleted from the
+// song (or a song swapped for another) can't go on sounding — same reason the sampler cache gets
+// dropped on instrument change rather than merged.
+function resetCustomVoices(list) {
+  CUSTOM_SPECS = {};
+  (list || []).forEach(v => { if (v && v.id) CUSTOM_SPECS[v.id] = v; });
+}
 // legato=true softens the attack and lets the note ring past its slot so a
 // moving line flows together instead of re-articulating on every eighth.
 function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape) {
-  const V = LEAD_SPECS[kind] || LEAD_SPECS.synth;
+  const V = specFor(kind) || LEAD_SPECS.synth;
   const hz = midiHz(midi);
   /* The part's own envelope, folded into the voice's rather than replacing it. `add` lengthens the
      attack, the three multipliers stretch or squash the stages the voice already has. That way a
@@ -1608,6 +1634,88 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
   });
 }
 
+/* ===== voice editor loudness normalisation =====
+   The same K-weighted (ITU-R BS.1770-flavoured) max-momentary measure scripts/measure-loudness.mjs
+   uses offline via Playwright to keep every built-in LEAD_SPECS voice equally audible — ported here
+   so the in-app voice editor's "Normalise" button can do the same thing to a hand-built voice, live,
+   in the browser that's already running it. The two implementations are kept in sync by hand (there
+   is no shared module between a Node CLI script and the bundled app); they compute the same number
+   from the same graph on purpose, so a custom voice normalised in-app lands at the same loudness a
+   built-in voice would if it were re-measured by the script. */
+function kWeight(x, sr) {
+  const biquad = (type, fc, dbGain, Q) => {
+    const A = Math.pow(10, dbGain / 40), w = 2 * Math.PI * fc / sr;
+    const cs = Math.cos(w), sn = Math.sin(w), al = sn / (2 * Q);
+    let b0, b1, b2, a0, a1, a2;
+    if (type === "highshelf") {
+      const sq = 2 * Math.sqrt(A) * al;
+      b0 = A * ((A + 1) + (A - 1) * cs + sq);
+      b1 = -2 * A * ((A - 1) + (A + 1) * cs);
+      b2 = A * ((A + 1) + (A - 1) * cs - sq);
+      a0 = (A + 1) - (A - 1) * cs + sq;
+      a1 = 2 * ((A - 1) - (A + 1) * cs);
+      a2 = (A + 1) - (A - 1) * cs - sq;
+    } else {
+      b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = (1 + cs) / 2;
+      a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al;
+    }
+    return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
+  };
+  const stages = [
+    biquad("highshelf", 1681.9744509742, 3.99984385397, 0.7071752369),
+    biquad("highpass", 38.13547087614, 0, 0.5003270373),
+  ];
+  let y = x;
+  for (const [b0, b1, b2, a1, a2] of stages) {
+    const z = new Float32Array(y.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < y.length; i++) {
+      const v = b0 * y[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = y[i]; y2 = y1; y1 = v; z[i] = v;
+    }
+    y = z;
+  }
+  return y;
+}
+// loudest 400ms window (100ms hop) — max-momentary rather than a whole-render mean, so a pluck
+// (all attack, no sustain) is scored by the part of it actually heard
+function maxMomentaryDb(x, sr) {
+  const y = kWeight(x, sr);
+  const W = Math.floor(sr * 0.4), H = Math.floor(sr * 0.1);
+  let best = 0;
+  for (let s = 0; s + W <= y.length; s += H) {
+    let ms = 0;
+    for (let i = s; i < s + W; i++) ms += y[i] * y[i];
+    if ((ms /= W) > best) best = ms;
+  }
+  return -0.691 + 10 * Math.log10(best + 1e-12);
+}
+// renders one voice at C4 and C5 — the registers a melody actually lives in — and averages, so a
+// low-pass sitting right on one pitch's harmonics doesn't skew the score
+async function renderLoudness(kind, sr = 44100) {
+  const dur = 1.0;
+  const render = async midi => {
+    const ctx = new OfflineAudioContext(1, Math.ceil(sr * (dur + 1.2)), sr);
+    leadNote(ctx, 0.05, midi, dur, kind, false, ctx.destination, null);
+    const buf = await ctx.startRendering();
+    return maxMomentaryDb(buf.getChannelData(0), sr);
+  };
+  return ((await render(60)) + (await render(72))) / 2;
+}
+/* Normalises a draft voice's `vol` to the default synth lead's own loudness — the same target every
+   built-in voice is matched to — so a voice built in the editor starts in the mix exactly like one
+   shipped with the app, not quietly buried or blaring over everything else the first time it's
+   picked. Registers the draft under a scratch id rather than the voice's real one, so calling this
+   mid-edit (before Save) can never be heard by anything else reading the live registry. Returns the
+   suggested `vol` value to write back into the draft, not a ratio — the caller multiplies nothing. */
+async function measureVoiceLoudness(spec) {
+  const SCRATCH = "custom:__measure__";
+  setCustomVoice(SCRATCH, { ...spec, vol: 1 });
+  const [target, raw] = await Promise.all([renderLoudness("synth"), renderLoudness(SCRATCH)]);
+  deleteCustomVoice(SCRATCH);
+  return Math.pow(10, (target - raw) / 20);
+}
+
 /* ===== the bass track =====
    Its own source rather than the chord voice's lowest note. The voices are the LEAD_SPECS synths
    played an octave below the chord voicing — no new synthesis, just the register and a per-voice
@@ -1624,9 +1732,9 @@ const PAD_VOICES = [["strings", "Strings"], ["glass", "Glass pad"], ["voice", "V
    same K-weighted loudness, so swapping the bass sound never moves the bass level. */
 const BASS_LVL = { sub: 2.9, saw: 2.7, square: 2.8, pluck: 3.5, acid: 3.4, reese: 3.0, growl: 2.7 };
 function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
-  const k = LEAD_SPECS[kind] ? kind : "sub";
+  const k = specFor(kind) ? kind : "sub";
   // C2 upward: below the chord window (VOICE_LO 55), above the kick's fundamental
   leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 3.0) * vel });
 }
 
-export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeFxMultiRack, makeFxMultiSlot, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, customVoiceName, deleteCustomVoice, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isCustomVoice, isGM, ksPluck, leadNote, makeDelay, makeFxMultiRack, makeFxMultiSlot, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, measureVoiceLoudness, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, resetCustomVoices, sampleVoicing, setCustomVoice, sfFetch, sfName, sfPrefetch, sfRawCache, specFor, strumChord, voiceChord };
