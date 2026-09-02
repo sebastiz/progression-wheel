@@ -692,9 +692,11 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
 - **Suggested melodies** (**Suggest** tab) — pick a common melody shape and a starting scale note,
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear
   melody** empties the section. The shapes cover chord-tone arpeggios (up / down / rolling, which
-  follow each bar's chord), **Chord phrases**, which gives every distinct chord its own short figure
-  instead of the same shape moved from chord to chord, scale runs, waves, neighbour tones, a repeated
-  pedal tone, call & response, question & answer (resolving to the tonic), the AA / AB / AABA motif
+  follow each bar's chord), **Chord-tone walk**, which freely varies both the notes and their
+  lengths against each bar's own chord — mostly chord tones with the odd passing note, one rhythm
+  slot here and several merged into a held tone there — rather than repeating one fixed shape, scale
+  runs, waves, neighbour tones, a repeated pedal tone, call & response, question & answer (resolving
+  to the tonic), the AA / AB / AABA motif
   forms, ascending and descending sequences, and wide leaping figures.
 
 - **⇢ Syncopate** (**Write** tab, beside ✦ Vary these notes) — anticipation as one tap: the part's
@@ -741,15 +743,15 @@ section is (verse, chorus, bridge, intro…), which pass of it this is, and wher
 running order. That's how the shapes differ from patterns: *Range expansion at the hook* keeps
 verses inside two or three notes and opens the whole octave for the chorus; *Withheld peak* spends
 the top note only in the final section; *Terraced* climbs a step per bar; *Long climb* lifts every
-section a little above the last; *Chord phrases* gives every distinct chord in the progression its
-own short figure — an arpeggio up, a leap and settle, a stepwise run — instead of one shape smeared
-across the changes, so a four-chord loop reads as four small ideas rather than one riff repeated
-four times, with the same chord always playing its own figure back wherever it recurs. The 22
+section a little above the last; *Chord-tone walk* freely varies both the notes and their lengths
+against each bar's own chord — mostly chord tones with the odd passing note, one rhythm slot here
+and several merged into a held tone there — instead of one fixed shape repeated across the changes,
+so even two bars over the same chord can land on different notes and a different rhythm. The 22
 narratives cover contour (arch, song-length arch, waves, descending lament, cascading sequence,
 leap-and-fill, speech contour), architecture (question & answer, call & response, motif development,
 terraced build, withheld peak, long climb, range expansion), texture (ostinato cell, widening
-pendulum, chant-then-release, chord-locked hook, suspension chain), and per-chord phrasing (chord
-phrases). Each shows what it does and a few songs that do it. **↻ Rewrite** re-runs it —
+pendulum, chant-then-release, chord-locked hook, suspension chain), and free chord-tone variation
+(chord-tone walk). Each shows what it does and a few songs that do it. **↻ Rewrite** re-runs it —
 after a key change, a new structure, or edits you'd rather throw away — and **↶ Undo** puts the
 melodies back as they were. It writes to layer A only, so a 2nd melody you've written stays put, and
 everything it writes is ordinary grid notes: edit any section afterwards.
