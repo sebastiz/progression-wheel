@@ -1211,6 +1211,42 @@ const VARIATIONS = [
 const DECORATE_IDS = ["passing", "add", "extend", "grace"];
 const DECORATE_VARIATIONS = VARIATIONS.filter(v => DECORATE_IDS.includes(v.id));
 
+/* The fallback for a section too solid for any of the above: every column already spoken for, note
+   after note with no gap between them — the wall-to-wall case a screenshot of "nothing here to
+   decorate" turned out to be. Kept out of DECORATE_VARIATIONS itself, whose whole promise is "never
+   touches what's written": this shortens the last column of a note at least two columns long by one,
+   then plays a neighbour-tone ornament in the column that frees up. A note's tail gets one column
+   shorter — its onset, its pitch, everything else about it stays exactly as written — which is a
+   real (if smaller) change, not the "nothing already written moves" guarantee the four gap-only
+   edits make. decorateSection below reaches for this only when none of those four found anywhere to
+   land at all, never in preference to them. */
+const SQUEEZE = { id:"squeeze", name:"Make room for an ornament",
+  tip:"Shortens a note by one column, at its tail, to fit a passing tone in — used only when the section is too packed for any of the above to find a gap.",
+  apply(bars, nd, r, pass) {
+    return overBars(bars, r, pass, (bar, ns) => {
+      const can = ns.filter(n => n.len >= 2);
+      if (!can.length) return false;
+      const n = byPass(can, r, pass), near = stepDegs(n.d, nd);
+      if (!near.length) return false;
+      const at = n.c + n.len - 1;
+      clearNote(bar, at, 1);
+      putNote(bar, at, 1, near[(pass - 1) % near.length]);
+      return true;
+    });
+  } };
+
+/* ✦ Decorate's actual entry point: try the gap-only edits first, and only fall back to shortening a
+   note's tail (SQUEEZE) when every one of them found nowhere at all to land — `varyWhole`'s own
+   `varied` count says which happened. `squeezed` on the result tells the caller which promise this
+   particular press is keeping, so the UI can report it honestly rather than always claiming the
+   stronger one. */
+const decorateSection = (bars, { id, nd = 7, seed = 0, level = 1 } = {}) => {
+  const first = varyWhole(bars, { id, nd, seed, level, pool: DECORATE_VARIATIONS });
+  if (first.varied || !level) return { ...first, squeezed: false };
+  const fallback = varyWhole(bars, { id: "squeeze", nd, seed: seed + 90071, level, pool: [SQUEEZE] });
+  return { ...fallback, squeezed: !!fallback.varied };
+};
+
 /* The other subset: edits that only ever move an existing note's timing or trade pitches between two
    existing notes — the melody's own multiset of pitches, rearranged, never a pitch it didn't already
    have and never a note lost. Push a note early and Arrive late move a note by one column into
@@ -1773,4 +1809,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, decorateSection, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };

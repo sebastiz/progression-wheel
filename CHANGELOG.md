@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **🎨 Decorate no longer gives up on a section packed too solid to have any silence left.** It only
+  ever adds into empty columns — a real guarantee, and worth keeping — but a melody with a note in
+  every single column (no gaps between any of them) has nowhere for that to land, and reported
+  "nothing here to decorate" with no way forward. It now falls back, only in that case, to shortening
+  one note's tail by a column and playing a neighbour-tone ornament in the column that frees up —
+  the note keeps its onset and its pitch, just one column less of it. A section with any real gap
+  still only ever gets added to; the fallback never fires unless the gap-only pass truly found
+  nothing at all.
 - **🎼 Reshape — named melodic-development techniques, applied to the whole section.** Everything
   else in the melody workbench nudges individual notes; this reshapes the phrase itself, the way a
   composer actually names the move: **Invert** flips the contour upside-down around the middle of the

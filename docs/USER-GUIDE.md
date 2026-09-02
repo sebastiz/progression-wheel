@@ -628,14 +628,19 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   directly).
 
 - **🎨 Decorate** (**Write** tab, beside ✦ Vary these notes) — the narrower promise: nothing you've
-  already written is ever moved, retuned, shortened or removed, only added to. It only ever writes
-  into silence that's already in the grid: **Add a passing note** fills a gap between two notes with
-  the step between their pitches, **Add a grace note** leans a quick note into the one right after it,
-  **Add an extra note** drops a note into any free space next to an existing one, **Let a note ring
-  on** holds a note into the silence right after it. Same pattern as Vary these notes — a dropdown to
-  pick **"auto mix"** or one named ornament (only sets it up), the button to write it, **↺** or one
-  tap past the top to undo — with its own baseline, so decorating a section and varying it never
-  compete for the same undo.
+  already written is ever retuned or removed, and it mostly only adds to it. It writes into silence
+  that's already in the grid where there is any: **Add a passing note** fills a gap between two notes
+  with the step between their pitches, **Add a grace note** leans a quick note into the one right
+  after it, **Add an extra note** drops a note into any free space next to an existing one, **Let a
+  note ring on** holds a note into the silence right after it. If the section is packed too solid for
+  any of that — a note in every single column, no gaps anywhere — it falls back to shortening one
+  note's tail by a column and playing a neighbour tone in the space that frees up, rather than doing
+  nothing; the note it shortens keeps its own pitch and where it starts, just one column less of it.
+  That fallback only ever fires when the section truly has no room at all — anywhere there's a real
+  gap, Decorate still only adds. Same pattern as Vary these notes — a dropdown to pick **"auto mix"**
+  or one named ornament (only sets it up), the button to write it, **↺** or one tap past the top to
+  undo — with its own baseline, so decorating a section and varying it never compete for the same
+  undo.
 
 - **🔀 Rearrange** (**Write** tab, beside 🎨 Decorate) — a third promise, in between: notes may move,
   but never into a pitch the melody didn't already have, and none of them disappear. **Push a note

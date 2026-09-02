@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, decorateSection, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -2979,7 +2979,10 @@ export default function ProgressionWheel() {
      held note gets cut short. Sometimes what's wanted is narrower than that: keep the tune exactly as
      written and only add ornaments around it. This always works on the whole section directly (no
      repeat-hunting — a fill or a passing tone belongs anywhere silent, first bar included) via
-     varyWhole restricted to DECORATE_VARIATIONS, so whatever it picks is guaranteed additive-only. */
+     decorateSection restricted to DECORATE_VARIATIONS, so whatever it picks is guaranteed additive-
+     only — except on a section packed too solid for that to find any silence at all (every column
+     already a note, wall to wall), where decorateSection falls back to shortening one note's tail by
+     a column to fit an ornament in rather than reporting a dead end. */
   const decorateNotes = (d, L, pickNow) => {
     const sec = secMelos[d.key]; if (!sec) return;
     const cur = barsOf(sec, L); if (!cur) return;
@@ -2990,7 +2993,7 @@ export default function ProgressionWheel() {
     const level = (fresh ? 0 : st.level) + 1;
     // offset from varyRepeats' seed so the two controls don't land on the same choices by coincidence
     const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17 + 90001;
-    const out = varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level, pool: DECORATE_VARIATIONS });
+    const out = decorateSection(base, { id: pick || undefined, nd: scaleSemis.length, seed, level });
     if (!out.varied) {
       setDecIn({ ...decIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing here to decorate" } });
       return;
@@ -2999,7 +3002,9 @@ export default function ProgressionWheel() {
     const bars = back ? dupBars(base) : out.bars;
     putLayer(d.key, L, bars);
     setDecIn({ ...decIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick,
-      note: back ? "back to the melody you wrote" : `${out.varied} note${out.varied === 1 ? "" : "s"} added` } });
+      note: back ? "back to the melody you wrote"
+        : out.squeezed ? `packed solid — shortened a note to fit ${out.varied === 1 ? "one in" : out.varied + " in"}`
+        : `${out.varied} note${out.varied === 1 ? "" : "s"} added` } });
   };
   const resetDecIn = (d, L) => {
     const k = varyKeyOf(d.key, L), st = decIn[k];
@@ -6305,8 +6310,11 @@ export default function ProgressionWheel() {
                         })()}
                         {/* ✦ Decorate — the narrower promise: never moves, retunes or removes a note
                             that's already written, only adds around it (a passing tone, a grace note,
-                            a note held into the silence after it). Its own dropdown and baseline, kept
-                            apart from ✦ Vary these notes so the two never fight over the same undo. */}
+                            a note held into the silence after it) — unless the section is packed too
+                            solid for any of that to find room, in which case decorateSection falls
+                            back to shortening one note's tail by a column rather than doing nothing.
+                            Its own dropdown and baseline, kept apart from ✦ Vary these notes so the
+                            two never fight over the same undo. */}
                         {tab === "write" && (() => {
                           const dk = varyKeyOf(d.key, secL);
                           const dst = decIn[dk];
@@ -6316,14 +6324,15 @@ export default function ProgressionWheel() {
                           return (
                             <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
                             <select className="fxsel" style={{ maxWidth:150 }} value={pick}
-                              title="Which ornament 🎨 Decorate adds next — choosing one only sets it up; press the button to add it. Every note you've already written stays exactly where it is, at the pitch and length you gave it; this only ever adds around it — a passing tone, an extra note, a grace note, a note held into the silence after it."
+                              title="Which ornament 🎨 Decorate adds next — choosing one only sets it up; press the button to add it. Every note you've already written keeps its pitch and its place; this mostly adds around it — a passing tone, an extra note, a grace note, a note held into the silence after it — and only shortens a note's tail by a column, as a last resort, when the section is packed too solid for any of those to fit."
                               onChange={e => setDecPick({ ...decPick, [dk]: e.target.value })}>
                               <option value="">Decorate — auto mix</option>
                               {DECORATE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
                             </select>
                             <button className={"mini" + (lv ? " on" : "")} onClick={() => decorateNotes(d, secL)}
                               title={(curD ? curD.tip : "Add ornaments on top of this melody — a passing tone, an extra note, a grace note, "
-                                + "a note held into the silence after it. Every note you wrote stays exactly where it is; this only adds.")
+                                + "a note held into the silence after it. Every note you wrote keeps its pitch and its place; this mostly "
+                                + "adds, and only shortens a note's tail by a column, as a last resort, when there's no room for that.")
                                 + " Tap again for more; one past the top puts the melody back as you wrote it."}>
                               🎨 {curD ? curD.name : "Decorate"}{lv ? " ×" + lv : ""}</button>
                             {lv > 0 && <button className="mini" onClick={() => resetDecIn(d, secL)}
