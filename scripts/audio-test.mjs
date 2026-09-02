@@ -1287,6 +1287,21 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/onChange=/.test(dd2) || !/setDecPick\(/.test(dd2) || !/decorateNotes\(d, secL, v\)/.test(dd2))
       problems.push("src: the Decorate dropdown stores the pick without applying it");
   }
+  /* 🔀 Rearrange has to keep its own promise the same way: only ever through varyWhole restricted to
+     REARRANGE_VARIATIONS, never the full catalogue — otherwise "no new pitch, no lost note" stops
+     being true the moment it reaches an edit outside that pool. */
+  {
+    const fn = code.slice(code.indexOf("const rearrangeNotes = "), code.indexOf("const resetRerIn = "));
+    if (!fn) problems.push("src: rearrangeNotes has moved — this guard no longer reads it");
+    if (!/pool:\s*REARRANGE_VARIATIONS/.test(fn))
+      problems.push("src: rearrangeNotes does not restrict varyWhole to REARRANGE_VARIATIONS — it could land a pitch-inventing edit under Rearrange's name");
+    if (!/putLayer\(/.test(fn)) problems.push("src: rearrangeNotes never writes the rearranged melody back");
+    if (!/rearrangeNotes\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to rearrange a section");
+    const dd3 = code.slice(code.indexOf("Rearrange — auto mix") - 400, code.indexOf("Rearrange — auto mix"));
+    if (!/onChange=/.test(dd3) || !/setRerPick\(/.test(dd3) || !/rearrangeNotes\(d, secL, v\)/.test(dd3))
+      problems.push("src: the Rearrange dropdown stores the pick without applying it");
+  }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
      anyone has already made. Both the resolution and the run arithmetic live in the `moveSpan`
@@ -2696,6 +2711,54 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const destructive = M.varyWhole(dup(fixtures[0]), { id: "merge", nd: ND, seed: 5, level: 2, pool: M.DECORATE_VARIATIONS });
   if (destructive.varied) problems.push("Decorate ran a non-additive id (merge) under its own pool");
   console.log(`decorate: ${M.DECORATE_VARIATIONS.length} additive-only edits, ${checks} checks, 0 touched an already-written note`);
+}
+
+/* ---- 🔀 Rearrange: move-only variation ----
+   A third, different promise from Decorate's: not "nothing already written moves" but "nothing
+   becomes a pitch the melody didn't already have, and no note is lost" — every edit in
+   REARRANGE_VARIATIONS either slides a note into empty space (Push a note early, Arrive late) or
+   trades two existing notes' pitches (Swap two notes), so the *set* of onsets and the *multiset* of
+   degrees played survive exactly, however the individual notes get reshuffled. Checked directly
+   rather than assumed, the same way Decorate's additive-only guarantee is. */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  // every onset's degree, in the order it's found — length is note count, sorted copy is the
+  // multiset comparison, so both "nothing lost" and "no new pitch" are one check each
+  const onsetDegs = bars => {
+    const out = [];
+    bars.forEach(bar => { for (let c = 0; c < bar.length; c++) {
+      if ((bar[c - 1] || [])[0] === (bar[c] || [])[0] && (bar[c] || []).length) continue;   // mid-note, not an onset
+      if ((bar[c] || []).length) out.push(bar[c][0]);
+    } });
+    return out;
+  };
+  const sameMultiset = (a, b) => a.length === b.length && JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  const fixtures = [
+    [[[0], [1], [], [3], [], [], [], [4]], [[5], [], [3], [], [], [1], [], [2]]],
+    [[[2], [], [4], [5], [], [], [1], []], [[0], [3], [], [], [6], [], [], [2]]],
+    [[[1], [2], [3], [], [5], [], [0], []], [[4], [], [], [6], [], [1], [], []]],
+  ];
+  let everFired = 0, checks = 0;
+  for (const fixture of fixtures) {
+    const before = onsetDegs(fixture);
+    for (const id of [undefined, ...M.REARRANGE_VARIATIONS.map(v => v.id)]) {
+      for (const level of [1, 2, 3]) {
+        checks++;
+        const res = M.varyWhole(dup(fixture), { id, nd: ND, seed: 11, level, pool: M.REARRANGE_VARIATIONS });
+        if (!sameMultiset(before, onsetDegs(res.bars)))
+          problems.push(`Rearrange(${id || "auto mix"}, level ${level}) changed which pitches or how many notes the melody has`);
+        if (res.varied > 0) everFired++;
+      }
+    }
+  }
+  if (everFired < fixtures.length * (M.REARRANGE_VARIATIONS.length + 1) * 0.6)
+    problems.push("Rearrange rarely fires across its own fixtures — the move-only set may be too narrow to be useful");
+  // a destructive id (one that can invent a pitch, like Different ending) must not run under
+  // Rearrange's pool, same guard as Decorate's
+  const destructive = M.varyWhole(dup(fixtures[0]), { id: "ending", nd: ND, seed: 11, level: 2, pool: M.REARRANGE_VARIATIONS });
+  if (destructive.varied) problems.push("Rearrange ran a non-move id (ending) under its own pool");
+  console.log(`rearrange: ${M.REARRANGE_VARIATIONS.length} move-only edits, ${checks} checks, note count and pitch multiset always preserved`);
 }
 
 /* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----

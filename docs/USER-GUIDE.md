@@ -636,6 +636,14 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   **↺** or one tap past the top to undo — with its own baseline, so decorating a section and varying
   it never compete for the same undo.
 
+- **🔀 Rearrange** (**Write** tab, beside 🎨 Decorate) — a third promise, in between: notes may move,
+  but never into a pitch the melody didn't already have, and none of them disappear. **Push a note
+  early** / **Arrive late** slide a note into the silence right beside it, same pitch, same length;
+  **Swap two notes** trades the pitches of two neighbouring notes, each keeping its own place — the
+  same notes you wrote, reshuffled rather than replaced. Same pattern again: a dropdown for
+  **"auto mix"** or one named move, applied the moment you pick it, **↺** or one tap past the top to
+  undo, its own baseline independent of Vary these notes and Decorate.
+
 - **Suggested melodies** (**Suggest** tab) — pick a common melody shape and a starting scale note,
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear
   melody** empties the section. The 16 shapes cover chord-tone arpeggios (up / down / rolling, which

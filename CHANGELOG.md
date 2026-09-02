@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **🔀 Rearrange — move a melody's own notes around without inventing a new one.** A third promise,
+  between ✦ Vary these notes (edits a note) and 🎨 Decorate (only adds): every note here may slide
+  earlier or later into silence, or trade places with its neighbour, but none of them may become a
+  pitch the melody didn't already have, and none may be lost — the same notes, reshuffled. Same
+  dropdown-picks-a-specific-edit pattern as the other two, its own baseline and undo, right beside
+  them in the melody workbench.
 - **🎨 Decorate — add ornaments to a melody without ever touching what's already written.** ✦ Vary
   these notes edits notes in place (a different landing note, a note cut short); sometimes what's
   wanted is narrower than that — keep the tune exactly as it is and only add to it. Decorate does

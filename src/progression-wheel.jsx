@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -736,6 +736,12 @@ export default function ProgressionWheel() {
      varying it are independent — pressing one never resets or overwrites the other's progress. */
   const [decIn, setDecIn] = useState({});
   const [decPick, setDecPick] = useState({});
+  /* 🔀 Rearrange — the third sibling, restricted to REARRANGE_VARIATIONS: every note may move in
+     time or trade places with another, but no note's pitch may become one the melody didn't already
+     have, and none may be lost. Same baseline/pick/state shape as decIn/decPick, independent of both
+     it and varyIn so all three controls keep their own undo. */
+  const [rerIn, setRerIn] = useState({});
+  const [rerPick, setRerPick] = useState({});
   /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
      early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
   const [syncIn, setSyncIn] = useState({});
@@ -2990,6 +2996,39 @@ export default function ProgressionWheel() {
     if (!st || !st.level) return;
     putLayer(d.key, L, dupBars(st.base));
     const next = { ...decIn }; delete next[k]; setDecIn(next);
+  };
+
+  /* ---- rearrange: move the written notes around without inventing a new one ----
+     The third promise, between ✦ Vary these notes (edits a note) and ✦ Decorate (only adds): every
+     note here may slide earlier or later, or trade places with its neighbour, but nothing turns into
+     a pitch the melody didn't already have and nothing disappears — the same notes, reshuffled. Also
+     always whole-section (no repeat-hunting), via varyWhole restricted to REARRANGE_VARIATIONS. */
+  const rearrangeNotes = (d, L, pickNow) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = rerIn[k];
+    const pick = pickNow != null ? pickNow : (rerPick[k] || "");
+    const fresh = !st || melKey(cur) !== st.grid || st.pick !== pick;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    // offset again, so Vary, Decorate and Rearrange never land on the same choices by coincidence
+    const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17 + 180002;
+    const out = varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level, pool: REARRANGE_VARIATIONS });
+    if (!out.varied) {
+      setRerIn({ ...rerIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing here to rearrange" } });
+      return;
+    }
+    const back = level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : out.bars;
+    putLayer(d.key, L, bars);
+    setRerIn({ ...rerIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick,
+      note: back ? "back to the melody you wrote" : `${out.varied} note${out.varied === 1 ? "" : "s"} moved` } });
+  };
+  const resetRerIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = rerIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...rerIn }; delete next[k]; setRerIn(next);
   };
 
   /* ---- syncopate: anticipation as a one-tap edit ----
@@ -6203,6 +6242,33 @@ export default function ProgressionWheel() {
                             {lv > 0 && <button className="mini" onClick={() => resetDecIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {dst && dst.note && <span className="rlbl" style={{ opacity:.75 }}>{dst.note}</span>}
+                          </>);
+                        })()}
+                        {/* 🔀 Rearrange — the third promise: notes may move, but never into a pitch the
+                            melody didn't already have, and none may be lost. Its own dropdown and
+                            baseline, independent of both ✦ Vary these notes and ✦ Decorate. */}
+                        {tab === "write" && (() => {
+                          const rk = varyKeyOf(d.key, secL);
+                          const rst = rerIn[rk];
+                          const lv = (rst && rst.level) || 0;
+                          const pick = rerPick[rk] || "";
+                          const curR = REARRANGE_VARIATIONS.find(v => v.id === pick);
+                          return (<>
+                            <select className="fxsel" style={{ maxWidth:150 }} value={pick}
+                              title="Which move gets made on this melody's own notes — picking one applies it immediately. A note may slide earlier or later, or trade places with its neighbour, but never becomes a pitch the melody didn't already have, and none of them disappear — the same notes, reshuffled."
+                              onChange={e => { const v = e.target.value; setRerPick({ ...rerPick, [rk]: v }); rearrangeNotes(d, secL, v); }}>
+                              <option value="">Rearrange — auto mix</option>
+                              {REARRANGE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+                            </select>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => rearrangeNotes(d, secL)}
+                              title={(curR ? curR.tip : "Move this melody's own notes around — a note pushed earlier or later, two "
+                                + "notes trading places. Never a pitch the melody didn't already have, and never a lost note; "
+                                + "the same notes, reshuffled.")
+                                + " Tap again for more; one past the top puts the melody back as you wrote it."}>
+                              🔀 {curR ? curR.name : "Rearrange"}{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetRerIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {rst && rst.note && <span className="rlbl" style={{ opacity:.75 }}>{rst.note}</span>}
                           </>);
                         })()}
                         {tab === "write" && (() => {
