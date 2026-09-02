@@ -9,9 +9,12 @@
   counts to ×8 (was ×5), and later restatements inside a repeated motif drift further from each
   other. Alongside it, a new **Chord-tone walk** option (in both **Suggested melodies** and
   **Melodic narrative**) freely varies the actual notes and note lengths against each bar's own
-  chord — a fresh, chord-weighted pitch or a held-over note at every rhythm slot — instead of one
-  fixed shape repeated across the changes, so even two bars over the identical chord can come out
-  with different notes and a different rhythm.
+  chord — a fresh, chord-weighted pitch or a held-over note at every column of the grid, so a run
+  spans anywhere from a sixteenth note up to a whole bar — instead of one fixed shape repeated
+  across the changes, so even two bars over the identical chord can come out with different notes
+  and a different rhythm. It deliberately ignores the Rhythm cell / role rhythm feel every other
+  shape follows, since picking its own note lengths at the finest grid available is the whole point
+  — a fixed cell of even slots could never produce a genuine sixteenth note no matter how it varied.
 - **🎛 Voice editor — build your own synth voice.** A new panel on the Sound tab, beside the Lead
   picker: name it, stack up to four oscillator partials (waveform, harmonic ratio, level), shape
   its attack/release/sustain, and give it an optional low-pass filter and vibrato. ▶ Preview plays

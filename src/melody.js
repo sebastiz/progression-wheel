@@ -522,44 +522,49 @@ const counterGen = place => function (u) {
    Everything else in this file lays one note per rhythm slot, so however much a shape or a narrative
    varies from bar to bar, every note it writes lasts exactly as long as the gap to the next slot —
    there is no independent choice of duration, and the pitch at every slot comes from one fixed shape
-   or figure, not a fresh choice. This walks the candidate onset slots a rhythm cell (or a role's own
-   feel) already lays out, and at each one either starts a fresh note — a pitch freshly drawn from
-   the chord, mostly a chord tone with the odd passing note mixed in — or lets the note before it
-   ring on through, which is what turns a grid of same-length slots into notes of genuinely varied
-   length: one slot here, three or four merged into a held tone there. Both choices are random, seeded
-   only by the bar and the pass, so the same bar plays back the same way every time the song is
-   opened — but two bars over the exact same chord can still land on completely different notes and
-   a completely different rhythm, because nothing here ties them together on purpose. */
+   or figure, not a fresh choice. This walks every single column of the bar — the finest grid the
+   song actually has, a sixteenth note on a sixteenth grid — and at each one either starts a fresh
+   note (a pitch freshly drawn from the chord, mostly a chord tone with the odd passing note mixed
+   in) or lets the note before it ring on through. That is what gives it real range: two consecutive
+   columns that both stay fresh is a run of short notes, a long run of holds is a half note or a
+   whole bar, and the same walk can do both across the same four bars. Deliberately the one pattern
+   here that ignores the Rhythm cell menu — it is not choosing where beats fall, it is choosing how
+   long each note lasts, which a fixed cell of evenly-spaced slots can never offer no matter how it
+   is varied. Both choices are random, seeded only by the bar and the pass, so the same bar plays
+   back the same way every time the song is opened — but two bars over the exact same chord can
+   still land on completely different notes and a completely different rhythm, because nothing here
+   ties them together on purpose. */
 // the pitch pool for a chord, as scale-degree offsets from its root: root/3rd/5th/7th weighted in
 // by repetition so they land far more often than the passing and neighbour tones mixed in beside them
 const CHORD_TONE_POOL = [0, 0, 0, 2, 2, 2, 4, 4, 4, 6, 6, 1, 3, 5, -1];
 // `cd` comes in as whatever the caller's chord tracking hands over — null (chromatic) included — so
 // anything that isn't actually a usable degree falls back to 0 rather than poisoning the arithmetic
 const chordDeg = cd => Number.isFinite(cd) ? cd : 0;
-// how often a slot lets the previous note ring on instead of starting a fresh one — high enough that
-// notes routinely span several slots, so the walk reads as long-and-short phrasing, not a note fired
-// into every single slot the rhythm cell offers
-const CHORD_WALK_HOLD = 0.65;
-// `slots` is the bar's candidate onsets as {c, len} pairs — already placed by whichever rhythm cell
-// or role is in use, so this never writes an onset the caller didn't offer a slot for
-const chordToneWalk = (B, slots, cd, seed) => {
+// how often a column lets the previous note ring on instead of starting a fresh one. Low enough
+// that most runs are short — a sixteenth or an eighth — with a real tail out to a half note or
+// longer, rather than a coin so biased toward holding that a four-slot bar routinely merges into
+// one note spanning the whole thing.
+const CHORD_WALK_HOLD = 0.5;
+// walks every column of a B-column bar — the finest grid there is, which is what lets the result
+// range all the way down to a single sixteenth; a rhythm cell's own slots are already too coarse
+// to ever produce one
+const chordToneWalk = (B, cd, seed) => {
   const bar = Array.from({ length: B }, () => []);
   const root = chordDeg(cd);
   let cur = null;
-  slots.forEach((s, i) => {
-    if (i === 0 || hash01(seed + i * 331) >= CHORD_WALK_HOLD)
-      cur = wrap7(root + CHORD_TONE_POOL[Math.floor(hash01(seed + i * 331 + 1) * CHORD_TONE_POOL.length)]);
-    for (let k = 0; k < s.len && s.c + k < B; k++) bar[s.c + k] = [cur];
-  });
+  for (let c = 0; c < B; c++) {
+    if (c === 0 || hash01(seed + c * 331) >= CHORD_WALK_HOLD)
+      cur = wrap7(root + CHORD_TONE_POOL[Math.floor(hash01(seed + c * 331 + 1) * CHORD_TONE_POOL.length)]);
+    bar[c] = [cur];
+  }
   return bar;
 };
 
 const MELODY_PATTERNS = [
   { id:"chordPhrases", name:"Chord-tone walk (varied notes & rhythm)",
-    desc:"Freely varied notes and note lengths against each bar's own chord — mostly chord tones with the odd passing note, one slot here and several merged into a held tone there — instead of one fixed shape repeated. Every bar gets its own random walk, even two bars over the same chord.",
-    gen(u){ const slots = u.cols.map((c, i) => ({ c, len: (u.lens && u.lens[i]) || 1 }));
-      return Array.from({ length:u.nBars }, (_, b) =>
-        chordToneWalk(u.B, slots, u.chordDegs[b], u.start * 131 + b * 977)); } },
+    desc:"Freely varied notes and note lengths against each bar's own chord — mostly chord tones with the odd passing note, a run of short notes here and several columns merged into a held tone there — from a sixteenth up to a whole bar, instead of one fixed shape repeated. Ignores the Rhythm cell above: it picks its own note lengths rather than filling in a fixed grid of them. Every bar gets its own random walk, even two bars over the same chord.",
+    gen(u){ return Array.from({ length:u.nBars }, (_, b) =>
+        chordToneWalk(u.B, u.chordDegs[b], u.start * 131 + b * 977)); } },
   { id:"arpUp", name:"Arpeggio ↑ (chord tones)",
     desc:"Climbs each bar's chord — root, 3rd, 5th, 7th — one note per beat. Follows the chords; the start note fills in over any out-of-key chord.",
     gen(u){ const Q = u.cols;
@@ -1705,12 +1710,10 @@ const isHook = role => "CDR".includes(role);   // the sections that are meant to
 
 const NARRATIVES = [
  { id:"chordPhrases", name:"Chord-tone walk (varied notes & rhythm)",
-   tip:"Freely varied notes and note lengths against each bar's own chord — mostly chord tones with the odd passing note, one slot here and several merged into a held tone there — instead of one fixed shape repeated across the changes. Every bar gets its own random walk, so even two bars over the same chord can land on different notes and a different rhythm.",
+   tip:"Freely varied notes and note lengths against each bar's own chord — mostly chord tones with the odd passing note, a run of short notes here and several columns merged into a held tone there — from a sixteenth up to a whole bar, instead of one fixed shape repeated across the changes. Ignores the role's usual rhythm feel: it picks its own note lengths rather than filling in a fixed grid of them. Every bar gets its own random walk, so even two bars over the same chord can land on different notes and a different rhythm.",
    refs:"The way a real player noodles round the changes rather than repeating a lick",
    gen(u){ const seed = u.role.charCodeAt(0) * 131 + u.pass * 977;
-     return Array.from({ length: u.nBars }, (_, b) => {
-       const slots = (u.spots && u.spots.length) ? u.spots : [{ c: 0, len: u.B }];
-       return chordToneWalk(u.B, slots, u.chordDegs[b], seed + b * 733); }); } },
+     return Array.from({ length: u.nBars }, (_, b) => chordToneWalk(u.B, u.chordDegs[b], seed + b * 733)); } },
 
  { id:"arch", name:"Arch — rise and fall",
    tip:"Every section is one arch: the line climbs to a peak halfway through and settles back down where it started. The oldest singable shape there is — it breathes like a spoken sentence, and it's why a ballad verse feels complete without a chorus.",
