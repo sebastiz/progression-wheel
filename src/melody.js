@@ -178,6 +178,8 @@ const MOD_GROUPS = [
         tip:"How long the filter takes to fall back. Short is a click of brightness, long is a sweep on every note." },
       { k:"drive", name:"Drive", kind:"amt", dflt:0, max:100, unit:"%",
         tip:"Overdrive this part. Gentle amounts thicken it; hard amounts are the point of a reese bass." },
+      { k:"uni", name:"Unison", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Stack extra detuned copies of every note underneath itself — the churning stack a supersaw is built from, applied to any instrument. Off is the voice exactly as it was; all the way up is four voices spread wide. Levels are balanced so turning it on thickens the sound rather than just making it louder." },
     ] },
   /* The amplifier stage. These four shape the level of a single note over its life, which is most of
      what tells the ear *what instrument this is* — strip the first thirty milliseconds off a piano

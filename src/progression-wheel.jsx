@@ -4512,12 +4512,14 @@ export default function ProgressionWheel() {
              exactly the voice it always did. */
           const shapeOf = ly => {
             const a = modOf(ly, "atk"), d = modOf(ly, "dec"), s = modOf(ly, "sus"), r = modOf(ly, "rel");
-            if (!a && !d && !s && !r) return NO_SHAPE;      // the common case, and a shared object
+            const u = modOf(ly, "uni");
+            if (!a && !d && !s && !r && !u) return NO_SHAPE;  // the common case, and a shared object
             return {
               // squared, so the first third of the slider covers the range where small changes are
               // audible and the top end reaches a genuine swell
               atk: Math.pow(a / 100, 2) * 1.2,
               dec: Math.pow(2, d / 50), sus: Math.pow(2, s / 70), rel: Math.pow(2, r / 33),
+              uni: u / 100,
             };
           };
           /* The note effects: the arpeggiator's siblings. Each rewrites the note events before any
