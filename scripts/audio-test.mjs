@@ -1265,12 +1265,14 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // the picked edit is the same dead end, and reads as "the dropdown does nothing" to whoever hits it
     if (!/const whole = !res\.varied/.test(fn))
       problems.push("src: varyRepeats falls back on !res.repeats rather than !res.varied — a picked edit with nowhere to land inside an actual repeat would still silently do nothing");
-    /* Picking a variation from the dropdown has to change the grid right there — a select that only
-       stores the choice and waits for a separate button press reads, to someone who just picked an
-       option and is watching the grid, as "this dropdown doesn't do anything". */
+    /* The button is the one and only thing that changes the grid. An onChange that also calls
+       varyRepeats gives two separate places that can each rewrite the melody — a dropdown "silently
+       apply on select" and a button "apply on click" — which is confusing in exactly the way this was
+       tried and reverted: a section with three of these controls stacked, each with its own dual
+       trigger, reads as a wall of buttons that might fire at any moment, not a predictable tool. */
     const dd = code.slice(code.indexOf("Vary these notes — auto mix") - 400, code.indexOf("Vary these notes — auto mix"));
-    if (!/onChange=/.test(dd) || !/setVaryPick\(/.test(dd) || !/varyRepeats\(d, secL, v\)/.test(dd))
-      problems.push("src: the Vary-these-notes dropdown stores the pick without applying it — selecting an option would visibly do nothing until a separate button press");
+    if (!/onChange=\{e => setVaryPick\(/.test(dd)) problems.push("src: the Vary-these-notes dropdown does not just store its pick");
+    if (/varyRepeats\(d, secL, v\)/.test(dd)) problems.push("src: the Vary-these-notes dropdown applies on selection — only the button may change the grid");
   }
   /* ✦ Decorate has to keep the promise its own name makes: it must only ever call into varyWhole
      restricted to DECORATE_VARIATIONS, never the full VARIATIONS catalogue — the moment it can reach
@@ -1283,9 +1285,10 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/putLayer\(/.test(fn)) problems.push("src: decorateNotes never writes the decorated melody back");
     if (!/decorateNotes\(d, secL\)/.test(code))
       problems.push("src: nothing in the melody grid offers to decorate a section");
+    // same single-trigger rule as Vary these notes: the dropdown only ever stores its pick
     const dd2 = code.slice(code.indexOf("Decorate — auto mix") - 400, code.indexOf("Decorate — auto mix"));
-    if (!/onChange=/.test(dd2) || !/setDecPick\(/.test(dd2) || !/decorateNotes\(d, secL, v\)/.test(dd2))
-      problems.push("src: the Decorate dropdown stores the pick without applying it");
+    if (!/onChange=\{e => setDecPick\(/.test(dd2)) problems.push("src: the Decorate dropdown does not just store its pick");
+    if (/decorateNotes\(d, secL, v\)/.test(dd2)) problems.push("src: the Decorate dropdown applies on selection — only the button may change the grid");
   }
   /* 🔀 Rearrange has to keep its own promise the same way: only ever through varyWhole restricted to
      REARRANGE_VARIATIONS, never the full catalogue — otherwise "no new pitch, no lost note" stops
@@ -1298,9 +1301,18 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/putLayer\(/.test(fn)) problems.push("src: rearrangeNotes never writes the rearranged melody back");
     if (!/rearrangeNotes\(d, secL\)/.test(code))
       problems.push("src: nothing in the melody grid offers to rearrange a section");
+    // same single-trigger rule again: the dropdown only ever stores its pick
     const dd3 = code.slice(code.indexOf("Rearrange — auto mix") - 400, code.indexOf("Rearrange — auto mix"));
-    if (!/onChange=/.test(dd3) || !/setRerPick\(/.test(dd3) || !/rearrangeNotes\(d, secL, v\)/.test(dd3))
-      problems.push("src: the Rearrange dropdown stores the pick without applying it");
+    if (!/onChange=\{e => setRerPick\(/.test(dd3)) problems.push("src: the Rearrange dropdown does not just store its pick");
+    if (/rearrangeNotes\(d, secL, v\)/.test(dd3)) problems.push("src: the Rearrange dropdown applies on selection — only the button may change the grid");
+  }
+  /* 🎲 Shuffle pitches has no dropdown to guard, only the button — reachability is the check. */
+  {
+    const fn = code.slice(code.indexOf("const shuffleMel = "), code.indexOf("const resetShufIn = "));
+    if (!fn) problems.push("src: shuffleMel has moved — this guard no longer reads it");
+    if (!/putLayer\(/.test(fn)) problems.push("src: shuffleMel never writes the shuffled melody back");
+    if (!/shuffleMel\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to shuffle a section's pitches");
   }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
@@ -2759,6 +2771,54 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const destructive = M.varyWhole(dup(fixtures[0]), { id: "ending", nd: ND, seed: 11, level: 2, pool: M.REARRANGE_VARIATIONS });
   if (destructive.varied) problems.push("Rearrange ran a non-move id (ending) under its own pool");
   console.log(`rearrange: ${M.REARRANGE_VARIATIONS.length} move-only edits, ${checks} checks, note count and pitch multiset always preserved`);
+}
+
+/* ---- 🎲 shufflePitches: random, but never a dead end ----
+   The one control with no dropdown and no targeted logic — every other engine in this file finds a
+   specific spot for a specific edit; this just throws darts. Its own two promises are narrower but
+   still real: it never touches a section with nothing in it, and — the thing that motivated building
+   it a count rather than a per-note coin toss — it is never a no-op on a section that plainly has
+   notes to move, however few, at the lowest level. */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const noteCount = bars => bars.reduce((a, bar) => a + M.barNotes(bar).length, 0);
+  // deterministic
+  const bars = [[[0], [1], [], [3], [], [], [], [4]], [[5], [], [3], [], [], [1], [], [2]]];
+  const a = M.shufflePitches(dup(bars), { nd: ND, seed: 17, level: 3 });
+  const b = M.shufflePitches(dup(bars), { nd: ND, seed: 17, level: 3 });
+  if (JSON.stringify(a.bars) !== JSON.stringify(b.bars)) problems.push("shufflePitches is not deterministic");
+  // never touches an empty grid, and level 0 is the control's off position
+  if (M.shufflePitches(M.blankBars(4, 8), { nd: ND, seed: 1, level: 5 }).varied)
+    problems.push("shufflePitches found something to move in an empty grid");
+  if (M.shufflePitches(dup(bars), { nd: ND, seed: 1, level: 0 }).varied)
+    problems.push("shufflePitches moved a note at level 0");
+  // note count never changes — this moves pitches, it does not add or remove notes
+  for (let level = 1; level <= 5; level++) {
+    const res = M.shufflePitches(dup(bars), { nd: ND, seed: 1, level });
+    if (noteCount(res.bars) !== noteCount(bars)) problems.push(`shufflePitches(level ${level}) changed the note count`);
+  }
+  // never a no-op at the lowest level on fixtures with real notes in them — a coin toss per note
+  // at low odds against a handful of notes would too often land on none of them; this has to guarantee
+  // at least one across a spread of seeds and section sizes, or it reads as broken the first few taps
+  const smallFixtures = [
+    [[[0], [1], [], [3], [], [], [], [4]], [[5], [], [3], [], [], [1], [], [2]]],
+    [[[2], [3], [], [], [], [], [], []]],
+    [[[0], [], [], [], [], [], [], [1]], [[2], [], [], [], [], [], [], [3]]],
+  ];
+  let zeroAtLevel1 = 0, tries = 0;
+  for (const fx of smallFixtures) for (let seed = 1; seed <= 20; seed++) {
+    tries++;
+    if (!M.shufflePitches(dup(fx), { nd: ND, seed, level: 1 }).varied) zeroAtLevel1++;
+  }
+  if (zeroAtLevel1) problems.push(`shufflePitches did nothing on ${zeroAtLevel1}/${tries} level-1 tries against sections that plainly have notes to move`);
+  // more level, more moved — not strictly monotonic (a clamp can eat a move), but the top has to
+  // clearly touch more than the bottom on a section with enough notes to show it
+  const busy = [[[0], [1], [2], [3], [4], [5], [6], [0]], [[1], [2], [3], [4], [5], [6], [0], [1]]];
+  const lo = M.shufflePitches(dup(busy), { nd: ND, seed: 4, level: 1 }).varied;
+  const hi = M.shufflePitches(dup(busy), { nd: ND, seed: 4, level: 5 }).varied;
+  if (hi <= lo) problems.push(`shufflePitches level 5 (${hi} moved) is not more than level 1 (${lo} moved) on a busy section`);
+  console.log(`shuffle pitches: deterministic, note count preserved, never a no-op at level 1 across ${tries} tries`);
 }
 
 /* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----

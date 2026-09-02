@@ -1221,6 +1221,45 @@ const DECORATE_VARIATIONS = VARIATIONS.filter(v => DECORATE_IDS.includes(v.id));
 const REARRANGE_IDS = ["push", "delay", "swap"];
 const REARRANGE_VARIATIONS = VARIATIONS.filter(v => REARRANGE_IDS.includes(v.id));
 
+/* 🎲 Shuffle pitches — a fourth kind of move, and the odd one out of the three above: not a targeted
+   edit (a neighbour, a landing note), not additive, not even confined to a pitch the melody already
+   had. Some of the written notes jump up or down from wherever they already sit, by a genuinely
+   random distance rather than a step to the nearest scale tone. `level` scales two things at once,
+   matching what a writer asking to "press again for more" means by more: how many of the notes get
+   touched, and how far the ones that do can jump — a light dusting at level 1, a real reshuffle by
+   level 5. How many is a count, not a coin toss per note: a low chance tried independently against a
+   handful of notes too often lands on none of them at all, which is exactly the dead end every other
+   control here is built to avoid — so this always touches at least one note when there is one to
+   touch. Still deterministic per (seed, level): the same tap lands the same notes the same way every
+   time the song opens. */
+const shufflePitches = (bars, { nd = 7, seed = 0, level = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  if (!level || !nd) return { bars: out, varied: 0 };
+  const notes = [];
+  out.forEach((bar, bi) => barNotes(bar).forEach(n => notes.push({ bar, ...n })));
+  if (!notes.length) return { bars: out, varied: 0 };
+  const chance = Math.min(1, 0.15 * level);
+  const reach = Math.min(nd - 1, level);
+  const count = Math.max(1, Math.round(notes.length * chance));
+  // a hashed order rather than the order they were written in, so which notes get touched changes
+  // with both the seed and the level rather than always starting from the first note in the section
+  const order = notes.map((_, i) => i).sort((a, b) => hash01(seed + a * 733) - hash01(seed + b * 733));
+  let varied = 0;
+  for (const i of order.slice(0, count)) {
+    const n = notes[i];
+    const dir = hash01(seed + i * 733 + 1) < 0.5 ? -1 : 1;
+    const dist = 1 + Math.floor(hash01(seed + i * 733 + 2) * reach);
+    // a note already sitting at the top or bottom of the scale can clamp straight back to itself —
+    // try the other direction once rather than quietly spending this note's turn on nothing
+    let next = Math.max(0, Math.min(nd - 1, n.d + dir * dist));
+    if (next === n.d) next = Math.max(0, Math.min(nd - 1, n.d - dir * dist));
+    if (next === n.d) continue;
+    putNote(n.bar, n.c, n.len, next);
+    varied++;
+  }
+  return { bars: out, varied };
+};
+
 // a bar list as one comparable string — enough to tell whether an edit actually landed
 const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
 
@@ -1609,4 +1648,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, shufflePitches, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };

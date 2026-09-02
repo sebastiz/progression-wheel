@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, shufflePitches, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -742,6 +742,9 @@ export default function ProgressionWheel() {
      it and varyIn so all three controls keep their own undo. */
   const [rerIn, setRerIn] = useState({});
   const [rerPick, setRerPick] = useState({});
+  /* 🎲 Shuffle pitches — no dropdown, no pick: one button, one baseline. Random by design, so there
+     is nothing to name in a menu the way Vary/Decorate/Rearrange's edits are named. */
+  const [shufIn, setShufIn] = useState({});
   /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
      early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
   const [syncIn, setSyncIn] = useState({});
@@ -3029,6 +3032,33 @@ export default function ProgressionWheel() {
     if (!st || !st.level) return;
     putLayer(d.key, L, dupBars(st.base));
     const next = { ...rerIn }; delete next[k]; setRerIn(next);
+  };
+
+  /* ---- 🎲 shuffle pitches: random jumps, no menu, one button ---- */
+  const shuffleMel = (d, L) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = shufIn[k];
+    const fresh = !st || melKey(cur) !== st.grid;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17 + 270003;
+    const out = shufflePitches(base, { nd: scaleSemis.length, seed, level });
+    if (!out.varied) {
+      setShufIn({ ...shufIn, [k]: { base, grid: melKey(cur), level: 0, note: "nothing here to shuffle" } });
+      return;
+    }
+    const back = level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : out.bars;
+    putLayer(d.key, L, bars);
+    setShufIn({ ...shufIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level,
+      note: back ? "back to the melody you wrote" : `${out.varied} note${out.varied === 1 ? "" : "s"} shuffled` } });
+  };
+  const resetShufIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = shufIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...shufIn }; delete next[k]; setShufIn(next);
   };
 
   /* ---- syncopate: anticipation as a one-tap edit ----
@@ -6191,17 +6221,24 @@ export default function ProgressionWheel() {
                             onClick={() => setMelMove(true)}>✋ Move</button>
                         </div>}
                         {/* Varying the repeats is about the whole melody rather than a selection, so it
-                            sits with the mode switch and not among the note tools below. */}
+                            sits with the mode switch and not among the note tools below. Four ways to
+                            change the notes — Vary, Decorate, Rearrange, Shuffle — each gets its own
+                            full-width row (flexBasis:100% inside the wrapping .melmodebar row) so its
+                            dropdown, button, undo and status stay visually together rather than
+                            interleaving with the others when the row wraps. The button alone applies a
+                            change; the dropdown only ever chooses what the next press will write —
+                            selecting an option never touches the grid by itself. */}
                         {tab === "write" && (() => {
                           const vk = varyKeyOf(d.key, secL);
                           const vst = varyIn[vk];
                           const lv = (vst && vst.level) || 0;
                           const pick = varyPick[vk] || "";
                           const curV = VARIATIONS.find(v => v.id === pick);
-                          return (<>
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
                             <select className="fxsel" style={{ maxWidth:150 }} value={pick}
-                              title="Which edit gets written into this melody's own notes — picking one writes it immediately. Left on the auto mix, picking it again (or the ✦ button) picks from the whole catalogue itself; picked to one, every tap after writes only that edit — same tune, small deliberate changes to the notes, never a different melody."
-                              onChange={e => { const v = e.target.value; setVaryPick({ ...varyPick, [vk]: v }); varyRepeats(d, secL, v); }}>
+                              title="Which edit ✦ Vary these notes writes next — choosing one only sets it up; press the button to write it. Left on the auto mix it picks from the whole catalogue itself; picked to one, every press after writes only that edit — same tune, small deliberate changes to the notes, never a different melody."
+                              onChange={e => setVaryPick({ ...varyPick, [vk]: e.target.value })}>
                               <option value="">Vary these notes — auto mix</option>
                               {VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
                             </select>
@@ -6215,7 +6252,8 @@ export default function ProgressionWheel() {
                             {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
-                          </>);
+                            </div>
+                          );
                         })()}
                         {/* ✦ Decorate — the narrower promise: never moves, retunes or removes a note
                             that's already written, only adds around it (a passing tone, a grace note,
@@ -6227,10 +6265,11 @@ export default function ProgressionWheel() {
                           const lv = (dst && dst.level) || 0;
                           const pick = decPick[dk] || "";
                           const curD = DECORATE_VARIATIONS.find(v => v.id === pick);
-                          return (<>
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
                             <select className="fxsel" style={{ maxWidth:150 }} value={pick}
-                              title="Which ornament gets added on top of this melody's own notes — picking one adds it immediately. Every note you've already written stays exactly where it is, at the pitch and length you gave it; this only ever adds around it — a passing tone, an extra note, a grace note, a note held into the silence after it."
-                              onChange={e => { const v = e.target.value; setDecPick({ ...decPick, [dk]: v }); decorateNotes(d, secL, v); }}>
+                              title="Which ornament 🎨 Decorate adds next — choosing one only sets it up; press the button to add it. Every note you've already written stays exactly where it is, at the pitch and length you gave it; this only ever adds around it — a passing tone, an extra note, a grace note, a note held into the silence after it."
+                              onChange={e => setDecPick({ ...decPick, [dk]: e.target.value })}>
                               <option value="">Decorate — auto mix</option>
                               {DECORATE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
                             </select>
@@ -6242,7 +6281,8 @@ export default function ProgressionWheel() {
                             {lv > 0 && <button className="mini" onClick={() => resetDecIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {dst && dst.note && <span className="rlbl" style={{ opacity:.75 }}>{dst.note}</span>}
-                          </>);
+                            </div>
+                          );
                         })()}
                         {/* 🔀 Rearrange — the third promise: notes may move, but never into a pitch the
                             melody didn't already have, and none may be lost. Its own dropdown and
@@ -6253,10 +6293,11 @@ export default function ProgressionWheel() {
                           const lv = (rst && rst.level) || 0;
                           const pick = rerPick[rk] || "";
                           const curR = REARRANGE_VARIATIONS.find(v => v.id === pick);
-                          return (<>
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
                             <select className="fxsel" style={{ maxWidth:150 }} value={pick}
-                              title="Which move gets made on this melody's own notes — picking one applies it immediately. A note may slide earlier or later, or trade places with its neighbour, but never becomes a pitch the melody didn't already have, and none of them disappear — the same notes, reshuffled."
-                              onChange={e => { const v = e.target.value; setRerPick({ ...rerPick, [rk]: v }); rearrangeNotes(d, secL, v); }}>
+                              title="Which move 🔀 Rearrange makes next — choosing one only sets it up; press the button to make it. A note may slide earlier or later, or trade places with its neighbour, but never becomes a pitch the melody didn't already have, and none of them disappear — the same notes, reshuffled."
+                              onChange={e => setRerPick({ ...rerPick, [rk]: e.target.value })}>
                               <option value="">Rearrange — auto mix</option>
                               {REARRANGE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
                             </select>
@@ -6269,7 +6310,28 @@ export default function ProgressionWheel() {
                             {lv > 0 && <button className="mini" onClick={() => resetRerIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {rst && rst.note && <span className="rlbl" style={{ opacity:.75 }}>{rst.note}</span>}
-                          </>);
+                            </div>
+                          );
+                        })()}
+                        {/* 🎲 Shuffle pitches — random by design, so there is nothing to name in a
+                            dropdown: one button, tap again for a bigger shuffle (more notes touched,
+                            further each can jump), its own baseline like the three above. */}
+                        {tab === "write" && (() => {
+                          const sk = varyKeyOf(d.key, secL);
+                          const sst = shufIn[sk];
+                          const lv = (sst && sst.level) || 0;
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => shuffleMel(d, secL)}
+                              title={"Randomly nudge some of this melody's own notes up or down from wherever they already sit — a "
+                                + "genuine random jump, not a step to the nearest scale tone. Tap again for a bigger shuffle: more "
+                                + "notes touched, further each one can move. One tap past the top puts the melody back as you wrote it."}>
+                              🎲 Shuffle pitches{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetShufIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {sst && sst.note && <span className="rlbl" style={{ opacity:.75 }}>{sst.note}</span>}
+                            </div>
+                          );
                         })()}
                         {tab === "write" && (() => {
                           const sst = syncIn[varyKeyOf(d.key, secL)];

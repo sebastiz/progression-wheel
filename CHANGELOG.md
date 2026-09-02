@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **🎲 Shuffle pitches — a fourth, dropdown-free control: random jumps, more with every tap.**
+  Nudges some of a melody's own notes up or down from wherever they already sit, by a genuinely
+  random distance rather than a step to the nearest scale tone — no menu, since there's nothing to
+  name for something random by design. Tapping again shuffles more: more notes touched, and further
+  each one can jump. Never a no-op on a section with notes in it, even on the first tap.
+- **Fixed: Vary these notes / Decorate / Rearrange had two separate things that could change the
+  grid — picking a dropdown option and pressing the button — which read as a wall of controls that
+  might fire at any moment, especially with all three stacked.** Picking an option now only sets up
+  what the button will write next; only the button changes the grid. Each control's dropdown, button,
+  undo and status also now sit together as one row rather than wrapping into whichever line had
+  space, so it's clear which parts belong to which control.
 - **🔀 Rearrange — move a melody's own notes around without inventing a new one.** A third promise,
   between ✦ Vary these notes (edits a note) and 🎨 Decorate (only adds): every note here may slide
   earlier or later into silence, or trade places with its neighbour, but none of them may become a
