@@ -614,10 +614,10 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   chorus does. Where nothing restates itself (most melodies a shape or a suggested pattern writes),
   it edits the notes directly instead — same tune either way, never a rewrite and never a no-op.
 
-  The dropdown beside it picks *which* edit gets written: left on **"auto mix"** the button chooses
-  from the whole catalogue of thirteen itself; pick one by name (Different ending, Add a passing
-  note, Push a note early, Split a long note, Add a turn…) and every tap writes only that edit, each
-  time landing on a different note or column.
+  The dropdown beside it picks *which* edit gets written, and applies it the moment you pick it: left
+  on **"auto mix"** the button chooses from the whole catalogue of fourteen itself; pick one by name
+  (Different ending, Add a passing note, Push a note early, Split a long note, Add a turn, Add a
+  grace note…) and every tap writes only that edit, each time landing on a different note or column.
 
   Tap again for more (the button counts **×2**, **×3**…, up to ×5) — each tap re-derives from the
   melody you started with rather than piling edits on edits, so the tune is still the tune at the top
@@ -625,6 +625,16 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   on the part you're editing, in that section only, and it tells you what it found ("3 of 3 repeats
   varied · 2-bar motif" when it found repeats to vary, "2 notes changed" when it edited the section
   directly).
+
+- **🎨 Decorate** (**Write** tab, beside ✦ Vary these notes) — the narrower promise: nothing you've
+  already written is ever moved, retuned, shortened or removed, only added to. It only ever writes
+  into silence that's already in the grid: **Add a passing note** fills a gap between two notes with
+  the step between their pitches, **Add a grace note** leans a quick note into the one right after it,
+  **Add an extra note** drops a note into any free space next to an existing one, **Let a note ring
+  on** holds a note into the silence right after it. Same pattern as Vary these notes — a dropdown for
+  **"auto mix"** or one named ornament, applied the moment you pick it, the button for tapping again,
+  **↺** or one tap past the top to undo — with its own baseline, so decorating a section and varying
+  it never compete for the same undo.
 
 - **Suggested melodies** (**Suggest** tab) — pick a common melody shape and a starting scale note,
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear

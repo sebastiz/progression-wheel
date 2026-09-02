@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -728,6 +728,14 @@ export default function ProgressionWheel() {
      kind of change does not have to keep tapping past ones they don't want. UI state, not song
      state, like varyIn beside it. */
   const [varyPick, setVaryPick] = useState({});
+  /* ✦ Decorate — the sibling of varyIn/varyPick above, restricted to DECORATE_VARIATIONS so it can
+     promise something ✦ Vary these notes can't: every note already written stays exactly where it
+     is, at the pitch and length it was given, and this only ever adds around it. decIn is the same
+     baseline/level/undo shape as varyIn; decPick is the same "" = auto mix, else one named id shape
+     as varyPick. Kept as separate state (not folded into varyIn/varyPick) so decorating a section and
+     varying it are independent — pressing one never resets or overwrites the other's progress. */
+  const [decIn, setDecIn] = useState({});
+  const [decPick, setDecPick] = useState({});
   /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
      early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
   const [syncIn, setSyncIn] = useState({});
@@ -2948,6 +2956,40 @@ export default function ProgressionWheel() {
     if (!st || !st.level) return;
     putLayer(d.key, L, dupBars(st.base));
     const next = { ...varyIn }; delete next[k]; setVaryIn(next);
+  };
+
+  /* ---- decorate: add to a melody without ever touching what's already there ----
+     ✦ Vary these notes' edits are small, but they are still edits — a landing note changes pitch, a
+     held note gets cut short. Sometimes what's wanted is narrower than that: keep the tune exactly as
+     written and only add ornaments around it. This always works on the whole section directly (no
+     repeat-hunting — a fill or a passing tone belongs anywhere silent, first bar included) via
+     varyWhole restricted to DECORATE_VARIATIONS, so whatever it picks is guaranteed additive-only. */
+  const decorateNotes = (d, L, pickNow) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = decIn[k];
+    const pick = pickNow != null ? pickNow : (decPick[k] || "");
+    const fresh = !st || melKey(cur) !== st.grid || st.pick !== pick;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    // offset from varyRepeats' seed so the two controls don't land on the same choices by coincidence
+    const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17 + 90001;
+    const out = varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level, pool: DECORATE_VARIATIONS });
+    if (!out.varied) {
+      setDecIn({ ...decIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing here to decorate" } });
+      return;
+    }
+    const back = level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : out.bars;
+    putLayer(d.key, L, bars);
+    setDecIn({ ...decIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick,
+      note: back ? "back to the melody you wrote" : `${out.varied} note${out.varied === 1 ? "" : "s"} added` } });
+  };
+  const resetDecIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = decIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...decIn }; delete next[k]; setDecIn(next);
   };
 
   /* ---- syncopate: anticipation as a one-tap edit ----
@@ -6134,6 +6176,33 @@ export default function ProgressionWheel() {
                             {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
+                          </>);
+                        })()}
+                        {/* ✦ Decorate — the narrower promise: never moves, retunes or removes a note
+                            that's already written, only adds around it (a passing tone, a grace note,
+                            a note held into the silence after it). Its own dropdown and baseline, kept
+                            apart from ✦ Vary these notes so the two never fight over the same undo. */}
+                        {tab === "write" && (() => {
+                          const dk = varyKeyOf(d.key, secL);
+                          const dst = decIn[dk];
+                          const lv = (dst && dst.level) || 0;
+                          const pick = decPick[dk] || "";
+                          const curD = DECORATE_VARIATIONS.find(v => v.id === pick);
+                          return (<>
+                            <select className="fxsel" style={{ maxWidth:150 }} value={pick}
+                              title="Which ornament gets added on top of this melody's own notes — picking one adds it immediately. Every note you've already written stays exactly where it is, at the pitch and length you gave it; this only ever adds around it — a passing tone, an extra note, a grace note, a note held into the silence after it."
+                              onChange={e => { const v = e.target.value; setDecPick({ ...decPick, [dk]: v }); decorateNotes(d, secL, v); }}>
+                              <option value="">Decorate — auto mix</option>
+                              {DECORATE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+                            </select>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => decorateNotes(d, secL)}
+                              title={(curD ? curD.tip : "Add ornaments on top of this melody — a passing tone, an extra note, a grace note, "
+                                + "a note held into the silence after it. Every note you wrote stays exactly where it is; this only adds.")
+                                + " Tap again for more; one past the top puts the melody back as you wrote it."}>
+                              🎨 {curD ? curD.name : "Decorate"}{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetDecIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {dst && dst.note && <span className="rlbl" style={{ opacity:.75 }}>{dst.note}</span>}
                           </>);
                         })()}
                         {tab === "write" && (() => {

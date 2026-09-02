@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **🎨 Decorate — add ornaments to a melody without ever touching what's already written.** ✦ Vary
+  these notes edits notes in place (a different landing note, a note cut short); sometimes what's
+  wanted is narrower than that — keep the tune exactly as it is and only add to it. Decorate does
+  that: it only ever writes into silence already in the grid, so a passing tone fills a gap between
+  two notes, a grace note leans into the note after it, an extra note appears where there's room, and
+  a note gets held on into the silence right after it — never moving, retuning, shortening or
+  removing a note you already wrote. Same dropdown-picks-a-specific-edit pattern as ✦ Vary these
+  notes, with its own baseline and undo, right beside it in the melody workbench.
 - **Fixed: picking a variation from the ✦ Vary these notes dropdown did nothing until you also
   pressed the button.** Choosing a named edit only stored the choice; the grid stayed exactly as it
   was until a separate tap on the button applied it, which read as the dropdown not working at all.
