@@ -1272,6 +1272,21 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/onChange=/.test(dd) || !/setVaryPick\(/.test(dd) || !/varyRepeats\(d, secL, v\)/.test(dd))
       problems.push("src: the Vary-these-notes dropdown stores the pick without applying it — selecting an option would visibly do nothing until a separate button press");
   }
+  /* ✦ Decorate has to keep the promise its own name makes: it must only ever call into varyWhole
+     restricted to DECORATE_VARIATIONS, never the full VARIATIONS catalogue — the moment it can reach
+     a destructive edit, "nothing you wrote is ever touched" stops being true. */
+  {
+    const fn = code.slice(code.indexOf("const decorateNotes = "), code.indexOf("const resetDecIn = "));
+    if (!fn) problems.push("src: decorateNotes has moved — this guard no longer reads it");
+    if (!/pool:\s*DECORATE_VARIATIONS/.test(fn))
+      problems.push("src: decorateNotes does not restrict varyWhole to DECORATE_VARIATIONS — it could land a destructive edit under Decorate's name");
+    if (!/putLayer\(/.test(fn)) problems.push("src: decorateNotes never writes the decorated melody back");
+    if (!/decorateNotes\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to decorate a section");
+    const dd2 = code.slice(code.indexOf("Decorate — auto mix") - 400, code.indexOf("Decorate — auto mix"));
+    if (!/onChange=/.test(dd2) || !/setDecPick\(/.test(dd2) || !/decorateNotes\(d, secL, v\)/.test(dd2))
+      problems.push("src: the Decorate dropdown stores the pick without applying it");
+  }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
      anyone has already made. Both the resolution and the run arithmetic live in the `moveSpan`
@@ -2625,6 +2640,62 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!whole.varied)
       problems.push("varyWhole(merge) found nothing on a section that plainly has an adjacent pair in it");
   }
+}
+
+/* ---- ✦ Decorate: additive-only variation ----
+   DECORATE_VARIATIONS makes a stronger promise than the general catalogue: not "mostly the same
+   melody" but "the exact same melody, with notes added on top" — nothing already written may move,
+   change pitch, shrink, or disappear. That is a correctness property, not a vibe, so it gets checked
+   as one: every column that held a note before decorating must hold the identical degree afterward,
+   for every listed decoration, at every level, on every fixture — a single violation is the bug the
+   feature exists to prevent (this is exactly the complaint that motivated it: a writer wanting their
+   melody's notes untouched and only added to). */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  // written columns as a map "bar:col" -> degree, checked against the same map after decorating
+  const writtenMap = bars => {
+    const m = new Map();
+    bars.forEach((bar, bi) => bar.forEach((col, ci) => { if (col.length) m.set(bi + ":" + ci, col[0]); }));
+    return m;
+  };
+  const untouched = (before, after) => {
+    for (const [key, deg] of before) {
+      const [bi, ci] = key.split(":").map(Number);
+      const col = after[bi][ci];
+      if (!col || !col.length || col[0] !== deg) return false;
+    }
+    return true;
+  };
+  // sparse, with gaps of every size, held notes, and adjacent notes with no gap — enough surface for
+  // every decoration (a passing-tone gap, free space for Add, a long note for a grace note before it,
+  // a note followed by silence for Extend) to have somewhere to land
+  const fixtures = [
+    [[[0], [], [], [2], [], [], [], [4]], [[5], [], [3], [], [], [1], [], []]],
+    [[[0], [1], [], [], [4], [], [6], []], [[3], [], [], [5], [], [], [2], []]],
+    [[[2], [], [], [], [5], [6], [], []], [[0], [], [3], [], [], [], [1], []]],
+  ];
+  let everFired = 0, checks = 0;
+  for (const fixture of fixtures) {
+    const before = writtenMap(fixture);
+    for (const id of [undefined, ...M.DECORATE_VARIATIONS.map(v => v.id)]) {
+      for (const level of [1, 2, 3]) {
+        checks++;
+        const res = M.varyWhole(dup(fixture), { id, nd: ND, seed: 5, level, pool: M.DECORATE_VARIATIONS });
+        if (!untouched(before, res.bars))
+          problems.push(`Decorate(${id || "auto mix"}, level ${level}) altered a note that was already written`);
+        if (res.varied > 0) everFired++;
+      }
+    }
+  }
+  if (everFired < fixtures.length * (M.DECORATE_VARIATIONS.length + 1) * 0.6)
+    problems.push("Decorate rarely fires across its own fixtures — the additive-only set may be too narrow to be useful");
+  // an id outside DECORATE_VARIATIONS (a destructive one, picked by mistake or by a stale UI state)
+  // must not silently run under the decorate pool — it isn't in the list `find` looks in, so it's a
+  // clean no-op rather than a note getting moved under Decorate's name
+  const destructive = M.varyWhole(dup(fixtures[0]), { id: "merge", nd: ND, seed: 5, level: 2, pool: M.DECORATE_VARIATIONS });
+  if (destructive.varied) problems.push("Decorate ran a non-additive id (merge) under its own pool");
+  console.log(`decorate: ${M.DECORATE_VARIATIONS.length} additive-only edits, ${checks} checks, 0 touched an already-written note`);
 }
 
 /* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----

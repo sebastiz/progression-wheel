@@ -1166,7 +1166,34 @@ const VARIATIONS = [
         return true;
       });
     } },
+  /* A grace note: a quick extra note in the free column right before an existing one, a step away.
+     Only ever writes into a column confirmed empty first — the note it leads into keeps its own
+     onset, pitch and length untouched — which is what makes this (with passing, add and extend)
+     safe for ✦ Decorate, where nothing already written is allowed to move or change. */
+  { id:"grace", name:"Add a grace note", tip:"A quick extra note in the silence right before an existing one, a step away — the note it leads into is untouched.",
+    apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        const can = ns.filter(n => n.c >= 1 && !(bar[n.c - 1] || []).length);
+        if (!can.length) return false;
+        const n = byPass(can, r, pass), near = stepDegs(n.d, nd);
+        if (!near.length) return false;
+        putNote(bar, n.c - 1, 1, near[(pass - 1) % near.length]);
+        return true;
+      });
+    } },
 ];
+
+/* The subset of VARIATIONS that only ever writes into a column already confirmed empty — never
+   moves, retunes, shortens or removes a note that is already there. ✦ Decorate uses only these:
+   the promise it makes ("the same melody, with notes added on top") has to be literally true, not
+   just true on average the way ✦ Vary these notes' small edits are. Add a passing note, Add an
+   extra note and Add a grace note fill silence between or beside existing notes; Let a note ring on
+   extends a note's own duration into silence at the same pitch, which is a continuation of that
+   note rather than an edit to it. (Add a turn is deliberately left out: it dips the *middle* of an
+   existing held note to a different pitch for one column, which is a real embellishment but not
+   this guarantee — a writer who wants that already has it from the full catalogue.) */
+const DECORATE_IDS = ["passing", "add", "extend", "grace"];
+const DECORATE_VARIATIONS = VARIATIONS.filter(v => DECORATE_IDS.includes(v.id));
 
 // a bar list as one comparable string — enough to tell whether an edit actually landed
 const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
@@ -1177,8 +1204,10 @@ const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).j
 
    `seed` picks where in the list the walk starts and which choice each variation makes; `pass`
    steps every one of those choices along by one, which is what makes repeat N and repeat N+1
-   differ by construction rather than by luck. */
-const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1 }) => {
+   differ by construction rather than by luck. `pool` is which list to walk — the full VARIATIONS by
+   default, or a narrower one like DECORATE_VARIATIONS when the caller has to guarantee every edit
+   it might land is a particular kind (only ever adding, never moving or replacing). */
+const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1, pool = VARIATIONS }) => {
   if (!amount || !pass || !out.length) return 0;
   /* A fractional amount is a continuous dial over a count of edits, so the fraction becomes a
      deterministic coin toss on one extra edit — seeded from the seed and the pass, never from
@@ -1191,7 +1220,7 @@ const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1 }) => {
   /* Walk a rotation of the list rather than drawing from it: a draw can miss a variation entirely
      over its tries, and in a sparse bar most variations have nowhere to go — no interior note to
      lift, no gap to fill — so the one that *can* act has to be reached, not hoped for. */
-  const start = Math.floor(hash01(seed) * VARIATIONS.length) + pass;
+  const start = Math.floor(hash01(seed) * pool.length) + pass;
   const before = barsKey(out);
   let applied = 0;
   /* Several variations are each other's mirror — clip and extend, push and delay, split and merge —
@@ -1199,11 +1228,11 @@ const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1 }) => {
      vary. Each edit therefore counts only if it changed something, and the walk carries on past
      `amount` while the bars still match where they started.
      One trip round the list, so two edits are always two different kinds of edit. */
-  for (let k = 0; k < VARIATIONS.length; k++) {
+  for (let k = 0; k < pool.length; k++) {
     if (applied >= amount && barsKey(out) !== before) break;
-    const i = (start + k) % VARIATIONS.length;
+    const i = (start + k) % pool.length;
     const snap = barsKey(out);
-    if (VARIATIONS[i].apply(out, nd, hash01(seed + i * 977), pass) && barsKey(out) !== snap) applied++;
+    if (pool[i].apply(out, nd, hash01(seed + i * 977), pass) && barsKey(out) !== snap) applied++;
   }
   return applied;
 };
@@ -1369,12 +1398,14 @@ const varyWithinPick = (bars, { id, nd = 7, seed = 0, level = 1 } = {}) => {
    one named edit exactly as varyWithinPick does; left unset it is the auto mix varyWithin uses,
    applied here with varyPass directly (the same engine a later section's own pass is varied with —
    see varyBars). `level` is both "how many edits" for the auto mix and "how many times to try, at
-   a different spot each time" for a picked one, so pressing again always has somewhere new to go. */
-const varyWhole = (bars, { id, nd = 7, seed = 0, level = 1 } = {}) => {
+   a different spot each time" for a picked one, so pressing again always has somewhere new to go.
+   `pool` narrows which list `id` (and the auto mix) is drawn from — ✦ Decorate passes
+   DECORATE_VARIATIONS so it can never land anything but a purely additive edit. */
+const varyWhole = (bars, { id, nd = 7, seed = 0, level = 1, pool = VARIATIONS } = {}) => {
   const out = bars.map(bar => bar.map(col => [...(col || [])]));
   if (!level || !out.length) return { bars: out, varied: 0 };
-  if (!id) return { bars: out, varied: varyPass(out, { pass: level, seed, nd, amount: level }) };
-  const v = VARIATIONS.find(x => x.id === id);
+  if (!id) return { bars: out, varied: varyPass(out, { pass: level, seed, nd, amount: level, pool }) };
+  const v = pool.find(x => x.id === id);
   if (!v) return { bars: out, varied: 0 };
   let varied = 0;
   for (let p = 1; p <= level; p++) {
@@ -1552,4 +1583,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
