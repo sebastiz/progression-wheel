@@ -237,11 +237,28 @@ what you render is exactly what you heard.
 
 ### Dance instruments
 
-The **Lead** menu (and each part's own instrument menu) has six voices built for this, under
+The **Lead** menu (and each part's own instrument menu) has seven voices built for this, under
 *Synth (no download)*: **Supersaw** (the trance/EDM wall of detuned saws), **Hoover** (the rave
 stab that slides down into the note), **Acid 303** (resonant, squelchy — try it with an arp),
-**Reese bass** (the detuned drum-and-bass growl), **Sub bass**, and **House stab**. They need no
-download and work offline.
+**Reese bass** (the detuned drum-and-bass double-saw), **Sub bass**, **House stab**, and **Growl**
+(the beating, inharmonic dubstep wobble). They need no download and work offline.
+
+### 🎛 The voice editor
+
+Every voice on this app up to here is hand-tuned in the source — this is the one place you build
+your own. On the Sound tab, next to the Lead picker, **🎛 Voice editor** opens a panel that lets
+you build a synth voice from scratch: name it, stack up to four oscillator partials (waveform —
+sine, triangle, square or sawtooth — harmonic ratio, and level), shape its attack, release and
+sustain, and give it an optional low-pass filter (cutoff and resonance) and vibrato. **▶ Preview**
+plays it right there, through the same engine the song does. **⚖ Normalise loudness** renders it
+offline and sets its level to match the default synth lead — the same measure every built-in voice
+is matched to, so a voice you build sits in the mix like any of them instead of guessing at the
+level slider yourself.
+
+A saved voice shows up under **My voices** in every Lead, Bass and Pad picker in the app — the
+Sound tab, each section's own per-part instrument menu, and the Session view — exactly like a
+built-in voice. It's saved with the song (and travels with a share link, undo/redo, and "Export
+for Claude"), so it's yours to keep reaching for as you keep writing, not a one-off experiment.
 
 ### The arrangement strip
 
@@ -576,7 +593,7 @@ arpeggiator and sends, the effects, the sidechain and every drawn automation lan
 written in plain words (with a built-in reference explaining each control), so the analysis can
 read *why* the wav sounds the way it does, not just *that* it does.
 **Sound** (the chord instrument) and **Lead** (the melody voice) are chosen above the wheel, next to
-the chord-colour menus. Both offer the full **General MIDI palette — about 90 instruments grouped by
+the chord-colour menus. Both offer the full **General MIDI palette — over 110 instruments grouped by
 category** (pianos, mallets, organs, guitars, basses, strings, ensemble & choir, brass, reeds, pipes,
 synth lead & pad, world). With **Real** on and a connection, each plays as a real recorded sample
 (downloaded only for the instrument you pick); offline, each falls back to a synth voice matched to

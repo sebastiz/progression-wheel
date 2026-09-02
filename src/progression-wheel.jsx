@@ -3,7 +3,7 @@ import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_ID
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
 import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
-import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxMultiRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord } from "./audio.js";
+import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxMultiRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord, customVoiceName, isCustomVoice, measureVoiceLoudness, resetCustomVoices, setCustomVoice, deleteCustomVoice } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
@@ -615,6 +615,18 @@ export default function ProgressionWheel() {
      arrange.js. Only the roster — which tracks exist, which clip numbers each has — is its own
      state, the same division sketchArr draws for the groove sketch's draft rows. */
   const [sessionTracks, setSessionTracks] = useState([]);
+  // the user's own hand-built synth voices (the voice editor) — {id, name, parts, atk, rel, vol,
+  // sus, lp?, q?, vib?}, one shape as a LEAD_SPECS entry plus `name`. Saved with the song like
+  // everything else here; audio.js gets its own live copy via resetCustomVoices (see the effect
+  // below) because the scheduler reads voices imperatively, not through React state.
+  const [voices, setVoices] = useState([]);
+  // audio.js's CUSTOM_SPECS is a plain mutable registry the scheduler reads imperatively (it isn't
+  // rendered by React), so it needs its own resync whenever the song's own voice list changes —
+  // on load, on undo/redo, and on every edit made in the voice editor below.
+  useEffect(() => { resetCustomVoices(voices); }, [voices]);
+  const [voiceEdOpen, setVoiceEdOpen] = useState(false);   // the panel's own open/closed, like openFx
+  const [voiceDraft, setVoiceDraft] = useState(null);      // null = the list view; an object = editing one voice
+  const [voiceBusy, setVoiceBusy] = useState(false);       // Normalise is async (a couple of offline renders)
   const [sessionSel, setSessionSel] = useState({ trackId:"", clipId:"" });   // which clip the editor below the grid shows
   const [sessionModGrp, setSessionModGrp] = useState("pattern");   // which mod group tab the clip editor shows, for a melody clip
   const [sessionPlaying, setSessionPlaying] = useState(false);
@@ -799,6 +811,10 @@ export default function ProgressionWheel() {
   const loopRef = useRef(null);                             // { from, len } bar window the scheduler confines to
   const melDragRef = useRef(null);
   const metroRef = useRef(null);
+  // one small, long-lived context for the voice editor's own Preview button — deliberately not the
+  // metronome's: a preview note has nothing to do with playback state (m.step, the scheduler, the
+  // mix graph) and should never fight Play/Stop for the one AudioContext that does
+  const previewCtxRef = useRef(null);
   const bpmRef = useRef(0), patRef = useRef([]), swingRef = useRef(0);
   const humRef = useRef(0), barBeatsRef = useRef(4);
   const chordsRef = useRef({ list:[], seq:[] }), instrRef = useRef("guitar"), drumRef = useRef(null);
@@ -5869,7 +5885,7 @@ export default function ProgressionWheel() {
     edits: ovMap, inserts: insList, quals: qmap, removed: remList,
     order: order.key === editKey ? order.list : null,
     melos: melos.progId === progId ? melos : null,
-    session: sessionTracks,
+    session: sessionTracks, voices,
   });
   /* ---- undo / redo ----
      One snapshot of the song document per change, taken from a debounced effect rather than at
@@ -5881,7 +5897,7 @@ export default function ProgressionWheel() {
   }, [progId, tonic, genre, emotion, mode, colour, patId, drum, secDrum, secQuiet, custom, auto, nChords, instr, melInstr,
       kit, pump, bass, bassVoice, secBass, perc, secPerc, pad, secPad,
       secBassPat, secPercPat, secPadVoice, secPartOut, secTrackLayers, secBassBeat, secPercBeat, secPadBeat, secChordBeat, trackFx, percKit, fxRack, secFx,
-      secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, sketchArr, ovMap, insList, qmap, remList, order, melos, sessionTracks]);
+      secMove, secTrans, secBeat, secNar, delayId, gridSt, effBpm, selStruct, contrast, sketchArr, ovMap, insList, qmap, remList, order, melos, sessionTracks, voices]);
   const lastDocRef = useRef(null);
   useEffect(() => {
     if (docJson == null) return;
@@ -6186,6 +6202,8 @@ export default function ProgressionWheel() {
     // melodies were session-only before this; a sketch without them just loads an empty grid
     setMelos(s.melos ? songMelos(s) : { progId:"", secs:{} });
     setSessionTracks(Array.isArray(s.session) ? s.session : []);
+    // absent in sketches saved before the voice editor existed — those just have none
+    setVoices(Array.isArray(s.voices) ? s.voices : []);
     setMelSel({ key:"", layer:0, notes:{} }); setNarUndo(null); setVaryIn({});
     setIoNote("Loaded “" + s.name + "”.");
   };
@@ -6221,7 +6239,7 @@ export default function ProgressionWheel() {
     setDrumSt({ key:"", val:"" }); setKitSt({ key:"", val:"" }); setPumpSt({ key:"", val:"" });
     setBassSt({ key:"", val:"" }); setBassVoiceSt({ key:"", val:"" }); setSecBass({});
     setPercSt({ key:"", val:"" }); setSecPerc({}); setPercKitSt({ key:"", val:"" });
-    setPadSt({ key:"", val:"" }); setSecPad({}); setTrackFx({}); setFxRack({});
+    setPadSt({ key:"", val:"" }); setSecPad({}); setTrackFx({}); setFxRack({}); setVoices([]);
     // structure, arrangement and everything written onto the sections
     setSelStruct(""); setContrast({ id:"", sec:"C" }); setCustom({ key:"", plan:null });
     setAuto({ key:"", filter:null, level:null }); setSketchArr([]); setSketchSel(0);
@@ -6930,6 +6948,7 @@ export default function ProgressionWheel() {
                       })()}</option>
                       <option value="off">No pad</option>
                       {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                      {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                     </select>
                   </label>
                 </div>
@@ -6968,6 +6987,9 @@ export default function ProgressionWheel() {
                     <optgroup label="Synth (no download)">
                       {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                     </optgroup>
+                    {voices.length > 0 && <optgroup label="My voices">
+                      {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </optgroup>}
                     {GM_CATS.map(([cat, list]) => (
                       <optgroup key={cat} label={"◈ " + cat}>
                         {list.map(([k, label]) => <option key={cat + k} value={k}>{label}</option>)}
@@ -7432,6 +7454,7 @@ export default function ProgressionWheel() {
                             </optgroup>
                             <optgroup label="All voices">
                               {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                              {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                             </optgroup>
                           </select>
                         </label>}
@@ -8962,6 +8985,9 @@ export default function ProgressionWheel() {
                 <optgroup label="Synth (no download)">
                   {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                 </optgroup>
+                {voices.length > 0 && <optgroup label="My voices">
+                  {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </optgroup>}
                 {GM_CATS.map(([cat, list]) => (
                   <optgroup key={cat} label={"◈ " + cat}>
                     {list.map(([k, label]) => <option key={"l" + cat + k} value={k}>{label}</option>)}
@@ -8970,6 +8996,173 @@ export default function ProgressionWheel() {
               </select>
             </label>
           </div>
+          {/* The voice editor: build a synth voice's own oscillator stack, envelope and filter, and
+              save it as a named voice — the same shape as a LEAD_SPECS entry (see audio.js), just
+              authored here instead of in source. Saved voices live in the song's own `voices` state
+              and show up in every Lead/Bass/Pad picker under "My voices", the same way a built-in
+              voice does everywhere. Same collapsible-with-a-badge shape as the FX racks below. */}
+          {(() => {
+            const WAVE_OPTS = [["sine", "Sine"], ["triangle", "Triangle"], ["square", "Square"], ["sawtooth", "Sawtooth"]];
+            const newDraft = () => ({ id: null, name: "",
+              parts: [{ type: "sawtooth", mult: 1, amp: 1 }, { type: "sine", mult: 2, amp: 0.3 }],
+              atk: 0.01, rel: 0.15, vol: 0.12, sus: 0.5, lp: null, q: 1, vib: false });
+            // the shape leadNote/specFor actually read — parts as [type,mult,amp] triples, filter
+            // fields present only when the voice has one, matching every hand-written LEAD_SPECS entry
+            const specOf = d => ({
+              name: (d.name || "").trim() || "Untitled voice",
+              parts: d.parts.map(p => [p.type, p.mult, p.amp]),
+              atk: d.atk, rel: d.rel, vol: d.vol, sus: d.sus,
+              ...(d.lp != null ? { lp: d.lp, q: d.q } : {}),
+              ...(d.vib ? { vib: true } : {}),
+            });
+            const preview = () => {
+              const AC = window.AudioContext || window.webkitAudioContext;
+              if (!previewCtxRef.current) previewCtxRef.current = new AC();
+              const ctx = previewCtxRef.current;
+              if (ctx.state === "suspended") ctx.resume();
+              setCustomVoice("custom:__preview__", specOf(voiceDraft));
+              leadNote(ctx, ctx.currentTime + 0.03, 67, 0.9, "custom:__preview__", false, ctx.destination, null);
+            };
+            const normalize = async () => {
+              setVoiceBusy(true);
+              try {
+                const vol = await measureVoiceLoudness(specOf(voiceDraft));
+                setVoiceDraft(d => ({ ...d, vol: Math.round(vol * 1000) / 1000 }));
+              } finally { setVoiceBusy(false); }
+            };
+            const saveDraft = () => {
+              const id = voiceDraft.id || ("custom:" + Math.random().toString(36).slice(2, 10));
+              const rec = { id, ...specOf(voiceDraft) };
+              setVoices(vs => voiceDraft.id ? vs.map(v => v.id === id ? rec : v) : [...vs, rec]);
+              setVoiceDraft(null);
+            };
+            const deleteDraft = () => {
+              if (voiceDraft.id) setVoices(vs => vs.filter(v => v.id !== voiceDraft.id));
+              setVoiceDraft(null);
+            };
+            const setPart = (i, patch) => setVoiceDraft(d => ({ ...d, parts: d.parts.map((p, idx) => idx === i ? { ...p, ...patch } : p) }));
+            const addPart = () => setVoiceDraft(d => d.parts.length >= 4 ? d : ({ ...d, parts: [...d.parts, { type: "sine", mult: 1, amp: 0.5 }] }));
+            const delPart = i => setVoiceDraft(d => d.parts.length <= 1 ? d : ({ ...d, parts: d.parts.filter((_, idx) => idx !== i) }));
+            return (<>
+              <button className="mini" onClick={() => { setVoiceEdOpen(!voiceEdOpen); setVoiceDraft(null); }}
+                title="Build your own synth voice — its oscillators, envelope and filter — and save it as a named voice you can pick anywhere Lead, Bass or Pad voices are chosen.">
+                {voiceEdOpen ? "▾" : "▸"} 🎛 Voice editor{voices.length ? " ● " + voices.length : ""}
+              </button>
+              {voiceEdOpen && (
+                <div style={{ marginTop:6 }}>
+                  {!voiceDraft && (<>
+                    {voices.length === 0 && <p className="keytag" style={{ margin:"4px 0" }}>No custom voices yet — build one below.</p>}
+                    {voices.map(v => (
+                      <div key={v.id} className="selrow" style={{ alignItems:"center", marginTop:4 }}>
+                        <span style={{ flex:1 }}>{v.name}</span>
+                        <button className="mini" onClick={() => setVoiceDraft({ id:v.id, name:v.name,
+                          parts: v.parts.map(([type, mult, amp]) => ({ type, mult, amp })),
+                          atk:v.atk, rel:v.rel, vol:v.vol, sus:v.sus,
+                          lp: v.lp != null ? v.lp : null, q: v.q != null ? v.q : 1, vib: !!v.vib })}>
+                          ✎ Edit
+                        </button>
+                        <button className="mini" title="Delete this voice"
+                          onClick={() => setVoices(vs => vs.filter(x => x.id !== v.id))}>🗑</button>
+                      </div>
+                    ))}
+                    <button className="mini" style={{ marginTop:6 }} onClick={() => setVoiceDraft(newDraft())}>+ New voice</button>
+                  </>)}
+                  {voiceDraft && (
+                    <div style={{ marginTop:4 }}>
+                      <label className="selwrap" style={{ minWidth:200 }}>
+                        <span className="lbl" style={{ margin:0 }}>Name</span>
+                        <input className="txt" value={voiceDraft.name} placeholder="My voice"
+                          onChange={e => setVoiceDraft({ ...voiceDraft, name:e.target.value })} />
+                      </label>
+                      {voiceDraft.parts.map((p, i) => (
+                        <div key={i} className="selrow" style={{ alignItems:"flex-end", flexWrap:"wrap", marginTop:6 }}>
+                          <label className="selwrap" style={{ minWidth:110 }}>
+                            <span className="lbl" style={{ margin:0 }}>Wave {i + 1}</span>
+                            <select value={p.type} onChange={e => setPart(i, { type:e.target.value })}>
+                              {WAVE_OPTS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                            </select>
+                          </label>
+                          <label className="selwrap" style={{ minWidth:80, maxWidth:80 }}>
+                            <span className="lbl" style={{ margin:0 }}>Ratio</span>
+                            <input className="txt" type="number" min="0.25" max="16" step="0.01" value={p.mult}
+                              title="Harmonic multiple of the note's own pitch — 1 is the fundamental, 2 an octave up, 1.5 a fifth up. Off-integer values (e.g. 0.994) beat gently against the fundamental instead of reinforcing it."
+                              onChange={e => setPart(i, { mult: +e.target.value || 1 })} />
+                          </label>
+                          <label className="selwrap" style={{ minWidth:110 }}>
+                            <span className="lbl" style={{ margin:0 }}>Level {Math.round(p.amp * 100)}%</span>
+                            <input className="lvl" type="range" min="0" max="100" step="1" value={Math.round(p.amp * 100)}
+                              onChange={e => setPart(i, { amp: +e.target.value / 100 })} />
+                          </label>
+                          {voiceDraft.parts.length > 1 &&
+                            <button className="mini" title="Remove this partial" onClick={() => delPart(i)}>✕</button>}
+                        </div>
+                      ))}
+                      {voiceDraft.parts.length < 4 &&
+                        <button className="mini" style={{ marginTop:4 }} onClick={addPart}>+ Add partial</button>}
+
+                      <div className="selrow" style={{ alignItems:"flex-end", flexWrap:"wrap", marginTop:10 }}>
+                        <label className="selwrap" style={{ minWidth:110 }}>
+                          <span className="lbl" style={{ margin:0 }}>Attack {Math.round(voiceDraft.atk * 1000)}ms</span>
+                          <input className="lvl" type="range" min="1" max="500" step="1" value={Math.round(voiceDraft.atk * 1000)}
+                            onChange={e => setVoiceDraft({ ...voiceDraft, atk: +e.target.value / 1000 })} />
+                        </label>
+                        <label className="selwrap" style={{ minWidth:110 }}>
+                          <span className="lbl" style={{ margin:0 }}>Release {Math.round(voiceDraft.rel * 1000)}ms</span>
+                          <input className="lvl" type="range" min="20" max="1500" step="5" value={Math.round(voiceDraft.rel * 1000)}
+                            onChange={e => setVoiceDraft({ ...voiceDraft, rel: +e.target.value / 1000 })} />
+                        </label>
+                        <label className="selwrap" style={{ minWidth:110 }}>
+                          <span className="lbl" style={{ margin:0 }}>Sustain {Math.round(voiceDraft.sus * 100)}%</span>
+                          <input className="lvl" type="range" min="0" max="100" step="1" value={Math.round(voiceDraft.sus * 100)}
+                            title="0 is percussive — the note decays away on its own once struck. Above 0 it holds at this level until released."
+                            onChange={e => setVoiceDraft({ ...voiceDraft, sus: +e.target.value / 100 })} />
+                        </label>
+                      </div>
+
+                      <div className="selrow" style={{ alignItems:"flex-end", flexWrap:"wrap", marginTop:6 }}>
+                        <label className="selwrap" style={{ minWidth:90, flexDirection:"row", alignItems:"center", gap:6 }}>
+                          <input type="checkbox" checked={voiceDraft.lp != null}
+                            onChange={e => setVoiceDraft({ ...voiceDraft, lp: e.target.checked ? 2000 : null })} />
+                          <span className="lbl" style={{ margin:0 }}>Filter</span>
+                        </label>
+                        {voiceDraft.lp != null && <>
+                          <label className="selwrap" style={{ minWidth:110 }}>
+                            <span className="lbl" style={{ margin:0 }}>Cutoff {voiceDraft.lp}Hz</span>
+                            <input className="lvl" type="range" min="200" max="8000" step="10" value={voiceDraft.lp}
+                              onChange={e => setVoiceDraft({ ...voiceDraft, lp: +e.target.value })} />
+                          </label>
+                          <label className="selwrap" style={{ minWidth:110 }}>
+                            <span className="lbl" style={{ margin:0 }}>Resonance {voiceDraft.q}</span>
+                            <input className="lvl" type="range" min="0.1" max="20" step="0.1" value={voiceDraft.q}
+                              onChange={e => setVoiceDraft({ ...voiceDraft, q: +e.target.value })} />
+                          </label>
+                        </>}
+                        <label className="selwrap" style={{ minWidth:90, flexDirection:"row", alignItems:"center", gap:6 }}>
+                          <input type="checkbox" checked={!!voiceDraft.vib}
+                            onChange={e => setVoiceDraft({ ...voiceDraft, vib:e.target.checked })} />
+                          <span className="lbl" style={{ margin:0 }}>Vibrato</span>
+                        </label>
+                      </div>
+
+                      <div className="selrow" style={{ marginTop:10, gap:8, alignItems:"center" }}>
+                        <button className="mini" onClick={preview}>▶ Preview</button>
+                        <button className="mini" disabled={voiceBusy} onClick={normalize}
+                          title="Render this voice offline and set its level to match the default synth lead — the same loudness every built-in voice is matched to, so it sits in the mix like any of them rather than being quietly buried or blaring over everything else the first time it's picked.">
+                          {voiceBusy ? "Measuring…" : "⚖ Normalise loudness"}
+                        </button>
+                        <span className="keytag">vol {voiceDraft.vol.toFixed(3)}</span>
+                      </div>
+                      <div className="selrow" style={{ marginTop:8, gap:8 }}>
+                        <button className="btn" onClick={saveDraft}>Save</button>
+                        <button className="mini" onClick={() => setVoiceDraft(null)}>Cancel</button>
+                        {voiceDraft.id && <button className="mini" title="Delete this voice" onClick={deleteDraft}>🗑 Delete</button>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>);
+          })()}
           {/* The Lead insert-fx rack: one shared bus all six melody parts feed into (see the note
               beside TRACKS_FX), so it has no per-part panel to live inside — it sits here instead,
               by the voice that plays it, the same collapsible-with-a-badge shape as the Track
@@ -9039,6 +9232,7 @@ export default function ProgressionWheel() {
               <select value={bassVoice} onChange={e => setBassVoiceSt({ key: progId, val: e.target.value })}
                 title="What the bassline is played on — all synth, so it sounds the same offline and in a render. The line itself is written on the sections.">
                 {BASS_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </label>
             <label className="selwrap" style={{ minWidth:140 }}>
@@ -9047,6 +9241,7 @@ export default function ProgressionWheel() {
                 title="The song's default pad voice — what a section's '— as the song —' plays. Each section can still pick its own, or none.">
                 <option value="">No pad — sections choose</option>
                 {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </label>
           </div>
@@ -9184,6 +9379,9 @@ export default function ProgressionWheel() {
             <optgroup label="Synth (no download)">
               {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </optgroup>
+            {voices.length > 0 && <optgroup label="My voices">
+              {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </optgroup>}
             {GM_CATS.map(([cat, list]) => (
               <optgroup key={cat} label={"◈ " + cat}>
                 {list.map(([k, label]) => <option key={cat + k} value={k}>{label}</option>)}

@@ -95,7 +95,7 @@ function makeSong(s) {
     secPadBeat: packBeats(s.secPadBeat), secChordBeat: packBeats(s.secChordBeat), secMove: s.secMove, secTrans: s.secTrans, secBeat: packBeats(s.secBeat), secNar: s.secNar, delayId: s.delayId, grid: s.grid,
     bpm: s.bpm, selStruct: s.selStruct, contrast: s.contrast, sketchArr: s.sketchArr,
     edits: s.edits, inserts: s.inserts, quals: s.quals, removed: s.removed, order: s.order,
-    melos: packMelos(s.melos), session: s.session,
+    melos: packMelos(s.melos), session: s.session, voices: s.voices,
   };
 }
 // melodies and drum bars read back out; everything else is already in its final shape
