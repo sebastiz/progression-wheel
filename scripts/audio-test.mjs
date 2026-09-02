@@ -2373,19 +2373,26 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (!(spread.fewer > combos / 4)) problems.push(`only ${spread.fewer} varied passes have fewer notes than the first`);
   /* A phrase of two long notes per bar really can run out of edits, so a level matching the one
      below it is not a bug on its own — a level that does so *often* is a menu entry pretending to
-     do something. Two per cent is the room a genuinely exhausted phrase needs. */
-  if (flat > steps * 0.02) problems.push(`${flat}/${steps} steps up the variation menu change nothing`);
+     do something. Now that the raw dial scales with the section (a 4-bar section here asks for
+     twice the edits its level number used to mean), a run of straight, unheld notes — the roles
+     that lose clip/extend/split/turn/merge/squeeze to "no held note to work with" — legitimately
+     hits that ceiling more often than the old flat counts ever did. Eight per cent is the room that
+     costs. */
+  if (flat > steps * 0.08) problems.push(`${flat}/${steps} steps up the variation menu change nothing`);
   /* The variation amount is a continuous slider now, so the fractions between the levels have to
      be real settings: a fractional amount resolves — deterministically, per pass — to one of the
      two integer amounts either side of it, never to a rounding of the dial and never differently
      on a second open of the same song. And across the corpus the dial has to actually turn: some
-     passes at 1.5 take the extra edit and some don't, or the fraction is a label for "2". */
+     passes at 1.5 take the extra edit and some don't, or the fraction is a label for "2". Pinned to
+     a 2-bar section so the length-scaling varyPass now does on top of this doesn't itself turn 1.5
+     into a clean multiple of the gap between 1 and 2 — this block is about the coin toss, not the
+     scaling, and the scaling has its own check below. */
   {
     let above = 0, below = 0;
     for (const nar of M.NARRATIVES) for (const role of ROLES) {
       const spots = M.rhythmSpots(M.ROLE_RHYTHM[role] || "straight", 8, 2, 4);
-      const base = nar.gen({ nBars: 4, B: 8, sub: 2, nd: ND, spots,
-        chordDegs: [[0, 2, 4], [3, 5, 0], [4, 6, 1], [0, 2, 4]], role,
+      const base = nar.gen({ nBars: 2, B: 8, sub: 2, nd: ND, spots,
+        chordDegs: [[0, 2, 4], [3, 5, 0]], role,
         pass: 0, passes: 4, idx: 0, total: 4, frac: 0 });
       for (let p = 1; p <= 3; p++) {
         const mid = show(M.varyBars(base, { pass: p, role, nd: ND, amount: 1.5 }));
@@ -2400,6 +2407,35 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     }
     if (!above || !below)
       problems.push(`a fractional amount never lands ${above ? "below" : "above"} itself — the slider's in-between positions do nothing`);
+  }
+  /* The actual complaint this scaling exists to fix: one edit for a whole eight-bar chorus reads as
+     "one note changed", not "varied". At the same dial position, a longer section has to come back
+     with more edits than a short one — not the same fixed handful regardless of how much melody
+     there is to vary. */
+  {
+    let neverGrew = 0, pairs = 0;
+    for (const nar of M.NARRATIVES) for (const role of ROLES) {
+      const spots2 = M.rhythmSpots(M.ROLE_RHYTHM[role] || "straight", 8, 2, 4);
+      const short = nar.gen({ nBars: 2, B: 8, sub: 2, nd: ND, spots: spots2,
+        chordDegs: [[0, 2, 4], [3, 5, 0]], role, pass: 0, passes: 4, idx: 0, total: 4, frac: 0 });
+      const spots8 = M.rhythmSpots(M.ROLE_RHYTHM[role] || "straight", 8, 2, 4);
+      const long = nar.gen({ nBars: 8, B: 8, sub: 2, nd: ND, spots: spots8,
+        chordDegs: [[0, 2, 4], [3, 5, 0], [4, 6, 1], [0, 2, 4], [0, 2, 4], [3, 5, 0], [4, 6, 1], [0, 2, 4]],
+        role, pass: 0, passes: 4, idx: 0, total: 4, frac: 0 });
+      for (const amount of [1, 2]) {
+        pairs++;
+        const shortOut = M.varyBars(short, { pass: 1, role, nd: ND, amount });
+        const longOut = M.varyBars(long, { pass: 1, role, nd: ND, amount });
+        const changed = (a, b) => a.reduce((n, bar, i) =>
+          n + (JSON.stringify(bar) === JSON.stringify(b[i]) ? 0 : 1), 0);
+        const shortChanged = changed(short, shortOut), longChanged = changed(long, longOut);
+        // the long section has four times the bars, so it should not come back with the same or
+        // fewer bars edited than the short one at the same dial position
+        if (longChanged <= shortChanged) neverGrew++;
+      }
+    }
+    if (neverGrew > pairs * 0.15)
+      problems.push(`${neverGrew}/${pairs} long-vs-short comparisons show no more edits for the longer section — the dial isn't scaling with section length`);
   }
   for (const v of M.VARIATIONS) if (!v.id || typeof v.apply !== "function") problems.push("a VARIATION has no id or no apply");
   /* Each kind of edit checked on its own. Two properties per variation: it fires somewhere in the
