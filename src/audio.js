@@ -1081,7 +1081,17 @@ function reverbIR(ctx, seconds, seed = 1) {
   for (let ch = 0; ch < 2; ch++) {
     const d = ir.getChannelData(ch);
     // the two channels take different seeds, or the reverb would be dead centre and mono
-    for (let i = 0; i < len; i++) d[i] = (hashNoise(seed * 7919 + ch * 104729 + i) * 2 - 1) * Math.pow(1 - i / len, 2.6);
+    let y = 0;
+    for (let i = 0; i < len; i++) {
+      const x = (hashNoise(seed * 7919 + ch * 104729 + i) * 2 - 1) * Math.pow(1 - i / len, 2.6);
+      // damping: a one-pole lowpass whose coefficient falls across the tail, so the reverb loses
+      // top end as it decays the way a real room's air and surfaces absorb highs faster than lows.
+      // A spectrally flat noise tail is what makes a convolution reverb read as synthetic even when
+      // its decay curve is right — this is the one change that fixes that, everywhere it is used.
+      const a = 0.9 - 0.75 * (i / len);
+      y += a * (x - y);
+      d[i] = y;
+    }
   }
   return ir;
 }
@@ -1547,18 +1557,32 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
     lfo.type = "sine"; lfo.frequency.value = 5.2; lfoG.gain.value = hz * 0.006;
     lfo.connect(lfoG); lfo.start(t + atk); lfo.stop(t3 + 0.05);
   }
+  /* Unison: stack extra detuned copies of every partial, the way a supersaw is built, generalised
+     to any voice. `S.uni` is 0..1 (off..full); voices go from 1 (untouched, at S.uni = 0 exactly
+     the loop below always ran anyway) up to 4, spread symmetrically up to ±25 cents apart. Each
+     voice's gain is divided by √voices rather than voices, so the *total* energy — not the peak of
+     any one voice — stays close to a single voice's, which is what keeps unison from just reading
+     as "louder" and keeps the per-voice loudness calibration (see LEAD_SPECS above) honest. */
+  const uni = Math.max(0, Math.min(1, S.uni || 0));
+  const voices = uni > 0 ? 1 + Math.round(uni * 3) : 1;
+  const spread = uni * 25;
+  const voiceGain = 1 / Math.sqrt(voices);
   V.parts.forEach(([type, mult, amp]) => {
-    const o = ctx.createOscillator();
-    o.type = type; o.frequency.value = hz * mult;
-    // the hoover's falling whoop: start above the note and slide down onto it
-    if (V.bend) {
-      o.frequency.setValueAtTime(hz * mult * Math.pow(2, V.bend / 12), t);
-      o.frequency.exponentialRampToValueAtTime(hz * mult, t + Math.max(0.06, atk * 4));
+    for (let v = 0; v < voices; v++) {
+      const cents = voices > 1 ? spread * (v / (voices - 1) - 0.5) * 2 : 0;
+      const vHz = hz * mult * Math.pow(2, cents / 1200);
+      const o = ctx.createOscillator();
+      o.type = type; o.frequency.value = vHz;
+      // the hoover's falling whoop: start above the note and slide down onto it
+      if (V.bend) {
+        o.frequency.setValueAtTime(vHz * Math.pow(2, V.bend / 12), t);
+        o.frequency.exponentialRampToValueAtTime(vHz, t + Math.max(0.06, atk * 4));
+      }
+      if (lfoG) lfoG.connect(o.frequency);
+      const pg = ctx.createGain(); pg.gain.value = amp * voiceGain;
+      o.connect(pg).connect(out);
+      o.start(t); o.stop(t3 + 0.05);
     }
-    if (lfoG) lfoG.connect(o.frequency);
-    const pg = ctx.createGain(); pg.gain.value = amp;
-    o.connect(pg).connect(out);
-    o.start(t); o.stop(t3 + 0.05);
   });
 }
 

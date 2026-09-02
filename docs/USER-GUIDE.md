@@ -605,20 +605,72 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   press an empty one and you are drawing, press a full one and you are rubbing out, so dragging back
   over your own line erases it rather than flickering it on and off. The whole stroke is one undo
   step. On a touchscreen a drag still scrolls the page, so tap-to-toggle stays as it was there.
-- **✦ Vary repeats** (**Write** tab, beside the Draw / Move switch) — a section is usually one motif
-  said three or four times, and said identically it's the part of a sketch that wears out first. This
-  finds where the melody you're editing restates itself — a one-bar riff, a two-bar hook, or a
-  sequence that repeats the same shape a step higher — leaves the *first* statement exactly as you
-  wrote it, and edits every restatement after it: a different landing note, a note added or taken
-  away, a phrase pushed early, a held note broken in two. Later statements drift a little further
-  than earlier ones, the way a fourth chorus does.
+- **✦ Vary these notes** (**Write** tab, beside the Draw / Move switch) — nudges a handful of this
+  melody's own notes without changing what melody it is: a different landing note, a note added or
+  taken away, a phrase pushed early, a held note broken in two. Where a section is one motif said
+  three or four times, it finds where the melody restates itself — a one-bar riff, a two-bar hook, or
+  a sequence that repeats the same shape a step higher — leaves the *first* statement exactly as you
+  wrote it, and only edits the restatements, drifting a little further with each one the way a fourth
+  chorus does. Where nothing restates itself (most melodies a shape or a suggested pattern writes),
+  it edits the notes directly instead — same tune either way, never a rewrite and never a no-op.
+
+  The dropdown beside it picks *which* edit the button writes next — choosing an option only sets it
+  up, the grid changes on the button press and nothing else: left on **"auto mix"** it chooses from
+  the whole catalogue of fourteen itself; pick one by name (Different ending, Add a passing note,
+  Push a note early, Split a long note, Add a turn, Add a grace note…) and every tap after writes
+  only that edit, each time landing on a different note or column.
 
   Tap again for more (the button counts **×2**, **×3**…, up to ×5) — each tap re-derives from the
-  melody you started with rather than piling edits on edits, so the motif is still the motif at the
-  top of the range. One tap past the top, or **↺**, puts it back exactly as it was; ⌘Z works too. It
-  acts on the part you're editing, in that section only, and it tells you what it found ("3 of 3
-  repeats varied · 2-bar motif"). If nothing in the melody repeats itself there's nothing to make
-  less boring, and it says so rather than rewriting a through-composed line.
+  melody you started with rather than piling edits on edits, so the tune is still the tune at the top
+  of the range. One tap past the top, or **↺**, puts it back exactly as it was; ⌘Z works too. It acts
+  on the part you're editing, in that section only, and it tells you what it found ("3 of 3 repeats
+  varied · 2-bar motif" when it found repeats to vary, "2 notes changed" when it edited the section
+  directly).
+
+- **🎨 Decorate** (**Write** tab, beside ✦ Vary these notes) — the narrower promise: nothing you've
+  already written is ever retuned or removed, and it mostly only adds to it. It writes into silence
+  that's already in the grid where there is any: **Add a passing note** fills a gap between two notes
+  with the step between their pitches, **Add a grace note** leans a quick note into the one right
+  after it, **Add an extra note** drops a note into any free space next to an existing one, **Let a
+  note ring on** holds a note into the silence right after it. If the section is packed too solid for
+  any of that — a note in every single column, no gaps anywhere — it falls back to shortening one
+  note's tail by a column and playing a neighbour tone in the space that frees up, rather than doing
+  nothing; the note it shortens keeps its own pitch and where it starts, just one column less of it.
+  That fallback only ever fires when the section truly has no room at all — anywhere there's a real
+  gap, Decorate still only adds. Same pattern as Vary these notes — a dropdown to pick **"auto mix"**
+  or one named ornament (only sets it up), the button to write it, **↺** or one tap past the top to
+  undo — with its own baseline, so decorating a section and varying it never compete for the same
+  undo.
+
+- **🔀 Rearrange** (**Write** tab, beside 🎨 Decorate) — a third promise, in between: notes may move,
+  but never into a pitch the melody didn't already have, and none of them disappear. **Push a note
+  early** / **Arrive late** slide a note into the silence right beside it, same pitch, same length;
+  **Swap two notes** trades the pitches of two neighbouring notes, each keeping its own place — the
+  same notes you wrote, reshuffled rather than replaced. Same pattern again: a dropdown to pick
+  **"auto mix"** or one named move (only sets it up), the button to make it, **↺** or one tap past the
+  top to undo, its own baseline independent of Vary these notes and Decorate.
+
+- **🎲 Shuffle pitches** (**Write** tab, beside 🔀 Rearrange) — no dropdown, since there's nothing to
+  name for something random by design: some of the melody's own notes jump up or down from wherever
+  they already sit, by a genuine random distance rather than a step to the nearest scale tone. Tap
+  again for a bigger shuffle — more notes touched, further each one can move — the same **↺** / one
+  tap past the top to undo as the other three, its own baseline.
+
+- **🎼 Reshape** (**Write** tab, beside 🎲 Shuffle pitches) — named melodic-development techniques,
+  applied to the whole section rather than a hand-picked selection (the ✋ Move-mode tools below do
+  the same things to a selection you drag). No "auto mix" — pick one on purpose:
+  - **Invert** flips the contour upside-down around the middle of the melody's *own* range (not
+    literally its first note — a melody starting on the tonic would otherwise invert straight back
+    onto itself, collapsing to a flat line). Press again to flip it back.
+  - **Reverse** plays the section backwards. Press again to flip it back.
+  - **Sequence up** / **Sequence down** restates the section's own repeated motif a scale step
+    further from the last with every tap — the classic rising-or-falling-sequence build.
+  - **Call & response** resolves the last note of every restatement home to the tonic — the call,
+    then the answer.
+
+  Sequence and Call & response need an actual repeat to work with — a through-composed section says
+  so rather than doing nothing silently. The dropdown only sets up which technique the button
+  applies next; **↺** or one tap past the top undoes, same as the other three controls.
 
 - **Suggested melodies** (**Suggest** tab) — pick a common melody shape and a starting scale note,
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear
@@ -627,10 +679,10 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   response, question & answer (resolving to the tonic), the AA / AB / AABA motif forms, ascending and
   descending sequences, and wide leaping figures.
 
-- **⇢ Syncopate** (**Write** tab, beside ✦ Vary repeats) — anticipation as one tap: the part's
+- **⇢ Syncopate** (**Write** tab, beside ✦ Vary these notes) — anticipation as one tap: the part's
   on-beat notes pushed half a beat early and held through the beat they left, the lean that
   carries most pop and house toplines. One tap pushes the backbeats, two pushes every beat but
-  the bar's downbeat, three puts the melody back. Like Vary repeats it always re-derives from the
+  the bar's downbeat, three puts the melody back. Like Vary these notes it always re-derives from the
   melody as it stood before the first press, so two taps push harder rather than pushing the
   pushed — and a push never swallows a note: an onset already sitting in its way keeps the note
   where it was.
@@ -647,7 +699,7 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
 
 - **⚔ Duel** (beside Check) — hooks get good by volume and selection, not by keeping the first
   plausible line. Start it and eight rivals are bred from the melody on the grid — same tune,
-  small mutations from the same engine Vary repeats uses. **▶ A** and **▶ B** each put a
+  small mutations from the same engine Vary these notes uses. **▶ A** and **▶ B** each put a
   contender on the grid and loop the section; tap **A wins** or **B wins** and the loser's slot
   goes to the next rival. When the pool runs out, the champion breeds fresh challengers, so the
   family keeps converging on what your ear keeps choosing. **✓ Keep champion** ends it with the

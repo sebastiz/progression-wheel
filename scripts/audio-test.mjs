@@ -1257,6 +1257,98 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // and it is reachable: a variation engine nothing calls is not a feature
     if (!/varyRepeats\(d, secL\)/.test(code))
       problems.push("src: nothing in the melody grid offers to vary a section's repeats");
+    // a section with nothing repeated inside it must still get its notes varied, not silently ignored
+    if (!/varyWhole\(/.test(fn))
+      problems.push("src: varyRepeats has no fallback for a section that never repeats itself — the button would do nothing to it");
+    // the fallback has to trigger on "the picked edit landed nowhere" (varied), not just "no repeat
+    // was found at all" (repeats) — a section that repeats but whose repeat slot happens not to fit
+    // the picked edit is the same dead end, and reads as "the dropdown does nothing" to whoever hits it
+    if (!/const whole = !res\.varied/.test(fn))
+      problems.push("src: varyRepeats falls back on !res.repeats rather than !res.varied — a picked edit with nowhere to land inside an actual repeat would still silently do nothing");
+    /* The button is the one and only thing that changes the grid. An onChange that also calls
+       varyRepeats gives two separate places that can each rewrite the melody — a dropdown "silently
+       apply on select" and a button "apply on click" — which is confusing in exactly the way this was
+       tried and reverted: a section with three of these controls stacked, each with its own dual
+       trigger, reads as a wall of buttons that might fire at any moment, not a predictable tool. */
+    const dd = code.slice(code.indexOf("Vary these notes — auto mix") - 400, code.indexOf("Vary these notes — auto mix"));
+    if (!/onChange=\{e => setVaryPick\(/.test(dd)) problems.push("src: the Vary-these-notes dropdown does not just store its pick");
+    if (/varyRepeats\(d, secL, v\)/.test(dd)) problems.push("src: the Vary-these-notes dropdown applies on selection — only the button may change the grid");
+  }
+  /* ✦ Decorate has to keep the promise its own name makes: it must only ever call into varyWhole
+     restricted to DECORATE_VARIATIONS, never the full VARIATIONS catalogue — the moment it can reach
+     a destructive edit, "nothing you wrote is ever touched" stops being true. */
+  {
+    const fn = code.slice(code.indexOf("const decorateNotes = "), code.indexOf("const resetDecIn = "));
+    if (!fn) problems.push("src: decorateNotes has moved — this guard no longer reads it");
+    if (!/decorateSection\(/.test(fn))
+      problems.push("src: decorateNotes does not call decorateSection — it could land a destructive edit under Decorate's name");
+    if (!/putLayer\(/.test(fn)) problems.push("src: decorateNotes never writes the decorated melody back");
+    if (!/decorateNotes\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to decorate a section");
+    // same single-trigger rule as Vary these notes: the dropdown only ever stores its pick
+    const dd2 = code.slice(code.indexOf("Decorate — auto mix") - 400, code.indexOf("Decorate — auto mix"));
+    if (!/onChange=\{e => setDecPick\(/.test(dd2)) problems.push("src: the Decorate dropdown does not just store its pick");
+    if (/decorateNotes\(d, secL, v\)/.test(dd2)) problems.push("src: the Decorate dropdown applies on selection — only the button may change the grid");
+  }
+  /* 🔀 Rearrange has to keep its own promise the same way: only ever through varyWhole restricted to
+     REARRANGE_VARIATIONS, never the full catalogue — otherwise "no new pitch, no lost note" stops
+     being true the moment it reaches an edit outside that pool. */
+  {
+    const fn = code.slice(code.indexOf("const rearrangeNotes = "), code.indexOf("const resetRerIn = "));
+    if (!fn) problems.push("src: rearrangeNotes has moved — this guard no longer reads it");
+    if (!/pool:\s*REARRANGE_VARIATIONS/.test(fn))
+      problems.push("src: rearrangeNotes does not restrict varyWhole to REARRANGE_VARIATIONS — it could land a pitch-inventing edit under Rearrange's name");
+    if (!/putLayer\(/.test(fn)) problems.push("src: rearrangeNotes never writes the rearranged melody back");
+    if (!/rearrangeNotes\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to rearrange a section");
+    // same single-trigger rule again: the dropdown only ever stores its pick
+    const dd3 = code.slice(code.indexOf("Rearrange — auto mix") - 400, code.indexOf("Rearrange — auto mix"));
+    if (!/onChange=\{e => setRerPick\(/.test(dd3)) problems.push("src: the Rearrange dropdown does not just store its pick");
+    if (/rearrangeNotes\(d, secL, v\)/.test(dd3)) problems.push("src: the Rearrange dropdown applies on selection — only the button may change the grid");
+  }
+  /* 🎲 Shuffle pitches has no dropdown to guard, only the button — reachability is the check. */
+  {
+    const fn = code.slice(code.indexOf("const shuffleMel = "), code.indexOf("const resetShufIn = "));
+    if (!fn) problems.push("src: shuffleMel has moved — this guard no longer reads it");
+    if (!/putLayer\(/.test(fn)) problems.push("src: shuffleMel never writes the shuffled melody back");
+    if (!/shuffleMel\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to shuffle a section's pitches");
+  }
+  /* 🎼 Reshape — reachable, writes back, and (same single-trigger rule as the other three) its
+     dropdown only ever stores a pick. Unlike them it has no auto-mix option to fall back to, so
+     there's nothing to check there — every id is a deliberate, named choice. */
+  {
+    const fn = code.slice(code.indexOf("const reshapeMel = "), code.indexOf("const resetReshIn = "));
+    if (!fn) problems.push("src: reshapeMel has moved — this guard no longer reads it");
+    if (!/putLayer\(/.test(fn)) problems.push("src: reshapeMel never writes the reshaped melody back");
+    if (!/RESHAPE_TYPES\.find\(/.test(fn)) problems.push("src: reshapeMel does not dispatch through RESHAPE_TYPES");
+    if (!/reshapeMel\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to reshape a section");
+    const dd4 = code.slice(code.indexOf("Which melodic-development technique"), code.indexOf("Which melodic-development technique") + 400);
+    if (!/onChange=\{e => setReshPick\(/.test(dd4)) problems.push("src: the Reshape dropdown does not just store its pick");
+    if (/reshapeMel\(d, secL, v\)/.test(dd4)) problems.push("src: the Reshape dropdown applies on selection — only the button may change the grid");
+  }
+  /* ⧉ copy notes to… — the mirror of ⧉ copy settings to…, added because a section varied, decorated,
+     rearranged, reshaped or shuffled had no way to push that result to its siblings: the existing
+     copy only ever carried instrument/register/level/mods, never the notes themselves. The two have
+     to stay strict mirrors of each other — copyPartNotes must reshape bars through adaptBars rather
+     than assuming every section is the same length, and it must never also carry settings, or a
+     writer copying notes to a sibling would silently overwrite whatever sound that sibling had
+     already dialled in for the part — exactly the failure mode copyPartSettings not touching notes
+     was built to avoid in the first place, in the other direction. */
+  {
+    const fn = code.slice(code.indexOf("const copyPartNotes = "), code.indexOf("const setSecInstr = "));
+    if (!fn) problems.push("src: copyPartNotes has moved — this guard no longer reads it");
+    if (!/adaptBars\(/.test(fn))
+      problems.push("src: copyPartNotes does not reshape bars through adaptBars — notes copied onto a section of a different length would not line up");
+    if (!/setMelos\(/.test(fn)) problems.push("src: copyPartNotes never writes the copied notes back");
+    // it must touch bars, and only bars — never instr/oct/vol/mute/solo/send, or it stops being the
+    // notes-only mirror of copyPartSettings and starts silently overwriting a sibling's own sound
+    if (!/\{ \.\.\.ly, bars \}/.test(fn))
+      problems.push("src: copyPartNotes writes more than just bars onto the destination layer — it should leave every setting alone");
+    if (!/copyPartNotes\(d\.key, secL,/.test(code))
+      problems.push("src: nothing in the melody grid offers to copy a part's notes to another section");
+    if (!/⧉ copy notes to…/.test(code)) problems.push("src: the copy-notes dropdown's label has moved or gone missing");
   }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
@@ -1386,6 +1478,23 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const lowest = 60 + 12 * LAYER_OCT_MIN;
   if (lowest < 0 || lowest > 127) problems.push(`the lowest register puts notes off the MIDI range (${lowest})`);
   console.log(`part mix: octaves ${LAYER_DEFAULT_OCT.join(",")} · levels ${LAYER_DEFAULT_VOL.join(",")} · lowest MIDI ${lowest}`);
+}
+
+/* ---- the melody make-up gain actually reaches a note ----
+   MELODY_MAKEUP is written once onto a part's gain node when the chain is first built, but every
+   written note re-sets that same node's gain to `gain * vel` for its own duration — which silently
+   drops the make-up the moment the first note plays unless that line carries MELODY_MAKEUP itself.
+   (This is exactly what made the melody parts read 100% on the Level slider and still sit under the
+   drums and chords.) The component is not executed here, so this reads its source the way the other
+   source-shape guards do, rather than re-deriving the bug from first principles. */
+{
+  const layerFn = code.slice(code.indexOf("const playLayer = "), code.indexOf("const playArp = "));
+  const arpFn = code.slice(code.indexOf("const playArp = "), code.indexOf("const anySolo = sec.layers.some"));
+  if (!/dest\.gain\.setValueAtTime\(gain \* vel \* MELODY_MAKEUP, tp\)/.test(layerFn))
+    problems.push("src: playLayer sets a melody note's gain without MELODY_MAKEUP — the part loses its make-up gain on its first note");
+  if (!/chain\.gain\.gain\.setValueAtTime\(gain \* vel \* MELODY_MAKEUP, tp\)/.test(arpFn))
+    problems.push("src: playArp sets a melody note's gain without MELODY_MAKEUP — an arped part loses its make-up gain on its first note");
+  console.log("melody make-up gain: reaches playLayer and playArp's per-note automation");
 }
 
 /* ---- the file tells a DAW how to lay itself out ---- */
@@ -2465,6 +2574,429 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`  pressing it again changes the result in ${steps - flat}/${steps} cases`);
 }
 
+/* ---- picking one named variation, rather than the auto mix ----
+   varyWithinPick is varyWithin pinned to one VARIATIONS entry — the dropdown next to ✦ Vary repeats
+   writes with it when the writer wants a specific edit rather than whatever the rotation lands on. It
+   has to hold to the same contract varyWithin does (leave the first statement alone, stay in shape,
+   be deterministic) and, since a writer can pick something like "Merge two notes" that only fires
+   where two adjacent notes actually exist, it also has to say "0 varied" rather than fake a result on
+   a motif that gives it nowhere to go. */
+{
+  const ND = 7;
+  const show = bars => bars.map(b => b.map(c => (c.length ? c[0] : ".")).join("")).join("|");
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const rep = (unit, n) => Array.from({ length: n }, () => dup(unit)).flat();
+
+  // every entry the dropdown will render needs a label, and the tip is what the option's title reads
+  for (const v of M.VARIATIONS) {
+    if (!v.name) problems.push(`VARIATIONS.${v.id} has no name — the dropdown would show nothing for it`);
+    if (!v.tip) problems.push(`VARIATIONS.${v.id} has no tip — the dropdown option has no title`);
+  }
+  // and the ids stay unique, or the dropdown offers two options that write the same thing under
+  // different labels while a third silently never runs
+  const ids = M.VARIATIONS.map(v => v.id);
+  if (new Set(ids).size !== ids.length) problems.push("VARIATIONS has duplicate ids");
+
+  // a busy two-bar motif restated four times, with at least one held note three columns long (for
+  // Add a turn), one two columns long (for Split/Cut a note short) and a leap over a gap (for Add a
+  // passing note) — enough for every listed edit to have somewhere to land, so a variation that never
+  // fires here is a variation with a bug, not just a sparse motif
+  const motif = [[[0], [0], [0], [1], [], [3], [], [5]], [[5], [4], [], [2], [2], [], [0], []]];
+  const base = rep(motif, 4), before = show(base);
+  let steps = 0, flat = 0, everFired = 0;
+  for (const v of M.VARIATIONS) {
+    const res1 = M.varyWithinPick(base, { id: v.id, nd: ND, seed: 11, level: 1 });
+    if (show(base) !== before) problems.push(`varyWithinPick mutated the bars it was given (${v.id})`);
+    // deterministic: the same id, seed and level always lands the same edit
+    if (show(M.varyWithinPick(base, { id: v.id, nd: ND, seed: 11, level: 1 }).bars) !== show(res1.bars))
+      problems.push(`varyWithinPick is not deterministic (${v.id})`);
+    if (res1.varied > res1.repeats) problems.push(`varyWithinPick(${v.id}) claims more varied repeats than it found`);
+    if (res1.varied > 0) everFired++;
+    // shape holds: still the same bar count and width, still legal scale degrees
+    if (res1.bars.length !== base.length) problems.push(`varyWithinPick changed the bar count (${v.id})`);
+    for (const bar of res1.bars) for (const col of bar) for (const d of col)
+      if (!(Number.isInteger(d) && d >= 0 && d < ND)) problems.push(`varyWithinPick(${v.id}) wrote degree ${d}`);
+    // the first statement is the reference and is never touched
+    const runs = M.motifRuns(base, res1.span || 2);
+    const slice = (bars, r) => show(bars.slice(r.at, r.at + (res1.span || 2)));
+    for (const r of runs) if (!r.occ && slice(res1.bars, r) !== slice(base, r))
+      problems.push(`varyWithinPick(${v.id}) edited the first statement`);
+    // pressing again (level 2) has a real chance of landing somewhere new, since `pass` moves on
+    steps++;
+    const res2 = M.varyWithinPick(base, { id: v.id, nd: ND, seed: 11, level: 2 });
+    if (show(res2.bars) === show(res1.bars)) flat++;
+  }
+  if (everFired < M.VARIATIONS.length) problems.push(`${M.VARIATIONS.length - everFired}/${M.VARIATIONS.length} variations never fired on a motif built to give every one of them somewhere to go`);
+  if (flat > steps * 0.3) problems.push(`${flat}/${steps} variations show no change between level 1 and level 2`);
+  // level 0 (nothing picked yet) and an unknown id are both a no-op, not a crash
+  const off = M.varyWithinPick(base, { id: "ending", nd: ND, seed: 11, level: 0 });
+  if (off.repeats || show(off.bars) !== before) problems.push("varyWithinPick did something at level 0");
+  const unknown = M.varyWithinPick(base, { id: "not-a-real-id", nd: ND, seed: 11, level: 1 });
+  if (unknown.repeats || show(unknown.bars) !== before) problems.push("varyWithinPick did something for an unknown id");
+  console.log(`variation picker: ${M.VARIATIONS.length} named edits, all fire on a motif built to give each one somewhere to go`);
+  console.log(`  pressing it again lands somewhere new in ${steps - flat}/${steps} cases`);
+}
+
+/* ---- varying a section that never repeats itself ----
+   varyWithin(Pick) rightly does nothing to a through-composed melody — there is no restatement to
+   treat as a variation of the first one. But ✦ Vary repeats falls back to varyWhole for exactly that
+   melody, because "nothing repeats" was being read by writers as "the button does nothing to my
+   tune", not as "there was nothing to vary". This is what the fallback promises: the same melody,
+   most of it untouched, a few of its own notes nudged — never a rewrite and never a silent no-op. */
+{
+  const ND = 7;
+  const show = bars => bars.map(b => b.map(c => (c.length ? c[0] : ".")).join("")).join("|");
+  // busy and genuinely through-composed: no bar restates another, but with a held note (for Add a
+  // turn), a two-long note (for Split) and an adjacent pair (for Merge) so every edit has somewhere
+  // to go, the same way the picker test's motif does
+  const thru = [[[0], [0], [0], [1], [], [3], [], [5]], [[6], [4], [], [2], [2], [], [0], []],
+                [[3], [1], [], [6], [], [4], [], [2]], [[5], [], [4], [4], [], [1], [], [6]]];
+  if (M.varyWithin(thru, { nd: ND, amount: 2, seed: 9 }).repeats)
+    problems.push("the through-composed fixture accidentally repeats itself — it would not exercise the fallback");
+
+  // deterministic, in shape, and leaves most of the tune alone
+  let everFired = 0, worstKeep = 1;
+  const onsets = bars => bars.flatMap((b, i) => M.barNotes(b).map(n => i + ":" + n.c));
+  const keep = new Set(onsets(thru));
+  for (const id of [undefined, ...M.VARIATIONS.map(v => v.id)]) {
+    const res1 = M.varyWhole(thru, { id, nd: ND, seed: 13, level: 2 });
+    if (show(M.varyWhole(thru, { id, nd: ND, seed: 13, level: 2 }).bars) !== show(res1.bars))
+      problems.push(`varyWhole is not deterministic (${id || "auto mix"})`);
+    if (res1.bars.length !== thru.length) problems.push(`varyWhole changed the bar count (${id || "auto mix"})`);
+    for (const bar of res1.bars) {
+      if (bar.length !== thru[0].length) problems.push(`varyWhole changed a bar's width (${id || "auto mix"})`);
+      for (const col of bar) for (const d of col)
+        if (!(Number.isInteger(d) && d >= 0 && d < ND)) problems.push(`varyWhole wrote degree ${d} (${id || "auto mix"})`);
+    }
+    if (res1.varied > 0) {
+      everFired++;
+      const same = onsets(res1.bars).filter(o => keep.has(o)).length / keep.size;
+      worstKeep = Math.min(worstKeep, same);
+      if (same < 0.55) problems.push(`varyWhole(${id || "auto mix"}) rewrote the section — only ${(same * 100) | 0}% left`);
+    }
+  }
+  // clip/split/turn/merge want a held note or an adjacent pair to act on; every other listed edit
+  // has to fire on a fixture built to give it somewhere to go, same bar as the auto mix
+  if (everFired < M.VARIATIONS.length - 3)
+    problems.push(`${M.VARIATIONS.length + 1 - everFired}/${M.VARIATIONS.length + 1} whole-section variations (including the auto mix) never fired`);
+  // amount/level 0 and an empty grid are both a no-op, not a crash
+  if (M.varyWhole(thru, { nd: ND, seed: 1, level: 0 }).varied) problems.push("varyWhole did something at level 0");
+  const blank = M.blankBars(4, 8);
+  if (M.varyWhole(blank, { nd: ND, seed: 1, level: 3 }).varied) problems.push("varyWhole found something to vary in an empty grid");
+  console.log(`whole-section fallback: ${everFired}/${M.VARIATIONS.length + 1} edits (incl. auto mix) fire on a through-composed section, ${(worstKeep * 100) | 0}% survives at worst`);
+
+  /* The trickier trigger: a section DOES repeat, so varyWithinPick finds a repeat slot to work in —
+     but the picked edit needs a structure (an adjacent pair for Merge, a held note for Add a turn…)
+     that happens not to be in that particular slot, even though the section has it elsewhere (often
+     in the first statement, which varyWithinPick is right to leave alone). `repeats > 0` is not the
+     same question as "did the picked edit actually land anywhere", and ✦ Vary these notes has to
+     fall back on the second as much as the first — a picker that only rescues the "never repeats"
+     case still reads as broken the moment someone picks Merge on a melody that happens to repeat. */
+  {
+    const pair = [[0], [1], [], [3], [], [5], [], []];        // an adjacent pair at col0-1
+    const noPair = [[2], [], [4], [], [6], [], [1], []];      // no two occupied columns back to back
+    const base = [pair, noPair, noPair];                      // noPair is what repeats; pair does not
+    const within = M.varyWithinPick(base, { id: "merge", nd: ND, seed: 3, level: 1 });
+    if (!within.repeats) problems.push("fixture does not exercise the case — no repeat was found at all");
+    if (within.varied) problems.push("fixture does not exercise the case — merge already landed inside the repeat");
+    const whole = M.varyWhole(base, { id: "merge", nd: ND, seed: 3, level: 1 });
+    if (!whole.varied)
+      problems.push("varyWhole(merge) found nothing on a section that plainly has an adjacent pair in it");
+  }
+}
+
+/* ---- ✦ Decorate: additive-only variation ----
+   DECORATE_VARIATIONS makes a stronger promise than the general catalogue: not "mostly the same
+   melody" but "the exact same melody, with notes added on top" — nothing already written may move,
+   change pitch, shrink, or disappear. That is a correctness property, not a vibe, so it gets checked
+   as one: every column that held a note before decorating must hold the identical degree afterward,
+   for every listed decoration, at every level, on every fixture — a single violation is the bug the
+   feature exists to prevent (this is exactly the complaint that motivated it: a writer wanting their
+   melody's notes untouched and only added to). */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  // written columns as a map "bar:col" -> degree, checked against the same map after decorating
+  const writtenMap = bars => {
+    const m = new Map();
+    bars.forEach((bar, bi) => bar.forEach((col, ci) => { if (col.length) m.set(bi + ":" + ci, col[0]); }));
+    return m;
+  };
+  const untouched = (before, after) => {
+    for (const [key, deg] of before) {
+      const [bi, ci] = key.split(":").map(Number);
+      const col = after[bi][ci];
+      if (!col || !col.length || col[0] !== deg) return false;
+    }
+    return true;
+  };
+  // sparse, with gaps of every size, held notes, and adjacent notes with no gap — enough surface for
+  // every decoration (a passing-tone gap, free space for Add, a long note for a grace note before it,
+  // a note followed by silence for Extend) to have somewhere to land
+  const fixtures = [
+    [[[0], [], [], [2], [], [], [], [4]], [[5], [], [3], [], [], [1], [], []]],
+    [[[0], [1], [], [], [4], [], [6], []], [[3], [], [], [5], [], [], [2], []]],
+    [[[2], [], [], [], [5], [6], [], []], [[0], [], [3], [], [], [], [1], []]],
+  ];
+  let everFired = 0, checks = 0;
+  for (const fixture of fixtures) {
+    const before = writtenMap(fixture);
+    for (const id of [undefined, ...M.DECORATE_VARIATIONS.map(v => v.id)]) {
+      for (const level of [1, 2, 3]) {
+        checks++;
+        const res = M.varyWhole(dup(fixture), { id, nd: ND, seed: 5, level, pool: M.DECORATE_VARIATIONS });
+        if (!untouched(before, res.bars))
+          problems.push(`Decorate(${id || "auto mix"}, level ${level}) altered a note that was already written`);
+        if (res.varied > 0) everFired++;
+      }
+    }
+  }
+  if (everFired < fixtures.length * (M.DECORATE_VARIATIONS.length + 1) * 0.6)
+    problems.push("Decorate rarely fires across its own fixtures — the additive-only set may be too narrow to be useful");
+  // an id outside DECORATE_VARIATIONS (a destructive one, picked by mistake or by a stale UI state)
+  // must not silently run under the decorate pool — it isn't in the list `find` looks in, so it's a
+  // clean no-op rather than a note getting moved under Decorate's name
+  const destructive = M.varyWhole(dup(fixtures[0]), { id: "merge", nd: ND, seed: 5, level: 2, pool: M.DECORATE_VARIATIONS });
+  if (destructive.varied) problems.push("Decorate ran a non-additive id (merge) under its own pool");
+  console.log(`decorate: ${M.DECORATE_VARIATIONS.length} additive-only edits, ${checks} checks, 0 touched an already-written note`);
+}
+
+/* ---- decorateSection's squeeze fallback ----
+   The case a real screenshot surfaced: a section packed wall to wall, no silence anywhere, where
+   every gap-only edit correctly finds nothing — and previously left the writer with "nothing here to
+   decorate" and no way to add an ornament at all. decorateSection now falls back to shortening one
+   note's tail by a column and playing a neighbour tone in the space that frees up, but only when the
+   gap-only pass truly found nothing; a section with any real room must never see its note lengths
+   touched just because a *specific* pick had nowhere to go while the section as a whole had space. */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const writtenPitches = bars => {
+    const m = new Map();
+    bars.forEach((bar, bi) => M.barNotes(bar).forEach(n => m.set(bi + ":" + n.c, n.d)));
+    return m;
+  };
+  // wall-to-wall: eight columns, four notes, not a single free column anywhere
+  const packed = [[[0], [0], [2], [2], [4], [4], [6], [6]]];
+  const before = writtenPitches(packed);
+  const res = M.decorateSection(dup(packed), { nd: ND, seed: 3, level: 1 });
+  if (!res.squeezed) problems.push("decorateSection did not fall back on a section with no silence anywhere");
+  if (!res.varied) problems.push("decorateSection's fallback found nothing on a section with a shortenable note");
+  // every onset that was already there keeps its own pitch — only a tail got shorter
+  for (const [key, deg] of before) {
+    const [bi, ci] = key.split(":").map(Number);
+    if (M.barNotes(res.bars[bi]).some(n => n.c === ci && n.d !== deg))
+      problems.push("decorateSection's fallback changed the pitch of an existing note's onset");
+  }
+  if (M.barNotes(res.bars[0]).length !== M.barNotes(packed[0]).length + 1)
+    problems.push("decorateSection's fallback did not add exactly one note where it shortened one");
+  // deterministic
+  const res2 = M.decorateSection(dup(packed), { nd: ND, seed: 3, level: 1 });
+  if (JSON.stringify(res.bars) !== JSON.stringify(res2.bars)) problems.push("decorateSection's fallback is not deterministic");
+  // a section with genuine room must use the gap-only path, never the fallback
+  const roomy = [[[0], [0], [], [3], [], [], [6], [6]]];
+  const auto = M.decorateSection(dup(roomy), { nd: ND, seed: 3, level: 1 });
+  if (auto.squeezed) problems.push("decorateSection fell back to squeezing on a section that plainly has room");
+  // and an empty section: nothing to shorten, nothing to add, no crash
+  const blank = M.decorateSection(M.blankBars(2, 8), { nd: ND, seed: 3, level: 1 });
+  if (blank.varied) problems.push("decorateSection found something to decorate in an empty section");
+  console.log("decorate fallback: a wall-to-wall section gets an ornament by shortening a note; a roomy section never does");
+}
+
+/* ---- 🔀 Rearrange: move-only variation ----
+   A third, different promise from Decorate's: not "nothing already written moves" but "nothing
+   becomes a pitch the melody didn't already have, and no note is lost" — every edit in
+   REARRANGE_VARIATIONS either slides a note into empty space (Push a note early, Arrive late) or
+   trades two existing notes' pitches (Swap two notes), so the *set* of onsets and the *multiset* of
+   degrees played survive exactly, however the individual notes get reshuffled. Checked directly
+   rather than assumed, the same way Decorate's additive-only guarantee is. */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  // every onset's degree, in the order it's found — length is note count, sorted copy is the
+  // multiset comparison, so both "nothing lost" and "no new pitch" are one check each
+  const onsetDegs = bars => {
+    const out = [];
+    bars.forEach(bar => { for (let c = 0; c < bar.length; c++) {
+      if ((bar[c - 1] || [])[0] === (bar[c] || [])[0] && (bar[c] || []).length) continue;   // mid-note, not an onset
+      if ((bar[c] || []).length) out.push(bar[c][0]);
+    } });
+    return out;
+  };
+  const sameMultiset = (a, b) => a.length === b.length && JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  const fixtures = [
+    [[[0], [1], [], [3], [], [], [], [4]], [[5], [], [3], [], [], [1], [], [2]]],
+    [[[2], [], [4], [5], [], [], [1], []], [[0], [3], [], [], [6], [], [], [2]]],
+    [[[1], [2], [3], [], [5], [], [0], []], [[4], [], [], [6], [], [1], [], []]],
+  ];
+  let everFired = 0, checks = 0;
+  for (const fixture of fixtures) {
+    const before = onsetDegs(fixture);
+    for (const id of [undefined, ...M.REARRANGE_VARIATIONS.map(v => v.id)]) {
+      for (const level of [1, 2, 3]) {
+        checks++;
+        const res = M.varyWhole(dup(fixture), { id, nd: ND, seed: 11, level, pool: M.REARRANGE_VARIATIONS });
+        if (!sameMultiset(before, onsetDegs(res.bars)))
+          problems.push(`Rearrange(${id || "auto mix"}, level ${level}) changed which pitches or how many notes the melody has`);
+        if (res.varied > 0) everFired++;
+      }
+    }
+  }
+  if (everFired < fixtures.length * (M.REARRANGE_VARIATIONS.length + 1) * 0.6)
+    problems.push("Rearrange rarely fires across its own fixtures — the move-only set may be too narrow to be useful");
+  // a destructive id (one that can invent a pitch, like Different ending) must not run under
+  // Rearrange's pool, same guard as Decorate's
+  const destructive = M.varyWhole(dup(fixtures[0]), { id: "ending", nd: ND, seed: 11, level: 2, pool: M.REARRANGE_VARIATIONS });
+  if (destructive.varied) problems.push("Rearrange ran a non-move id (ending) under its own pool");
+  console.log(`rearrange: ${M.REARRANGE_VARIATIONS.length} move-only edits, ${checks} checks, note count and pitch multiset always preserved`);
+}
+
+/* ---- 🎲 shufflePitches: random, but never a dead end ----
+   The one control with no dropdown and no targeted logic — every other engine in this file finds a
+   specific spot for a specific edit; this just throws darts. Its own two promises are narrower but
+   still real: it never touches a section with nothing in it, and — the thing that motivated building
+   it a count rather than a per-note coin toss — it is never a no-op on a section that plainly has
+   notes to move, however few, at the lowest level. */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const noteCount = bars => bars.reduce((a, bar) => a + M.barNotes(bar).length, 0);
+  // deterministic
+  const bars = [[[0], [1], [], [3], [], [], [], [4]], [[5], [], [3], [], [], [1], [], [2]]];
+  const a = M.shufflePitches(dup(bars), { nd: ND, seed: 17, level: 3 });
+  const b = M.shufflePitches(dup(bars), { nd: ND, seed: 17, level: 3 });
+  if (JSON.stringify(a.bars) !== JSON.stringify(b.bars)) problems.push("shufflePitches is not deterministic");
+  // never touches an empty grid, and level 0 is the control's off position
+  if (M.shufflePitches(M.blankBars(4, 8), { nd: ND, seed: 1, level: 5 }).varied)
+    problems.push("shufflePitches found something to move in an empty grid");
+  if (M.shufflePitches(dup(bars), { nd: ND, seed: 1, level: 0 }).varied)
+    problems.push("shufflePitches moved a note at level 0");
+  // note count never changes — this moves pitches, it does not add or remove notes
+  for (let level = 1; level <= 5; level++) {
+    const res = M.shufflePitches(dup(bars), { nd: ND, seed: 1, level });
+    if (noteCount(res.bars) !== noteCount(bars)) problems.push(`shufflePitches(level ${level}) changed the note count`);
+  }
+  // never a no-op at the lowest level on fixtures with real notes in them — a coin toss per note
+  // at low odds against a handful of notes would too often land on none of them; this has to guarantee
+  // at least one across a spread of seeds and section sizes, or it reads as broken the first few taps
+  const smallFixtures = [
+    [[[0], [1], [], [3], [], [], [], [4]], [[5], [], [3], [], [], [1], [], [2]]],
+    [[[2], [3], [], [], [], [], [], []]],
+    [[[0], [], [], [], [], [], [], [1]], [[2], [], [], [], [], [], [], [3]]],
+  ];
+  let zeroAtLevel1 = 0, tries = 0;
+  for (const fx of smallFixtures) for (let seed = 1; seed <= 20; seed++) {
+    tries++;
+    if (!M.shufflePitches(dup(fx), { nd: ND, seed, level: 1 }).varied) zeroAtLevel1++;
+  }
+  if (zeroAtLevel1) problems.push(`shufflePitches did nothing on ${zeroAtLevel1}/${tries} level-1 tries against sections that plainly have notes to move`);
+  // more level, more moved — not strictly monotonic (a clamp can eat a move), but the top has to
+  // clearly touch more than the bottom on a section with enough notes to show it
+  const busy = [[[0], [1], [2], [3], [4], [5], [6], [0]], [[1], [2], [3], [4], [5], [6], [0], [1]]];
+  const lo = M.shufflePitches(dup(busy), { nd: ND, seed: 4, level: 1 }).varied;
+  const hi = M.shufflePitches(dup(busy), { nd: ND, seed: 4, level: 5 }).varied;
+  if (hi <= lo) problems.push(`shufflePitches level 5 (${hi} moved) is not more than level 1 (${lo} moved) on a busy section`);
+  console.log(`shuffle pitches: deterministic, note count preserved, never a no-op at level 1 across ${tries} tries`);
+}
+
+/* ---- 🎼 Reshape: named melodic-development techniques ----
+   Invert, Reverse, Sequence up/down and Call & response are a different kind of promise than
+   everything above: not "how much changes" but "is this actually the named technique" — an inversion
+   that isn't a real mirror, or a sequence that touches the first statement, is a bug regardless of
+   how much of the melody it varies. */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const show = bars => bars.map(b => b.map(c => (c.length ? c[0] : ".")).join("")).join("|");
+  const degreesOf = bars => bars.flatMap(bar => bar.map(col => (col.length ? col[0] : null)));
+  const noteCount = bars => bars.reduce((a, bar) => a + M.barNotes(bar).length, 0);
+
+  // catalogue shape: every entry named, tipped, unique, and callable
+  const ids = M.RESHAPE_TYPES.map(t => t.id);
+  if (new Set(ids).size !== ids.length) problems.push("RESHAPE_TYPES has duplicate ids");
+  for (const t of M.RESHAPE_TYPES) {
+    if (!t.name) problems.push(`RESHAPE_TYPES.${t.id} has no name`);
+    if (!t.tip) problems.push(`RESHAPE_TYPES.${t.id} has no tip`);
+    if (typeof t.apply !== "function") problems.push(`RESHAPE_TYPES.${t.id} has no apply`);
+  }
+
+  const asymmetric = [[[0], [1], [], [3], [], [], [], [4]], [[5], [], [3], [], [], [1], [], [2]]];
+  const byId = id => M.RESHAPE_TYPES.find(t => t.id === id);
+
+  // Invert: an involution (twice = identity), never collapses outside the melody's own range, and
+  // actually changes something on a melody that isn't already symmetric about its own centre
+  {
+    const once = byId("invert").apply(dup(asymmetric), { nd: ND, level: 1 });
+    const twice = byId("invert").apply(once.bars, { nd: ND, level: 1 });
+    if (show(twice.bars) !== show(asymmetric)) problems.push("Invert twice does not return the original melody");
+    if (!once.varied) problems.push("Invert found nothing to change on an asymmetric melody");
+    const degs = degreesOf(asymmetric).filter(d => d != null);
+    const lo = Math.min(...degs), hi = Math.max(...degs);
+    for (const d of degreesOf(once.bars).filter(x => x != null))
+      if (d < lo || d > hi) problems.push(`Invert produced degree ${d} outside the melody's own range ${lo}..${hi}`);
+    // the toggle-by-parity contract the UI relies on: odd level inverts, even level is the original
+    if (byId("invert").apply(dup(asymmetric), { nd: ND, level: 2 }).varied)
+      problems.push("Invert at an even level (the UI's 'toggle back' state) reports a change");
+  }
+  // Reverse: also an involution, and note count survives (the columns are the same multiset, read
+  // in the opposite order — nothing is added, lost, or resized)
+  {
+    const once = byId("reverse").apply(dup(asymmetric), { level: 1 });
+    const twice = byId("reverse").apply(once.bars, { level: 1 });
+    if (show(twice.bars) !== show(asymmetric)) problems.push("Reverse twice does not return the original melody");
+    if (!once.varied) problems.push("Reverse found nothing to change on an asymmetric melody");
+    if (noteCount(once.bars) !== noteCount(asymmetric)) problems.push("Reverse changed the note count");
+    if (byId("reverse").apply(dup(asymmetric), { level: 2 }).varied)
+      problems.push("Reverse at an even level (the UI's 'toggle back' state) reports a change");
+  }
+  /* Sequence and Call & response both work over whatever repeat bestMotifSpan finds, which for a
+     given fixture may be a one-bar or a multi-bar span — an implementation choice these tests should
+     not hard-code. So rather than predicting exactly which notes move by how much, they check the
+     properties that have to hold under any span: the very first bar is always the reference and is
+     never touched, something changes on a section built to repeat, the result is deterministic, and
+     — the property each control actually promises — every bar the edit did touch does the named
+     thing (ends on the tonic for Answer; is a real difference for Sequence, and a bigger step at a
+     higher level actually gives a different result). */
+  // Sequence: needs an actual repeat (a through-composed section reports none)
+  {
+    if (byId("seq-up").apply(dup(asymmetric), { nd: ND, level: 1 }).repeats)
+      problems.push("Sequence up found a repeat in a through-composed section");
+    const bar1 = [[0], [1], [], [3], [], [], [], [4]], bar2 = [[5], [], [3], [], [], [1], [], [2]];
+    const rep = [bar1, bar2, bar1, bar2];
+    for (const id of ["seq-up", "seq-down"]) {
+      const res1 = byId(id).apply(dup(rep), { nd: ND, level: 1 });
+      if (!res1.repeats) { problems.push(`${id} found no repeat in a section built to have one`); continue; }
+      if (show([res1.bars[0]]) !== show([rep[0]])) problems.push(`${id} edited the very first bar`);
+      if (!res1.varied) problems.push(`${id} changed nothing on a section built to have a repeat`);
+      const res1b = byId(id).apply(dup(rep), { nd: ND, level: 1 });
+      if (show(res1b.bars) !== show(res1.bars)) problems.push(`${id} is not deterministic`);
+      const res2 = byId(id).apply(dup(rep), { nd: ND, level: 2 });
+      if (show(res2.bars) === show(res1.bars)) problems.push(`${id}: level 2 gives the same result as level 1`);
+    }
+  }
+  // Call & response: needs a repeat too; every bar it actually changes ends on the tonic, the first
+  // bar is untouched, and it is idempotent — answering an already-answered section changes nothing
+  {
+    if (byId("answer").apply(dup(asymmetric), { nd: ND }).repeats)
+      problems.push("Call & response found a repeat in a through-composed section");
+    const bar1 = [[0], [1], [], [3], [], [], [], [4]], bar2 = [[5], [], [3], [], [], [1], [], [2]];
+    const rep = [bar1, bar2, bar1, bar2];
+    const res = byId("answer").apply(dup(rep), { nd: ND });
+    if (!res.repeats) problems.push("Call & response found no repeat in a section built to have one");
+    if (show([res.bars[0]]) !== show([rep[0]])) problems.push("Call & response edited the very first bar");
+    if (!res.varied) problems.push("Call & response changed nothing on a section built to have a repeat");
+    // whichever bars it actually touched, each one's last note must land on the tonic
+    res.bars.forEach((bar, bi) => {
+      if (show([bar]) === show([rep[bi]])) return;               // unchanged bar, nothing to check
+      const notes = M.barNotes(bar);
+      if (notes.length && notes[notes.length - 1].d !== 0)
+        problems.push(`Call & response changed bar ${bi} without resolving its last note to the tonic`);
+    });
+    if (byId("answer").apply(res.bars, { nd: ND }).varied) problems.push("Call & response is not idempotent");
+  }
+  console.log(`reshape: ${M.RESHAPE_TYPES.length} named techniques — invert/reverse involutive, sequence/answer respect the first statement`);
+}
+
 /* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----
    Everything in hook.js is pure and deterministic, and the fixes have one job: applying a check's
    fix must improve (or at worst hold) that check's own score without corrupting the grid. */
@@ -2651,7 +3183,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // Pitch — which notes come out
     semis:0, dia:0, snap:"", invert:"", chord:"", voicing:"close", rpitch:0, octJump:0, oct2:0, detune:0,
     // Tone, Envelope, Movement
-    cut:100, res:0, hp:0, fenv:0, fdec:30, drive:0,
+    cut:100, res:0, hp:0, fenv:0, fdec:30, drive:0, uni:0,
     atk:0, dec:0, sus:0, rel:0, vfilt:0,
     wob:0, wobRate:2, trem:0, tremRate:4, pan:0, apan:0, apanRate:1,
     // Feel and Space
@@ -3121,6 +3653,9 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     return n % 2 ? n + 1 : n;
   };
   const kits = new Set(M.DRUM_KITS.map(([k]) => k)), pumps = new Set(M.PUMPS.map(([k]) => k));
+  const padVoices = new Set(M.PAD_VOICES.map(([v]) => v)), percKits = new Set(M.PERC_KITS.map(([v]) => v));
+  const delayTimes = new Set(M.DELAY_TIMES.map(([v]) => v)), syncLevels = new Set(M.SYNC_LEVELS.map(([v]) => v));
+  const leadVoices = new Set(M.LEAD_VOICES.map(([v]) => v)), narrativeIds = new Set(M.NARRATIVES.map(n => n.id));
   let rows = 0, subtractions = 0, silences = 0;
   for (const t of M.DANCE_TEMPLATES) {
     const where = `template ${t.id}`;
@@ -3132,6 +3667,24 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // the whole template has to fit the 4/4 dance world it is written for, or the bars do not line up
     if (M.meterOf(M.PATTERNS[t.pat]) !== "4/4") problems.push(`${where}: "${t.pat}" is not a 4/4 rhythm`);
     if (M.DRUMS[t.drum] && !M.drumFitsMeter(M.DRUMS[t.drum], "4/4")) problems.push(`${where}: "${t.drum}" does not fit 4/4`);
+    // the sound-shaping and melodic-narrative defaults every style now carries
+    if (t.pad && !padVoices.has(t.pad)) problems.push(`${where}: unknown pad voice "${t.pad}"`);
+    if (t.percKit && !percKits.has(t.percKit)) problems.push(`${where}: unknown perc kit "${t.percKit}"`);
+    if (t.delay && !delayTimes.has(t.delay)) problems.push(`${where}: unknown delay time "${t.delay}"`);
+    if (t.swing != null && !(t.swing >= 0 && t.swing <= 0.6)) problems.push(`${where}: swing ${t.swing} is outside 0–0.6`);
+    if (t.instr && !M.isGM(t.instr)) problems.push(`${where}: unknown chord instrument "${t.instr}"`);
+    if (t.melInstr && !(M.isGM(t.melInstr) || leadVoices.has(t.melInstr))) problems.push(`${where}: unknown lead voice "${t.melInstr}"`);
+    if (t.humanise != null && !(t.humanise >= 0 && t.humanise <= 1)) problems.push(`${where}: humanise ${t.humanise} is outside 0–1`);
+    if (t.narrative && !narrativeIds.has(t.narrative)) problems.push(`${where}: unknown narrative "${t.narrative}"`);
+    if (t.vary != null && !(Number.isFinite(t.vary) && t.vary >= 0)) problems.push(`${where}: vary ${t.vary} is not a non-negative number`);
+    if (t.sync != null && !syncLevels.has(t.sync)) problems.push(`${where}: unknown syncopation level ${t.sync}`);
+    if (t.trackFx) for (const [trId, patch] of Object.entries(t.trackFx))
+      for (const [k, v] of Object.entries(patch)) {
+        const mod = M.MOD_BY_KEY[k];
+        if (!mod) problems.push(`${where}: trackFx.${trId} names an unknown mod "${k}"`);
+        else if (mod.kind === "amt" && !(v >= 0 && v <= (mod.max || 100))) problems.push(`${where}: trackFx.${trId}.${k} = ${v} is outside 0–${mod.max || 100}`);
+        else if (mod.kind === "bi" && !(v >= mod.min && v <= mod.max)) problems.push(`${where}: trackFx.${trId}.${k} = ${v} is outside ${mod.min}–${mod.max}`);
+      }
 
     for (const row of t.plan) {
       rows++;

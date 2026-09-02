@@ -178,6 +178,8 @@ const MOD_GROUPS = [
         tip:"How long the filter takes to fall back. Short is a click of brightness, long is a sweep on every note." },
       { k:"drive", name:"Drive", kind:"amt", dflt:0, max:100, unit:"%",
         tip:"Overdrive this part. Gentle amounts thicken it; hard amounts are the point of a reese bass." },
+      { k:"uni", name:"Unison", kind:"amt", dflt:0, max:100, unit:"%",
+        tip:"Stack extra detuned copies of every note underneath itself — the churning stack a supersaw is built from, applied to any instrument. Off is the voice exactly as it was; all the way up is four voices spread wide. Levels are balanced so turning it on thickens the sound rather than just making it louder." },
     ] },
   /* The amplifier stage. These four shape the level of a single note over its life, which is most of
      what tells the ear *what instrument this is* — strip the first thirty milliseconds off a piano
@@ -993,7 +995,8 @@ const wouldMerge = (ns, i) => {
 
 const VARIATIONS = [
   // the classic: same phrase, different landing note. Strongest single change for the least damage.
-  { id:"ending", apply(bars, nd, r, pass) {
+  { id:"ending", name:"Different ending", tip:"Land the repeat on a different note than last time — the strongest single change for the least damage.",
+    apply(bars, nd, r, pass) {
       const bar = bars[bars.length - 1], ns = barNotes(bar);
       if (!ns.length) return false;
       const i = ns.length - 1, last = ns[i], merge = wouldMerge(ns, i);
@@ -1004,7 +1007,8 @@ const VARIATIONS = [
       return true;
     } },
   // the same idea at the other end: start the repeat from somewhere else and walk back into the tune
-  { id:"opening", apply(bars, nd, r, pass) {
+  { id:"opening", name:"Different opening", tip:"Start the repeat from a different note and walk back into the tune.",
+    apply(bars, nd, r, pass) {
       const bar = bars[0], ns = barNotes(bar);
       if (ns.length < 2) return false;                       // leave a one-note bar its one note
       const merge = wouldMerge(ns, 0);
@@ -1016,7 +1020,8 @@ const VARIATIONS = [
   /* Release a held note early. Pure rhythm — the pitches are untouched — which makes it the one
      edit that still has somewhere to go in a bar of two long notes, where every variation that
      needs an interior note or a gap has already given up. */
-  { id:"clip", apply(bars, nd, r, pass) {
+  { id:"clip", name:"Cut a note short", tip:"Release a held note early — a pure rhythm change, the pitches are untouched.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const held = ns.filter(n => n.len > 1);
         if (!held.length) return false;
@@ -1026,7 +1031,8 @@ const VARIATIONS = [
       });
     } },
   // the mirror: let a note run on into the space after it. The phrase leans instead of stepping.
-  { id:"extend", apply(bars, nd, r, pass) {
+  { id:"extend", name:"Let a note ring on", tip:"Run a note into the empty space right after it — the phrase leans instead of stepping.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const can = ns.filter(n => n.c + n.len < bar.length && !(bar[n.c + n.len] || []).length);
         if (!can.length) return false;
@@ -1036,7 +1042,8 @@ const VARIATIONS = [
       });
     } },
   // a passing note through a leap the phrase already makes
-  { id:"passing", apply(bars, nd, r, pass) {
+  { id:"passing", name:"Add a passing note", tip:"Fill a leap the phrase already makes with a note halfway between.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         for (let i = 0; i + 1 < ns.length; i++) {
           const a = ns[i], c = ns[i + 1];
@@ -1053,7 +1060,8 @@ const VARIATIONS = [
     } },
   /* One more note than last time. `passing` only fires through a leap; this fills any space the
      phrase leaves, a step away from the note before it, so a repeat can simply be busier. */
-  { id:"add", apply(bars, nd, r, pass) {
+  { id:"add", name:"Add an extra note", tip:"Fill any free space in the bar with a note a step away from its neighbour — the repeat gets busier.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const spots = [];
         for (let i = 0; i < ns.length; i++) {
@@ -1071,7 +1079,8 @@ const VARIATIONS = [
     } },
   /* A long note breaks in two and the second half steps away — the same onset, one more note. The
      way a held note turns into a phrase without the bar getting any busier at the start. */
-  { id:"split", apply(bars, nd, r, pass) {
+  { id:"split", name:"Split a long note", tip:"Break a held note in two, the second half a step away — the same onset, one more note.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const held = ns.filter(n => n.len >= 2);
         if (!held.length) return false;
@@ -1084,7 +1093,8 @@ const VARIATIONS = [
     } },
   /* The ornament: a held note dips to its neighbour and comes back, so one note becomes three.
      Needs room on both sides of the middle, which is why it wants a note three columns long. */
-  { id:"turn", apply(bars, nd, r, pass) {
+  { id:"turn", name:"Add a turn", tip:"An ornament: a held note dips to its neighbour and comes back, so one note becomes three.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const long = ns.filter(n => n.len >= 3);
         if (!long.length) return false;
@@ -1095,7 +1105,8 @@ const VARIATIONS = [
       });
     } },
   // push a phrase early — the anticipation that makes a repeat feel restless
-  { id:"push", apply(bars, nd, r, pass) {
+  { id:"push", name:"Push a note early", tip:"Move a note one column earlier — the anticipation that makes a repeat feel restless.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         // every note with a free column in front of it, then step along them by pass — always
         // pushing the same note would give two repeats the same edit whenever they pick the same bar
@@ -1108,7 +1119,8 @@ const VARIATIONS = [
       });
     } },
   // and the other way: a note arrives late, off the beat it was written on
-  { id:"delay", apply(bars, nd, r, pass) {
+  { id:"delay", name:"Arrive late", tip:"Move a note one column later, off the beat it was written on.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         const can = ns.filter((n, i) => i > 0 && n.c + n.len < bar.length && !(bar[n.c + n.len] || []).length);
         if (!can.length) return false;
@@ -1119,7 +1131,8 @@ const VARIATIONS = [
       });
     } },
   // lift one interior note to its neighbour — the smallest change that is still audible
-  { id:"neighbour", apply(bars, nd, r, pass) {
+  { id:"neighbour", name:"Nudge a note", tip:"Lift one interior note to its neighbour — the smallest change that is still audible.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         if (ns.length < 3) return false;
         // any note, not only the interior ones: a three-note bar has one interior note, so
@@ -1133,7 +1146,8 @@ const VARIATIONS = [
       });
     } },
   // take a note away: space is a variation too, and it stops later passes getting busier and busier
-  { id:"thin", apply(bars, nd, r, pass) {
+  { id:"thin", name:"Thin one out", tip:"Take a note away — space is a variation too, and it stops later repeats getting busier and busier.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         if (ns.length < 3) return false;                     // never empty a bar out entirely
         const n = ns[(Math.floor(r * ns.length) + pass) % ns.length];
@@ -1143,7 +1157,8 @@ const VARIATIONS = [
     } },
   /* Two notes become one. The mirror of `split`, and the edit that gives a fourth chorus somewhere
      to go once the earlier passes have all got busier. */
-  { id:"merge", apply(bars, nd, r, pass) {
+  { id:"merge", name:"Merge two notes", tip:"Two adjacent notes become one, holding the pitch of the first — the mirror of Split a long note.",
+    apply(bars, nd, r, pass) {
       return overBars(bars, r, pass, (bar, ns) => {
         // adjacent pairs with no gap between them: the second is absorbed into the first
         const pairs = ns.filter((n, i) => i > 0 && n.c === ns[i - 1].c + ns[i - 1].len);
@@ -1153,7 +1168,135 @@ const VARIATIONS = [
         return true;
       });
     } },
+  /* A grace note: a quick extra note in the free column right before an existing one, a step away.
+     Only ever writes into a column confirmed empty first — the note it leads into keeps its own
+     onset, pitch and length untouched — which is what makes this (with passing, add and extend)
+     safe for ✦ Decorate, where nothing already written is allowed to move or change. */
+  { id:"grace", name:"Add a grace note", tip:"A quick extra note in the silence right before an existing one, a step away — the note it leads into is untouched.",
+    apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        const can = ns.filter(n => n.c >= 1 && !(bar[n.c - 1] || []).length);
+        if (!can.length) return false;
+        const n = byPass(can, r, pass), near = stepDegs(n.d, nd);
+        if (!near.length) return false;
+        putNote(bar, n.c - 1, 1, near[(pass - 1) % near.length]);
+        return true;
+      });
+    } },
+  /* Two written notes trade pitches, each keeping its own onset and length — the same two pitches
+     the melody already had, just which one lands first. No pitch outside the melody is ever
+     introduced and no note is ever lost, which is what makes this (with push and delay) safe for
+     ✦ Rearrange, where every note may move but none may become a note that wasn't already there. */
+  { id:"swap", name:"Swap two notes", tip:"Two adjacent notes trade pitches, each keeping its own place — the same notes you wrote, reordered.",
+    apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        if (ns.length < 2) return false;
+        const i = byPass(ns.slice(0, -1).map((_, k) => k), r, pass);
+        const a = ns[i], b = ns[i + 1];
+        if (a.d === b.d) return false;
+        putNote(bar, a.c, a.len, b.d);
+        putNote(bar, b.c, b.len, a.d);
+        return true;
+      });
+    } },
 ];
+
+/* The subset of VARIATIONS that only ever writes into a column already confirmed empty — never
+   moves, retunes, shortens or removes a note that is already there. ✦ Decorate uses only these:
+   the promise it makes ("the same melody, with notes added on top") has to be literally true, not
+   just true on average the way ✦ Vary these notes' small edits are. Add a passing note, Add an
+   extra note and Add a grace note fill silence between or beside existing notes; Let a note ring on
+   extends a note's own duration into silence at the same pitch, which is a continuation of that
+   note rather than an edit to it. (Add a turn is deliberately left out: it dips the *middle* of an
+   existing held note to a different pitch for one column, which is a real embellishment but not
+   this guarantee — a writer who wants that already has it from the full catalogue.) */
+const DECORATE_IDS = ["passing", "add", "extend", "grace"];
+const DECORATE_VARIATIONS = VARIATIONS.filter(v => DECORATE_IDS.includes(v.id));
+
+/* The fallback for a section too solid for any of the above: every column already spoken for, note
+   after note with no gap between them — the wall-to-wall case a screenshot of "nothing here to
+   decorate" turned out to be. Kept out of DECORATE_VARIATIONS itself, whose whole promise is "never
+   touches what's written": this shortens the last column of a note at least two columns long by one,
+   then plays a neighbour-tone ornament in the column that frees up. A note's tail gets one column
+   shorter — its onset, its pitch, everything else about it stays exactly as written — which is a
+   real (if smaller) change, not the "nothing already written moves" guarantee the four gap-only
+   edits make. decorateSection below reaches for this only when none of those four found anywhere to
+   land at all, never in preference to them. */
+const SQUEEZE = { id:"squeeze", name:"Make room for an ornament",
+  tip:"Shortens a note by one column, at its tail, to fit a passing tone in — used only when the section is too packed for any of the above to find a gap.",
+  apply(bars, nd, r, pass) {
+    return overBars(bars, r, pass, (bar, ns) => {
+      const can = ns.filter(n => n.len >= 2);
+      if (!can.length) return false;
+      const n = byPass(can, r, pass), near = stepDegs(n.d, nd);
+      if (!near.length) return false;
+      const at = n.c + n.len - 1;
+      clearNote(bar, at, 1);
+      putNote(bar, at, 1, near[(pass - 1) % near.length]);
+      return true;
+    });
+  } };
+
+/* ✦ Decorate's actual entry point: try the gap-only edits first, and only fall back to shortening a
+   note's tail (SQUEEZE) when every one of them found nowhere at all to land — `varyWhole`'s own
+   `varied` count says which happened. `squeezed` on the result tells the caller which promise this
+   particular press is keeping, so the UI can report it honestly rather than always claiming the
+   stronger one. */
+const decorateSection = (bars, { id, nd = 7, seed = 0, level = 1 } = {}) => {
+  const first = varyWhole(bars, { id, nd, seed, level, pool: DECORATE_VARIATIONS });
+  if (first.varied || !level) return { ...first, squeezed: false };
+  const fallback = varyWhole(bars, { id: "squeeze", nd, seed: seed + 90071, level, pool: [SQUEEZE] });
+  return { ...fallback, squeezed: !!fallback.varied };
+};
+
+/* The other subset: edits that only ever move an existing note's timing or trade pitches between two
+   existing notes — the melody's own multiset of pitches, rearranged, never a pitch it didn't already
+   have and never a note lost. Push a note early and Arrive late move a note by one column into
+   silence a column away (they never land on top of another note — see their own `can` filters);
+   Swap two notes trades two notes' pitches while both keep their own onset and length. ✦ Rearrange
+   uses only these, the way ✦ Decorate uses only the additive ones — a third, narrower promise than
+   either: not "notes added on top" but "the same notes, moved around". */
+const REARRANGE_IDS = ["push", "delay", "swap"];
+const REARRANGE_VARIATIONS = VARIATIONS.filter(v => REARRANGE_IDS.includes(v.id));
+
+/* 🎲 Shuffle pitches — a fourth kind of move, and the odd one out of the three above: not a targeted
+   edit (a neighbour, a landing note), not additive, not even confined to a pitch the melody already
+   had. Some of the written notes jump up or down from wherever they already sit, by a genuinely
+   random distance rather than a step to the nearest scale tone. `level` scales two things at once,
+   matching what a writer asking to "press again for more" means by more: how many of the notes get
+   touched, and how far the ones that do can jump — a light dusting at level 1, a real reshuffle by
+   level 5. How many is a count, not a coin toss per note: a low chance tried independently against a
+   handful of notes too often lands on none of them at all, which is exactly the dead end every other
+   control here is built to avoid — so this always touches at least one note when there is one to
+   touch. Still deterministic per (seed, level): the same tap lands the same notes the same way every
+   time the song opens. */
+const shufflePitches = (bars, { nd = 7, seed = 0, level = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  if (!level || !nd) return { bars: out, varied: 0 };
+  const notes = [];
+  out.forEach((bar, bi) => barNotes(bar).forEach(n => notes.push({ bar, ...n })));
+  if (!notes.length) return { bars: out, varied: 0 };
+  const chance = Math.min(1, 0.15 * level);
+  const reach = Math.min(nd - 1, level);
+  const count = Math.max(1, Math.round(notes.length * chance));
+  // a hashed order rather than the order they were written in, so which notes get touched changes
+  // with both the seed and the level rather than always starting from the first note in the section
+  const order = notes.map((_, i) => i).sort((a, b) => hash01(seed + a * 733) - hash01(seed + b * 733));
+  let varied = 0;
+  for (const i of order.slice(0, count)) {
+    const n = notes[i];
+    const dir = hash01(seed + i * 733 + 1) < 0.5 ? -1 : 1;
+    const dist = 1 + Math.floor(hash01(seed + i * 733 + 2) * reach);
+    // a note already sitting at the top or bottom of the scale can clamp straight back to itself —
+    // try the other direction once rather than quietly spending this note's turn on nothing
+    let next = Math.max(0, Math.min(nd - 1, n.d + dir * dist));
+    if (next === n.d) next = Math.max(0, Math.min(nd - 1, n.d - dir * dist));
+    if (next === n.d) continue;
+    putNote(n.bar, n.c, n.len, next);
+    varied++;
+  }
+  return { bars: out, varied };
+};
 
 // a bar list as one comparable string — enough to tell whether an edit actually landed
 const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
@@ -1164,8 +1307,10 @@ const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).j
 
    `seed` picks where in the list the walk starts and which choice each variation makes; `pass`
    steps every one of those choices along by one, which is what makes repeat N and repeat N+1
-   differ by construction rather than by luck. */
-const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1 }) => {
+   differ by construction rather than by luck. `pool` is which list to walk — the full VARIATIONS by
+   default, or a narrower one like DECORATE_VARIATIONS when the caller has to guarantee every edit
+   it might land is a particular kind (only ever adding, never moving or replacing). */
+const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1, pool = VARIATIONS }) => {
   if (!amount || !pass || !out.length) return 0;
   /* A fractional amount is a continuous dial over a count of edits, so the fraction becomes a
      deterministic coin toss on one extra edit — seeded from the seed and the pass, never from
@@ -1178,7 +1323,7 @@ const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1 }) => {
   /* Walk a rotation of the list rather than drawing from it: a draw can miss a variation entirely
      over its tries, and in a sparse bar most variations have nowhere to go — no interior note to
      lift, no gap to fill — so the one that *can* act has to be reached, not hoped for. */
-  const start = Math.floor(hash01(seed) * VARIATIONS.length) + pass;
+  const start = Math.floor(hash01(seed) * pool.length) + pass;
   const before = barsKey(out);
   let applied = 0;
   /* Several variations are each other's mirror — clip and extend, push and delay, split and merge —
@@ -1186,11 +1331,11 @@ const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1 }) => {
      vary. Each edit therefore counts only if it changed something, and the walk carries on past
      `amount` while the bars still match where they started.
      One trip round the list, so two edits are always two different kinds of edit. */
-  for (let k = 0; k < VARIATIONS.length; k++) {
+  for (let k = 0; k < pool.length; k++) {
     if (applied >= amount && barsKey(out) !== before) break;
-    const i = (start + k) % VARIATIONS.length;
+    const i = (start + k) % pool.length;
     const snap = barsKey(out);
-    if (VARIATIONS[i].apply(out, nd, hash01(seed + i * 977), pass) && barsKey(out) !== snap) applied++;
+    if (pool[i].apply(out, nd, hash01(seed + i * 977), pass) && barsKey(out) !== snap) applied++;
   }
   return applied;
 };
@@ -1283,21 +1428,27 @@ const motifRuns = (bars, span) => {
   return out;
 };
 
-const varyWithin = (bars, { nd = 7, amount = 1, seed = 0 } = {}) => {
-  const out = bars.map(bar => bar.map(col => [...(col || [])]));
-  const none = { bars: out, span: 0, repeats: 0, varied: 0, edits: 0 };
-  if (!amount || out.length < 2) return none;
-  /* Which slice length the section is actually built from is not something to guess — a verse made
-     of a one-bar riff and a chorus made of a two-bar hook both look like eight bars of melody. Try
-     every plausible length and keep the one that finds the most restatements, longest first when two
-     agree: a two-bar phrase varied as a phrase keeps its opening and changes its ending, which is
-     what a writer would do, where varying it bar by bar changes both halves. */
+/* Which slice length a section is actually built from is not something to guess — a verse made of a
+   one-bar riff and a chorus made of a two-bar hook both look like eight bars of melody. Try every
+   plausible length and keep the one that finds the most restatements, longest first when two agree:
+   a two-bar phrase varied as a phrase keeps its opening and changes its ending, which is what a
+   writer would do, where varying it bar by bar changes both halves. Shared by varyWithin and
+   varyWithinPick — the two ways of varying the repeats inside one section. */
+const bestMotifSpan = out => {
   let best = null;
   for (const span of unitSpans(out.length)) {
     const runs = motifRuns(out, span);
     const repeats = runs.filter(r => r.occ).length;
     if (!best || repeats > best.repeats) best = { span, runs, repeats };
   }
+  return best;
+};
+
+const varyWithin = (bars, { nd = 7, amount = 1, seed = 0 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0, edits: 0 };
+  if (!amount || out.length < 2) return none;
+  const best = bestMotifSpan(out);
   if (!best || !best.repeats) return none;
   let varied = 0, edits = 0;
   best.runs.forEach(r => {
@@ -1315,6 +1466,182 @@ const varyWithin = (bars, { nd = 7, amount = 1, seed = 0 } = {}) => {
   });
   return { bars: out, span: best.span, repeats: best.repeats, varied, edits };
 };
+
+/* The same idea, pinned to one named edit from VARIATIONS instead of the auto mix varyWithin walks.
+   A writer who wants "push the hook early" rather than whatever the rotation lands on next picks it
+   from a dropdown and gets exactly that edit, on every repeat it has somewhere to go. `level` plays
+   the part `amount` plays in varyWithin: each press hands `apply` a different `pass`, so a second tap
+   of the same variation lands on a different note or column rather than repeating the first tap's
+   no-op. The first statement is never touched, same as varyWithin. */
+const varyWithinPick = (bars, { id, nd = 7, seed = 0, level = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0 };
+  const v = VARIATIONS.find(x => x.id === id);
+  if (!v || !level || out.length < 2) return none;
+  const best = bestMotifSpan(out);
+  if (!best || !best.repeats) return none;
+  let varied = 0;
+  best.runs.forEach(r => {
+    if (!r.occ) return;
+    const slice = out.slice(r.at, r.at + best.span);
+    const snap = barsKey(slice);
+    const rnd = hash01(seed + r.first * 331 + best.span * 17);
+    if (v.apply(slice, nd, rnd, r.occ + level - 1) && barsKey(slice) !== snap) varied++;
+  });
+  return { bars: out, span: best.span, repeats: best.repeats, varied };
+};
+
+/* The fallback for a section with nothing repeated inside it to preserve as the reference statement
+   — a one-off 8-bar arch, say, rather than a riff said four times. varyWithin(Pick) has no first
+   statement to leave alone there and quite rightly finds nothing to do; but "this melody doesn't
+   repeat itself" is not the same as "there is nothing here worth varying", and a writer who presses
+   ✦ Vary repeats wants their notes nudged either way. This edits every bar directly rather than
+   hunting for restatements — the same small, targeted edits (a different landing note, a note added
+   or thinned, a phrase pushed early), just without a first statement held back from them. `id` picks
+   one named edit exactly as varyWithinPick does; left unset it is the auto mix varyWithin uses,
+   applied here with varyPass directly (the same engine a later section's own pass is varied with —
+   see varyBars). `level` is both "how many edits" for the auto mix and "how many times to try, at
+   a different spot each time" for a picked one, so pressing again always has somewhere new to go.
+   `pool` narrows which list `id` (and the auto mix) is drawn from — ✦ Decorate passes
+   DECORATE_VARIATIONS so it can never land anything but a purely additive edit. */
+const varyWhole = (bars, { id, nd = 7, seed = 0, level = 1, pool = VARIATIONS } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  if (!level || !out.length) return { bars: out, varied: 0 };
+  if (!id) return { bars: out, varied: varyPass(out, { pass: level, seed, nd, amount: level, pool }) };
+  const v = pool.find(x => x.id === id);
+  if (!v) return { bars: out, varied: 0 };
+  let varied = 0;
+  for (let p = 1; p <= level; p++) {
+    const snap = barsKey(out);
+    if (v.apply(out, nd, hash01(seed + p * 977), p) && barsKey(out) !== snap) varied++;
+  }
+  return { bars: out, varied };
+};
+
+/* ---- 🎼 Reshape: named melodic-development techniques, applied to the whole section ----
+   Everything above nudges individual notes. These four reshape the *phrase* — the actual named moves
+   a composer reaches for (invert a subject, retrograde it, sequence it up a step, answer a call) —
+   the way the selection tools in Move mode already let you do by hand. Each is deterministic and
+   reversible from its own baseline like every other control here, but none of them share a "how many
+   edits" dial the way VARIATIONS-based engines do: Invert and Reverse are involutions (apply twice,
+   get the original back), Sequence's level is how many steps each repeat climbs or falls, and Answer
+   either resolves the phrase home or it already does. RESHAPE_TYPES is the catalogue the dropdown
+   reads; each entry's `apply` takes the same (bars, {nd, level}) shape so the UI can dispatch by id
+   without knowing which of the four it picked. */
+
+/* Every note in every bar, reflected around the middle of the melody's own range — not literally
+   around the first note, the textbook definition, because a melody starting on the tonic (the single
+   most common note to start on) would then reflect everything else down into negative degrees, every
+   one of them clamped back to the tonic: an "inversion" that collapses to a flat line, the opposite
+   of the creative variety this exists to offer. Mirroring around the range's own centre instead keeps
+   every result inside the range the melody already used — 2×centre − max = min and 2×centre − min =
+   max, so nothing needs clamping — while still inverting the shape: every rise becomes a fall of the
+   same size relative to that centre. Still involutive (apply twice, get the original back), so
+   pressing again is the undo. */
+const invertSection = (bars, nd = 7) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  let lo = null, hi = null;
+  out.forEach(bar => bar.forEach(col => {
+    if (!col.length) return;
+    if (lo == null || col[0] < lo) lo = col[0];
+    if (hi == null || col[0] > hi) hi = col[0];
+  }));
+  if (lo == null) return { bars: out, varied: 0 };
+  const pivot = (lo + hi) / 2;
+  let varied = 0;
+  out.forEach(bar => bar.forEach((col, ci) => {
+    if (!col.length) return;
+    const d = Math.max(0, Math.min(nd - 1, Math.round(2 * pivot - col[0])));
+    if (d !== col[0]) { bar[ci] = [d]; varied++; }
+  }));
+  return { bars: out, varied };
+};
+
+// the whole section's columns, read backwards — retrograde. A literal array reversal rather than a
+// note-by-note one, so a held note stays exactly as long as it was, just mirrored in position; also
+// its own inverse, for the same reason invertSection's is.
+const reverseSection = bars => {
+  const flat = bars.flatMap(bar => bar.map(col => [...col]));
+  const rev = [...flat].reverse();
+  let i = 0;
+  const out = bars.map(bar => bar.map(() => [...rev[i++]]));
+  const varied = flat.some((col, j) => (col[0] ?? null) !== (rev[j][0] ?? null))
+    ? out.reduce((a, bar) => a + barNotes(bar).length, 0) : 0;
+  return { bars: out, varied };
+};
+
+/* The section's own repeated motif, restated a scale step further from the first statement each time
+   it comes round — the rising (or falling) sequence, one of the single most common devices in pop and
+   film writing. Needs an actual repeat to sequence, the same way Vary these notes needs one to vary
+   before it falls back to editing directly — but unlike that fallback, sequencing a phrase that never
+   restates itself would just be transposing one bar, which is not the device this is. `level` is the
+   step size: level 1 nudges each repeat one degree further than the last, level 2 two degrees, and so
+   on — a steeper climb each press rather than a different edit. */
+const sequenceSection = (bars, { nd = 7, level = 1, dir = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0 };
+  if (!level) return none;
+  const best = bestMotifSpan(out);
+  if (!best || !best.repeats) return none;
+  let varied = 0;
+  best.runs.forEach(r => {
+    if (!r.occ) return;
+    const shift = dir * level * r.occ;
+    let moved = false;
+    for (let bi = r.at; bi < r.at + best.span; bi++) {
+      out[bi] = out[bi].map(col => {
+        if (!col.length) return col;
+        const d = Math.max(0, Math.min(nd - 1, col[0] + shift));
+        if (d !== col[0]) moved = true;
+        return [d];
+      });
+    }
+    if (moved) varied++;
+  });
+  return { bars: out, span: best.span, repeats: best.repeats, varied };
+};
+
+/* Call & response: the section's own repeated motif treated as a call, each restatement's very last
+   note resolved onto the tonic (scale degree 0) as its response — the classic antecedent → consequent
+   shape, without needing to select the call by hand the way the Move-mode version does. The first
+   statement is the call and is left alone, same as every other repeat-based edit here. Idempotent
+   rather than leveled: a restatement that already resolves home has nothing further for a second
+   press to do. */
+const answerSection = (bars, { nd = 7 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0 };
+  const best = bestMotifSpan(out);
+  if (!best || !best.repeats) return none;
+  let varied = 0;
+  best.runs.forEach(r => {
+    if (!r.occ) return;
+    const notes = barNotes(out.slice(r.at, r.at + best.span).flat());
+    if (!notes.length) return;
+    const last = notes[notes.length - 1];
+    if (last.d === 0) return;                            // already resolves home
+    const flat = out.slice(r.at, r.at + best.span).flat();
+    for (let k = 0; k < last.len; k++) flat[last.c + k] = [0];
+    // write the flattened slice back into its own bars
+    let ci = 0;
+    for (let bi = r.at; bi < r.at + best.span; bi++)
+      out[bi] = out[bi].map(() => flat[ci++]);
+    varied++;
+  });
+  return { bars: out, span: best.span, repeats: best.repeats, varied };
+};
+
+const RESHAPE_TYPES = [
+  { id:"invert", name:"Invert", tip:"Flip the melody's contour upside-down around its first note — every rise becomes a fall of the same size. Press again to flip it back.",
+    apply: (bars, { nd, level }) => level % 2 === 1 ? invertSection(bars, nd) : { bars: bars.map(b => b.map(c => [...c])), varied: 0 } },
+  { id:"reverse", name:"Reverse", tip:"Play the section backwards — retrograde. Same notes, opposite order. Press again to flip it back.",
+    apply: (bars, { level }) => level % 2 === 1 ? reverseSection(bars) : { bars: bars.map(b => b.map(c => [...c])), varied: 0 } },
+  { id:"seq-up", name:"Sequence up", tip:"The section's own repeated motif, restated a scale step higher each time it comes round — a rising sequence. Tap again for a steeper climb.",
+    apply: (bars, { nd, level }) => sequenceSection(bars, { nd, level, dir: 1 }) },
+  { id:"seq-down", name:"Sequence down", tip:"The same idea, falling — each repeat a scale step lower than the last. Tap again for a steeper fall.",
+    apply: (bars, { nd, level }) => sequenceSection(bars, { nd, level, dir: -1 }) },
+  { id:"answer", name:"Call & response", tip:"Each restatement of the section's motif resolves its last note home to the tonic — the call, then the answer.",
+    apply: (bars, { nd }) => answerSection(bars, { nd }) },
+];
 
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
 
@@ -1484,4 +1811,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, decorateSection, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };

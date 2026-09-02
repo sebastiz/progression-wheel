@@ -1,6 +1,118 @@
 # Changelog
 
 ## Unreleased
+- **⧉ copy notes to…, beside the existing ⧉ copy settings to….** The existing copy on a part only
+  ever carried its instrument, register, level and modulation onto other sections — never the notes,
+  by design, so pushing a sound to a sibling never silently overwrote a melody it had written for
+  itself. That meant there was no way to push a section's *notes* — freshly varied, decorated,
+  rearranged, reshaped or shuffled — out to its siblings at all. The new dropdown is the mirror: only
+  the notes travel, reshaped to fit each destination's own chord sequence and length, and the sound
+  each destination already had for that part is left exactly as it was.
+- **🎨 Decorate no longer gives up on a section packed too solid to have any silence left.** It only
+  ever adds into empty columns — a real guarantee, and worth keeping — but a melody with a note in
+  every single column (no gaps between any of them) has nowhere for that to land, and reported
+  "nothing here to decorate" with no way forward. It now falls back, only in that case, to shortening
+  one note's tail by a column and playing a neighbour-tone ornament in the column that frees up —
+  the note keeps its onset and its pitch, just one column less of it. A section with any real gap
+  still only ever gets added to; the fallback never fires unless the gap-only pass truly found
+  nothing at all.
+- **🎼 Reshape — named melodic-development techniques, applied to the whole section.** Everything
+  else in the melody workbench nudges individual notes; this reshapes the phrase itself, the way a
+  composer actually names the move: **Invert** flips the contour upside-down around the middle of the
+  melody's own range (not literally its first note, which would collapse anything starting on the
+  tonic straight back onto itself); **Reverse** plays it backwards; **Sequence up/down** restates the
+  section's own repeated motif a scale step further from the last with every tap; **Call & response**
+  resolves each restatement's last note home to the tonic. Invert and Reverse are self-inverse — press
+  again to flip back, no separate undo needed for the common case. These are the same techniques the
+  ✋ Move-mode selection tools (⤯ Invert, ↤ Reverse, Seq ▲/▼, ↩ Answer) already offered by hand; this
+  applies them to the whole section in one tap, no selection required.
+- **🎲 Shuffle pitches — a fourth, dropdown-free control: random jumps, more with every tap.**
+  Nudges some of a melody's own notes up or down from wherever they already sit, by a genuinely
+  random distance rather than a step to the nearest scale tone — no menu, since there's nothing to
+  name for something random by design. Tapping again shuffles more: more notes touched, and further
+  each one can jump. Never a no-op on a section with notes in it, even on the first tap.
+- **Fixed: Vary these notes / Decorate / Rearrange had two separate things that could change the
+  grid — picking a dropdown option and pressing the button — which read as a wall of controls that
+  might fire at any moment, especially with all three stacked.** Picking an option now only sets up
+  what the button will write next; only the button changes the grid. Each control's dropdown, button,
+  undo and status also now sit together as one row rather than wrapping into whichever line had
+  space, so it's clear which parts belong to which control.
+- **🔀 Rearrange — move a melody's own notes around without inventing a new one.** A third promise,
+  between ✦ Vary these notes (edits a note) and 🎨 Decorate (only adds): every note here may slide
+  earlier or later into silence, or trade places with its neighbour, but none of them may become a
+  pitch the melody didn't already have, and none may be lost — the same notes, reshuffled. Same
+  dropdown-picks-a-specific-edit pattern as the other two, its own baseline and undo, right beside
+  them in the melody workbench.
+- **🎨 Decorate — add ornaments to a melody without ever touching what's already written.** ✦ Vary
+  these notes edits notes in place (a different landing note, a note cut short); sometimes what's
+  wanted is narrower than that — keep the tune exactly as it is and only add to it. Decorate does
+  that: it only ever writes into silence already in the grid, so a passing tone fills a gap between
+  two notes, a grace note leans into the note after it, an extra note appears where there's room, and
+  a note gets held on into the silence right after it — never moving, retuning, shortening or
+  removing a note you already wrote. Same dropdown-picks-a-specific-edit pattern as ✦ Vary these
+  notes, with its own baseline and undo, right beside it in the melody workbench.
+- **Fixed: picking a variation from the ✦ Vary these notes dropdown did nothing until you also
+  pressed the button.** Choosing a named edit only stored the choice; the grid stayed exactly as it
+  was until a separate tap on the button applied it, which read as the dropdown not working at all.
+  Picking an option now applies it immediately, the same tap that chose it — the button remains for
+  applying the current pick again, for another round of edits.
+- **Fixed: melody parts were quieter than their Level slider promised.** Every melody part's chain
+  was built with a make-up gain (so a 100% Level part reads as loud as the drums), but every note
+  the part played re-set that same gain to just its own level and velocity, silently dropping the
+  make-up the instant the first note sounded — the melody was never as loud as it looked, whatever
+  the Level slider read. The per-note gain now carries the make-up too, on both the written grid and
+  the arpeggiator.
+- **✦ Vary these notes (was ✦ Vary repeats) now varies every section, not just the ones that repeat
+  a phrase — and not just when the specific edit picked happens to fit the repeat it finds.** It used
+  to find the motif a section restates and edit only the repeats, reporting "nothing repeats in this
+  melody" and doing nothing on anything through-composed — which is most melodies a narrative or
+  pattern writes, so the button read as broken more often than not. Worse, picking a named edit from
+  the dropdown could look broken even on a section that *does* repeat: Merge two notes needs an
+  adjacent pair, Add a turn needs a long held note, and the particular repeat found might not have
+  one even though the section does, elsewhere. Both cases now fall back to editing the section's own
+  notes directly — the same small, deliberate changes (a different landing note, a note added or
+  thinned, a phrase pushed early), just applied straight to the tune, searching every bar rather than
+  only the repeat it first tried. Same melody either way, never a different one and never a silent
+  no-op.
+- **Pick a specific variation, instead of only the auto mix.** A dropdown beside the button — in the
+  melody workbench, so it's there wherever a section's melody is being edited — lists all thirteen
+  named edits (Different ending, Add a passing note, Push a note early, Split a long note, Add a
+  turn…), each with a one-line description of what it does. Left on "auto mix" the button behaves as
+  before, picking from the whole catalogue itself; pick one and it writes only that edit, and tapping
+  again lands the same kind of edit on a different note or column rather than repeating itself.
+- **Every style on the Arrange tab now sets its own tone, feel and melody, not just its groove.**
+  Picking a style already set tempo, drum kit, pump and bassline; it now also sets the pad voice,
+  percussion kit, delay time and swing, the chord and lead instrument, the humanise (feel) amount,
+  and a default melodic narrative — so choosing Dubstep reaches for a Reese lead over a wobbling
+  bass and Trance reaches for a supersaw over a breathing pad, rather than leaving those on
+  whatever the last style left behind. Lead instrument, chord instrument and humanise were global
+  settings shared by every song; they are now remembered per progression like tempo and drums
+  already were. A handful of styles with a genuinely signature use of movement or drive — dubstep's
+  wobble, acid house and psytrance's resonant squelch, EBM and industrial techno's distortion —
+  also set that track's Tone/Movement FX, rather than adding it everywhere it wouldn't earn its
+  keep. "Recreate a famous track" inherits all of this from its style the same way it already
+  inherits tempo and drums, so a track preset that doesn't specify its own sound gets its style's.
+- **Ten famous tracks for every style on the Arrange tab.** "Recreate a famous track" now covers all
+  68 styles (previously only 13 had any, and just 1-2 tracks each) — 658 new real, researched tracks
+  bringing the catalogue to 678, each with its own key/tempo/chord-progression match and a melodic
+  narrative steered toward the record's real character (never a transcribed melody — see the note at
+  the top of `src/track-presets.js`). Two of the rarest, newest sub-genres (psytrance, full-on
+  psytrance) land on 9 rather than 10, since a couple of candidate tracks couldn't be verified as
+  real and were dropped rather than shipped as a guess. Once a style is picked, the dropdown now
+  shows just that style's own tracks instead of the full list (see the previous entry below).
+- **68 dance-music styles on the Arrange tab, up from 13.** Every style in the "Dance Music Family
+  Tree" — the whole disco/house branch (Balearic Beat, Italo Disco, Hi-NRG, Acid House, Deep House,
+  Afro House, Amapiano, Gqom, Tribal House, French/Filter House, Deep Tech, Electro House, Dutch
+  House…), the bass/garage branch (Bass House, Moombahton, Speed Garage, Grime, Bassline, UK Funky,
+  Brostep, Riddim, Future Garage…), the breakbeat/jungle/hardcore branch (UK Breakbeat Hardcore,
+  Jungle, Liquid D&B, Neurofunk, Jump-Up, Drumfunk, Breakcore, Digital Hardcore, Happy Hardcore,
+  Gabber), the electro/EBM/techno branch (Hardstyle, Speedcore, Electro-Funk, EBM, New Beat, Minimal/
+  Dub/Hard/Industrial Techno) and the trance/psytrance branch (Progressive/Uplifting/Goa Trance,
+  Psytrance, Full-On, Darkpsy, Progressive Psytrance) — now has its own arrangement template: a
+  genre-appropriate tempo, drum kit and bassline plus a structure built for that style's actual
+  phrase lengths and energy curve, not a reskin of a nearby genre. The 13 existing templates keep
+  their ids and settings; a few picked up their more exact family-tree name (House → Chicago House,
+  Techno → Detroit Techno, Big room / festival → Big Room / Festival House, and so on).
 - **Recreate a famous track, on the Arrange tab.** A new dropdown beside the structure picker holds
   twenty real dance and electronic records — house, nu-disco, tech house, techno, trance, big room,
   progressive house, melodic techno, drum & bass, dubstep, future bass, trap and UK garage — and

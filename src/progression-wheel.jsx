@@ -8,13 +8,13 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, decorateSection, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 import { SESSION_PREFIX, TRACK_TYPES, TRACK_TYPE_BY_ID, newClip, newTrack, nextClipNum, sessionKey } from "./session.js";
-import { DANCE_TEMPLATES, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
+import { DANCE_TEMPLATES, FAMILY_OF, FAMILY_ORDER, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 import { TRACK_PRESETS } from "./track-presets.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
@@ -525,6 +525,7 @@ export default function ProgressionWheel() {
   const TABS = [["write", "Write"], ["sound", "Sound"], ["sketch", "Sketch"], ["arrange", "Arrange"], ["session", "Session"], ["save", "Save"]];
   const [tab, setTab] = useState("write");
   const [wheelOpen, setWheelOpen] = useState(true);
+  const [styleRefOpen, setStyleRefOpen] = useState(false);
   const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
   const [adv, setAdv] = useState(false);    // reveal the advanced harmony controls (secondary doms, etc.)
   const [showPar, setShowPar] = useState(false);
@@ -544,8 +545,8 @@ export default function ProgressionWheel() {
   const [curLabel, setCurLabel] = useState(null);
   const [bpmSt, setBpmSt] = useState({ key:"", val:0 });
   const [nChordsSt, setNChordsSt] = useState({ key:"", val:0 });   // chords in the loop (0 = the progression's own length)
-  const [instr, setInstr] = useState("acoustic_guitar_steel");   // chord instrument (GM key)
-  const [melInstr, setMelInstr] = useState("flute");        // melody lead voice — a real sampled instrument by default (synth id or GM key)
+  const [instrSt, setInstrSt] = useState({ key:"", val:"acoustic_guitar_steel" });   // chord instrument (GM key), keyed by progression so a style can set it
+  const [melInstrSt, setMelInstrSt] = useState({ key:"", val:"flute" });        // melody lead voice — a real sampled instrument by default (synth id or GM key), keyed by progression
   const [legato, setLegato] = useState(true);               // merge/flow melody notes
   const [clickOn, setClickOn] = useState(false);            // metronome click on each hit (off by default)
   const [patSel, setPatSel] = useState({ key:"", id:"" });
@@ -704,7 +705,7 @@ export default function ProgressionWheel() {
   const [gridSt, setGridSt] = useState({ key:"", val:"" });     // melody grid resolution, keyed by progression
   const [delaySt, setDelaySt] = useState({ key:"", val:"" });   // delay time, keyed by progression
   const [swingSt, setSwingSt] = useState({ key:"", val:0 });    // swing amount 0..0.6, keyed by progression
-  const [humanise, setHumanise] = useState(0);                  // timing + velocity looseness, 0..1
+  const [humaniseSt, setHumaniseSt] = useState({ key:"", val:0 });   // timing + velocity looseness, 0..1, keyed by progression
   // Undo/redo over the whole song document. Snapshots are cheap (the same shape the sketch and the
   // link use) and taken after the fact, so a tool you experiment in can always be walked back.
   const [past, setPast] = useState([]);
@@ -736,6 +737,36 @@ export default function ProgressionWheel() {
      is gone. It is deliberately not part of the song document: the notes are the song, this is just
      where the writer had got to with the control. */
   const [varyIn, setVaryIn] = useState({});
+  /* Which single variation ✦ Vary these notes writes, per section+part — "" is the auto mix (the
+     original behaviour, walking every variation in the catalogue); anything else pins the button
+     to one named edit (Different ending, Add a passing note, …) so a writer chasing one particular
+     kind of change does not have to keep tapping past ones they don't want. UI state, not song
+     state, like varyIn beside it. */
+  const [varyPick, setVaryPick] = useState({});
+  /* ✦ Decorate — the sibling of varyIn/varyPick above, restricted to DECORATE_VARIATIONS so it can
+     promise something ✦ Vary these notes can't: every note already written stays exactly where it
+     is, at the pitch and length it was given, and this only ever adds around it. decIn is the same
+     baseline/level/undo shape as varyIn; decPick is the same "" = auto mix, else one named id shape
+     as varyPick. Kept as separate state (not folded into varyIn/varyPick) so decorating a section and
+     varying it are independent — pressing one never resets or overwrites the other's progress. */
+  const [decIn, setDecIn] = useState({});
+  const [decPick, setDecPick] = useState({});
+  /* 🔀 Rearrange — the third sibling, restricted to REARRANGE_VARIATIONS: every note may move in
+     time or trade places with another, but no note's pitch may become one the melody didn't already
+     have, and none may be lost. Same baseline/pick/state shape as decIn/decPick, independent of both
+     it and varyIn so all three controls keep their own undo. */
+  const [rerIn, setRerIn] = useState({});
+  const [rerPick, setRerPick] = useState({});
+  /* 🎲 Shuffle pitches — no dropdown, no pick: one button, one baseline. Random by design, so there
+     is nothing to name in a menu the way Vary/Decorate/Rearrange's edits are named. */
+  const [shufIn, setShufIn] = useState({});
+  /* 🎼 Reshape — the named melodic-development techniques (Invert, Reverse, Sequence up/down, Call &
+     response), applied to the whole section rather than a hand-picked selection. Unlike Vary/Decorate/
+     Rearrange's dropdown there is no "auto mix": each of these is a deliberate, distinct move a writer
+     reaches for on purpose, so reshPick always names one (defaulting to the first) rather than "".
+     Same baseline/undo shape as the others, independent state of its own. */
+  const [reshIn, setReshIn] = useState({});
+  const [reshPick, setReshPick] = useState({});
   /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
      early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
   const [syncIn, setSyncIn] = useState({});
@@ -1297,7 +1328,19 @@ export default function ProgressionWheel() {
     // track", not "whatever the last template left running under a different genre"
     setBassSt({ key: progId, val: tpl.bass && BASS[tpl.bass] ? tpl.bass : "" });
     setBassVoiceSt({ key: progId, val: tpl.bassVoice || "" });
+    setPadSt({ key: progId, val: tpl.pad && PAD_VOICES.some(([id]) => id === tpl.pad) ? tpl.pad : "" });
+    setPercKitSt({ key: progId, val: tpl.percKit || "" });
+    setDelaySt({ key: progId, val: tpl.delay || "" });
+    setSwingSt({ key: progId, val: tpl.swing != null ? tpl.swing : 0 });
+    setInstrSt({ key: progId, val: tpl.instr || "acoustic_guitar_steel" });
+    setMelInstrSt({ key: progId, val: tpl.melInstr || "flute" });
+    setHumaniseSt({ key: progId, val: tpl.humanise != null ? tpl.humanise : 0 });
+    setTrackFx(tpl.trackFx || {});
     applyArrangement(tpl.plan, v);
+    // the narrative write must land a render later, for the same reason applyTrackPreset stages
+    // it — it also calls setMelos, and a second setMelos issued in this same breath as
+    // applyArrangement's would silently overwrite it rather than stack
+    trackPresetRef.current = tpl.narrative ? { stage: "melody", preset: tpl } : null;
   };
 
   /* ---- track presets: "recreate a famous track" ----
@@ -1373,10 +1416,22 @@ export default function ProgressionWheel() {
     const bassId = preset.bass || (tpl && tpl.bass);
     setBassSt({ key: pid, val: bassId && BASS[bassId] ? bassId : "" });
     setBassVoiceSt({ key: pid, val: preset.bassVoice || (tpl && tpl.bassVoice) || "" });
-    if (preset.pad) setPadSt({ key: pid, val: preset.pad });
-    if (preset.percKit) setPercKitSt({ key: pid, val: preset.percKit });
-    if (preset.delay) setDelaySt({ key: pid, val: preset.delay });
-    if (preset.swing != null) setSwingSt({ key: pid, val: preset.swing });
+    // a track preset that doesn't state its own pad/perc/delay/swing/instruments/feel falls back to
+    // its style's defaults, exactly as it already does for bpm/drum/kit/pump above — a famous track
+    // is a specific reading of its style, not a departure from it
+    const padId = preset.pad || (tpl && tpl.pad);
+    if (padId) setPadSt({ key: pid, val: padId });
+    const pkId = preset.percKit || (tpl && tpl.percKit);
+    if (pkId) setPercKitSt({ key: pid, val: pkId });
+    const delayId = preset.delay || (tpl && tpl.delay);
+    if (delayId) setDelaySt({ key: pid, val: delayId });
+    const swingVal = preset.swing != null ? preset.swing : (tpl ? tpl.swing : null);
+    if (swingVal != null) setSwingSt({ key: pid, val: swingVal });
+    setInstrSt({ key: pid, val: preset.instr || (tpl && tpl.instr) || "acoustic_guitar_steel" });
+    setMelInstrSt({ key: pid, val: preset.melInstr || (tpl && tpl.melInstr) || "flute" });
+    const humaniseVal = preset.humanise != null ? preset.humanise : (tpl && tpl.humanise != null ? tpl.humanise : 0);
+    setHumaniseSt({ key: pid, val: humaniseVal });
+    setTrackFx(preset.trackFx || (tpl && tpl.trackFx) || {});
     setSelRow(0); setCustom({ key:"", plan:null });
     const selVal = tplIdx >= 0 ? pid + ":t:" + tplIdx : "";
     setSelStruct(selVal);
@@ -1435,6 +1490,9 @@ export default function ProgressionWheel() {
   // Swing is a dial now, not a switch. The rhythm pattern's own `swing` flag sets the starting
   // point; the user can then push it anywhere from straight to nearly triplet.
   const swingAmt = swingSt.key === progId ? swingSt.val : (rhythm.swing ? 0.33 : 0);
+  const instr = instrSt.key === progId ? instrSt.val : "acoustic_guitar_steel";
+  const melInstr = melInstrSt.key === progId ? melInstrSt.val : "flute";
+  const humanise = humaniseSt.key === progId ? humaniseSt.val : 0;
   bpmRef.current = effBpm; patRef.current = rhythm.pattern; swingRef.current = swingAmt;
   humRef.current = humanise;
   instrRef.current = instr; drumRef.current = DRUMS[drum].pattern; realRef.current = realSounds;
@@ -2644,6 +2702,33 @@ export default function ProgressionWheel() {
     if (n) setMelos({ progId, secs: next });
     return n;
   };
+  /* The mirror of copyPartSettings: only this part's notes travel — a way to push a section's
+     melody (freshly varied, decorated, reshaped…) out to its siblings without also overwriting
+     whatever instrument, register or level those sections had already dialled in for that part, the
+     way copying settings would. Reshaped bar-for-bar onto each destination's own chord sequence via
+     adaptBars — the same reconciliation a saved song already gets on load — rather than assuming
+     every section runs the same length, so a four-bar verse's notes land sensibly on an eight-bar
+     one instead of half the destination staying silent or the array simply not matching its bars. */
+  const copyPartNotes = (fromKey, L, toKeys) => {
+    const fromSec = secMelos[fromKey], src = layerOf(fromSec, L);
+    if (!src) return 0;
+    const samePid = melos.progId === progId;
+    const secs = samePid ? melos.secs : {};
+    const next = { ...secs };
+    let n = 0;
+    for (const key of toKeys) {
+      const sec = secMelos[key]; if (!sec || key === fromKey) continue;
+      const bars = adaptBars(fromSec.ids, src.bars, sec.ids, samePid);
+      const grown = sec.layers.length > L ? sec.layers.map(cloneLayer)
+        : [...sec.layers.map(cloneLayer), ...Array.from({ length: L + 1 - sec.layers.length }, () =>
+            ({ bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: null,
+               oct: 0, vol: 1, mute: false, solo: false, send: 0 }))];
+      next[key] = { ids: sec.ids, layers: grown.map((ly, i) => i === L ? { ...ly, bars } : ly) };
+      n++;
+    }
+    if (n) setMelos({ progId, secs: next });
+    return n;
+  };
   const setSecInstr = (key, L, val) => {
     const sec = secMelos[key]; if (!sec) return;
     putSec(key, { layers: sec.layers.map((ly, i) =>
@@ -3014,33 +3099,48 @@ export default function ProgressionWheel() {
   const varyKeyOf = (key, L) => key + ":" + L;
   const melKey = bars => JSON.stringify(bars);
   const VARY_IN_MAX = 5;                                    // past this the motif stops being the motif
-  const varyRepeats = (d, L) => {
+  const varyRepeats = (d, L, pickNow) => {
     const sec = secMelos[d.key]; if (!sec) return;
     const cur = barsOf(sec, L); if (!cur) return;
     const k = varyKeyOf(d.key, L), st = varyIn[k];
-    /* The stored baseline is only good while the grid still holds what we last wrote to it. Draw a
-       note, undo, write a pattern over the top — and the melody in front of the writer is a new
-       first statement, not a varied old one. Comparing the notes rather than trusting the counter is
-       what keeps the button honest through an edit it never heard about. */
-    const fresh = !st || melKey(cur) !== st.grid;
+    // "" = the auto mix; else one VARIATIONS id. `pickNow` lets the dropdown apply the instant it's
+    // changed, passing the value straight through rather than reading the state set alongside it —
+    // setVaryPick has not re-rendered yet at that point, so varyPick[k] would still read the old pick.
+    const pick = pickNow != null ? pickNow : (varyPick[k] || "");
+    /* The stored baseline is only good while the grid still holds what we last wrote to it, and only
+       while it is being varied the same way — switching the dropdown to a different edit is as much
+       a change of mind as writing a new note, so it starts a fresh baseline too. Comparing rather
+       than trusting the counter is what keeps the button honest through either kind of change. */
+    const fresh = !st || melKey(cur) !== st.grid || st.pick !== pick;
     const base = fresh ? cur : st.base;
     const level = (fresh ? 0 : st.level) + 1;
     const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17;
-    const res = varyWithin(base, { nd: scaleSemis.length, amount: level, seed });
-    // nothing restates itself here, so there is nothing to make less boring — say so rather than
-    // quietly editing a through-composed melody the writer never asked to have rewritten
-    if (!res.repeats) {
-      setVaryIn({ ...varyIn, [k]: { base, grid: melKey(cur), level: 0, note: "nothing repeats in this melody" } });
+    const res = pick
+      ? varyWithinPick(base, { id: pick, nd: scaleSemis.length, seed, level })
+      : varyWithin(base, { nd: scaleSemis.length, amount: level, seed });
+    /* Two different ways the repeat-based edit can land nothing: the section has no restatement to
+       treat as a variation of the first one (a one-off arch rather than a riff said four times), or
+       it does repeat but the *picked* edit has nowhere to go inside those particular repeats — Merge
+       two notes needs an adjacent pair, Add a turn needs a held note three columns long, and the
+       repeated slice just might not have one even though the section as a whole does. Either way,
+       `res.varied` is 0 and the grid would otherwise sit there unchanged with the dropdown looking
+       broken. Fall back to editing the whole section directly, which searches every bar rather than
+       only the repeat slots, so the picked edit gets every chance the section actually offers it. */
+    const whole = !res.varied;
+    const out = whole ? varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level }) : res;
+    if (whole && !out.varied) {
+      setVaryIn({ ...varyIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing here to vary" } });
       return;
     }
     // one past the top is the way back: the melody as it was, and the next press starts again
     const back = level > VARY_IN_MAX;
-    const bars = back ? dupBars(base) : res.bars;
+    const bars = back ? dupBars(base) : out.bars;
     putLayer(d.key, L, bars);
-    setVaryIn({ ...varyIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level,
+    setVaryIn({ ...varyIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick,
       note: back ? "back to the melody you wrote"
-        : `${res.varied} of ${res.repeats} repeat${res.repeats > 1 ? "s" : ""} varied · `
-          + (res.span > 1 ? `${res.span}-bar motif` : "1-bar motif") } });
+        : whole ? `${out.varied} note${out.varied === 1 ? "" : "s"} changed`
+        : `${out.varied} of ${res.repeats} repeat${res.repeats > 1 ? "s" : ""} varied`
+          + (pick ? "" : ` · ${res.span > 1 ? `${res.span}-bar motif` : "1-bar motif"}`) } });
   };
   // back to the melody as it was before the first press, with the counter cleared
   const resetVaryIn = (d, L) => {
@@ -3050,9 +3150,149 @@ export default function ProgressionWheel() {
     const next = { ...varyIn }; delete next[k]; setVaryIn(next);
   };
 
+  /* ---- decorate: add to a melody without ever touching what's already there ----
+     ✦ Vary these notes' edits are small, but they are still edits — a landing note changes pitch, a
+     held note gets cut short. Sometimes what's wanted is narrower than that: keep the tune exactly as
+     written and only add ornaments around it. This always works on the whole section directly (no
+     repeat-hunting — a fill or a passing tone belongs anywhere silent, first bar included) via
+     decorateSection restricted to DECORATE_VARIATIONS, so whatever it picks is guaranteed additive-
+     only — except on a section packed too solid for that to find any silence at all (every column
+     already a note, wall to wall), where decorateSection falls back to shortening one note's tail by
+     a column to fit an ornament in rather than reporting a dead end. */
+  const decorateNotes = (d, L, pickNow) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = decIn[k];
+    const pick = pickNow != null ? pickNow : (decPick[k] || "");
+    const fresh = !st || melKey(cur) !== st.grid || st.pick !== pick;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    // offset from varyRepeats' seed so the two controls don't land on the same choices by coincidence
+    const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17 + 90001;
+    const out = decorateSection(base, { id: pick || undefined, nd: scaleSemis.length, seed, level });
+    if (!out.varied) {
+      setDecIn({ ...decIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing here to decorate" } });
+      return;
+    }
+    const back = level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : out.bars;
+    putLayer(d.key, L, bars);
+    setDecIn({ ...decIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick,
+      note: back ? "back to the melody you wrote"
+        : out.squeezed ? `packed solid — shortened a note to fit ${out.varied === 1 ? "one in" : out.varied + " in"}`
+        : `${out.varied} note${out.varied === 1 ? "" : "s"} added` } });
+  };
+  const resetDecIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = decIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...decIn }; delete next[k]; setDecIn(next);
+  };
+
+  /* ---- rearrange: move the written notes around without inventing a new one ----
+     The third promise, between ✦ Vary these notes (edits a note) and ✦ Decorate (only adds): every
+     note here may slide earlier or later, or trade places with its neighbour, but nothing turns into
+     a pitch the melody didn't already have and nothing disappears — the same notes, reshuffled. Also
+     always whole-section (no repeat-hunting), via varyWhole restricted to REARRANGE_VARIATIONS. */
+  const rearrangeNotes = (d, L, pickNow) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = rerIn[k];
+    const pick = pickNow != null ? pickNow : (rerPick[k] || "");
+    const fresh = !st || melKey(cur) !== st.grid || st.pick !== pick;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    // offset again, so Vary, Decorate and Rearrange never land on the same choices by coincidence
+    const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17 + 180002;
+    const out = varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level, pool: REARRANGE_VARIATIONS });
+    if (!out.varied) {
+      setRerIn({ ...rerIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: "nothing here to rearrange" } });
+      return;
+    }
+    const back = level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : out.bars;
+    putLayer(d.key, L, bars);
+    setRerIn({ ...rerIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick,
+      note: back ? "back to the melody you wrote" : `${out.varied} note${out.varied === 1 ? "" : "s"} moved` } });
+  };
+  const resetRerIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = rerIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...rerIn }; delete next[k]; setRerIn(next);
+  };
+
+  /* ---- 🎲 shuffle pitches: random jumps, no menu, one button ---- */
+  const shuffleMel = (d, L) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = shufIn[k];
+    const fresh = !st || melKey(cur) !== st.grid;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + L * 17 + 270003;
+    const out = shufflePitches(base, { nd: scaleSemis.length, seed, level });
+    if (!out.varied) {
+      setShufIn({ ...shufIn, [k]: { base, grid: melKey(cur), level: 0, note: "nothing here to shuffle" } });
+      return;
+    }
+    const back = level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : out.bars;
+    putLayer(d.key, L, bars);
+    setShufIn({ ...shufIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level,
+      note: back ? "back to the melody you wrote" : `${out.varied} note${out.varied === 1 ? "" : "s"} shuffled` } });
+  };
+  const resetShufIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = shufIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...shufIn }; delete next[k]; setShufIn(next);
+  };
+
+  /* ---- 🎼 reshape: invert / reverse / sequence / call & response ----
+     Invert and Reverse are involutions — apply the same transform twice from the same baseline and
+     you're back where you started — so they toggle on parity of `level` rather than counting up to a
+     cap the way every other control here does; a toggle always writes the grid, even on the "back to
+     base" half, because that half is a real state the grid has to show, not a no-op to skip. Sequence
+     and Answer need an actual repeated motif, the same way Vary these notes' repeat-based path does,
+     and say so when there isn't one rather than silently doing nothing. */
+  const reshapeMel = (d, L, pickNow) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = reshIn[k];
+    const pick = pickNow != null ? pickNow : (reshPick[k] || RESHAPE_TYPES[0].id);
+    const fresh = !st || melKey(cur) !== st.grid || st.pick !== pick;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    const type = RESHAPE_TYPES.find(t => t.id === pick) || RESHAPE_TYPES[0];
+    const toggle = pick === "invert" || pick === "reverse";
+    const out = type.apply(base, { nd: scaleSemis.length, level });
+    if (!toggle && !out.varied) {
+      const why = out.repeats != null && !out.repeats
+        ? `nothing repeats here to ${pick === "answer" ? "answer" : "sequence"}`
+        : "already there";
+      setReshIn({ ...reshIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: why } });
+      return;
+    }
+    const back = !toggle && level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : out.bars;
+    putLayer(d.key, L, bars);
+    const note = back ? "back to the melody you wrote"
+      : toggle ? (level % 2 === 1 ? (pick === "invert" ? "inverted" : "reversed") : "back to how you wrote it")
+      : pick === "answer" ? `${out.varied} of ${out.repeats} repeat${out.repeats > 1 ? "s" : ""} now resolve home`
+      : `${out.varied} of ${out.repeats} repeat${out.repeats > 1 ? "s" : ""} shifted`;
+    setReshIn({ ...reshIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick, note } });
+  };
+  const resetReshIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = reshIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...reshIn }; delete next[k]; setReshIn(next);
+  };
+
   /* ---- syncopate: anticipation as a one-tap edit ----
      The single most reliable catchiness trick there is — a note arriving half a beat before the
-     beat it was written on, held through it. Same baseline discipline as ✦ Vary repeats: each press
+     beat it was written on, held through it. Same baseline discipline as ✦ Vary these notes: each press
      re-derives from the melody as it stood before the first one, so press two pushes harder rather
      than pushing the pushed, and the third press is the way back. */
   const syncopateMel = (d, L) => {
@@ -4527,12 +4767,14 @@ export default function ProgressionWheel() {
              exactly the voice it always did. */
           const shapeOf = ly => {
             const a = modOf(ly, "atk"), d = modOf(ly, "dec"), s = modOf(ly, "sus"), r = modOf(ly, "rel");
-            if (!a && !d && !s && !r) return NO_SHAPE;      // the common case, and a shared object
+            const u = modOf(ly, "uni");
+            if (!a && !d && !s && !r && !u) return NO_SHAPE;  // the common case, and a shared object
             return {
               // squared, so the first third of the slider covers the range where small changes are
               // audible and the top end reaches a genuine swell
               atk: Math.pow(a / 100, 2) * 1.2,
               dec: Math.pow(2, d / 50), sus: Math.pow(2, s / 70), rel: Math.pow(2, r / 33),
+              uni: u / 100,
             };
           };
           /* The note effects: the arpeggiator's siblings. Each rewrites the note events before any
@@ -4658,7 +4900,9 @@ export default function ProgressionWheel() {
             const tp = timeFor(ly, li, melStep);
             const dest = chainOf(li).gain;
             const vel = velFor(ly, li, melStep, nbars);
-            dest.gain.setValueAtTime(gain * vel, tp);
+            // every note re-sets this node's gain, which would otherwise overwrite the
+            // MELODY_MAKEUP this chain was built with the moment the first note played
+            dest.gain.setValueAtTime(gain * vel * MELODY_MAKEUP, tp);
             if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, tp);
             const leadKey = isGM(voice) ? voice : null;   // real-sample lead voice, if any
             if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
@@ -4731,7 +4975,7 @@ export default function ProgressionWheel() {
             const chain = chainOf(li);
             const tp = timeFor(ly, li, stepIdx);
             const vel = velFor(ly, li, stepIdx, nbars);
-            chain.gain.gain.setValueAtTime(gain * vel, tp);
+            chain.gain.gain.setValueAtTime(gain * vel * MELODY_MAKEUP, tp);
             if (m.partSend[li]) m.partSend[li].gain.setValueAtTime(send, tp);
             const leadKey = isGM(voice) ? voice : null;
             if (realRef.current && leadKey && !m.leadLoaded.has(leadKey)) { m.sampler.load(leadKey); m.leadLoaded.add(leadKey); }
@@ -6231,7 +6475,7 @@ export default function ProgressionWheel() {
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const loadSketch = s => {
     setForce(s.progId); setTonic(s.tonic); setGenre(s.genre); setEmotion(s.emotion); setMode(s.mode || null);
-    setColour(s.colour || "triads"); setInstr(s.instr); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
+    setColour(s.colour || "triads"); setInstrSt({ key:s.progId, val:s.instr || "acoustic_guitar_steel" }); setSecDrum(s.secDrum || {}); setSecQuiet(s.secQuiet || {}); setCustom(s.custom || { key:"", plan:null }); setAuto(s.auto || { key:"", filter:null, level:null });
     setSecMove(s.secMove || {}); setSecTrans(s.secTrans || {}); setSecBeat(songBeats(s));
     setSecNar(s.secNar || {});
     setGridSt({ key:s.progId, val:s.grid || "" });                                 // absent in sketches saved before the grid was its own choice
@@ -6266,7 +6510,7 @@ export default function ProgressionWheel() {
     setEdits({ key:eKey, map:s.edits || {} }); setInserts({ key:eKey, list:s.inserts || [] });
     setQuals({ key:eKey, map:s.quals || {} }); setRemoved({ key:eKey, list:s.removed || [] });
     setOrder(s.order ? { key:eKey, list:s.order } : { key:"", list:null }); setPillSel([]);
-    if (s.melInstr) setMelInstr(s.melInstr);
+    if (s.melInstr) setMelInstrSt({ key:s.progId, val:s.melInstr });
     // melodies were session-only before this; a sketch without them just loads an empty grid
     setMelos(s.melos ? songMelos(s) : { progId:"", secs:{} });
     setSessionTracks(Array.isArray(s.session) ? s.session : []);
@@ -6299,9 +6543,9 @@ export default function ProgressionWheel() {
     setRemoved({ key:"", list:[] }); setOrder({ key:"", list:null }); setPillSel([]); setSel(null);
     setReorder(false); setAdding(false); setRemoving(false); setFingerIdx(null); setSelSong("");
     // sound: instruments, rhythm, tempo, feel and the whole rhythm section
-    setInstr("acoustic_guitar_steel"); setMelInstr("flute");
+    setInstrSt({ key:"", val:"acoustic_guitar_steel" }); setMelInstrSt({ key:"", val:"flute" });
     setPatSel({ key:"", id:"" }); setBpmSt({ key:"", val:0 }); setNChordsSt({ key:"", val:0 });
-    setGridSt({ key:"", val:"" }); setDelaySt({ key:"", val:"" }); setSwingSt({ key:"", val:0 }); setHumanise(0);
+    setGridSt({ key:"", val:"" }); setDelaySt({ key:"", val:"" }); setSwingSt({ key:"", val:0 }); setHumaniseSt({ key:"", val:0 });
     setDrumSt({ key:"", val:"" }); setKitSt({ key:"", val:"" }); setPumpSt({ key:"", val:"" });
     setBassSt({ key:"", val:"" }); setBassVoiceSt({ key:"", val:"" }); setSecBass({});
     setPercSt({ key:"", val:"" }); setSecPerc({}); setPercKitSt({ key:"", val:"" });
@@ -6387,21 +6631,147 @@ export default function ProgressionWheel() {
                             onClick={() => setMelMove(true)}>✋ Move</button>
                         </div>}
                         {/* Varying the repeats is about the whole melody rather than a selection, so it
-                            sits with the mode switch and not among the note tools below. */}
+                            sits with the mode switch and not among the note tools below. Four ways to
+                            change the notes — Vary, Decorate, Rearrange, Shuffle — each gets its own
+                            full-width row (flexBasis:100% inside the wrapping .melmodebar row) so its
+                            dropdown, button, undo and status stay visually together rather than
+                            interleaving with the others when the row wraps. The button alone applies a
+                            change; the dropdown only ever chooses what the next press will write —
+                            selecting an option never touches the grid by itself. */}
                         {tab === "write" && (() => {
-                          const vst = varyIn[varyKeyOf(d.key, secL)];
+                          const vk = varyKeyOf(d.key, secL);
+                          const vst = varyIn[vk];
                           const lv = (vst && vst.level) || 0;
-                          return (<>
+                          const pick = varyPick[vk] || "";
+                          const curV = VARIATIONS.find(v => v.id === pick);
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
+                            <select className="fxsel" style={{ maxWidth:150 }} value={pick}
+                              title="Which edit ✦ Vary these notes writes next — choosing one only sets it up; press the button to write it. Left on the auto mix it picks from the whole catalogue itself; picked to one, every press after writes only that edit — same tune, small deliberate changes to the notes, never a different melody."
+                              onChange={e => setVaryPick({ ...varyPick, [vk]: e.target.value })}>
+                              <option value="">Vary these notes — auto mix</option>
+                              {VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+                            </select>
                             <button className={"mini" + (lv ? " on" : "")} onClick={() => varyRepeats(d, secL)}
-                              title={"Vary the repeats inside this section — the motif is found where it restates itself, "
-                                + "the first statement is left alone, and every one after it gets a different landing note, "
-                                + "an extra note, a phrase pushed early. Tap again for more; one past the top puts the "
-                                + "melody back as you wrote it."}>
-                              ✦ Vary repeats{lv ? " ×" + lv : ""}</button>
+                              title={(curV ? curV.tip : "Nudge a handful of this melody's own notes — a different landing note, "
+                                + "a note added or thinned, a phrase pushed early. Same tune, not a different one: where a phrase "
+                                + "restates itself the first statement is always left alone and only the repeats change; where "
+                                + "nothing repeats, the notes are edited directly instead.")
+                                + " Tap again for more; one past the top puts the melody back as you wrote it."}>
+                              ✦ {curV ? curV.name : "Vary these notes"}{lv ? " ×" + lv : ""}</button>
                             {lv > 0 && <button className="mini" onClick={() => resetVaryIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {vst && vst.note && <span className="rlbl" style={{ opacity:.75 }}>{vst.note}</span>}
-                          </>);
+                            </div>
+                          );
+                        })()}
+                        {/* ✦ Decorate — the narrower promise: never moves, retunes or removes a note
+                            that's already written, only adds around it (a passing tone, a grace note,
+                            a note held into the silence after it) — unless the section is packed too
+                            solid for any of that to find room, in which case decorateSection falls
+                            back to shortening one note's tail by a column rather than doing nothing.
+                            Its own dropdown and baseline, kept apart from ✦ Vary these notes so the
+                            two never fight over the same undo. */}
+                        {tab === "write" && (() => {
+                          const dk = varyKeyOf(d.key, secL);
+                          const dst = decIn[dk];
+                          const lv = (dst && dst.level) || 0;
+                          const pick = decPick[dk] || "";
+                          const curD = DECORATE_VARIATIONS.find(v => v.id === pick);
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
+                            <select className="fxsel" style={{ maxWidth:150 }} value={pick}
+                              title="Which ornament 🎨 Decorate adds next — choosing one only sets it up; press the button to add it. Every note you've already written keeps its pitch and its place; this mostly adds around it — a passing tone, an extra note, a grace note, a note held into the silence after it — and only shortens a note's tail by a column, as a last resort, when the section is packed too solid for any of those to fit."
+                              onChange={e => setDecPick({ ...decPick, [dk]: e.target.value })}>
+                              <option value="">Decorate — auto mix</option>
+                              {DECORATE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+                            </select>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => decorateNotes(d, secL)}
+                              title={(curD ? curD.tip : "Add ornaments on top of this melody — a passing tone, an extra note, a grace note, "
+                                + "a note held into the silence after it. Every note you wrote keeps its pitch and its place; this mostly "
+                                + "adds, and only shortens a note's tail by a column, as a last resort, when there's no room for that.")
+                                + " Tap again for more; one past the top puts the melody back as you wrote it."}>
+                              🎨 {curD ? curD.name : "Decorate"}{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetDecIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {dst && dst.note && <span className="rlbl" style={{ opacity:.75 }}>{dst.note}</span>}
+                            </div>
+                          );
+                        })()}
+                        {/* 🔀 Rearrange — the third promise: notes may move, but never into a pitch the
+                            melody didn't already have, and none may be lost. Its own dropdown and
+                            baseline, independent of both ✦ Vary these notes and ✦ Decorate. */}
+                        {tab === "write" && (() => {
+                          const rk = varyKeyOf(d.key, secL);
+                          const rst = rerIn[rk];
+                          const lv = (rst && rst.level) || 0;
+                          const pick = rerPick[rk] || "";
+                          const curR = REARRANGE_VARIATIONS.find(v => v.id === pick);
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
+                            <select className="fxsel" style={{ maxWidth:150 }} value={pick}
+                              title="Which move 🔀 Rearrange makes next — choosing one only sets it up; press the button to make it. A note may slide earlier or later, or trade places with its neighbour, but never becomes a pitch the melody didn't already have, and none of them disappear — the same notes, reshuffled."
+                              onChange={e => setRerPick({ ...rerPick, [rk]: e.target.value })}>
+                              <option value="">Rearrange — auto mix</option>
+                              {REARRANGE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+                            </select>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => rearrangeNotes(d, secL)}
+                              title={(curR ? curR.tip : "Move this melody's own notes around — a note pushed earlier or later, two "
+                                + "notes trading places. Never a pitch the melody didn't already have, and never a lost note; "
+                                + "the same notes, reshuffled.")
+                                + " Tap again for more; one past the top puts the melody back as you wrote it."}>
+                              🔀 {curR ? curR.name : "Rearrange"}{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetRerIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {rst && rst.note && <span className="rlbl" style={{ opacity:.75 }}>{rst.note}</span>}
+                            </div>
+                          );
+                        })()}
+                        {/* 🎲 Shuffle pitches — random by design, so there is nothing to name in a
+                            dropdown: one button, tap again for a bigger shuffle (more notes touched,
+                            further each can jump), its own baseline like the three above. */}
+                        {tab === "write" && (() => {
+                          const sk = varyKeyOf(d.key, secL);
+                          const sst = shufIn[sk];
+                          const lv = (sst && sst.level) || 0;
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => shuffleMel(d, secL)}
+                              title={"Randomly nudge some of this melody's own notes up or down from wherever they already sit — a "
+                                + "genuine random jump, not a step to the nearest scale tone. Tap again for a bigger shuffle: more "
+                                + "notes touched, further each one can move. One tap past the top puts the melody back as you wrote it."}>
+                              🎲 Shuffle pitches{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetShufIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {sst && sst.note && <span className="rlbl" style={{ opacity:.75 }}>{sst.note}</span>}
+                            </div>
+                          );
+                        })()}
+                        {/* 🎼 Reshape — the named melodic-development techniques (Invert, Reverse,
+                            Sequence up/down, Call & response), applied to the whole section without
+                            selecting notes first the way the Move-mode versions of these need to. No
+                            "auto mix": each is a deliberate move, so the dropdown always names one. */}
+                        {tab === "write" && (() => {
+                          const hk = varyKeyOf(d.key, secL);
+                          const hst = reshIn[hk];
+                          const lv = (hst && hst.level) || 0;
+                          const pick = reshPick[hk] || RESHAPE_TYPES[0].id;
+                          const curH = RESHAPE_TYPES.find(v => v.id === pick) || RESHAPE_TYPES[0];
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
+                            <select className="fxsel" style={{ maxWidth:150 }} value={pick}
+                              title="Which melodic-development technique 🎼 Reshape makes next — choosing one only sets it up; press the button to make it. These reshape the phrase itself rather than a single note: flip its contour, play it backwards, restate its repeated motif a step higher or lower, or resolve each restatement home."
+                              onChange={e => setReshPick({ ...reshPick, [hk]: e.target.value })}>
+                              {RESHAPE_TYPES.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+                            </select>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => reshapeMel(d, secL)}
+                              title={curH.tip + " Tap again for more; one past the top puts the melody back as you wrote it."}>
+                              🎼 {curH.name}{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetReshIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {hst && hst.note && <span className="rlbl" style={{ opacity:.75 }}>{hst.note}</span>}
+                            </div>
+                          );
                         })()}
                         {tab === "write" && (() => {
                           const sst = syncIn[varyKeyOf(d.key, secL)];
@@ -6953,6 +7323,12 @@ export default function ProgressionWheel() {
                         const n = copyPartSettings(d.key, secL, keys);
                         setIoNote(n ? `${LAYER_NAMES[secL]}'s settings copied to ${what}.` : "Nothing to copy to.");
                       };
+                      // the mirror of doCopy — same destinations, but the notes travel and the
+                      // sound each destination already had stays exactly as it was
+                      const doCopyNotes = (keys, what) => {
+                        const n = copyPartNotes(d.key, secL, keys);
+                        setIoNote(n ? `${LAYER_NAMES[secL]}'s notes copied to ${what}.` : "Nothing to copy to.");
+                      };
                       return (<>
                       <div className="row lytabs" style={{ gap:5, alignItems:"flex-end", flexWrap:"wrap" }}>
                         {sec.layers.map((l, li) => {
@@ -6989,6 +7365,20 @@ export default function ProgressionWheel() {
                               else if (v) doCopy([v], v);
                             }}>
                             <option value="">⧉ copy settings to…</option>
+                            {sameRole.length > 0 && <option value="role">every other {d.word.toLowerCase()} ({sameRole.length})</option>}
+                            {others.length > 0 && <option value="all">every other section ({others.length})</option>}
+                            {others.length > 0 && <optgroup label="just one">
+                              {others.map(o => <option key={o.key} value={o.key}>{o.key} · {o.word}</option>)}
+                            </optgroup>}
+                          </select>
+                          <select className="fxsel partcopy" value="" title="Copy this part's notes — however they got there: written by hand, a suggested pattern, a narrative shape, or any of Vary/Decorate/Rearrange/Reshape/Shuffle's edits — onto the same part of other sections, reshaped to fit each one's own chord sequence and length. Their instrument, register, level and modulation are left exactly as they were; use 'copy settings to…' beside it for those."
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (v === "role") doCopyNotes(sameRole.map(o => o.key), "every other " + d.word.toLowerCase());
+                              else if (v === "all") doCopyNotes(others.map(o => o.key), "every other section");
+                              else if (v) doCopyNotes([v], v);
+                            }}>
+                            <option value="">⧉ copy notes to…</option>
                             {sameRole.length > 0 && <option value="role">every other {d.word.toLowerCase()} ({sameRole.length})</option>}
                             {others.length > 0 && <option value="all">every other section ({others.length})</option>}
                             {others.length > 0 && <optgroup label="just one">
@@ -7816,12 +8206,25 @@ export default function ProgressionWheel() {
   const curTrackPreset = trackSt && TRACK_PRESETS.find(t => t.id === trackSt && t.progId === progId) || null;
   // "recreate a famous track" — sits beside structPicker() because picking one *is* picking a
   // structure (and a key, a tempo and a groove) at once; see applyTrackPreset for why it can't
-  // just call pickStruct and the narrative picker back to back
+  // just call pickStruct and the narrative picker back to back.
+  // Once a style is already picked (curTpl), the list narrows to that style's own famous tracks
+  // rather than all of them at once — ten relevant options beat scrolling past all the others.
+  // Nothing is lost with no style picked yet: every track is still there, grouped by style.
+  const stylePresets = curTpl ? TRACK_PRESETS.filter(t => t.baseTemplate === curTpl.id) : null;
   const trackPicker = () => (
     <select value={trackSt} onChange={e => applyTrackPreset(e.target.value)}
       title="Reconfigures the song — tempo, key, chords, arrangement and groove — to closely match a real record, so you can study how it's built. The melody is this app's own generated hook, steered toward the real track's character, never a copy of it.">
-      <option value="">Recreate a famous track…</option>
-      {TRACK_PRESETS.map(t => <option key={t.id} value={t.id}>{t.artist} — {t.name}</option>)}
+      <option value="">{stylePresets ? `${stylePresets.length} famous ${curTpl.name} tracks…` : "Recreate a famous track…"}</option>
+      {stylePresets
+        ? stylePresets.map(t => <option key={t.id} value={t.id}>{t.artist} — {t.name}</option>)
+        : DANCE_TEMPLATES.map(tpl => {
+            const ts = TRACK_PRESETS.filter(t => t.baseTemplate === tpl.id);
+            return ts.length ? (
+              <optgroup key={tpl.id} label={tpl.name}>
+                {ts.map(t => <option key={t.id} value={t.id}>{t.artist} — {t.name}</option>)}
+              </optgroup>
+            ) : null;
+          })}
     </select>
   );
   /* ---- the arrangement at a glance, and its editor ----
@@ -8621,6 +9024,19 @@ export default function ProgressionWheel() {
         /* what a template did, said in words beside the strip that draws it */
         .tplnote { margin-top:9px; padding:8px 11px 9px; background:var(--bg);
           border:1px solid var(--line-2); border-left:3px solid ${GOLD}; border-radius:var(--r-lg); }
+        /* the full 68-style reference table — a lookup, so it favours density over the tplnote's
+           one-template-at-a-time prose; grouped and ordered exactly as the family tree groups them */
+        .styleref { margin-top:8px; max-height:420px; overflow-y:auto; overflow-x:auto;
+          border:1px solid var(--line-2); border-radius:var(--r-lg); padding:2px 11px; background:var(--bg); }
+        .styleref-fam + .styleref-fam { border-top:1px solid var(--line-2); margin-top:8px; padding-top:6px; }
+        .styleref-famname { font-size:var(--fs-md); color:${GOLD}; font-weight:600; margin:6px 0 4px; }
+        .styleref table { width:100%; border-collapse:collapse; margin-bottom:6px; }
+        .styleref th { text-align:left; font-size:var(--fs-micro); color:var(--muted); font-weight:500;
+          padding:2px 8px 4px 0; border-bottom:1px solid var(--line-2); white-space:nowrap; }
+        .styleref td { font-size:var(--fs-md); color:var(--muted); padding:5px 8px 5px 0;
+          border-bottom:1px solid var(--line); vertical-align:top; }
+        .styleref tr:last-child td { border-bottom:none; }
+        .styleref td.styleref-name { color:var(--ink); font-weight:600; white-space:nowrap; }
         .tlhead { position:absolute; top:14px; bottom:0; width:2px; background:${GOLD}; border-radius:var(--r-xs);
           pointer-events:none; box-shadow:0 0 6px ${GOLD}AA; z-index:4; }
         /* Section boundaries, drawn down the whole strip. Two sections that letter the same way get
@@ -8860,7 +9276,7 @@ export default function ProgressionWheel() {
           <div className="selrow">
             <label className="selwrap">
               <span className="lbl" style={{ margin:0 }}>Chords</span>
-              <select value={gmKey(instr)} onChange={e => setInstr(e.target.value)}>
+              <select value={gmKey(instr)} onChange={e => setInstrSt({ key:progId, val:e.target.value })}>
                 {GM_CATS.map(([cat, list]) => (
                   <optgroup key={cat} label={cat}>
                     {list.map(([k, label]) => <option key={cat + k} value={k}>{label}</option>)}
@@ -8870,7 +9286,7 @@ export default function ProgressionWheel() {
             </label>
             <label className="selwrap">
               <span className="lbl" style={{ margin:0 }}>Lead</span>
-              <select value={melInstr} onChange={e => setMelInstr(e.target.value)}>
+              <select value={melInstr} onChange={e => setMelInstrSt({ key:progId, val:e.target.value })}>
                 <optgroup label="Synth (no download)">
                   {LEAD_VOICES.filter(([id]) => !isGM(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                 </optgroup>
@@ -8995,7 +9411,7 @@ export default function ProgressionWheel() {
             <label className="selwrap" style={{ minWidth:118 }}>
               <span className="lbl" style={{ margin:0 }}>Feel {Math.round(humanise * 100)}%</span>
               <input className="lvl" type="range" min="0" max="100" value={Math.round(humanise * 100)}
-                onChange={e => setHumanise(+e.target.value / 100)}
+                onChange={e => setHumaniseSt({ key: progId, val: +e.target.value / 100 })}
                 title="Humanise — nudges every hit a few milliseconds early or late and varies how hard it lands, so the grid stops sounding typed. The variation is fixed, not random, so a render sounds like what you heard." />
             </label>
             <div className={"tog" + (realSounds ? " on" : "")} onClick={() => setRealSounds(v => !v)} style={{ paddingBottom:6 }}
@@ -9836,6 +10252,34 @@ export default function ProgressionWheel() {
             <span className="keytag" style={{ margin:0 }}>Recreate a famous track</span>
             {trackPicker()}
           </div>
+          <div className="row" style={{ marginTop:6 }}>
+            <button className="mini" onClick={() => setStyleRefOpen(v => !v)}
+              title="A reference table of every dance-arrangement style above, grouped the way the dance-music family tree groups them — for looking things up, not for picking one (use the dropdown above for that).">
+              {styleRefOpen ? "▾" : "▸"} All {DANCE_TEMPLATES.length} styles — family tree reference
+            </button>
+          </div>
+          {styleRefOpen && (
+            <div className="styleref">
+              {FAMILY_ORDER.map(fam => (
+                <div key={fam} className="styleref-fam">
+                  <div className="styleref-famname">{fam}</div>
+                  <table>
+                    <thead><tr><th>Style</th><th>BPM</th><th>Kit</th><th>What makes the arrangement distinctive</th></tr></thead>
+                    <tbody>
+                      {DANCE_TEMPLATES.filter(t => FAMILY_OF[t.id] === fam).map(t => (
+                        <tr key={t.id}>
+                          <td className="styleref-name">{t.name}</td>
+                          <td>{t.bpm}</td>
+                          <td>{(DRUM_KITS.find(([k]) => k === t.kit) || [])[1] || t.kit}</td>
+                          <td>{t.tip}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
           {curTrackPreset && (
             <div className="tplnote" style={{ marginTop:6 }}>
               <div className="row" style={{ gap:"6px 8px", alignItems:"baseline", flexWrap:"wrap" }}>
