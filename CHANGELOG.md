@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **🎼 Reshape — named melodic-development techniques, applied to the whole section.** Everything
+  else in the melody workbench nudges individual notes; this reshapes the phrase itself, the way a
+  composer actually names the move: **Invert** flips the contour upside-down around the middle of the
+  melody's own range (not literally its first note, which would collapse anything starting on the
+  tonic straight back onto itself); **Reverse** plays it backwards; **Sequence up/down** restates the
+  section's own repeated motif a scale step further from the last with every tap; **Call & response**
+  resolves each restatement's last note home to the tonic. Invert and Reverse are self-inverse — press
+  again to flip back, no separate undo needed for the common case. These are the same techniques the
+  ✋ Move-mode selection tools (⤯ Invert, ↤ Reverse, Seq ▲/▼, ↩ Answer) already offered by hand; this
+  applies them to the whole section in one tap, no selection required.
 - **🎲 Shuffle pitches — a fourth, dropdown-free control: random jumps, more with every tap.**
   Nudges some of a melody's own notes up or down from wherever they already sit, by a genuinely
   random distance rather than a step to the nearest scale tone — no menu, since there's nothing to

@@ -1480,6 +1480,131 @@ const varyWhole = (bars, { id, nd = 7, seed = 0, level = 1, pool = VARIATIONS } 
   return { bars: out, varied };
 };
 
+/* ---- 🎼 Reshape: named melodic-development techniques, applied to the whole section ----
+   Everything above nudges individual notes. These four reshape the *phrase* — the actual named moves
+   a composer reaches for (invert a subject, retrograde it, sequence it up a step, answer a call) —
+   the way the selection tools in Move mode already let you do by hand. Each is deterministic and
+   reversible from its own baseline like every other control here, but none of them share a "how many
+   edits" dial the way VARIATIONS-based engines do: Invert and Reverse are involutions (apply twice,
+   get the original back), Sequence's level is how many steps each repeat climbs or falls, and Answer
+   either resolves the phrase home or it already does. RESHAPE_TYPES is the catalogue the dropdown
+   reads; each entry's `apply` takes the same (bars, {nd, level}) shape so the UI can dispatch by id
+   without knowing which of the four it picked. */
+
+/* Every note in every bar, reflected around the middle of the melody's own range — not literally
+   around the first note, the textbook definition, because a melody starting on the tonic (the single
+   most common note to start on) would then reflect everything else down into negative degrees, every
+   one of them clamped back to the tonic: an "inversion" that collapses to a flat line, the opposite
+   of the creative variety this exists to offer. Mirroring around the range's own centre instead keeps
+   every result inside the range the melody already used — 2×centre − max = min and 2×centre − min =
+   max, so nothing needs clamping — while still inverting the shape: every rise becomes a fall of the
+   same size relative to that centre. Still involutive (apply twice, get the original back), so
+   pressing again is the undo. */
+const invertSection = (bars, nd = 7) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  let lo = null, hi = null;
+  out.forEach(bar => bar.forEach(col => {
+    if (!col.length) return;
+    if (lo == null || col[0] < lo) lo = col[0];
+    if (hi == null || col[0] > hi) hi = col[0];
+  }));
+  if (lo == null) return { bars: out, varied: 0 };
+  const pivot = (lo + hi) / 2;
+  let varied = 0;
+  out.forEach(bar => bar.forEach((col, ci) => {
+    if (!col.length) return;
+    const d = Math.max(0, Math.min(nd - 1, Math.round(2 * pivot - col[0])));
+    if (d !== col[0]) { bar[ci] = [d]; varied++; }
+  }));
+  return { bars: out, varied };
+};
+
+// the whole section's columns, read backwards — retrograde. A literal array reversal rather than a
+// note-by-note one, so a held note stays exactly as long as it was, just mirrored in position; also
+// its own inverse, for the same reason invertSection's is.
+const reverseSection = bars => {
+  const flat = bars.flatMap(bar => bar.map(col => [...col]));
+  const rev = [...flat].reverse();
+  let i = 0;
+  const out = bars.map(bar => bar.map(() => [...rev[i++]]));
+  const varied = flat.some((col, j) => (col[0] ?? null) !== (rev[j][0] ?? null))
+    ? out.reduce((a, bar) => a + barNotes(bar).length, 0) : 0;
+  return { bars: out, varied };
+};
+
+/* The section's own repeated motif, restated a scale step further from the first statement each time
+   it comes round — the rising (or falling) sequence, one of the single most common devices in pop and
+   film writing. Needs an actual repeat to sequence, the same way Vary these notes needs one to vary
+   before it falls back to editing directly — but unlike that fallback, sequencing a phrase that never
+   restates itself would just be transposing one bar, which is not the device this is. `level` is the
+   step size: level 1 nudges each repeat one degree further than the last, level 2 two degrees, and so
+   on — a steeper climb each press rather than a different edit. */
+const sequenceSection = (bars, { nd = 7, level = 1, dir = 1 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0 };
+  if (!level) return none;
+  const best = bestMotifSpan(out);
+  if (!best || !best.repeats) return none;
+  let varied = 0;
+  best.runs.forEach(r => {
+    if (!r.occ) return;
+    const shift = dir * level * r.occ;
+    let moved = false;
+    for (let bi = r.at; bi < r.at + best.span; bi++) {
+      out[bi] = out[bi].map(col => {
+        if (!col.length) return col;
+        const d = Math.max(0, Math.min(nd - 1, col[0] + shift));
+        if (d !== col[0]) moved = true;
+        return [d];
+      });
+    }
+    if (moved) varied++;
+  });
+  return { bars: out, span: best.span, repeats: best.repeats, varied };
+};
+
+/* Call & response: the section's own repeated motif treated as a call, each restatement's very last
+   note resolved onto the tonic (scale degree 0) as its response — the classic antecedent → consequent
+   shape, without needing to select the call by hand the way the Move-mode version does. The first
+   statement is the call and is left alone, same as every other repeat-based edit here. Idempotent
+   rather than leveled: a restatement that already resolves home has nothing further for a second
+   press to do. */
+const answerSection = (bars, { nd = 7 } = {}) => {
+  const out = bars.map(bar => bar.map(col => [...(col || [])]));
+  const none = { bars: out, span: 0, repeats: 0, varied: 0 };
+  const best = bestMotifSpan(out);
+  if (!best || !best.repeats) return none;
+  let varied = 0;
+  best.runs.forEach(r => {
+    if (!r.occ) return;
+    const notes = barNotes(out.slice(r.at, r.at + best.span).flat());
+    if (!notes.length) return;
+    const last = notes[notes.length - 1];
+    if (last.d === 0) return;                            // already resolves home
+    const flat = out.slice(r.at, r.at + best.span).flat();
+    for (let k = 0; k < last.len; k++) flat[last.c + k] = [0];
+    // write the flattened slice back into its own bars
+    let ci = 0;
+    for (let bi = r.at; bi < r.at + best.span; bi++)
+      out[bi] = out[bi].map(() => flat[ci++]);
+    varied++;
+  });
+  return { bars: out, span: best.span, repeats: best.repeats, varied };
+};
+
+const RESHAPE_TYPES = [
+  { id:"invert", name:"Invert", tip:"Flip the melody's contour upside-down around its first note — every rise becomes a fall of the same size. Press again to flip it back.",
+    apply: (bars, { nd, level }) => level % 2 === 1 ? invertSection(bars, nd) : { bars: bars.map(b => b.map(c => [...c])), varied: 0 } },
+  { id:"reverse", name:"Reverse", tip:"Play the section backwards — retrograde. Same notes, opposite order. Press again to flip it back.",
+    apply: (bars, { level }) => level % 2 === 1 ? reverseSection(bars) : { bars: bars.map(b => b.map(c => [...c])), varied: 0 } },
+  { id:"seq-up", name:"Sequence up", tip:"The section's own repeated motif, restated a scale step higher each time it comes round — a rising sequence. Tap again for a steeper climb.",
+    apply: (bars, { nd, level }) => sequenceSection(bars, { nd, level, dir: 1 }) },
+  { id:"seq-down", name:"Sequence down", tip:"The same idea, falling — each repeat a scale step lower than the last. Tap again for a steeper fall.",
+    apply: (bars, { nd, level }) => sequenceSection(bars, { nd, level, dir: -1 }) },
+  { id:"answer", name:"Call & response", tip:"Each restatement of the section's motif resolves its last note home to the tonic — the call, then the answer.",
+    apply: (bars, { nd }) => answerSection(bars, { nd }) },
+];
+
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
 
 const NARRATIVES = [
@@ -1648,4 +1773,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, shufflePitches, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
