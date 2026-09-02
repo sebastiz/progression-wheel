@@ -773,7 +773,10 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   };
   const straightSpots = M.rhythmSpots("straight", 8, 2, 4);
   const offSpots = M.rhythmSpots("offbeat", 8, 2, 4);
-  const gen = sp => M.MELODY_PATTERNS[0].gen({ nBars: 4, B: 8, sub: 2,
+  // arpUp by id, not MELODY_PATTERNS[0] — chordPhrases (deliberately the one pattern that ignores
+  // the rhythm cell, choosing its own note lengths instead) sits first in the list now
+  const arpUp = M.MELODY_PATTERNS.find(p => p.id === "arpUp");
+  const gen = sp => arpUp.gen({ nBars: 4, B: 8, sub: 2,
     cols: sp.map(x => x.c), lens: sp.map(x => x.len), start: 2, chordDegs });
   const straightOn = onBeatFraction(gen(straightSpots)), offOn = onBeatFraction(gen(offSpots));
   console.log(`onsets on the beat: straight ${(straightOn * 100).toFixed(0)}%, off-beat cell ${(offOn * 100).toFixed(0)}%`);

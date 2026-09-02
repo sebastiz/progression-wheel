@@ -693,8 +693,10 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear
   melody** empties the section. The shapes cover chord-tone arpeggios (up / down / rolling, which
   follow each bar's chord), **Chord-tone walk**, which freely varies both the notes and their
-  lengths against each bar's own chord — mostly chord tones with the odd passing note, one rhythm
-  slot here and several merged into a held tone there — rather than repeating one fixed shape, scale
+  lengths against each bar's own chord — mostly chord tones with the odd passing note, a run of
+  short notes here and several columns merged into a held tone there, from a sixteenth up to a
+  whole bar — rather than repeating one fixed shape (it's the one shape here that ignores the
+  Rhythm cell menu above it, since choosing its own note lengths is the whole point), scale
   runs, waves, neighbour tones, a repeated pedal tone, call & response, question & answer (resolving
   to the tonic), the AA / AB / AABA motif
   forms, ascending and descending sequences, and wide leaping figures.
@@ -744,9 +746,11 @@ running order. That's how the shapes differ from patterns: *Range expansion at t
 verses inside two or three notes and opens the whole octave for the chorus; *Withheld peak* spends
 the top note only in the final section; *Terraced* climbs a step per bar; *Long climb* lifts every
 section a little above the last; *Chord-tone walk* freely varies both the notes and their lengths
-against each bar's own chord — mostly chord tones with the odd passing note, one rhythm slot here
-and several merged into a held tone there — instead of one fixed shape repeated across the changes,
-so even two bars over the same chord can land on different notes and a different rhythm. The 22
+against each bar's own chord — mostly chord tones with the odd passing note, a run of short notes
+here and several columns merged into a held tone there, from a sixteenth up to a whole bar — instead
+of one fixed shape repeated across the changes (it ignores the role's usual rhythm feel entirely,
+since choosing its own note lengths is the whole point), so even two bars over the same chord can
+land on different notes and a different rhythm. The 22
 narratives cover contour (arch, song-length arch, waves, descending lament, cascading sequence,
 leap-and-fill, speech contour), architecture (question & answer, call & response, motif development,
 terraced build, withheld peak, long climb, range expansion), texture (ostinato cell, widening
