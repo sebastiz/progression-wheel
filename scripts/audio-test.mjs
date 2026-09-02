@@ -1314,6 +1314,20 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (!/shuffleMel\(d, secL\)/.test(code))
       problems.push("src: nothing in the melody grid offers to shuffle a section's pitches");
   }
+  /* 🎼 Reshape — reachable, writes back, and (same single-trigger rule as the other three) its
+     dropdown only ever stores a pick. Unlike them it has no auto-mix option to fall back to, so
+     there's nothing to check there — every id is a deliberate, named choice. */
+  {
+    const fn = code.slice(code.indexOf("const reshapeMel = "), code.indexOf("const resetReshIn = "));
+    if (!fn) problems.push("src: reshapeMel has moved — this guard no longer reads it");
+    if (!/putLayer\(/.test(fn)) problems.push("src: reshapeMel never writes the reshaped melody back");
+    if (!/RESHAPE_TYPES\.find\(/.test(fn)) problems.push("src: reshapeMel does not dispatch through RESHAPE_TYPES");
+    if (!/reshapeMel\(d, secL\)/.test(code))
+      problems.push("src: nothing in the melody grid offers to reshape a section");
+    const dd4 = code.slice(code.indexOf("Which melodic-development technique"), code.indexOf("Which melodic-development technique") + 400);
+    if (!/onChange=\{e => setReshPick\(/.test(dd4)) problems.push("src: the Reshape dropdown does not just store its pick");
+    if (/reshapeMel\(d, secL, v\)/.test(dd4)) problems.push("src: the Reshape dropdown applies on selection — only the button may change the grid");
+  }
   /* Moves are per section instance, with the section type as the fallback — songs saved before that
      only carry the type key, so dropping the fallback silently strips the moves off every song
      anyone has already made. Both the resolution and the run arithmetic live in the `moveSpan`
@@ -2819,6 +2833,104 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const hi = M.shufflePitches(dup(busy), { nd: ND, seed: 4, level: 5 }).varied;
   if (hi <= lo) problems.push(`shufflePitches level 5 (${hi} moved) is not more than level 1 (${lo} moved) on a busy section`);
   console.log(`shuffle pitches: deterministic, note count preserved, never a no-op at level 1 across ${tries} tries`);
+}
+
+/* ---- 🎼 Reshape: named melodic-development techniques ----
+   Invert, Reverse, Sequence up/down and Call & response are a different kind of promise than
+   everything above: not "how much changes" but "is this actually the named technique" — an inversion
+   that isn't a real mirror, or a sequence that touches the first statement, is a bug regardless of
+   how much of the melody it varies. */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const show = bars => bars.map(b => b.map(c => (c.length ? c[0] : ".")).join("")).join("|");
+  const degreesOf = bars => bars.flatMap(bar => bar.map(col => (col.length ? col[0] : null)));
+  const noteCount = bars => bars.reduce((a, bar) => a + M.barNotes(bar).length, 0);
+
+  // catalogue shape: every entry named, tipped, unique, and callable
+  const ids = M.RESHAPE_TYPES.map(t => t.id);
+  if (new Set(ids).size !== ids.length) problems.push("RESHAPE_TYPES has duplicate ids");
+  for (const t of M.RESHAPE_TYPES) {
+    if (!t.name) problems.push(`RESHAPE_TYPES.${t.id} has no name`);
+    if (!t.tip) problems.push(`RESHAPE_TYPES.${t.id} has no tip`);
+    if (typeof t.apply !== "function") problems.push(`RESHAPE_TYPES.${t.id} has no apply`);
+  }
+
+  const asymmetric = [[[0], [1], [], [3], [], [], [], [4]], [[5], [], [3], [], [], [1], [], [2]]];
+  const byId = id => M.RESHAPE_TYPES.find(t => t.id === id);
+
+  // Invert: an involution (twice = identity), never collapses outside the melody's own range, and
+  // actually changes something on a melody that isn't already symmetric about its own centre
+  {
+    const once = byId("invert").apply(dup(asymmetric), { nd: ND, level: 1 });
+    const twice = byId("invert").apply(once.bars, { nd: ND, level: 1 });
+    if (show(twice.bars) !== show(asymmetric)) problems.push("Invert twice does not return the original melody");
+    if (!once.varied) problems.push("Invert found nothing to change on an asymmetric melody");
+    const degs = degreesOf(asymmetric).filter(d => d != null);
+    const lo = Math.min(...degs), hi = Math.max(...degs);
+    for (const d of degreesOf(once.bars).filter(x => x != null))
+      if (d < lo || d > hi) problems.push(`Invert produced degree ${d} outside the melody's own range ${lo}..${hi}`);
+    // the toggle-by-parity contract the UI relies on: odd level inverts, even level is the original
+    if (byId("invert").apply(dup(asymmetric), { nd: ND, level: 2 }).varied)
+      problems.push("Invert at an even level (the UI's 'toggle back' state) reports a change");
+  }
+  // Reverse: also an involution, and note count survives (the columns are the same multiset, read
+  // in the opposite order — nothing is added, lost, or resized)
+  {
+    const once = byId("reverse").apply(dup(asymmetric), { level: 1 });
+    const twice = byId("reverse").apply(once.bars, { level: 1 });
+    if (show(twice.bars) !== show(asymmetric)) problems.push("Reverse twice does not return the original melody");
+    if (!once.varied) problems.push("Reverse found nothing to change on an asymmetric melody");
+    if (noteCount(once.bars) !== noteCount(asymmetric)) problems.push("Reverse changed the note count");
+    if (byId("reverse").apply(dup(asymmetric), { level: 2 }).varied)
+      problems.push("Reverse at an even level (the UI's 'toggle back' state) reports a change");
+  }
+  /* Sequence and Call & response both work over whatever repeat bestMotifSpan finds, which for a
+     given fixture may be a one-bar or a multi-bar span — an implementation choice these tests should
+     not hard-code. So rather than predicting exactly which notes move by how much, they check the
+     properties that have to hold under any span: the very first bar is always the reference and is
+     never touched, something changes on a section built to repeat, the result is deterministic, and
+     — the property each control actually promises — every bar the edit did touch does the named
+     thing (ends on the tonic for Answer; is a real difference for Sequence, and a bigger step at a
+     higher level actually gives a different result). */
+  // Sequence: needs an actual repeat (a through-composed section reports none)
+  {
+    if (byId("seq-up").apply(dup(asymmetric), { nd: ND, level: 1 }).repeats)
+      problems.push("Sequence up found a repeat in a through-composed section");
+    const bar1 = [[0], [1], [], [3], [], [], [], [4]], bar2 = [[5], [], [3], [], [], [1], [], [2]];
+    const rep = [bar1, bar2, bar1, bar2];
+    for (const id of ["seq-up", "seq-down"]) {
+      const res1 = byId(id).apply(dup(rep), { nd: ND, level: 1 });
+      if (!res1.repeats) { problems.push(`${id} found no repeat in a section built to have one`); continue; }
+      if (show([res1.bars[0]]) !== show([rep[0]])) problems.push(`${id} edited the very first bar`);
+      if (!res1.varied) problems.push(`${id} changed nothing on a section built to have a repeat`);
+      const res1b = byId(id).apply(dup(rep), { nd: ND, level: 1 });
+      if (show(res1b.bars) !== show(res1.bars)) problems.push(`${id} is not deterministic`);
+      const res2 = byId(id).apply(dup(rep), { nd: ND, level: 2 });
+      if (show(res2.bars) === show(res1.bars)) problems.push(`${id}: level 2 gives the same result as level 1`);
+    }
+  }
+  // Call & response: needs a repeat too; every bar it actually changes ends on the tonic, the first
+  // bar is untouched, and it is idempotent — answering an already-answered section changes nothing
+  {
+    if (byId("answer").apply(dup(asymmetric), { nd: ND }).repeats)
+      problems.push("Call & response found a repeat in a through-composed section");
+    const bar1 = [[0], [1], [], [3], [], [], [], [4]], bar2 = [[5], [], [3], [], [], [1], [], [2]];
+    const rep = [bar1, bar2, bar1, bar2];
+    const res = byId("answer").apply(dup(rep), { nd: ND });
+    if (!res.repeats) problems.push("Call & response found no repeat in a section built to have one");
+    if (show([res.bars[0]]) !== show([rep[0]])) problems.push("Call & response edited the very first bar");
+    if (!res.varied) problems.push("Call & response changed nothing on a section built to have a repeat");
+    // whichever bars it actually touched, each one's last note must land on the tonic
+    res.bars.forEach((bar, bi) => {
+      if (show([bar]) === show([rep[bi]])) return;               // unchanged bar, nothing to check
+      const notes = M.barNotes(bar);
+      if (notes.length && notes[notes.length - 1].d !== 0)
+        problems.push(`Call & response changed bar ${bi} without resolving its last note to the tonic`);
+    });
+    if (byId("answer").apply(res.bars, { nd: ND }).varied) problems.push("Call & response is not idempotent");
+  }
+  console.log(`reshape: ${M.RESHAPE_TYPES.length} named techniques — invert/reverse involutive, sequence/answer respect the first statement`);
 }
 
 /* ---- the hook toolkit: report card, syncopation, tournament pool, bass riffs ----

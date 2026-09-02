@@ -8,7 +8,7 @@ import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
 import { decodeSong, encodeSong, makeSong, songBeats, songMelos, unpackBeats } from "./song.js";
-import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, shufflePitches, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
+import { ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, MEL_GRIDS, gridSub, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, NARRATIVES, RHYTHMS, ROLE_RHYTHM, blankBars, layerGain, rescaleBar, rhythmSpots, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, partMoveOf, DRUM_MOVES, fillHitAt } from "./melody.js";
 import { SYNC_LEVELS, bassRiffBars, hookPool, hookReport, mutateHook, riffShapeName, syncopateBars } from "./hook.js";
 import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
@@ -745,6 +745,13 @@ export default function ProgressionWheel() {
   /* 🎲 Shuffle pitches — no dropdown, no pick: one button, one baseline. Random by design, so there
      is nothing to name in a menu the way Vary/Decorate/Rearrange's edits are named. */
   const [shufIn, setShufIn] = useState({});
+  /* 🎼 Reshape — the named melodic-development techniques (Invert, Reverse, Sequence up/down, Call &
+     response), applied to the whole section rather than a hand-picked selection. Unlike Vary/Decorate/
+     Rearrange's dropdown there is no "auto mix": each of these is a deliberate, distinct move a writer
+     reaches for on purpose, so reshPick always names one (defaulting to the first) rather than "".
+     Same baseline/undo shape as the others, independent state of its own. */
+  const [reshIn, setReshIn] = useState({});
+  const [reshPick, setReshPick] = useState({});
   /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
      early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
   const [syncIn, setSyncIn] = useState({});
@@ -3059,6 +3066,47 @@ export default function ProgressionWheel() {
     if (!st || !st.level) return;
     putLayer(d.key, L, dupBars(st.base));
     const next = { ...shufIn }; delete next[k]; setShufIn(next);
+  };
+
+  /* ---- 🎼 reshape: invert / reverse / sequence / call & response ----
+     Invert and Reverse are involutions — apply the same transform twice from the same baseline and
+     you're back where you started — so they toggle on parity of `level` rather than counting up to a
+     cap the way every other control here does; a toggle always writes the grid, even on the "back to
+     base" half, because that half is a real state the grid has to show, not a no-op to skip. Sequence
+     and Answer need an actual repeated motif, the same way Vary these notes' repeat-based path does,
+     and say so when there isn't one rather than silently doing nothing. */
+  const reshapeMel = (d, L, pickNow) => {
+    const sec = secMelos[d.key]; if (!sec) return;
+    const cur = barsOf(sec, L); if (!cur) return;
+    const k = varyKeyOf(d.key, L), st = reshIn[k];
+    const pick = pickNow != null ? pickNow : (reshPick[k] || RESHAPE_TYPES[0].id);
+    const fresh = !st || melKey(cur) !== st.grid || st.pick !== pick;
+    const base = fresh ? cur : st.base;
+    const level = (fresh ? 0 : st.level) + 1;
+    const type = RESHAPE_TYPES.find(t => t.id === pick) || RESHAPE_TYPES[0];
+    const toggle = pick === "invert" || pick === "reverse";
+    const out = type.apply(base, { nd: scaleSemis.length, level });
+    if (!toggle && !out.varied) {
+      const why = out.repeats != null && !out.repeats
+        ? `nothing repeats here to ${pick === "answer" ? "answer" : "sequence"}`
+        : "already there";
+      setReshIn({ ...reshIn, [k]: { base, grid: melKey(cur), level: 0, pick, note: why } });
+      return;
+    }
+    const back = !toggle && level > VARY_IN_MAX;
+    const bars = back ? dupBars(base) : out.bars;
+    putLayer(d.key, L, bars);
+    const note = back ? "back to the melody you wrote"
+      : toggle ? (level % 2 === 1 ? (pick === "invert" ? "inverted" : "reversed") : "back to how you wrote it")
+      : pick === "answer" ? `${out.varied} of ${out.repeats} repeat${out.repeats > 1 ? "s" : ""} now resolve home`
+      : `${out.varied} of ${out.repeats} repeat${out.repeats > 1 ? "s" : ""} shifted`;
+    setReshIn({ ...reshIn, [k]: { base, grid: melKey(bars), level: back ? 0 : level, pick, note } });
+  };
+  const resetReshIn = (d, L) => {
+    const k = varyKeyOf(d.key, L), st = reshIn[k];
+    if (!st || !st.level) return;
+    putLayer(d.key, L, dupBars(st.base));
+    const next = { ...reshIn }; delete next[k]; setReshIn(next);
   };
 
   /* ---- syncopate: anticipation as a one-tap edit ----
@@ -6330,6 +6378,32 @@ export default function ProgressionWheel() {
                             {lv > 0 && <button className="mini" onClick={() => resetShufIn(d, secL)}
                               title="Put this melody back as it was before the first tap">↺</button>}
                             {sst && sst.note && <span className="rlbl" style={{ opacity:.75 }}>{sst.note}</span>}
+                            </div>
+                          );
+                        })()}
+                        {/* 🎼 Reshape — the named melodic-development techniques (Invert, Reverse,
+                            Sequence up/down, Call & response), applied to the whole section without
+                            selecting notes first the way the Move-mode versions of these need to. No
+                            "auto mix": each is a deliberate move, so the dropdown always names one. */}
+                        {tab === "write" && (() => {
+                          const hk = varyKeyOf(d.key, secL);
+                          const hst = reshIn[hk];
+                          const lv = (hst && hst.level) || 0;
+                          const pick = reshPick[hk] || RESHAPE_TYPES[0].id;
+                          const curH = RESHAPE_TYPES.find(v => v.id === pick) || RESHAPE_TYPES[0];
+                          return (
+                            <div className="row" style={{ flexBasis:"100%", margin:"2px 0" }}>
+                            <select className="fxsel" style={{ maxWidth:150 }} value={pick}
+                              title="Which melodic-development technique 🎼 Reshape makes next — choosing one only sets it up; press the button to make it. These reshape the phrase itself rather than a single note: flip its contour, play it backwards, restate its repeated motif a step higher or lower, or resolve each restatement home."
+                              onChange={e => setReshPick({ ...reshPick, [hk]: e.target.value })}>
+                              {RESHAPE_TYPES.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+                            </select>
+                            <button className={"mini" + (lv ? " on" : "")} onClick={() => reshapeMel(d, secL)}
+                              title={curH.tip + " Tap again for more; one past the top puts the melody back as you wrote it."}>
+                              🎼 {curH.name}{lv ? " ×" + lv : ""}</button>
+                            {lv > 0 && <button className="mini" onClick={() => resetReshIn(d, secL)}
+                              title="Put this melody back as it was before the first tap">↺</button>}
+                            {hst && hst.note && <span className="rlbl" style={{ opacity:.75 }}>{hst.note}</span>}
                             </div>
                           );
                         })()}

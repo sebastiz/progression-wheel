@@ -651,6 +651,22 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   again for a bigger shuffle — more notes touched, further each one can move — the same **↺** / one
   tap past the top to undo as the other three, its own baseline.
 
+- **🎼 Reshape** (**Write** tab, beside 🎲 Shuffle pitches) — named melodic-development techniques,
+  applied to the whole section rather than a hand-picked selection (the ✋ Move-mode tools below do
+  the same things to a selection you drag). No "auto mix" — pick one on purpose:
+  - **Invert** flips the contour upside-down around the middle of the melody's *own* range (not
+    literally its first note — a melody starting on the tonic would otherwise invert straight back
+    onto itself, collapsing to a flat line). Press again to flip it back.
+  - **Reverse** plays the section backwards. Press again to flip it back.
+  - **Sequence up** / **Sequence down** restates the section's own repeated motif a scale step
+    further from the last with every tap — the classic rising-or-falling-sequence build.
+  - **Call & response** resolves the last note of every restatement home to the tonic — the call,
+    then the answer.
+
+  Sequence and Call & response need an actual repeat to work with — a through-composed section says
+  so rather than doing nothing silently. The dropdown only sets up which technique the button
+  applies next; **↺** or one tap past the top undoes, same as the other three controls.
+
 - **Suggested melodies** (**Suggest** tab) — pick a common melody shape and a starting scale note,
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear
   melody** empties the section. The 16 shapes cover chord-tone arpeggios (up / down / rolling, which
