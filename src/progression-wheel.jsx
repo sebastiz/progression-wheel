@@ -2949,7 +2949,7 @@ export default function ProgressionWheel() {
      a control whose whole job is to be tried a few times. */
   const varyKeyOf = (key, L) => key + ":" + L;
   const melKey = bars => JSON.stringify(bars);
-  const VARY_IN_MAX = 5;                                    // past this the motif stops being the motif
+  const VARY_IN_MAX = 8;                                    // past this the motif stops being the motif
   const varyRepeats = (d, L, pickNow) => {
     const sec = secMelos[d.key]; if (!sec) return;
     const cur = barsOf(sec, L); if (!cur) return;
@@ -3312,10 +3312,10 @@ export default function ProgressionWheel() {
   const narSync = narSyncSt.key === progId ? narSyncSt.val : 0;
   const narWithin = narInSt.key === progId ? narInSt.val : false;
   // the slider's dial positions in words, anchored on the levels the old menu offered
-  const VARY_MAX = 6;
+  const VARY_MAX = 10;
   const varyWords = a => a <= 0 ? "identical repeats" : a < 0.75 ? "barely varied"
     : a < 1.5 ? "vary a little" : a < 2.5 ? "vary more" : a < 3.5 ? "vary a lot"
-    : a < 5 ? "really varied" : "barely repeats";
+    : a < 5 ? "really varied" : a < 7.5 ? "aggressively varied" : "barely repeats";
   // the bar's chord as a scale degree — the hook narratives use to follow the harmony
   const chordDegsOf = cs => cs.map(c => {
     const i = scaleNotes.indexOf(((c.root % 12) + 12) % 12);

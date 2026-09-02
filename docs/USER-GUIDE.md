@@ -620,7 +620,7 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
   Push a note early, Split a long note, Add a turn, Add a grace note…) and every tap after writes
   only that edit, each time landing on a different note or column.
 
-  Tap again for more (the button counts **×2**, **×3**…, up to ×5) — each tap re-derives from the
+  Tap again for more (the button counts **×2**, **×3**…, up to ×8) — each tap re-derives from the
   melody you started with rather than piling edits on edits, so the tune is still the tune at the top
   of the range. One tap past the top, or **↺**, puts it back exactly as it was; ⌘Z works too. It acts
   on the part you're editing, in that section only, and it tells you what it found ("3 of 3 repeats
@@ -674,10 +674,11 @@ No sound on iPhone? Check the ring/silent switch — it mutes all web audio.
 
 - **Suggested melodies** (**Suggest** tab) — pick a common melody shape and a starting scale note,
   then **Write to grid** lays it onto the section so you can hear it and edit from there; **Clear
-  melody** empties the section. The 16 shapes cover chord-tone arpeggios (up / down / rolling, which
-  follow each bar's chord), scale runs, waves, neighbour tones, a repeated pedal tone, call &
-  response, question & answer (resolving to the tonic), the AA / AB / AABA motif forms, ascending and
-  descending sequences, and wide leaping figures.
+  melody** empties the section. The shapes cover chord-tone arpeggios (up / down / rolling, which
+  follow each bar's chord), **Chord phrases**, which gives every distinct chord its own short figure
+  instead of the same shape moved from chord to chord, scale runs, waves, neighbour tones, a repeated
+  pedal tone, call & response, question & answer (resolving to the tonic), the AA / AB / AABA motif
+  forms, ascending and descending sequences, and wide leaping figures.
 
 - **⇢ Syncopate** (**Write** tab, beside ✦ Vary these notes) — anticipation as one tap: the part's
   on-beat notes pushed half a beat early and held through the beat they left, the lean that
@@ -723,11 +724,15 @@ section is (verse, chorus, bridge, intro…), which pass of it this is, and wher
 running order. That's how the shapes differ from patterns: *Range expansion at the hook* keeps
 verses inside two or three notes and opens the whole octave for the chorus; *Withheld peak* spends
 the top note only in the final section; *Terraced* climbs a step per bar; *Long climb* lifts every
-section a little above the last. The 19 narratives cover contour (arch, song-length arch, waves,
-descending lament, cascading sequence, leap-and-fill, speech contour), architecture (question &
-answer, call & response, motif development, terraced build, withheld peak, long climb, range
-expansion), and texture (ostinato cell, widening pendulum, chant-then-release, chord-locked hook,
-suspension chain). Each shows what it does and a few songs that do it. **↻ Rewrite** re-runs it —
+section a little above the last; *Chord phrases* gives every distinct chord in the progression its
+own short figure — an arpeggio up, a leap and settle, a stepwise run — instead of one shape smeared
+across the changes, so a four-chord loop reads as four small ideas rather than one riff repeated
+four times, with the same chord always playing its own figure back wherever it recurs. The 22
+narratives cover contour (arch, song-length arch, waves, descending lament, cascading sequence,
+leap-and-fill, speech contour), architecture (question & answer, call & response, motif development,
+terraced build, withheld peak, long climb, range expansion), texture (ostinato cell, widening
+pendulum, chant-then-release, chord-locked hook, suspension chain), and per-chord phrasing (chord
+phrases). Each shows what it does and a few songs that do it. **↻ Rewrite** re-runs it —
 after a key change, a new structure, or edits you'd rather throw away — and **↶ Undo** puts the
 melodies back as they were. It writes to layer A only, so a 2nd melody you've written stays put, and
 everything it writes is ordinary grid notes: edit any section afterwards.
@@ -742,8 +747,9 @@ writes:
   every repeat takes one edit and some, deterministically, take a second. The dial scales with the
   section itself, so a whole eight-bar chorus takes proportionally more edits at the same setting
   than a two-bar riff does — the point being felt across the section, not just at one note in it.
-  The first pass is always left alone (it is the thing the others are variations of), and the
-  slider rewrites the narrative when you release it.
+  The slider runs to 10 now, well past *really varied*, for a repeat that should barely resemble
+  its first statement. The first pass is always left alone (it is the thing the others are
+  variations of), and the slider rewrites the narrative when you release it.
 - **Syncopate** — writes the narrative with anticipation baked in: on-beat notes pushed half a beat
   early and held through the beat they left, the lean that carries most pop and house toplines.
   *Push the backbeats* moves beats 2 and 4; *push every beat* moves everything but each bar's

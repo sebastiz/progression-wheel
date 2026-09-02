@@ -518,7 +518,40 @@ const counterGen = place => function (u) {
     return bar;
   });
 };
+/* ---- chord phrases: a different short idea for each chord, not one shape smeared across all of
+   them ----
+   Every pattern and narrative in this file either ignores the chord underneath it (the same shape,
+   wherever it lands) or only transposes one fixed shape onto each chord's root (arpUp, arpDown,
+   arpRoll below) — which still reads as one riff moved around, not as different ideas. This is the
+   other move: a small bank of contrasting figures — an arpeggio up, a leap and settle, a stepwise
+   run — and which one a chord gets is keyed to the chord's own identity, not to its position in the
+   bar. The same chord coming back later in the loop plays the same figure back, so the progression
+   still reads as one piece; a genuinely different chord almost always gets a genuinely different one. */
+const CHORD_FIGURES = [
+  [0, 2, 4, 6],    // rise — arpeggio up through the 7th
+  [6, 4, 2, 0],    // fall — arpeggio down from the 7th home to the root
+  [0, 2, 0, -1],   // turn — leans up to the 3rd, dips below the root
+  [0, 4, 2, 0],    // skip — leap to the 5th, settle back through the 3rd
+  [0, 1, 2, 3],    // run — stepwise up from the root
+  [4, 3, 2, 1],    // runDown — stepwise down from the 3rd above
+  [0, 0, 2, 0],    // pedal — mostly rooted, one lift to the 3rd
+  [2, -1, 4, 0],   // swing — wide and restless: 3rd, below the root, 5th, root
+];
+// which figure a chord gets, keyed to the chord's own scale degree rather than its position — the
+// reason the same chord recurring later in the loop plays the same idea back. `cd` comes in as
+// whatever the caller's chord tracking hands over — null (chromatic) included — so anything that
+// isn't actually a usable degree falls back to 0 rather than poisoning the arithmetic downstream.
+const chordDeg = cd => Number.isFinite(cd) ? cd : 0;
+const figureFor = (cd, seed) => CHORD_FIGURES[Math.floor(hash01(seed + chordDeg(cd) * 977) * CHORD_FIGURES.length)];
+
 const MELODY_PATTERNS = [
+  { id:"chordPhrases", name:"Chord phrases (a new figure per chord)",
+    desc:"Each distinct chord gets its own short figure — an arpeggio up, a leap and settle, a stepwise run — instead of the same shape moved around from chord to chord. The same chord always plays its own figure back.",
+    gen(u){ const Q = u.cols;
+      return Array.from({ length:u.nBars }, (_, b) => {
+        const g = Number.isFinite(u.chordDegs[b]) ? u.chordDegs[b] : u.start;
+        const fig = figureFor(u.chordDegs[b], u.start * 131);
+        return layBar(u.B, Q, Q.map((_, i) => g + fig[i % fig.length]), u.lens); }); } },
   { id:"arpUp", name:"Arpeggio ↑ (chord tones)",
     desc:"Climbs each bar's chord — root, 3rd, 5th, 7th — one note per beat. Follows the chords; the start note fills in over any out-of-key chord.",
     gen(u){ const Q = u.cols;
@@ -1478,7 +1511,7 @@ const varyWithin = (bars, { nd = 7, amount = 1, seed = 0 } = {}) => {
        stepping through choices a sparse motif has already run out of, and two of them land on the
        same edit often enough to hear. A different number of edits cannot collide that way. */
     const n = varyPass(slice, { pass: r.occ, seed: seed + r.first * 331 + best.span * 17,
-      nd, amount: amount + Math.min(3, r.occ - 1) });
+      nd, amount: amount + Math.min(6, (r.occ - 1) * 2) });
     if (n) { varied++; edits += n; }
   });
   return { bars: out, span: best.span, repeats: best.repeats, varied, edits };
@@ -1663,6 +1696,14 @@ const RESHAPE_TYPES = [
 const isHook = role => "CDR".includes(role);   // the sections that are meant to be the payoff
 
 const NARRATIVES = [
+ { id:"chordPhrases", name:"Chord phrases — a new figure per chord",
+   tip:"Gives every distinct chord in the progression its own short figure — an arpeggio up, a leap and settle, a stepwise run — instead of one shape smeared across the changes underneath it. The same chord always plays its own figure back, so a four-chord loop comes out as four small ideas that still read as one piece rather than one riff repeated four times.",
+   refs:"Motown basslines borrowed for the top line · riff-led house, disco and Afrobeats hooks",
+   gen(u){ const seed = u.role.charCodeAt(0) * 131 + u.pass * 977;
+     return narBars(u, () => nCols(u.B, roleN(u.role), u.sub), s => {
+       const fig = figureFor(s.cd, seed);
+       return wrap7(chordDeg(s.cd) + fig[s.i % fig.length]); }); } },
+
  { id:"arch", name:"Arch — rise and fall",
    tip:"Every section is one arch: the line climbs to a peak halfway through and settles back down where it started. The oldest singable shape there is — it breathes like a spoken sentence, and it's why a ballad verse feels complete without a chorus.",
    refs:"Someone Like You (verse) · Yesterday · Hallelujah",
