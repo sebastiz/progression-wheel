@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+- **Six new synth voices, and 22 more General MIDI instruments.** The Lead menu's *Synth
+  (no download)* list grows from 20 voices to 26: **Clav** (a percussive, metallic funk keys sound),
+  **Moog lead** (a resonant mono lead), **Pizzicato** (short, plucked strings), **Chime** (a bright
+  mallet tone), **Warm pad**, and **Growl** (an inharmonic dubstep wobble, also selectable as a Bass
+  voice) — each loudness-matched to every existing voice the same way
+  (`scripts/measure-loudness.mjs`), so reaching for a new one never jumps the mix. The General MIDI
+  palette (Sound and Lead's sampled instruments) grows alongside it, from 89 keys to 111: guitar
+  harmonics, a second slap and synth bass, a second synth strings and synth brass, blown bottle,
+  shakuhachi, four more synth leads (chiff, charang, voice, fifths) and four more synth pads
+  (polysynth, bowed, metallic, sweep), plus a clutch of world instruments — bagpipe, fiddle, tinkle
+  bell, woodblock, taiko drum, melodic tom, synth drum.
+- **Unison, and a less synthetic-sounding reverb.** Every Lead/Bass/Pad voice gets a Unison control
+  in the Tone panel: it stacks up to four detuned copies of the note, generalising what the
+  hand-built Supersaw voice already did to every other voice — a thin voice gets fatter without a
+  new preset. Voice gains are balanced by 1/√voices, so turning it up thickens a sound rather than
+  just making it louder, and it is exactly off (a single, untouched oscillator) at its default, so
+  every existing voice's loudness calibration holds. Separately, the reverb's impulse response now
+  darkens across its decay — a one-pole lowpass whose cutoff falls over the tail, the way a real
+  room's air and surfaces absorb high frequencies faster than low ones — instead of staying
+  spectrally flat noise from the first millisecond to the last, which is the main reason a
+  convolution reverb reads as synthetic even with an otherwise correct decay curve.
 - **⧉ copy notes to…, beside the existing ⧉ copy settings to….** The existing copy on a part only
   ever carried its instrument, register, level and modulation onto other sections — never the notes,
   by design, so pushing a sound to a sibling never silently overwrote a melody it had written for

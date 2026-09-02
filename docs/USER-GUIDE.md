@@ -237,11 +237,11 @@ what you render is exactly what you heard.
 
 ### Dance instruments
 
-The **Lead** menu (and each part's own instrument menu) has six voices built for this, under
+The **Lead** menu (and each part's own instrument menu) has seven voices built for this, under
 *Synth (no download)*: **Supersaw** (the trance/EDM wall of detuned saws), **Hoover** (the rave
 stab that slides down into the note), **Acid 303** (resonant, squelchy — try it with an arp),
-**Reese bass** (the detuned drum-and-bass growl), **Sub bass**, and **House stab**. They need no
-download and work offline.
+**Reese bass** (the detuned drum-and-bass double-saw), **Sub bass**, **House stab**, and **Growl**
+(the beating, inharmonic dubstep wobble). They need no download and work offline.
 
 ### The arrangement strip
 
@@ -576,7 +576,7 @@ arpeggiator and sends, the effects, the sidechain and every drawn automation lan
 written in plain words (with a built-in reference explaining each control), so the analysis can
 read *why* the wav sounds the way it does, not just *that* it does.
 **Sound** (the chord instrument) and **Lead** (the melody voice) are chosen above the wheel, next to
-the chord-colour menus. Both offer the full **General MIDI palette — about 90 instruments grouped by
+the chord-colour menus. Both offer the full **General MIDI palette — over 110 instruments grouped by
 category** (pianos, mallets, organs, guitars, basses, strings, ensemble & choir, brass, reeds, pipes,
 synth lead & pad, world). With **Real** on and a connection, each plays as a real recorded sample
 (downloaded only for the instrument you pick); offline, each falls back to a synth voice matched to

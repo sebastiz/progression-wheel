@@ -764,7 +764,8 @@ const GM_PROGRAM = Object.fromEntries(GM_NAMES.map((n, i) => [n, i]));
 // the built-in synth voices aren't GM at all, so map each to its nearest General MIDI equivalent
 const SYNTH_PROGRAM = { synth:81, sine:80, triangle:80, square:80, saw:81, pluck:25, bell:11,
   musicbox:10, ep:4, strings:48, brass:61, organ:16, voice:53, glass:88,
-  supersaw:81, hoover:81, acid:87, reese:39, sub:38, stab:62 };
+  supersaw:81, hoover:81, acid:87, reese:39, sub:38, stab:62,
+  clav:7, moog:81, pizz:45, chime:14, warmpad:89, growl:39 };
 // program number for anything the app can voice: a GM key, a synth id, or nothing recognisable
 const programOf = (key, fallback = 0) => {
   const k = gmKey(key);
@@ -927,39 +928,50 @@ const GM_CATS = [
     ["acoustic_guitar_nylon","Nylon guitar","pluck"], ["acoustic_guitar_steel","Steel guitar","pluck"],
     ["electric_guitar_jazz","Jazz guitar","pluck"], ["electric_guitar_clean","Clean electric","pluck"],
     ["electric_guitar_muted","Muted electric","pluck"], ["overdriven_guitar","Overdrive guitar","pluck"],
-    ["distortion_guitar","Distortion guitar","pluck"]]],
+    ["distortion_guitar","Distortion guitar","pluck"], ["guitar_harmonics","Guitar harmonics","pluck"]]],
   ["Basses", [
     ["acoustic_bass","Acoustic bass","bass"], ["electric_bass_finger","Finger bass","bass"],
     ["electric_bass_pick","Pick bass","bass"], ["fretless_bass","Fretless bass","bass"],
-    ["slap_bass_1","Slap bass","bass"], ["synth_bass_1","Synth bass","bass"], ["contrabass","Double bass","bass"]]],
+    ["slap_bass_1","Slap bass","bass"], ["slap_bass_2","Slap bass 2","bass"],
+    ["synth_bass_1","Synth bass","bass"], ["synth_bass_2","Synth bass 2","bass"], ["contrabass","Double bass","bass"]]],
   ["Strings & harp", [
     ["violin","Violin","pad"], ["viola","Viola","pad"], ["cello","Cello","pad"],
     ["tremolo_strings","Tremolo strings","pad"], ["pizzicato_strings","Pizzicato strings","pluck"],
     ["orchestral_harp","Harp","pluck"], ["timpani","Timpani","mallet"]]],
   ["Ensemble & choir", [
     ["string_ensemble_1","String ensemble","pad"], ["string_ensemble_2","Slow strings","pad"],
-    ["synth_strings_1","Synth strings","pad"], ["choir_aahs","Choir “aahs”","pad"],
+    ["synth_strings_1","Synth strings","pad"], ["synth_strings_2","Synth strings 2","pad"],
+    ["choir_aahs","Choir “aahs”","pad"],
     ["voice_oohs","Voice “oohs”","pad"], ["synth_choir","Synth voice","pad"], ["orchestra_hit","Orchestra hit","keys"]]],
   ["Brass", [
     ["trumpet","Trumpet","pad"], ["trombone","Trombone","pad"], ["tuba","Tuba","bass"],
     ["muted_trumpet","Muted trumpet","pad"], ["french_horn","French horn","pad"],
-    ["brass_section","Brass section","pad"], ["synth_brass_1","Synth brass","pad"]]],
+    ["brass_section","Brass section","pad"], ["synth_brass_1","Synth brass","pad"],
+    ["synth_brass_2","Synth brass 2","pad"]]],
   ["Reeds", [
     ["soprano_sax","Soprano sax","pad"], ["alto_sax","Alto sax","pad"], ["tenor_sax","Tenor sax","pad"],
     ["baritone_sax","Baritone sax","pad"], ["oboe","Oboe","pad"], ["english_horn","English horn","pad"],
     ["bassoon","Bassoon","pad"], ["clarinet","Clarinet","pad"]]],
   ["Pipes", [
     ["piccolo","Piccolo","pad"], ["flute","Flute","pad"], ["recorder","Recorder","pad"],
-    ["pan_flute","Pan flute","pad"], ["whistle","Whistle","pad"], ["ocarina","Ocarina","pad"]]],
+    ["pan_flute","Pan flute","pad"], ["whistle","Whistle","pad"], ["ocarina","Ocarina","pad"],
+    ["blown_bottle","Blown bottle","pad"], ["shakuhachi","Shakuhachi","pad"]]],
   ["Synth lead & pad", [
     ["lead_1_square","Square lead","keys"], ["lead_2_sawtooth","Saw lead","keys"],
-    ["lead_3_calliope","Calliope lead","pad"], ["lead_8_bass__lead","Bass+lead","keys"],
+    ["lead_3_calliope","Calliope lead","pad"], ["lead_4_chiff","Chiff lead","keys"],
+    ["lead_5_charang","Charang lead","keys"], ["lead_6_voice","Voice lead","pad"],
+    ["lead_7_fifths","Fifths lead","keys"], ["lead_8_bass__lead","Bass+lead","keys"],
     ["pad_1_new_age","New-age pad","pad"], ["pad_2_warm","Warm pad","pad"],
-    ["pad_4_choir","Choir pad","pad"], ["pad_7_halo","Halo pad","pad"]]],
+    ["pad_3_polysynth","Polysynth pad","pad"], ["pad_4_choir","Choir pad","pad"],
+    ["pad_5_bowed","Bowed pad","pad"], ["pad_6_metallic","Metallic pad","pad"],
+    ["pad_7_halo","Halo pad","pad"], ["pad_8_sweep","Sweep pad","pad"]]],
   ["World", [
     ["sitar","Sitar","pluck"], ["banjo","Banjo","pluck"], ["shamisen","Shamisen","pluck"],
     ["koto","Koto","pluck"], ["kalimba","Kalimba","mallet"], ["shanai","Shanai","pad"],
-    ["steel_drums","Steel drums","mallet"], ["agogo","Agogo","mallet"]]],
+    ["steel_drums","Steel drums","mallet"], ["agogo","Agogo","mallet"],
+    ["bagpipe","Bagpipe","organ"], ["fiddle","Fiddle","pad"], ["tinkle_bell","Tinkle bell","mallet"],
+    ["woodblock","Woodblock","mallet"], ["taiko_drum","Taiko drum","mallet"],
+    ["melodic_tom","Melodic tom","mallet"], ["synth_drum","Synth drum","mallet"]]],
 ];
 const GM_FAM = {}, GM_LABEL = {};
 GM_CATS.forEach(([, list]) => list.forEach(([k, label, fam]) => { GM_FAM[k] = fam; GM_LABEL[k] = label; }));
@@ -1464,10 +1476,11 @@ const LEAD_VOICES = [
   ["pluck","Pluck"], ["bell","Bell"], ["musicbox","Music box"],
   ["ep","Electric piano"], ["strings","Strings"], ["brass","Brass"],
   ["organ","Organ"], ["voice","Voice (ah)"], ["glass","Glass pad"], ["whistle","Whistle"],
+  ["clav","Clav"], ["moog","Moog lead"], ["pizz","Pizzicato"], ["chime","Chime"], ["warmpad","Warm pad"],
   // dance voices — the sounds the genre is actually made of, rather than approximations of
   // orchestral instruments. Detune is expressed as a frequency multiple: 2^(cents/1200).
   ["supersaw","Supersaw (trance/EDM)"], ["hoover","Hoover (rave)"], ["acid","Acid 303"],
-  ["reese","Reese bass (DnB)"], ["sub","Sub bass"], ["stab","House stab"],
+  ["reese","Reese bass (DnB)"], ["sub","Sub bass"], ["stab","House stab"], ["growl","Growl (dubstep)"],
 ];
 const LEAD_SPECS = {
   synth:    { parts:[["triangle",1,1],["sine",2,0.3]],                 atk:0.012, rel:0.13, vol:0.12, sus:0.6 },
@@ -1486,6 +1499,11 @@ const LEAD_SPECS = {
   voice:    { parts:[["sawtooth",1,0.4],["sine",1,0.45]],             atk:0.06,  rel:0.18, vol:0.109,  sus:0.8, lp:1500, vib:true },
   glass:    { parts:[["sine",1,1],["sine",3,0.2],["triangle",2,0.15]],atk:0.07,  rel:0.32, vol:0.079,  sus:0.75 },
   whistle:  { parts:[["sine",1,1],["sine",2,0.02]],                   atk:0.03,  rel:0.1,  vol:0.077, sus:0.85, vib:true },
+  clav:     { parts:[["square",1,0.55],["triangle",2,0.35],["sine",5,0.12]], atk:0.002, rel:0.12, vol:0.158, sus:0, lp:3600, q:1.2 },
+  moog:     { parts:[["sawtooth",1,0.65],["square",1,0.35]],          atk:0.006, rel:0.14, vol:0.100, sus:0.7, lp:2000, q:3, fenv:[2.2, 1] },
+  pizz:     { parts:[["sawtooth",1,0.5],["sawtooth",1.004,0.5]],      atk:0.002, rel:0.15, vol:0.215, sus:0, lp:2600 },
+  chime:    { parts:[["sine",1,1],["sine",4,0.25],["sine",9.2,0.06]], atk:0.002, rel:0.4,  vol:0.113, sus:0, lp:3800 },
+  warmpad:  { parts:[["square",1,0.4],["square",2,0.15],["triangle",1,0.35]], atk:0.25, rel:0.5, vol:0.091, sus:0.9, lp:2000, vib:true },
   /* Dance voices. `q` adds filter resonance, `fenv:[from,to]` sweeps the cutoff across the note
      (as a multiple of `lp`), and `bend` drops the pitch in from that many semitones above. */
   supersaw: { parts:[["sawtooth",0.97940,0.7],["sawtooth",0.98624,0.7],["sawtooth",0.99311,0.7],
@@ -1504,6 +1522,10 @@ const LEAD_SPECS = {
   sub:      { parts:[["sine",1,1],["triangle",2,0.15]],               atk:0.012, rel:0.1, vol:0.073, sus:0.9 },
   stab:     { parts:[["sawtooth",1,0.6],["square",2,0.2],["sawtooth",1.00694,0.5]],
               atk:0.003, rel:0.18, vol:0.22, sus:0, lp:3400, q:1.4, fenv:[1.6, 0.7] },
+  // an inharmonic, near-octave-but-not-quite square layered under the fundamental — the beating
+  // between it and the saws is the growl a clean reese doesn't have
+  growl:    { parts:[["sawtooth",1,1],["square",2.01,0.4],["sawtooth",3.98,0.25]],
+              atk:0.01, rel:0.16, vol:0.076, sus:0.8, lp:750, q:7 },
 };
 // legato=true softens the attack and lets the note ring past its slot so a
 // moving line flows together instead of re-articulating on every eighth.
@@ -1592,15 +1614,15 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
    boost, because one low note has to carry the way a whole chord does. All synth, never sampled:
    the bass has to sound identical offline, and these are the sounds the genres are made of anyway. */
 const BASS_VOICES = [["sub", "Sub bass"], ["saw", "Saw bass"], ["square", "Square bass"],
-  ["pluck", "Picked bass"], ["acid", "Acid 303"], ["reese", "Reese (DnB)"]];
+  ["pluck", "Picked bass"], ["acid", "Acid 303"], ["reese", "Reese (DnB)"], ["growl", "Growl (dubstep)"]];
 /* The pad track's voices — the sustained half of LEAD_SPECS. The pad holds the chord's upper
    voicing a bar at a time, so everything here has a real sustain and none of it is percussive. */
 const PAD_VOICES = [["strings", "Strings"], ["glass", "Glass pad"], ["voice", "Voice (ah)"],
-  ["organ", "Organ"], ["brass", "Brass"], ["supersaw", "Supersaw"]];
+  ["organ", "Organ"], ["brass", "Brass"], ["supersaw", "Supersaw"], ["warmpad", "Warm pad"]];
 /* Measured like the lead vols (scripts/measure-loudness.mjs), but at C2 and to a hotter target,
    because one low note has to carry the way a whole chord does — every bass voice lands at the
    same K-weighted loudness, so swapping the bass sound never moves the bass level. */
-const BASS_LVL = { sub: 2.9, saw: 2.7, square: 2.8, pluck: 3.5, acid: 3.4, reese: 3.0 };
+const BASS_LVL = { sub: 2.9, saw: 2.7, square: 2.8, pluck: 3.5, acid: 3.4, reese: 3.0, growl: 2.7 };
 function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
   const k = LEAD_SPECS[kind] ? kind : "sub";
   // C2 upward: below the chord window (VOICE_LO 55), above the kick's fundamental
