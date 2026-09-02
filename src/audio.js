@@ -764,12 +764,14 @@ const GM_PROGRAM = Object.fromEntries(GM_NAMES.map((n, i) => [n, i]));
 // the built-in synth voices aren't GM at all, so map each to its nearest General MIDI equivalent
 const SYNTH_PROGRAM = { synth:81, sine:80, triangle:80, square:80, saw:81, pluck:25, bell:11,
   musicbox:10, ep:4, strings:48, brass:61, organ:16, voice:53, glass:88,
-  supersaw:81, hoover:81, acid:87, reese:39, sub:38, stab:62 };
+  supersaw:81, hoover:81, acid:87, reese:39, sub:38, stab:62,
+  clav:7, moog:81, pizz:45, chime:14, warmpad:89, growl:39 };
 // program number for anything the app can voice: a GM key, a synth id, or nothing recognisable
 const programOf = (key, fallback = 0) => {
   const k = gmKey(key);
   if (GM_PROGRAM[k] != null) return GM_PROGRAM[k];
   if (SYNTH_PROGRAM[key] != null) return SYNTH_PROGRAM[key];
+  if (isCustomVoice(key)) return 81;   // no GM equivalent to guess — nearest is a generic synth lead
   return fallback;
 };
 
@@ -927,39 +929,50 @@ const GM_CATS = [
     ["acoustic_guitar_nylon","Nylon guitar","pluck"], ["acoustic_guitar_steel","Steel guitar","pluck"],
     ["electric_guitar_jazz","Jazz guitar","pluck"], ["electric_guitar_clean","Clean electric","pluck"],
     ["electric_guitar_muted","Muted electric","pluck"], ["overdriven_guitar","Overdrive guitar","pluck"],
-    ["distortion_guitar","Distortion guitar","pluck"]]],
+    ["distortion_guitar","Distortion guitar","pluck"], ["guitar_harmonics","Guitar harmonics","pluck"]]],
   ["Basses", [
     ["acoustic_bass","Acoustic bass","bass"], ["electric_bass_finger","Finger bass","bass"],
     ["electric_bass_pick","Pick bass","bass"], ["fretless_bass","Fretless bass","bass"],
-    ["slap_bass_1","Slap bass","bass"], ["synth_bass_1","Synth bass","bass"], ["contrabass","Double bass","bass"]]],
+    ["slap_bass_1","Slap bass","bass"], ["slap_bass_2","Slap bass 2","bass"],
+    ["synth_bass_1","Synth bass","bass"], ["synth_bass_2","Synth bass 2","bass"], ["contrabass","Double bass","bass"]]],
   ["Strings & harp", [
     ["violin","Violin","pad"], ["viola","Viola","pad"], ["cello","Cello","pad"],
     ["tremolo_strings","Tremolo strings","pad"], ["pizzicato_strings","Pizzicato strings","pluck"],
     ["orchestral_harp","Harp","pluck"], ["timpani","Timpani","mallet"]]],
   ["Ensemble & choir", [
     ["string_ensemble_1","String ensemble","pad"], ["string_ensemble_2","Slow strings","pad"],
-    ["synth_strings_1","Synth strings","pad"], ["choir_aahs","Choir “aahs”","pad"],
+    ["synth_strings_1","Synth strings","pad"], ["synth_strings_2","Synth strings 2","pad"],
+    ["choir_aahs","Choir “aahs”","pad"],
     ["voice_oohs","Voice “oohs”","pad"], ["synth_choir","Synth voice","pad"], ["orchestra_hit","Orchestra hit","keys"]]],
   ["Brass", [
     ["trumpet","Trumpet","pad"], ["trombone","Trombone","pad"], ["tuba","Tuba","bass"],
     ["muted_trumpet","Muted trumpet","pad"], ["french_horn","French horn","pad"],
-    ["brass_section","Brass section","pad"], ["synth_brass_1","Synth brass","pad"]]],
+    ["brass_section","Brass section","pad"], ["synth_brass_1","Synth brass","pad"],
+    ["synth_brass_2","Synth brass 2","pad"]]],
   ["Reeds", [
     ["soprano_sax","Soprano sax","pad"], ["alto_sax","Alto sax","pad"], ["tenor_sax","Tenor sax","pad"],
     ["baritone_sax","Baritone sax","pad"], ["oboe","Oboe","pad"], ["english_horn","English horn","pad"],
     ["bassoon","Bassoon","pad"], ["clarinet","Clarinet","pad"]]],
   ["Pipes", [
     ["piccolo","Piccolo","pad"], ["flute","Flute","pad"], ["recorder","Recorder","pad"],
-    ["pan_flute","Pan flute","pad"], ["whistle","Whistle","pad"], ["ocarina","Ocarina","pad"]]],
+    ["pan_flute","Pan flute","pad"], ["whistle","Whistle","pad"], ["ocarina","Ocarina","pad"],
+    ["blown_bottle","Blown bottle","pad"], ["shakuhachi","Shakuhachi","pad"]]],
   ["Synth lead & pad", [
     ["lead_1_square","Square lead","keys"], ["lead_2_sawtooth","Saw lead","keys"],
-    ["lead_3_calliope","Calliope lead","pad"], ["lead_8_bass__lead","Bass+lead","keys"],
+    ["lead_3_calliope","Calliope lead","pad"], ["lead_4_chiff","Chiff lead","keys"],
+    ["lead_5_charang","Charang lead","keys"], ["lead_6_voice","Voice lead","pad"],
+    ["lead_7_fifths","Fifths lead","keys"], ["lead_8_bass__lead","Bass+lead","keys"],
     ["pad_1_new_age","New-age pad","pad"], ["pad_2_warm","Warm pad","pad"],
-    ["pad_4_choir","Choir pad","pad"], ["pad_7_halo","Halo pad","pad"]]],
+    ["pad_3_polysynth","Polysynth pad","pad"], ["pad_4_choir","Choir pad","pad"],
+    ["pad_5_bowed","Bowed pad","pad"], ["pad_6_metallic","Metallic pad","pad"],
+    ["pad_7_halo","Halo pad","pad"], ["pad_8_sweep","Sweep pad","pad"]]],
   ["World", [
     ["sitar","Sitar","pluck"], ["banjo","Banjo","pluck"], ["shamisen","Shamisen","pluck"],
     ["koto","Koto","pluck"], ["kalimba","Kalimba","mallet"], ["shanai","Shanai","pad"],
-    ["steel_drums","Steel drums","mallet"], ["agogo","Agogo","mallet"]]],
+    ["steel_drums","Steel drums","mallet"], ["agogo","Agogo","mallet"],
+    ["bagpipe","Bagpipe","organ"], ["fiddle","Fiddle","pad"], ["tinkle_bell","Tinkle bell","mallet"],
+    ["woodblock","Woodblock","mallet"], ["taiko_drum","Taiko drum","mallet"],
+    ["melodic_tom","Melodic tom","mallet"], ["synth_drum","Synth drum","mallet"]]],
 ];
 const GM_FAM = {}, GM_LABEL = {};
 GM_CATS.forEach(([, list]) => list.forEach(([k, label, fam]) => { GM_FAM[k] = fam; GM_LABEL[k] = label; }));
@@ -1464,10 +1477,11 @@ const LEAD_VOICES = [
   ["pluck","Pluck"], ["bell","Bell"], ["musicbox","Music box"],
   ["ep","Electric piano"], ["strings","Strings"], ["brass","Brass"],
   ["organ","Organ"], ["voice","Voice (ah)"], ["glass","Glass pad"], ["whistle","Whistle"],
+  ["clav","Clav"], ["moog","Moog lead"], ["pizz","Pizzicato"], ["chime","Chime"], ["warmpad","Warm pad"],
   // dance voices — the sounds the genre is actually made of, rather than approximations of
   // orchestral instruments. Detune is expressed as a frequency multiple: 2^(cents/1200).
   ["supersaw","Supersaw (trance/EDM)"], ["hoover","Hoover (rave)"], ["acid","Acid 303"],
-  ["reese","Reese bass (DnB)"], ["sub","Sub bass"], ["stab","House stab"],
+  ["reese","Reese bass (DnB)"], ["sub","Sub bass"], ["stab","House stab"], ["growl","Growl (dubstep)"],
 ];
 const LEAD_SPECS = {
   synth:    { parts:[["triangle",1,1],["sine",2,0.3]],                 atk:0.012, rel:0.13, vol:0.12, sus:0.6 },
@@ -1486,6 +1500,11 @@ const LEAD_SPECS = {
   voice:    { parts:[["sawtooth",1,0.4],["sine",1,0.45]],             atk:0.06,  rel:0.18, vol:0.109,  sus:0.8, lp:1500, vib:true },
   glass:    { parts:[["sine",1,1],["sine",3,0.2],["triangle",2,0.15]],atk:0.07,  rel:0.32, vol:0.079,  sus:0.75 },
   whistle:  { parts:[["sine",1,1],["sine",2,0.02]],                   atk:0.03,  rel:0.1,  vol:0.077, sus:0.85, vib:true },
+  clav:     { parts:[["square",1,0.55],["triangle",2,0.35],["sine",5,0.12]], atk:0.002, rel:0.12, vol:0.158, sus:0, lp:3600, q:1.2 },
+  moog:     { parts:[["sawtooth",1,0.65],["square",1,0.35]],          atk:0.006, rel:0.14, vol:0.100, sus:0.7, lp:2000, q:3, fenv:[2.2, 1] },
+  pizz:     { parts:[["sawtooth",1,0.5],["sawtooth",1.004,0.5]],      atk:0.002, rel:0.15, vol:0.215, sus:0, lp:2600 },
+  chime:    { parts:[["sine",1,1],["sine",4,0.25],["sine",9.2,0.06]], atk:0.002, rel:0.4,  vol:0.113, sus:0, lp:3800 },
+  warmpad:  { parts:[["square",1,0.4],["square",2,0.15],["triangle",1,0.35]], atk:0.25, rel:0.5, vol:0.091, sus:0.9, lp:2000, vib:true },
   /* Dance voices. `q` adds filter resonance, `fenv:[from,to]` sweeps the cutoff across the note
      (as a multiple of `lp`), and `bend` drops the pitch in from that many semitones above. */
   supersaw: { parts:[["sawtooth",0.97940,0.7],["sawtooth",0.98624,0.7],["sawtooth",0.99311,0.7],
@@ -1504,11 +1523,40 @@ const LEAD_SPECS = {
   sub:      { parts:[["sine",1,1],["triangle",2,0.15]],               atk:0.012, rel:0.1, vol:0.073, sus:0.9 },
   stab:     { parts:[["sawtooth",1,0.6],["square",2,0.2],["sawtooth",1.00694,0.5]],
               atk:0.003, rel:0.18, vol:0.22, sus:0, lp:3400, q:1.4, fenv:[1.6, 0.7] },
+  // an inharmonic, near-octave-but-not-quite square layered under the fundamental — the beating
+  // between it and the saws is the growl a clean reese doesn't have
+  growl:    { parts:[["sawtooth",1,1],["square",2.01,0.4],["sawtooth",3.98,0.25]],
+              atk:0.01, rel:0.16, vol:0.076, sus:0.8, lp:750, q:7 },
 };
+/* ===== user-built voices (the "voice editor") =====
+   A user's own voices are saved with the song, not with the app, so they live in this plain,
+   mutable registry rather than as more LEAD_SPECS entries — the component resyncs it from the
+   song's own `voices` state (see resetCustomVoices) every time the song loads or a voice is
+   edited, the same "audio.js holds the live copy, React state is the source of truth" split the
+   FX rack and every other imperative part of the graph already uses. Ids are always "custom:…",
+   which can never collide with a GM_CATS folder key (isGM stays false for them, correctly) or a
+   future built-in LEAD_SPECS id. A record has the same shape as a LEAD_SPECS entry, plus `name`
+   for the dropdowns and export — leadNote reads only the fields it already knows about, so the
+   extra key is harmless. */
+let CUSTOM_SPECS = {};
+const isCustomVoice = id => Object.prototype.hasOwnProperty.call(CUSTOM_SPECS, id);
+// the one lookup every call site should use instead of touching LEAD_SPECS directly — a user
+// voice shadows nothing (its id can't collide) and always wins if it somehow did
+const specFor = kind => CUSTOM_SPECS[kind] || LEAD_SPECS[kind];
+const customVoiceName = id => (CUSTOM_SPECS[id] && CUSTOM_SPECS[id].name) || id;
+function setCustomVoice(id, spec) { CUSTOM_SPECS[id] = spec; }
+function deleteCustomVoice(id) { delete CUSTOM_SPECS[id]; }
+// one call, on song load or any edit: replaces the whole registry so a voice deleted from the
+// song (or a song swapped for another) can't go on sounding — same reason the sampler cache gets
+// dropped on instrument change rather than merged.
+function resetCustomVoices(list) {
+  CUSTOM_SPECS = {};
+  (list || []).forEach(v => { if (v && v.id) CUSTOM_SPECS[v.id] = v; });
+}
 // legato=true softens the attack and lets the note ring past its slot so a
 // moving line flows together instead of re-articulating on every eighth.
 function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape) {
-  const V = LEAD_SPECS[kind] || LEAD_SPECS.synth;
+  const V = specFor(kind) || LEAD_SPECS.synth;
   const hz = midiHz(midi);
   /* The part's own envelope, folded into the voice's rather than replacing it. `add` lengthens the
      attack, the three multipliers stretch or squash the stages the voice already has. That way a
@@ -1586,25 +1634,107 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
   });
 }
 
+/* ===== voice editor loudness normalisation =====
+   The same K-weighted (ITU-R BS.1770-flavoured) max-momentary measure scripts/measure-loudness.mjs
+   uses offline via Playwright to keep every built-in LEAD_SPECS voice equally audible — ported here
+   so the in-app voice editor's "Normalise" button can do the same thing to a hand-built voice, live,
+   in the browser that's already running it. The two implementations are kept in sync by hand (there
+   is no shared module between a Node CLI script and the bundled app); they compute the same number
+   from the same graph on purpose, so a custom voice normalised in-app lands at the same loudness a
+   built-in voice would if it were re-measured by the script. */
+function kWeight(x, sr) {
+  const biquad = (type, fc, dbGain, Q) => {
+    const A = Math.pow(10, dbGain / 40), w = 2 * Math.PI * fc / sr;
+    const cs = Math.cos(w), sn = Math.sin(w), al = sn / (2 * Q);
+    let b0, b1, b2, a0, a1, a2;
+    if (type === "highshelf") {
+      const sq = 2 * Math.sqrt(A) * al;
+      b0 = A * ((A + 1) + (A - 1) * cs + sq);
+      b1 = -2 * A * ((A - 1) + (A + 1) * cs);
+      b2 = A * ((A + 1) + (A - 1) * cs - sq);
+      a0 = (A + 1) - (A - 1) * cs + sq;
+      a1 = 2 * ((A - 1) - (A + 1) * cs);
+      a2 = (A + 1) - (A - 1) * cs - sq;
+    } else {
+      b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = (1 + cs) / 2;
+      a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al;
+    }
+    return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
+  };
+  const stages = [
+    biquad("highshelf", 1681.9744509742, 3.99984385397, 0.7071752369),
+    biquad("highpass", 38.13547087614, 0, 0.5003270373),
+  ];
+  let y = x;
+  for (const [b0, b1, b2, a1, a2] of stages) {
+    const z = new Float32Array(y.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < y.length; i++) {
+      const v = b0 * y[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = y[i]; y2 = y1; y1 = v; z[i] = v;
+    }
+    y = z;
+  }
+  return y;
+}
+// loudest 400ms window (100ms hop) — max-momentary rather than a whole-render mean, so a pluck
+// (all attack, no sustain) is scored by the part of it actually heard
+function maxMomentaryDb(x, sr) {
+  const y = kWeight(x, sr);
+  const W = Math.floor(sr * 0.4), H = Math.floor(sr * 0.1);
+  let best = 0;
+  for (let s = 0; s + W <= y.length; s += H) {
+    let ms = 0;
+    for (let i = s; i < s + W; i++) ms += y[i] * y[i];
+    if ((ms /= W) > best) best = ms;
+  }
+  return -0.691 + 10 * Math.log10(best + 1e-12);
+}
+// renders one voice at C4 and C5 — the registers a melody actually lives in — and averages, so a
+// low-pass sitting right on one pitch's harmonics doesn't skew the score
+async function renderLoudness(kind, sr = 44100) {
+  const dur = 1.0;
+  const render = async midi => {
+    const ctx = new OfflineAudioContext(1, Math.ceil(sr * (dur + 1.2)), sr);
+    leadNote(ctx, 0.05, midi, dur, kind, false, ctx.destination, null);
+    const buf = await ctx.startRendering();
+    return maxMomentaryDb(buf.getChannelData(0), sr);
+  };
+  return ((await render(60)) + (await render(72))) / 2;
+}
+/* Normalises a draft voice's `vol` to the default synth lead's own loudness — the same target every
+   built-in voice is matched to — so a voice built in the editor starts in the mix exactly like one
+   shipped with the app, not quietly buried or blaring over everything else the first time it's
+   picked. Registers the draft under a scratch id rather than the voice's real one, so calling this
+   mid-edit (before Save) can never be heard by anything else reading the live registry. Returns the
+   suggested `vol` value to write back into the draft, not a ratio — the caller multiplies nothing. */
+async function measureVoiceLoudness(spec) {
+  const SCRATCH = "custom:__measure__";
+  setCustomVoice(SCRATCH, { ...spec, vol: 1 });
+  const [target, raw] = await Promise.all([renderLoudness("synth"), renderLoudness(SCRATCH)]);
+  deleteCustomVoice(SCRATCH);
+  return Math.pow(10, (target - raw) / 20);
+}
+
 /* ===== the bass track =====
    Its own source rather than the chord voice's lowest note. The voices are the LEAD_SPECS synths
    played an octave below the chord voicing — no new synthesis, just the register and a per-voice
    boost, because one low note has to carry the way a whole chord does. All synth, never sampled:
    the bass has to sound identical offline, and these are the sounds the genres are made of anyway. */
 const BASS_VOICES = [["sub", "Sub bass"], ["saw", "Saw bass"], ["square", "Square bass"],
-  ["pluck", "Picked bass"], ["acid", "Acid 303"], ["reese", "Reese (DnB)"]];
+  ["pluck", "Picked bass"], ["acid", "Acid 303"], ["reese", "Reese (DnB)"], ["growl", "Growl (dubstep)"]];
 /* The pad track's voices — the sustained half of LEAD_SPECS. The pad holds the chord's upper
    voicing a bar at a time, so everything here has a real sustain and none of it is percussive. */
 const PAD_VOICES = [["strings", "Strings"], ["glass", "Glass pad"], ["voice", "Voice (ah)"],
-  ["organ", "Organ"], ["brass", "Brass"], ["supersaw", "Supersaw"]];
+  ["organ", "Organ"], ["brass", "Brass"], ["supersaw", "Supersaw"], ["warmpad", "Warm pad"]];
 /* Measured like the lead vols (scripts/measure-loudness.mjs), but at C2 and to a hotter target,
    because one low note has to carry the way a whole chord does — every bass voice lands at the
    same K-weighted loudness, so swapping the bass sound never moves the bass level. */
-const BASS_LVL = { sub: 2.9, saw: 2.7, square: 2.8, pluck: 3.5, acid: 3.4, reese: 3.0 };
+const BASS_LVL = { sub: 2.9, saw: 2.7, square: 2.8, pluck: 3.5, acid: 3.4, reese: 3.0, growl: 2.7 };
 function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
-  const k = LEAD_SPECS[kind] ? kind : "sub";
+  const k = specFor(kind) ? kind : "sub";
   // C2 upward: below the chord window (VOICE_LO 55), above the kick's fundamental
   leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 3.0) * vel });
 }
 
-export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isGM, ksPluck, leadNote, makeDelay, makeFxMultiRack, makeFxMultiSlot, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, sampleVoicing, sfFetch, sfName, sfPrefetch, sfRawCache, strumChord, voiceChord };
+export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, customVoiceName, deleteCustomVoice, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isCustomVoice, isGM, ksPluck, leadNote, makeDelay, makeFxMultiRack, makeFxMultiSlot, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, measureVoiceLoudness, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, resetCustomVoices, sampleVoicing, setCustomVoice, sfFetch, sfName, sfPrefetch, sfRawCache, specFor, strumChord, voiceChord };

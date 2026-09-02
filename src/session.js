@@ -19,6 +19,7 @@ const TRACK_TYPES = [
   { id: "pad",    name: "Pad",    icon: "🌫", tip: "Held chords. Each clip is its own written grid." },
   { id: "perc",   name: "Perc",   icon: "🪘", tip: "A second, independent percussion grid. Each clip is its own pattern." },
   { id: "chords", name: "Chords", icon: "🎼", tip: "The strum rhythm over the song's own progression. Each clip is its own written rhythm." },
+  { id: "audio",  name: "Audio",  icon: "🎧", tip: "A real sound file — drop a .wav or .mp3 into a clip and launch it beat-matched to the song's tempo. Sound files live for this browser session only; they are not in saves or share links." },
 ];
 const TRACK_TYPE_BY_ID = Object.fromEntries(TRACK_TYPES.map(t => [t.id, t]));
 
@@ -26,6 +27,9 @@ let uidSeed = 0;
 // short, readable, unique within a browser session — these ids are never shown, only used as keys
 const uid = prefix => prefix + (Date.now().toString(36)) + (uidSeed++).toString(36);
 
+// a clip may also carry a follow action: `fa` ("next" | "prev" | "first" | "rand" | "stop",
+// absent = keep looping) and `fn` (full passes before it fires, absent = 1) — set in the
+// Session tab's clip editor, read by the scheduler's promotion block
 const newClip = (num, nbars = 4) => ({ id: uid("c"), num, nbars });
 
 const newTrack = (type, name) => ({

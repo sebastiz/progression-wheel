@@ -1644,6 +1644,33 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`instruments: ${keys.length} GM keys + ${synths.length} synth voices, all mapped to programs`);
 }
 
+/* ---- the voice editor's custom-voice registry: never collides with a GM key or a built-in
+   LEAD_SPECS entry, degrades to nothing rather than throwing when a spec is missing, and a fresh
+   song's registry can never carry a stale voice forward from whatever song played before it ---- */
+{
+  const id = "custom:test1234";
+  if (audio.isGM(id)) problems.push("a custom voice id read as a GM key");
+  if (audio.LEAD_SPECS[id]) problems.push("a custom voice id collided with a built-in LEAD_SPECS entry");
+  if (audio.specFor(id) !== undefined) problems.push("specFor found a spec for an unregistered custom id");
+  const spec = { name: "Test Voice", parts: [["sawtooth", 1, 1], ["sine", 2, 0.3]], atk: 0.01, rel: 0.15, vol: 0.12, sus: 0.5 };
+  audio.setCustomVoice(id, spec);
+  if (audio.specFor(id) !== spec) problems.push("specFor did not return the registered custom spec");
+  if (!audio.isCustomVoice(id)) problems.push("isCustomVoice did not recognise a registered id");
+  if (audio.customVoiceName(id) !== "Test Voice") problems.push("customVoiceName did not return the registered name");
+  // no GM key and no SYNTH_PROGRAM entry — the one case that used to fall back to program 0 (piano)
+  if (audio.programOf(id) !== 81) problems.push(`a custom voice with no program mapping resolved to program ${audio.programOf(id)}, want 81 (a generic synth lead)`);
+  audio.deleteCustomVoice(id);
+  if (audio.specFor(id) !== undefined) problems.push("deleteCustomVoice left the spec behind");
+  // resetCustomVoices replaces the whole registry — the sync point loadSketch/undo/redo call on
+  // every song change, so a voice from whatever song played last must never survive it
+  audio.setCustomVoice("custom:stale", spec);
+  audio.resetCustomVoices([{ id: "custom:fresh", ...spec, name: "Fresh" }]);
+  if (audio.specFor("custom:stale") !== undefined) problems.push("resetCustomVoices left a stale voice behind");
+  if (audio.specFor("custom:fresh") == null) problems.push("resetCustomVoices did not register the new list");
+  audio.resetCustomVoices([]);   // leave the registry empty for every test that runs after this one
+  console.log("custom voices: registry, GM-safety and program fallback all clean");
+}
+
 /* ---- the wav writer produces a file a player will actually open ---- */
 {
   const rate = 44100, frames = 1000;

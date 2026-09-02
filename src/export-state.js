@@ -2,7 +2,7 @@ import { MODES, SEMI_NAME, modeId } from "./theory.js";
 import { DRUMS, BASS, PERCS, PATTERNS, PUMPS, PUMP_AMT, METER_BY_ID, METERS } from "./patterns.js";
 import { ARP_BY_ID, ARP_RATES, GATE_BY_ID, LAYER_NAMES, MODS, MOD_GROUPS, modOf } from "./melody.js";
 import { BASS_VOICES, DELAY_BEATS, DELAY_TIMES, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_LABEL,
-  LEAD_VOICES, MOVES, PAD_VOICES, TRANS, gmKey, isGM } from "./audio.js";
+  LEAD_VOICES, MOVES, PAD_VOICES, TRANS, customVoiceName, gmKey, isCustomVoice, isGM } from "./audio.js";
 
 /* export-state — the settings half of "Export for Claude": one JSON snapshot of every choice that
    shaped the rendered audio, written to be read without the source code beside it.
@@ -92,6 +92,8 @@ function describeInstrument(id) {
   const k = gmKey(id);
   if (isGM(k)) return { id: k, name: GM_LABEL[k] || k,
     source: "sampled — a real General MIDI recording, pitch-shifted from a few anchor notes" };
+  if (isCustomVoice(k)) return { id: k, name: customVoiceName(k),
+    source: "synthesized — a custom voice built in the voice editor, not one of the app's own" };
   return { id: k, name: leadLabel(k) || k,
     source: "synthesized — a Web Audio oscillator voice (the id names its waveform/character)" };
 }
