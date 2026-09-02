@@ -1181,6 +1181,22 @@ const VARIATIONS = [
         return true;
       });
     } },
+  /* Two written notes trade pitches, each keeping its own onset and length — the same two pitches
+     the melody already had, just which one lands first. No pitch outside the melody is ever
+     introduced and no note is ever lost, which is what makes this (with push and delay) safe for
+     ✦ Rearrange, where every note may move but none may become a note that wasn't already there. */
+  { id:"swap", name:"Swap two notes", tip:"Two adjacent notes trade pitches, each keeping its own place — the same notes you wrote, reordered.",
+    apply(bars, nd, r, pass) {
+      return overBars(bars, r, pass, (bar, ns) => {
+        if (ns.length < 2) return false;
+        const i = byPass(ns.slice(0, -1).map((_, k) => k), r, pass);
+        const a = ns[i], b = ns[i + 1];
+        if (a.d === b.d) return false;
+        putNote(bar, a.c, a.len, b.d);
+        putNote(bar, b.c, b.len, a.d);
+        return true;
+      });
+    } },
 ];
 
 /* The subset of VARIATIONS that only ever writes into a column already confirmed empty — never
@@ -1194,6 +1210,16 @@ const VARIATIONS = [
    this guarantee — a writer who wants that already has it from the full catalogue.) */
 const DECORATE_IDS = ["passing", "add", "extend", "grace"];
 const DECORATE_VARIATIONS = VARIATIONS.filter(v => DECORATE_IDS.includes(v.id));
+
+/* The other subset: edits that only ever move an existing note's timing or trade pitches between two
+   existing notes — the melody's own multiset of pitches, rearranged, never a pitch it didn't already
+   have and never a note lost. Push a note early and Arrive late move a note by one column into
+   silence a column away (they never land on top of another note — see their own `can` filters);
+   Swap two notes trades two notes' pitches while both keep their own onset and length. ✦ Rearrange
+   uses only these, the way ✦ Decorate uses only the additive ones — a third, narrower promise than
+   either: not "notes added on top" but "the same notes, moved around". */
+const REARRANGE_IDS = ["push", "delay", "swap"];
+const REARRANGE_VARIATIONS = VARIATIONS.filter(v => REARRANGE_IDS.includes(v.id));
 
 // a bar list as one comparable string — enough to tell whether an edit actually landed
 const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).join("")).join("|");
@@ -1583,4 +1609,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, REARRANGE_VARIATIONS, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
