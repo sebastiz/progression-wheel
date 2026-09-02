@@ -3183,7 +3183,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // Pitch — which notes come out
     semis:0, dia:0, snap:"", invert:"", chord:"", voicing:"close", rpitch:0, octJump:0, oct2:0, detune:0,
     // Tone, Envelope, Movement
-    cut:100, res:0, hp:0, fenv:0, fdec:30, drive:0,
+    cut:100, res:0, hp:0, fenv:0, fdec:30, drive:0, uni:0,
     atk:0, dec:0, sus:0, rel:0, vfilt:0,
     wob:0, wobRate:2, trem:0, tremRate:4, pan:0, apan:0, apanRate:1,
     // Feel and Space
