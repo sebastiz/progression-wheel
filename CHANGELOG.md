@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **Melody variation, turned up.** The **Vary repeats** / **Vary these notes** engine used to apply
+  the same small, fixed number of edits regardless of how many bars it was given, so a whole
+  eight-bar chorus barely sounded different between repeats — it now scales with the section, and
+  the edit walk laps its catalogue as many times as it takes to spend that total instead of capping
+  at one edit per kind. The **Vary repeats** slider now runs to 10 (was 6) and **Vary these notes**
+  counts to ×8 (was ×5), and later restatements inside a repeated motif drift further from each
+  other. Alongside it, a new **Chord-tone walk** option (in both **Suggested melodies** and
+  **Melodic narrative**) freely varies the actual notes and note lengths against each bar's own
+  chord — a fresh, chord-weighted pitch or a held-over note at every rhythm slot — instead of one
+  fixed shape repeated across the changes, so even two bars over the identical chord can come out
+  with different notes and a different rhythm.
 - **🎛 Voice editor — build your own synth voice.** A new panel on the Sound tab, beside the Lead
   picker: name it, stack up to four oscillator partials (waveform, harmonic ratio, level), shape
   its attack/release/sustain, and give it an optional low-pass filter and vibrato. ▶ Preview plays
