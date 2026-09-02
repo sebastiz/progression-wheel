@@ -2553,6 +2553,33 @@ export default function ProgressionWheel() {
     if (n) setMelos({ progId, secs: next });
     return n;
   };
+  /* The mirror of copyPartSettings: only this part's notes travel — a way to push a section's
+     melody (freshly varied, decorated, reshaped…) out to its siblings without also overwriting
+     whatever instrument, register or level those sections had already dialled in for that part, the
+     way copying settings would. Reshaped bar-for-bar onto each destination's own chord sequence via
+     adaptBars — the same reconciliation a saved song already gets on load — rather than assuming
+     every section runs the same length, so a four-bar verse's notes land sensibly on an eight-bar
+     one instead of half the destination staying silent or the array simply not matching its bars. */
+  const copyPartNotes = (fromKey, L, toKeys) => {
+    const fromSec = secMelos[fromKey], src = layerOf(fromSec, L);
+    if (!src) return 0;
+    const samePid = melos.progId === progId;
+    const secs = samePid ? melos.secs : {};
+    const next = { ...secs };
+    let n = 0;
+    for (const key of toKeys) {
+      const sec = secMelos[key]; if (!sec || key === fromKey) continue;
+      const bars = adaptBars(fromSec.ids, src.bars, sec.ids, samePid);
+      const grown = sec.layers.length > L ? sec.layers.map(cloneLayer)
+        : [...sec.layers.map(cloneLayer), ...Array.from({ length: L + 1 - sec.layers.length }, () =>
+            ({ bars: blankBars(sec.layers[0].bars.length, meloBeats), instr: null,
+               oct: 0, vol: 1, mute: false, solo: false, send: 0 }))];
+      next[key] = { ids: sec.ids, layers: grown.map((ly, i) => i === L ? { ...ly, bars } : ly) };
+      n++;
+    }
+    if (n) setMelos({ progId, secs: next });
+    return n;
+  };
   const setSecInstr = (key, L, val) => {
     const sec = secMelos[key]; if (!sec) return;
     putSec(key, { layers: sec.layers.map((ly, i) =>
@@ -6966,6 +6993,12 @@ export default function ProgressionWheel() {
                         const n = copyPartSettings(d.key, secL, keys);
                         setIoNote(n ? `${LAYER_NAMES[secL]}'s settings copied to ${what}.` : "Nothing to copy to.");
                       };
+                      // the mirror of doCopy — same destinations, but the notes travel and the
+                      // sound each destination already had stays exactly as it was
+                      const doCopyNotes = (keys, what) => {
+                        const n = copyPartNotes(d.key, secL, keys);
+                        setIoNote(n ? `${LAYER_NAMES[secL]}'s notes copied to ${what}.` : "Nothing to copy to.");
+                      };
                       return (<>
                       <div className="row lytabs" style={{ gap:5, alignItems:"flex-end", flexWrap:"wrap" }}>
                         {sec.layers.map((l, li) => {
@@ -7002,6 +7035,20 @@ export default function ProgressionWheel() {
                               else if (v) doCopy([v], v);
                             }}>
                             <option value="">⧉ copy settings to…</option>
+                            {sameRole.length > 0 && <option value="role">every other {d.word.toLowerCase()} ({sameRole.length})</option>}
+                            {others.length > 0 && <option value="all">every other section ({others.length})</option>}
+                            {others.length > 0 && <optgroup label="just one">
+                              {others.map(o => <option key={o.key} value={o.key}>{o.key} · {o.word}</option>)}
+                            </optgroup>}
+                          </select>
+                          <select className="fxsel partcopy" value="" title="Copy this part's notes — however they got there: written by hand, a suggested pattern, a narrative shape, or any of Vary/Decorate/Rearrange/Reshape/Shuffle's edits — onto the same part of other sections, reshaped to fit each one's own chord sequence and length. Their instrument, register, level and modulation are left exactly as they were; use 'copy settings to…' beside it for those."
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (v === "role") doCopyNotes(sameRole.map(o => o.key), "every other " + d.word.toLowerCase());
+                              else if (v === "all") doCopyNotes(others.map(o => o.key), "every other section");
+                              else if (v) doCopyNotes([v], v);
+                            }}>
+                            <option value="">⧉ copy notes to…</option>
                             {sameRole.length > 0 && <option value="role">every other {d.word.toLowerCase()} ({sameRole.length})</option>}
                             {others.length > 0 && <option value="all">every other section ({others.length})</option>}
                             {others.length > 0 && <optgroup label="just one">

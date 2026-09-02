@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **⧉ copy notes to…, beside the existing ⧉ copy settings to….** The existing copy on a part only
+  ever carried its instrument, register, level and modulation onto other sections — never the notes,
+  by design, so pushing a sound to a sibling never silently overwrote a melody it had written for
+  itself. That meant there was no way to push a section's *notes* — freshly varied, decorated,
+  rearranged, reshaped or shuffled — out to its siblings at all. The new dropdown is the mirror: only
+  the notes travel, reshaped to fit each destination's own chord sequence and length, and the sound
+  each destination already had for that part is left exactly as it was.
 - **🎨 Decorate no longer gives up on a section packed too solid to have any silence left.** It only
   ever adds into empty columns — a real guarantee, and worth keeping — but a melody with a note in
   every single column (no gaps between any of them) has nowhere for that to land, and reported
