@@ -1280,8 +1280,8 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   {
     const fn = code.slice(code.indexOf("const decorateNotes = "), code.indexOf("const resetDecIn = "));
     if (!fn) problems.push("src: decorateNotes has moved — this guard no longer reads it");
-    if (!/pool:\s*DECORATE_VARIATIONS/.test(fn))
-      problems.push("src: decorateNotes does not restrict varyWhole to DECORATE_VARIATIONS — it could land a destructive edit under Decorate's name");
+    if (!/decorateSection\(/.test(fn))
+      problems.push("src: decorateNotes does not call decorateSection — it could land a destructive edit under Decorate's name");
     if (!/putLayer\(/.test(fn)) problems.push("src: decorateNotes never writes the decorated melody back");
     if (!/decorateNotes\(d, secL\)/.test(code))
       problems.push("src: nothing in the melody grid offers to decorate a section");
@@ -2737,6 +2737,48 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const destructive = M.varyWhole(dup(fixtures[0]), { id: "merge", nd: ND, seed: 5, level: 2, pool: M.DECORATE_VARIATIONS });
   if (destructive.varied) problems.push("Decorate ran a non-additive id (merge) under its own pool");
   console.log(`decorate: ${M.DECORATE_VARIATIONS.length} additive-only edits, ${checks} checks, 0 touched an already-written note`);
+}
+
+/* ---- decorateSection's squeeze fallback ----
+   The case a real screenshot surfaced: a section packed wall to wall, no silence anywhere, where
+   every gap-only edit correctly finds nothing — and previously left the writer with "nothing here to
+   decorate" and no way to add an ornament at all. decorateSection now falls back to shortening one
+   note's tail by a column and playing a neighbour tone in the space that frees up, but only when the
+   gap-only pass truly found nothing; a section with any real room must never see its note lengths
+   touched just because a *specific* pick had nowhere to go while the section as a whole had space. */
+{
+  const ND = 7;
+  const dup = bars => bars.map(b => b.map(c => [...c]));
+  const writtenPitches = bars => {
+    const m = new Map();
+    bars.forEach((bar, bi) => M.barNotes(bar).forEach(n => m.set(bi + ":" + n.c, n.d)));
+    return m;
+  };
+  // wall-to-wall: eight columns, four notes, not a single free column anywhere
+  const packed = [[[0], [0], [2], [2], [4], [4], [6], [6]]];
+  const before = writtenPitches(packed);
+  const res = M.decorateSection(dup(packed), { nd: ND, seed: 3, level: 1 });
+  if (!res.squeezed) problems.push("decorateSection did not fall back on a section with no silence anywhere");
+  if (!res.varied) problems.push("decorateSection's fallback found nothing on a section with a shortenable note");
+  // every onset that was already there keeps its own pitch — only a tail got shorter
+  for (const [key, deg] of before) {
+    const [bi, ci] = key.split(":").map(Number);
+    if (M.barNotes(res.bars[bi]).some(n => n.c === ci && n.d !== deg))
+      problems.push("decorateSection's fallback changed the pitch of an existing note's onset");
+  }
+  if (M.barNotes(res.bars[0]).length !== M.barNotes(packed[0]).length + 1)
+    problems.push("decorateSection's fallback did not add exactly one note where it shortened one");
+  // deterministic
+  const res2 = M.decorateSection(dup(packed), { nd: ND, seed: 3, level: 1 });
+  if (JSON.stringify(res.bars) !== JSON.stringify(res2.bars)) problems.push("decorateSection's fallback is not deterministic");
+  // a section with genuine room must use the gap-only path, never the fallback
+  const roomy = [[[0], [0], [], [3], [], [], [6], [6]]];
+  const auto = M.decorateSection(dup(roomy), { nd: ND, seed: 3, level: 1 });
+  if (auto.squeezed) problems.push("decorateSection fell back to squeezing on a section that plainly has room");
+  // and an empty section: nothing to shorten, nothing to add, no crash
+  const blank = M.decorateSection(M.blankBars(2, 8), { nd: ND, seed: 3, level: 1 });
+  if (blank.varied) problems.push("decorateSection found something to decorate in an empty section");
+  console.log("decorate fallback: a wall-to-wall section gets an ornament by shortening a note; a roomy section never does");
 }
 
 /* ---- 🔀 Rearrange: move-only variation ----
