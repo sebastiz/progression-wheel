@@ -738,9 +738,12 @@ writes:
 - **Vary repeats** — a continuous slider, from *identical repeats* at the left to *barely repeats*
   at the right. It sets how far each later pass of a section drifts from its first time round — a
   new landing note, a note added or taken away, a phrase pushed early, a held note broken in two —
-  and being continuous, anywhere on the dial is a real setting: 1.4 means every repeat takes one
-  edit and some, deterministically, take a second. The first pass is always left alone (it is the
-  thing the others are variations of), and the slider rewrites the narrative when you release it.
+  and being continuous, anywhere on the dial is a real setting: on a two-bar section, 1.4 means
+  every repeat takes one edit and some, deterministically, take a second. The dial scales with the
+  section itself, so a whole eight-bar chorus takes proportionally more edits at the same setting
+  than a two-bar riff does — the point being felt across the section, not just at one note in it.
+  The first pass is always left alone (it is the thing the others are variations of), and the
+  slider rewrites the narrative when you release it.
 - **Syncopate** — writes the narrative with anticipation baked in: on-beat notes pushed half a beat
   early and held through the beat they left, the lean that carries most pop and house toplines.
   *Push the backbeats* moves beats 2 and 4; *push every beat* moves everything but each bar's

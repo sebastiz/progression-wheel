@@ -1312,6 +1312,14 @@ const barsKey = bars => bars.map(b => b.map(c => (c && c.length ? c[0] : ".")).j
    it might land is a particular kind (only ever adding, never moving or replacing). */
 const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1, pool = VARIATIONS }) => {
   if (!amount || !pass || !out.length) return 0;
+  /* The dial is edits per bar or two of melody, not edits for however much `out` happens to hold: a
+     couple of edits that read as "varied" on a one-bar riff barely register spread over an eight-bar
+     chorus, so raw `amount` scales with how many bars are actually being walked (`shufflePitches`
+     above scales the same way, off notes.length rather than a flat count — this uses bars because
+     every VARIATIONS edit only ever touches the one bar it lands in). One or two bars is where the
+     raw dial value already sat, so that stays unscaled; anything longer gets proportionally more —
+     the walk below laps the pool as many times as it takes to actually spend the total. */
+  amount *= Math.max(1, out.length / 2);
   /* A fractional amount is a continuous dial over a count of edits, so the fraction becomes a
      deterministic coin toss on one extra edit — seeded from the seed and the pass, never from
      Math.random, so 1.4 means "every pass gets one edit, and this particular pass either does or
@@ -1330,12 +1338,21 @@ const varyPass = (out, { pass = 1, seed = 0, nd = 7, amount = 1, pool = VARIATIO
      so a second edit can undo the first and hand back a repeat identical to the one it was meant to
      vary. Each edit therefore counts only if it changed something, and the walk carries on past
      `amount` while the bars still match where they started.
-     One trip round the list, so two edits are always two different kinds of edit. */
-  for (let k = 0; k < pool.length; k++) {
-    if (applied >= amount && barsKey(out) !== before) break;
-    const i = (start + k) % pool.length;
-    const snap = barsKey(out);
-    if (pool[i].apply(out, nd, hash01(seed + i * 977), pass) && barsKey(out) !== snap) applied++;
+     One trip round the list lands every kind once, which used to be the whole walk — but a long
+     section asking for more edits than there are kinds of edit deserves more than fifteen and then
+     silence, so a lap that still hasn't reached `amount` goes round again, `pass` nudged a lap
+     further each time so the second "Different ending" lands on a different note than the first,
+     the way a fifth chorus differs from a fourth. Stops the moment a whole lap changes nothing —
+     that's the phrase genuinely out of room, not a reason to spin forever. */
+  for (let lap = 0; applied < amount || barsKey(out) === before; lap++) {
+    const gained = applied;
+    for (let k = 0; k < pool.length; k++) {
+      if (applied >= amount && barsKey(out) !== before) break;
+      const i = (start + k) % pool.length;
+      const snap = barsKey(out);
+      if (pool[i].apply(out, nd, hash01(seed + i * 977 + lap * 613), pass + lap) && barsKey(out) !== snap) applied++;
+    }
+    if (applied === gained) break;
   }
   return applied;
 };
