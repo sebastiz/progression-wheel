@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **Song settings, closed by default; instrument and style, in every section.** "Global settings"
+  on the Arrange tab is renamed **Song settings** and starts collapsed instead of open. Each
+  section's Drums, Percussion, Bass, Pad and Chords panel now carries its own **Style** (the
+  pattern — a groove, a bassline, a strum) and, where the sound has one, its own **Instrument**
+  (a kit, a voice, a GM patch) — Pad already had a voice picker; Bass, Percussion, Drums and Chords
+  are new. Each resolves instance → this section's type → the song's own, exactly like the melodic
+  narrative already did: leave it blank and it inherits, pick one and it's yours, and "→ every
+  {section}" promotes that pick to every pass of the type at once ("↺ every {section}" clears that
+  shared default back to the song's). This replaces the old "plays" row in ▸ Transitions & presets,
+  which only ever reached the style half of that pair. Wired all the way into what you actually
+  hear — Play, render, stems and Claude export — not just the grid preview.
 - **A tidier melody workbench.** The Write/Suggest/Check/Duel and Draw/Move toggles used to sit as
   loose buttons floating between the part settings and the grid; they're now one bordered toolbar,
   reading as part of the melody panel instead of chrome that happened to land nearby. The six
