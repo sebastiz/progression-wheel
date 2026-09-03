@@ -899,6 +899,12 @@ const DEFS = [
   progId:"deepHouse", baseTemplate:"techhouse",
   narrative:"ostinato", vary:0.3, sync:1,
   tip:"A Solotoko tech house anthem built on one chugging bass-and-vocal-chop groove sustained for most of its runtime, its two big sections distinguished mainly by what's been dropped out. `ostinato` writes that same barely-developing loop." },
+
+{ id:"techhouse_dietcoke", name:"Diet Coke", artist:"Fallon", year:2025, bpm:128, tonic:2,
+  progId:"edm", baseTemplate:"techhouse",
+  narrative:"chant", vary:0.3, sync:2,
+  tip:"Diet Coke chops a vintage rap vocal sample into a short, repeating cell over a driving, percussion-forward groove rather than writing a new vocal line - the drop is that same chop landing at full width, not new material arriving. `chant` keeps a held, mostly-static reciting phrase, syncopated hard to match how tightly the chop bounces off the beat." },
+
 { id:"deeptech_needu100", name:"Need U (100%)", artist:"Duke Dumont ft. A*M*E", year:2013, bpm:123, tonic:5,
   progId:"deepHouse", baseTemplate:"deeptech",
   narrative:"chant", vary:0.4, sync:2,
