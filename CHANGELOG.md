@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **More drum kits and percussion kits.** Drums go from three kits to six: the acoustic kit, TR-909
+  and TR-808 are joined by the **TR-707** (bright, plasticky, 80s pop and Latin house), the **TR-606**
+  (thin and buzzy — analog punk and early techno), and the **LinnDrum** (the clean deep kick and
+  gated-reverb snare crack that defined mid-80s pop). Percussion goes from two kits to four: hand
+  and machine are joined by **Electro** (brighter, tighter, almost clipped) and **Lo-fi** (muffled
+  and dusty, like an old sample). All are real, distinct synthesis, not just a renamed filter —
+  picked per-section the same way as any other kit, live in Play/render/stems.
+- **Instrument and style for every extra track, not just the first.** The Style/Instrument pickers
+  each Drums/Bass/Percussion/Pad panel got recently now follow whichever track's tab is open —
+  add a 2nd or 3rd bass (or drums, or perc, or pad) and each one gets its own independent
+  instance → type → song fallback, exactly like the first track always had, instead of only the
+  first track being pickable and the rest silently following the song. Chords has no second track
+  to speak of — it's one harmonic part — so this doesn't apply there.
 - **Song settings, closed by default; instrument and style, in every section.** "Global settings"
   on the Arrange tab is renamed **Song settings** and starts collapsed instead of open. Each
   section's Drums, Percussion, Bass, Pad and Chords panel now carries its own **Style** (the

@@ -7151,9 +7151,12 @@ export default function ProgressionWheel() {
                showing it. Only these two actions ever touch the letter tier, which is otherwise
                invisible on purpose: one place to set it (any instance of the type), one place to see
                it (every instance's blank option), no separate summary row to keep in sync. */
-            const fallbackPicker = (label, icon, map, setMap, nameOf, options, tip, offLabel, onPick) => {
+            // `sec` carries the key/base a layered instrument track resolves against — `d` itself
+            // for the first track, or `layered(d, li)` for its 2nd/3rd/… so each extra track gets
+            // its own independent instance-then-letter-then-song fallback, exactly like the first
+            const fallbackPicker = (sec, label, icon, map, setMap, nameOf, options, tip, offLabel, onPick) => {
               const wd = d.word.toLowerCase();
-              const value = map[d.key] || "", baseValue = map[d.base] || "";
+              const value = map[sec.key] || "", baseValue = map[sec.base] || "";
               // one write per action, both keys in the same object literal — two separate setMap
               // calls in one handler would each replace the whole map from the same stale snapshot,
               // so the second would silently undo the first instead of combining with it
@@ -7162,16 +7165,16 @@ export default function ProgressionWheel() {
                 <label className="secopt" title={tip}>
                   <span className="optlbl">{icon ? <span aria-hidden="true">{icon}</span> : null} {label}</span>
                   <select value={value} onChange={e => { const v = e.target.value;
-                      write({ [d.key]: v }); if (onPick) onPick(v); }}>
+                      write({ [sec.key]: v }); if (onPick) onPick(v); }}>
                     <option value="">{baseValue ? "as every " + wd + " — " + nameOf(baseValue) : "— the song's " + label.toLowerCase() + " —"}</option>
                     {offLabel && <option value="off">{offLabel}</option>}
                     {options}
                   </select>
-                  {value && d.base !== d.key && <button className="mini" title={"Make this every " + wd + "'s " + label.toLowerCase() + ", not just this one"}
-                    onClick={() => write({ [d.key]: "", [d.base]: value })}>→ every {wd}</button>}
+                  {value && sec.base !== sec.key && <button className="mini" title={"Make this every " + wd + "'s " + label.toLowerCase() + ", not just this one"}
+                    onClick={() => write({ [sec.key]: "", [sec.base]: value })}>→ every {wd}</button>}
                   {!value && baseValue && <button className="mini"
                     title={"Clear every " + wd + "'s " + label.toLowerCase() + " — back to the song's"}
-                    onClick={() => write({ [d.base]: "" })}>↺ every {wd}</button>}
+                    onClick={() => write({ [sec.base]: "" })}>↺ every {wd}</button>}
                 </label>
               );
             };
@@ -7551,14 +7554,14 @@ export default function ProgressionWheel() {
                         {trackTabStrip("drums", d)}
                         {/* the instrument+style menus live inside the section, so the collapsed page
                             shows no dropdowns — open the bar and the choice is here */}
-                        {!view.groove && fallbackPicker("Style", null, secDrum, setSecDrum,
+                        {!view.groove && fallbackPicker(dl, "Style", null, secDrum, setSecDrum,
                           id => (DRUMS[id] || {}).name || id,
                           metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>),
-                          "The drum pattern for this " + d.word.toLowerCase() + " alone — its own groove, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it.")}
-                        {!view.groove && fallbackPicker("Kit", null, secKit, setSecKit,
+                          "The drum pattern for this " + d.word.toLowerCase() + (dLayer ? "'s " + LAYER_NAMES[dLayer] + " track" : "") + " alone — its own groove, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it.")}
+                        {!view.groove && fallbackPicker(dl, "Kit", null, secKit, setSecKit,
                           id => (DRUM_KITS.find(([k]) => k === id) || [, id])[1],
                           DRUM_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>),
-                          "How the drums are voiced for this " + d.word.toLowerCase() + " alone — an acoustic kit, or one of the two drum machines.")}
+                          "How the drums are voiced for this " + d.word.toLowerCase() + (dLayer ? "'s " + LAYER_NAMES[dLayer] + " track" : "") + " alone — an acoustic kit, or one of the drum machines.")}
                         {view.groove && dLayer === 0 && <label className="secopt" title="The drum pattern the grid opens on — paint the grid and the pattern is yours">
                           <span className="optlbl">starts from</span>
                           <select value={drum} onChange={e => { setDrumSt({ key: progId, val: e.target.value });
@@ -7645,16 +7648,16 @@ export default function ProgressionWheel() {
                           : src ? (src.loop ? "following the groove" : "following " + ((cat && cat.name) || "the section's perc"))
                           : "no perc here — paint some"}</span>
                         {trackTabStrip("perc", d)}
-                        {!view.groove && fallbackPicker("Style", null, secPercPat, setSecPercPat,
+                        {!view.groove && fallbackPicker(dl, "Style", null, secPercPat, setSecPercPat,
                           id => (PERCS[id] || DRUMS[id] || {}).name || id,
                           Object.entries(PERCS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>),
-                          "The percussion pattern for this " + d.word.toLowerCase() + " alone — a second layer over the drums. The classic move is perc entering a build before the kick returns.",
+                          "The percussion pattern for this " + d.word.toLowerCase() + (pLayer ? "'s " + LAYER_NAMES[pLayer] + " track" : "") + " alone — a second layer over the drums. The classic move is perc entering a build before the kick returns.",
                           "No percussion",
-                          () => { if (secPercBeat[d.key]) { const nb = { ...secPercBeat }; delete nb[d.key]; setSecPercBeat(nb); } })}
-                        {!view.groove && fallbackPicker("Kit", null, secPercKit, setSecPercKit,
+                          () => { if (secPercBeat[dl.key]) { const nb = { ...secPercBeat }; delete nb[dl.key]; setSecPercBeat(nb); } })}
+                        {!view.groove && fallbackPicker(dl, "Kit", null, secPercKit, setSecPercKit,
                           id => (PERC_KITS.find(([k]) => k === id) || [, id])[1],
                           PERC_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>),
-                          "How the percussion is voiced for this " + d.word.toLowerCase() + " alone — played by hand, or the drum machine's idea of it.")}
+                          "How the percussion is voiced for this " + d.word.toLowerCase() + (pLayer ? "'s " + LAYER_NAMES[pLayer] + " track" : "") + " alone — played by hand, or one of the machine's ideas of it.")}
                         {view.groove && pLayer === 0 && <label className="secopt" title="The percussion pattern the groove starts from — shakers, congas and offbeat hats over the drums">
                           <span className="optlbl">starts from</span>
                           <select value={perc} onChange={e => { setPercSt({ key: progId, val: e.target.value || "off" });
@@ -7736,17 +7739,17 @@ export default function ProgressionWheel() {
                           : src ? (src.loop ? "following the groove" : "following " + ((cat && cat.name) || "the section's bass"))
                           : "no bass here — paint a line"}</span>
                         {trackTabStrip("bass", d)}
-                        {!view.groove && fallbackPicker("Style", null, secBassPat, setSecBassPat,
+                        {!view.groove && fallbackPicker(dl, "Style", null, secBassPat, setSecBassPat,
                           id => (BASS[id] || {}).name || id,
                           Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>),
-                          "The bassline for this " + d.word.toLowerCase() + " alone — a pattern from the catalogue, or none. Independent of the chords, so a breakdown can lose the harmony and keep the bass running. Paint the grid below to write the line note by note.",
+                          "The bassline for this " + d.word.toLowerCase() + (bLayer ? "'s " + LAYER_NAMES[bLayer] + " track" : "") + " alone — a pattern from the catalogue, or none. Independent of the chords, so a breakdown can lose the harmony and keep the bass running. Paint the grid below to write the line note by note.",
                           "No bass",
                           // the menu supersedes a written grid — the grid re-seeds from the new choice
-                          () => { if (secBassBeat[d.key]) { const nb = { ...secBassBeat }; delete nb[d.key]; setSecBassBeat(nb); } })}
-                        {!view.groove && fallbackPicker("Voice", null, secBassVoice, setSecBassVoice,
+                          () => { if (secBassBeat[dl.key]) { const nb = { ...secBassBeat }; delete nb[dl.key]; setSecBassBeat(nb); } })}
+                        {!view.groove && fallbackPicker(dl, "Voice", null, secBassVoice, setSecBassVoice,
                           id => (BASS_VOICES.find(([k]) => k === id) || [, id])[1],
                           BASS_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>),
-                          "The bass sound for this " + d.word.toLowerCase() + " alone — sub, saw, acid and the rest, independent of its pattern.")}
+                          "The bass sound for this " + d.word.toLowerCase() + (bLayer ? "'s " + LAYER_NAMES[bLayer] + " track" : "") + " alone — sub, saw, acid and the rest, independent of its pattern.")}
                         {view.groove && bLayer === 0 && <label className="secopt" title="The bassline pattern the groove starts from — paint the bass grid to make the line your own">
                           <span className="optlbl">starts from</span>
                           <select value={bass} onChange={e => { setBassSt({ key: progId, val: e.target.value });
@@ -7843,14 +7846,14 @@ export default function ProgressionWheel() {
                           : padOnOf(dl) ? "one hold a bar — the pad's natural state"
                           : "no pad here — paint a rhythm"}</span>
                         {trackTabStrip("pad", d)}
-                        {!view.groove && fallbackPicker("Voice", null, secPadVoice, setSecPadVoice,
+                        {!view.groove && fallbackPicker(dl, "Voice", null, secPadVoice, setSecPadVoice,
                           id => id === "off" ? "no pad" : (PAD_VOICES.find(([k]) => k === id) || [])[1]
                             || (voices.find(v => v.id === id) || {}).name || id,
                           (<>{PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                             {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</>),
-                          "The pad for this " + d.word.toLowerCase() + " alone — a second chord voice holding the upper voicing a bar at a time, reverbed and barely pumped. Pads carry breakdowns and sit out of DJ intros.",
+                          "The pad for this " + d.word.toLowerCase() + (qLayer ? "'s " + LAYER_NAMES[qLayer] + " track" : "") + " alone — a second chord voice holding the upper voicing a bar at a time, reverbed and barely pumped. Pads carry breakdowns and sit out of DJ intros.",
                           "No pad",
-                          () => { if (secPadBeat[d.key]) { const nb = { ...secPadBeat }; delete nb[d.key]; setSecPadBeat(nb); } })}
+                          () => { if (secPadBeat[dl.key]) { const nb = { ...secPadBeat }; delete nb[dl.key]; setSecPadBeat(nb); } })}
                         {view.groove && qLayer === 0 && <label className="secopt" title="The pad voice — the chord's upper voicing held a bar at a time. Write its rhythm on this grid.">
                           <span className="optlbl">voice</span>
                           <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}>
@@ -7941,13 +7944,13 @@ export default function ProgressionWheel() {
                             <option value="out">Chords out</option>
                           </select>
                         </label>}
-                        {!view.groove && fallbackPicker("Style", null, secChordPat, setSecChordPat,
+                        {!view.groove && fallbackPicker(d, "Style", null, secChordPat, setSecChordPat,
                           id => (PATTERNS[id] || {}).name || id,
                           metricPats.map(([id, p]) => <option key={id} value={id}>{p.name}</option>),
                           "An alternate strum for this " + d.word.toLowerCase() + " alone, independent of its own written rhythm above.",
                           null,
                           () => { if (secChordBeat[d.key]) resetChordBeat(d.key); })}
-                        {!view.groove && fallbackPicker("Instrument", null, secChordInstr, setSecChordInstr, gmName,
+                        {!view.groove && fallbackPicker(d, "Instrument", null, secChordInstr, setSecChordInstr, gmName,
                           GM_CATS.map(([cat, list]) => (
                             <optgroup key={cat} label={cat}>
                               {list.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
@@ -9651,7 +9654,7 @@ export default function ProgressionWheel() {
             <label className="selwrap" style={{ minWidth:150 }}>
               <span className="lbl" style={{ margin:0 }}>Kit</span>
               <select value={kit} onChange={e => setKitSt({ key: progId, val: e.target.value })}
-                title="How the drums are voiced — an acoustic kit, or the two drum machines dance music is built on">
+                title="How the drums are voiced — an acoustic kit, or one of the drum machines dance music is built on">
                 {DRUM_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
             </label>
@@ -9659,7 +9662,7 @@ export default function ProgressionWheel() {
             <label className="selwrap" style={{ minWidth:150 }}>
               <span className="lbl" style={{ margin:0 }}>Perc kit</span>
               <select value={percKit} onChange={e => setPercKitSt({ key: progId, val: e.target.value })}
-                title="How the percussion layer is voiced — struck by hand, or the drum machine's fixed-pitch idea of the same instruments">
+                title="How the percussion layer is voiced — struck by hand, or one of the machine's fixed-pitch ideas of the same instruments">
                 {PERC_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
             </label>
