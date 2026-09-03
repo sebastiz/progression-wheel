@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **A tidier melody workbench.** The Write/Suggest/Check/Duel and Draw/Move toggles used to sit as
+  loose buttons floating between the part settings and the grid; they're now one bordered toolbar,
+  reading as part of the melody panel instead of chrome that happened to land nearby. The six
+  note-editing tools (Vary these notes, Decorate, Rearrange, Shuffle pitches, Reshape, Syncopate)
+  no longer stack open by default — they're behind a single ▸ ✦ Variation toggle in that same
+  toolbar, closed by default, with a ● when one of them has actually been used on the part so
+  nothing gets hidden along with the controls.
 - **Instrument options moved to their instrument.** In each section's ▸ Transitions & presets panel,
   the old "plays" row — which kit this section's drums use, whether its chords are in or out, which
   bass/perc pattern or pad voice it plays — is gone; those five controls now live inside the ▸

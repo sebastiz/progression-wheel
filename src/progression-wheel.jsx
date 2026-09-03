@@ -736,6 +736,10 @@ export default function ProgressionWheel() {
   const [melos, setMelos] = useState({ progId:"", secs:{} }); // per-section melodies, chord-anchored
   const [openSecs, setOpenSecs] = useState({});             // which section melody grids are open
   const [melTab, setMelTab] = useState({});                 // per-section: "write" | "suggest"
+  // whether the ✦ Variation panel (Vary/Decorate/Rearrange/Shuffle/Reshape/Syncopate) is open,
+  // per section+part — closed by default so Write mode opens on Draw/Move and the grid, not six
+  // stacked edit tools most sessions never touch
+  const [openVary, setOpenVary] = useState({});
   const [sugSel, setSugSel] = useState({});
   const [rhySel, setRhySel] = useState({});                 // per-section melody rhythm cell                 // per-section: { pat, start } suggested-melody picks
   const [narSel, setNarSel] = useState({ key:"", id:"" });  // melodic narrative written across the whole song
@@ -6652,15 +6656,25 @@ export default function ProgressionWheel() {
                           <button className={melMove ? "on" : ""} title="Drag a box to select notes, then drag a selected one to move the group"
                             onClick={() => setMelMove(true)}>✋ Move</button>
                         </div>}
-                        {/* Varying the repeats is about the whole melody rather than a selection, so it
-                            sits with the mode switch and not among the note tools below. Four ways to
-                            change the notes — Vary, Decorate, Rearrange, Shuffle — each gets its own
-                            full-width row (flexBasis:100% inside the wrapping .melmodebar row) so its
-                            dropdown, button, undo and status stay visually together rather than
-                            interleaving with the others when the row wraps. The button alone applies a
-                            change; the dropdown only ever chooses what the next press will write —
-                            selecting an option never touches the grid by itself. */}
+                        {/* Vary/Decorate/Rearrange/Shuffle/Reshape/Syncopate are six edit tools for
+                            notes already on the grid, as opposed to Draw/Move's "write them by hand" —
+                            a different job, so they get their own disclosure rather than six rows
+                            stacked under the mode switch by default. The dot says one of them has
+                            been used on this part, so the fact isn't hidden along with the controls. */}
                         {tab === "write" && (() => {
+                          const vk = varyKeyOf(d.key, secL);
+                          const vOpen = !!openVary[vk];
+                          const anySet = [varyIn[vk], decIn[vk], rerIn[vk], shufIn[vk], reshIn[vk], syncIn[vk]]
+                            .some(s => s && s.level > 0);
+                          return (
+                            <button className={"mini" + (vOpen ? " on" : "")}
+                              onClick={() => setOpenVary({ ...openVary, [vk]: !vOpen })}
+                              title="Reshape the notes already on this part's grid — small edits, ornaments, a shuffle, a reshuffle, or a deliberate reshape — instead of drawing them by hand.">
+                              {vOpen ? "▾" : "▸"} ✦ Variation{anySet ? " ●" : ""}
+                            </button>
+                          );
+                        })()}
+                        {tab === "write" && !!openVary[varyKeyOf(d.key, secL)] && (() => {
                           const vk = varyKeyOf(d.key, secL);
                           const vst = varyIn[vk];
                           const lv = (vst && vst.level) || 0;
@@ -6694,7 +6708,7 @@ export default function ProgressionWheel() {
                             back to shortening one note's tail by a column rather than doing nothing.
                             Its own dropdown and baseline, kept apart from ✦ Vary these notes so the
                             two never fight over the same undo. */}
-                        {tab === "write" && (() => {
+                        {tab === "write" && !!openVary[varyKeyOf(d.key, secL)] && (() => {
                           const dk = varyKeyOf(d.key, secL);
                           const dst = decIn[dk];
                           const lv = (dst && dst.level) || 0;
@@ -6723,7 +6737,7 @@ export default function ProgressionWheel() {
                         {/* 🔀 Rearrange — the third promise: notes may move, but never into a pitch the
                             melody didn't already have, and none may be lost. Its own dropdown and
                             baseline, independent of both ✦ Vary these notes and ✦ Decorate. */}
-                        {tab === "write" && (() => {
+                        {tab === "write" && !!openVary[varyKeyOf(d.key, secL)] && (() => {
                           const rk = varyKeyOf(d.key, secL);
                           const rst = rerIn[rk];
                           const lv = (rst && rst.level) || 0;
@@ -6752,7 +6766,7 @@ export default function ProgressionWheel() {
                         {/* 🎲 Shuffle pitches — random by design, so there is nothing to name in a
                             dropdown: one button, tap again for a bigger shuffle (more notes touched,
                             further each can jump), its own baseline like the three above. */}
-                        {tab === "write" && (() => {
+                        {tab === "write" && !!openVary[varyKeyOf(d.key, secL)] && (() => {
                           const sk = varyKeyOf(d.key, secL);
                           const sst = shufIn[sk];
                           const lv = (sst && sst.level) || 0;
@@ -6773,7 +6787,7 @@ export default function ProgressionWheel() {
                             Sequence up/down, Call & response), applied to the whole section without
                             selecting notes first the way the Move-mode versions of these need to. No
                             "auto mix": each is a deliberate move, so the dropdown always names one. */}
-                        {tab === "write" && (() => {
+                        {tab === "write" && !!openVary[varyKeyOf(d.key, secL)] && (() => {
                           const hk = varyKeyOf(d.key, secL);
                           const hst = reshIn[hk];
                           const lv = (hst && hst.level) || 0;
@@ -6795,7 +6809,7 @@ export default function ProgressionWheel() {
                             </div>
                           );
                         })()}
-                        {tab === "write" && (() => {
+                        {tab === "write" && !!openVary[varyKeyOf(d.key, secL)] && (() => {
                           const sst = syncIn[varyKeyOf(d.key, secL)];
                           const lv = (sst && sst.level) || 0;
                           return (<>
@@ -8990,7 +9004,8 @@ export default function ProgressionWheel() {
         .mcell.msel { outline:2px solid var(--blue); outline-offset:-1px; box-shadow:inset 0 0 0 2px rgba(110,168,255,.35); }
         .mcell.mbox { background:rgba(110,168,255,.22); border-color:var(--blue); }
         .mcell.mghost { background:rgba(110,168,255,.5); border-color:var(--blue); }
-        .melmodebar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:6px; }
+        .melmodebar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:6px;
+          padding:7px 8px; border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface-2); }
         .melmodebar .rlbl { font-size:var(--fs-md); color:var(--muted); margin:0 2px; }
         .mscroll { overflow-x:auto; padding-bottom:4px; }
         /* The row labels live inside the scroller, so a section wider than the panel used to scroll
