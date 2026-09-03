@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- **A huge jump in kit choice.** Drums go from 6 kits to 16: acoustic/909/808/707/606/LinnDrum are
+  joined by the **CR-78** (soft, early-box), **DMX** (boom-bap), **SP-1200** (gritty sample crunch),
+  **MPC60** (warm 90s hip-hop), **Hard techno**, **Gabber**, **Dubstep**, **Jungle**, **Minimal** and
+  **Vinyl** — each its own kick/snare/hat synthesis, not a filtered rename. Percussion goes from
+  4 kits to 10, adding **Latin**, **Trap**, **Industrial**, **Jungle**, **Dub** and **Bright**
+  alongside Hand/Machine/Electro/Lo-fi. Both catalogues are now table-driven internally, so adding
+  the next one is a data entry, not a rewrite.
+- **A style or kit pick lands on the grid immediately.** Choosing a Style now paints that pattern
+  straight onto the section's own grid — Drums, Percussion, Bass and Chords — instead of sitting as
+  an invisible fallback behind whatever was already there; the section's own written notes always
+  won regardless, so a pick that didn't visibly change anything used to look like it had done
+  nothing. Also removed the "→ every {section}" / "↺ every {section}" promote-and-clear buttons
+  next to each picker — a second, confusingly similar mechanism to the section's own
+  ▸ Transitions & presets "copy to every {section}", which still does the job of pushing a written
+  grid out to sibling sections.
 - **More drum kits and percussion kits.** Drums go from three kits to six: the acoustic kit, TR-909
   and TR-808 are joined by the **TR-707** (bright, plasticky, 80s pop and Latin house), the **TR-606**
   (thin and buzzy — analog punk and early techno), and the **LinnDrum** (the clean deep kick and

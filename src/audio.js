@@ -44,15 +44,70 @@ function clickSound(ctx, t, sym, dest) {
     o2.start(t); o2.stop(t + 0.13);
   }
 }
-// One drum voice. `ch` is a channel letter from a DRUMS pattern; `kit` picks the voicing.
-// The machine kits are what most dance music is actually built on, and each differs from the
-// acoustic kit in kind, not just tone: the 909's kick is a short punchy thud with a hard click
-// on top, the 808's is a long tuned sub-boom that rings for most of a beat, the 707 is a bright
-// plasticky thud built for 80s pop and Latin house, the 606 is thin and buzzy — barely any body
-// at all — and the LinnDrum is the clean, deep kick and the gated-reverb snare crack that
-// defined mid-80s pop production.
+/* Every drum kit's kick, snare and hat, as data rather than a chain of if/else branches — the
+   only way "a huge number of kits" stays readable. Each entry:
+     kick:  { type, hz0, hz1, sweep, vol, atk, dec, nz:[vol,atk,dec,type,hz,Q?] }
+     snare: { tones:[[hz,vol,atk,dec], …], nz:[[vol,atk,dec,type,hz,Q?], …] }
+     hat:   { hz, ring:[hz,hz,hz] or null for a pure-noise (buzzy) hat, closedDec?, openDec? }
+   B (the 808-style sub-boom, layered onto any kit for a trap-style beat) and C/P/R/X (clap, rim,
+   ride, crash) don't vary by kit — every kit answers to the same clap and cymbals, the way a real
+   drum machine's kick and snare define its character far more than its incidental percussion. A
+   kit not in this table falls back to "acoustic" rather than throwing, so an old saved song with
+   an id from before a kit was removed still plays something. */
+const DRUM_KIT_SPECS = {
+  acoustic: { kick: { type:"sine", hz0:165, hz1:42, sweep:0.09, vol:0.62, atk:0.002, dec:0.22, nz:[0.22,0.001,0.02,"lowpass",3200] },
+    snare: { tones:[[175,0.14,0.001,0.09],[330,0.09,0.001,0.09]], nz:[[0.3,0.001,0.055,"highpass",1600],[0.14,0.002,0.16,"bandpass",3200,0.6]] },
+    hat: { hz:7800, ring:[2400,3000,4700] } },
+  "909": { kick: { type:"sine", hz0:200, hz1:48, sweep:0.045, vol:0.68, atk:0.001, dec:0.3, nz:[0.3,0.001,0.016,"lowpass",4200] },   // tight body, hard click on top
+    snare: { tones:[[238,0.1,0.001,0.06]], nz:[[0.34,0.001,0.075,"highpass",1900],[0.12,0.001,0.13,"bandpass",4200,0.7]] },   // noise-forward, short, bright
+    hat: { hz:8600, ring:[3100,4200,5900], closedDec:0.035 } },
+  "808": { subKick: true, kick: null,   // the kick channel routes into the shared sub-boom branch below
+    snare: { tones:[[180,0.16,0.001,0.075]], nz:[[0.2,0.001,0.055,"highpass",2400]] },   // tuned tick + a thin noise puff
+    hat: { hz:9200, ring:null, openDec:0.32, closedDec:0.028 } },   // pure noise — no partial ring
+  "707": { kick: { type:"sine", hz0:210, hz1:55, sweep:0.05, vol:0.6, atk:0.001, dec:0.24, nz:[0.22,0.001,0.012,"bandpass",3400,1.1] },   // punchy mid-tuned thud, plasticky click — the Latin-pop kick
+    snare: { tones:[[260,0.09,0.001,0.05]], nz:[[0.3,0.001,0.06,"highpass",2400]] },   // bright and snappy, a shade thinner than the 909
+    hat: { hz:8200, ring:[2800,3900,5400] } },
+  "606": { kick: { type:"triangle", hz0:150, hz1:50, sweep:0.035, vol:0.5, atk:0.001, dec:0.16, nz:[0.14,0.001,0.01,"highpass",2600] },   // thin, buzzy, barely any body
+    snare: { tones:[], nz:[[0.32,0.001,0.07,"bandpass",2600,0.9],[0.1,0.001,0.03,"highpass",4000]] },   // buzzy and papery, almost all noise
+    hat: { hz:9400, ring:null, openDec:0.32, closedDec:0.028 } },
+  linn: { kick: { type:"sine", hz0:145, hz1:46, sweep:0.075, vol:0.66, atk:0.002, dec:0.32, nz:[0.1,0.001,0.015,"lowpass",2000] },   // deep and clean, shorter than an 808 — the 80s pop-ballad kick
+    snare: { tones:[[210,0.12,0.001,0.045]], nz:[[0.38,0.001,0.09,"highpass",2100]] },   // the gated-reverb crack — bright transient, cut off hard
+    hat: { hz:8000, ring:[2600,3600,5100] } },
+  cr78: { kick: { type:"sine", hz0:130, hz1:55, sweep:0.1, vol:0.5, atk:0.004, dec:0.2, nz:[0.06,0.002,0.02,"lowpass",1800] },   // soft, muted, almost no click — the earliest boxes barely had a beater
+    snare: { tones:[[300,0.07,0.001,0.04]], nz:[[0.16,0.002,0.05,"bandpass",2200,1]] },   // dry, short, more tick than crack
+    hat: { hz:7200, ring:[2200,2900,4100], closedDec:0.03, openDec:0.22 } },
+  dmx: { kick: { type:"sine", hz0:185, hz1:50, sweep:0.06, vol:0.72, atk:0.001, dec:0.26, nz:[0.28,0.001,0.02,"lowpass",3800] },   // punchy, tuned — the boom half of boom-bap
+    snare: { tones:[[220,0.22,0.001,0.11]], nz:[[0.42,0.001,0.15,"highpass",1500],[0.15,0.001,0.2,"bandpass",2600,0.5]] },   // the huge gated snare — long and loud, cut off hard
+    hat: { hz:8400, ring:[2700,3600,5200], closedDec:0.03 } },
+  sp1200: { kick: { type:"sine", hz0:150, hz1:44, sweep:0.07, vol:0.66, atk:0.001, dec:0.2, nz:[0.32,0.001,0.03,"bandpass",2600,0.9] },   // gritty, bit-crushed sample crunch on the beater
+    snare: { tones:[[190,0.13,0.001,0.06]], nz:[[0.36,0.001,0.07,"bandpass",2200,0.8],[0.16,0.001,0.1,"highpass",3200]] },   // dusty, crunchy, all texture
+    hat: { hz:6800, ring:[2000,2700,3900], closedDec:0.045, openDec:0.3 } },
+  mpc60: { kick: { type:"sine", hz0:158, hz1:44, sweep:0.085, vol:0.64, atk:0.002, dec:0.24, nz:[0.18,0.001,0.018,"lowpass",2800] },   // warm and round — 90s boom-bap
+    snare: { tones:[[195,0.16,0.001,0.08],[350,0.07,0.001,0.06]], nz:[[0.26,0.001,0.08,"highpass",1900],[0.12,0.002,0.13,"bandpass",2900,0.6]] },
+    hat: { hz:7500, ring:[2300,3000,4400], closedDec:0.04 } },
+  hardtechno: { kick: { type:"triangle", hz0:180, hz1:45, sweep:0.03, vol:0.85, atk:0.0005, dec:0.14, nz:[0.4,0.001,0.02,"bandpass",1200,2] },   // short, loud, clipped — built to distort
+    snare: { tones:[], nz:[[0.4,0.001,0.05,"bandpass",1800,1.2],[0.2,0.001,0.09,"highpass",4500]] },
+    hat: { hz:9800, ring:null, closedDec:0.022, openDec:0.24 } },
+  gabber: { kick: { type:"triangle", hz0:190, hz1:38, sweep:0.05, vol:0.95, atk:0.0004, dec:0.3, nz:[0.5,0.001,0.05,"bandpass",900,1.6] },   // extreme, distorted, almost all midrange body
+    snare: { tones:[], nz:[[0.42,0.001,0.06,"bandpass",1600,1],[0.22,0.001,0.1,"highpass",5000]] },
+    hat: { hz:10200, ring:null, closedDec:0.02, openDec:0.2 } },
+  dubstep: { kick: { type:"sine", hz0:110, hz1:32, sweep:0.1, vol:0.7, atk:0.003, dec:0.4, nz:[0.14,0.001,0.025,"lowpass",1800] },   // heavy, low, longer than an 808
+    snare: { tones:[[200,0.1,0.001,0.05]], nz:[[0.36,0.001,0.2,"highpass",2000],[0.18,0.001,0.28,"bandpass",3800,0.4]] },   // bright, long, metallic tail
+    hat: { hz:9000, ring:[3000,4500,6400], closedDec:0.03, openDec:0.3 } },
+  jungle: { kick: { type:"sine", hz0:172, hz1:46, sweep:0.06, vol:0.6, atk:0.002, dec:0.18, nz:[0.24,0.001,0.018,"lowpass",3500] },   // tight, sits under a chopped break
+    snare: { tones:[[185,0.15,0.001,0.08],[340,0.11,0.001,0.07]], nz:[[0.34,0.001,0.06,"highpass",1700],[0.16,0.002,0.15,"bandpass",3400,0.55]] },   // bright and snappy — the breakbeat crack
+    hat: { hz:8000, ring:[2500,3300,5000], closedDec:0.028 } },
+  minimal: { kick: { type:"sine", hz0:160, hz1:60, sweep:0.02, vol:0.5, atk:0.001, dec:0.08, nz:[0.1,0.001,0.008,"lowpass",2600] },   // small, dry, almost clicky — nothing rings
+    snare: { tones:[[240,0.06,0.001,0.03]], nz:[[0.16,0.001,0.03,"highpass",2600]] },
+    hat: { hz:8800, ring:null, closedDec:0.018, openDec:0.1 } },
+  vinyl: { kick: { type:"sine", hz0:150, hz1:44, sweep:0.09, vol:0.5, atk:0.004, dec:0.22, nz:[0.16,0.003,0.03,"lowpass",1500] },   // dusty and soft, everything low-passed like an old sample
+    snare: { tones:[[170,0.09,0.002,0.08]], nz:[[0.22,0.003,0.09,"bandpass",1400,0.8]] },
+    hat: { hz:5200, ring:[1800,2400,3400], closedDec:0.045, openDec:0.3 } },
+};
+// One drum voice. `ch` is a channel letter from a DRUMS pattern; `kit` picks the voicing (see
+// DRUM_KIT_SPECS above). B, C, P, R and X are shared across every kit.
 function drumSound(ctx, t, ch, noise, dest, kit, vel = 1) {
-  const K9 = kit === "909", K8 = kit === "808", K7 = kit === "707", K6 = kit === "606", KL = kit === "linn";
+  const KP = DRUM_KIT_SPECS[kit] || DRUM_KIT_SPECS.acoustic;
   // one filtered noise burst — the skin/cymbal half of nearly every voice here.
   // The shared noise buffer is only 0.3 s, so anything ringing longer (ride, crash) has to
   // loop it or the tail goes silent halfway through its own envelope.
@@ -76,62 +131,34 @@ function drumSound(ctx, t, ch, noise, dest, kit, vel = 1) {
   };
   if (ch === "K" || ch === "B") {
     // B is the 808-style sub-boom on any kit — the long tuned tail under a trap beat
-    const sub = ch === "B" || K8;
+    const sub = ch === "B" || KP.subKick;
     if (sub) {                                   // pure sine, slow drop, long ring
       tone("sine", ch === "B" ? 105 : 120, 42, 0.06, 0.72, 0.004, ch === "B" ? 1.1 : 0.85);
       nz(0.05, 0.001, 0.012, "lowpass", 2200);   // barely any beater — the 808 is almost all body
-    } else if (K9) {                             // 909: tight body, hard click on top
-      tone("sine", 200, 48, 0.045, 0.68, 0.001, 0.3);
-      nz(0.3, 0.001, 0.016, "lowpass", 4200);
-    } else if (K7) {                             // 707: punchy mid-tuned thud, plasticky click — the Latin-pop kick
-      tone("sine", 210, 55, 0.05, 0.6, 0.001, 0.24);
-      nz(0.22, 0.001, 0.012, "bandpass", 3400, 1.1);
-    } else if (K6) {                             // 606: thin, buzzy, barely any body — analog punk/early techno
-      tone("triangle", 150, 50, 0.035, 0.5, 0.001, 0.16);
-      nz(0.14, 0.001, 0.01, "highpass", 2600);
-    } else if (KL) {                             // LinnDrum: deep and clean, shorter than an 808 — the 80s pop-ballad kick
-      tone("sine", 145, 46, 0.075, 0.66, 0.002, 0.32);
-      nz(0.1, 0.001, 0.015, "lowpass", 2000);
-    } else {                                     // acoustic: the original kick
-      tone("sine", 165, 42, 0.09, 0.62, 0.002, 0.22);
-      nz(0.22, 0.001, 0.02, "lowpass", 3200);
+    } else {
+      const k = KP.kick;
+      tone(k.type, k.hz0, k.hz1, k.sweep, k.vol, k.atk, k.dec);
+      nz(...k.nz);
     }
   } else if (ch === "S") {
-    if (K9) {                                    // 909 snare: noise-forward, short, bright
-      tone("triangle", 238, 0, 0, 0.1, 0.001, 0.06);
-      nz(0.34, 0.001, 0.075, "highpass", 1900);
-      nz(0.12, 0.001, 0.13, "bandpass", 4200, 0.7);
-    } else if (K8) {                             // 808 snare: tuned tick + a thin noise puff
-      tone("triangle", 180, 0, 0, 0.16, 0.001, 0.075);
-      nz(0.2, 0.001, 0.055, "highpass", 2400);
-    } else if (K7) {                             // 707 snare: bright and snappy, a shade thinner than the 909
-      tone("triangle", 260, 0, 0, 0.09, 0.001, 0.05);
-      nz(0.3, 0.001, 0.06, "highpass", 2400);
-    } else if (K6) {                             // 606 snare: buzzy and papery, almost all noise
-      nz(0.32, 0.001, 0.07, "bandpass", 2600, 0.9);
-      nz(0.1, 0.001, 0.03, "highpass", 4000);
-    } else if (KL) {                             // LinnDrum: the gated-reverb crack — bright transient, cut off hard
-      tone("triangle", 210, 0, 0, 0.12, 0.001, 0.045);
-      nz(0.38, 0.001, 0.09, "highpass", 2100);
-    } else {                                     // acoustic: two-tone shell + crack + wire rattle
-      [175, 330].forEach((hz, k) => tone("triangle", hz, 0, 0, k ? 0.09 : 0.14, 0.001, 0.09));
-      nz(0.3, 0.001, 0.055, "highpass", 1600);
-      nz(0.14, 0.002, 0.16, "bandpass", 3200, 0.6);
-    }
+    KP.snare.tones.forEach(([hz, vol, atk, dec]) => tone("triangle", hz, 0, 0, vol, atk, dec));
+    KP.snare.nz.forEach(args => nz(...args));
   } else if (ch === "H" || ch === "O") {
     // closed vs open hat: the same voice with a longer tail. The machine kits are brighter and
     // more metallic than the acoustic one, which is most of why a 909 pattern reads as "house".
     const open = ch === "O";
-    const buzzy = K8 || K6;                      // pure-noise hats — no partial ring on top
-    const dec = open ? (buzzy ? 0.32 : 0.28) : (K9 ? 0.035 : buzzy ? 0.028 : 0.04);
+    const hp = KP.hat;
+    const buzzy = !hp.ring;                       // pure-noise hats — no partial ring on top
+    const dec = open ? (hp.openDec != null ? hp.openDec : buzzy ? 0.32 : 0.28)
+      : (hp.closedDec != null ? hp.closedDec : buzzy ? 0.028 : 0.04);
     const vol = open ? 0.1 : 0.11;
-    nz(vol, 0.001, dec, "highpass", K9 ? 8600 : K8 ? 9200 : K7 ? 8200 : K6 ? 9400 : KL ? 8000 : 7800);
+    nz(vol, 0.001, dec, "highpass", hp.hz);
     if (buzzy) return;
     // a ring of inharmonic square partials through a shared high-pass gives the metal
     const ring = ctx.createGain(); ring.gain.value = 0.02;
     const rhp = ctx.createBiquadFilter(); rhp.type = "highpass"; rhp.frequency.value = 8500;
     ring.connect(rhp); rhp.connect(env(ctx, t, (open ? 0.42 : 0.5) * vel, 0.001, open ? dec * 0.9 : 0.035, true, dest));
-    (K9 ? [3100, 4200, 5900] : K7 ? [2800, 3900, 5400] : KL ? [2600, 3600, 5100] : [2400, 3000, 4700]).forEach(hz => {
+    hp.ring.forEach(hz => {
       const o = ctx.createOscillator(); o.type = "square"; o.frequency.value = hz;
       o.connect(ring); o.start(t); o.stop(t + dec + 0.01);
     });
@@ -714,10 +741,48 @@ function ksPluck(ctx, t, freq, dur, vol, bright, dest) {
    membranes with a falling pitch for the drums, ringing partials for the metal. `ch` is a
    channel letter from a PERCS pattern (see PERC_VOICES); unknown letters are silently skipped,
    so a grid painted against an older row set degrades to silence rather than a wrong sound. */
+/* Every percussion kit's eight voices, as data — the same reasoning as DRUM_KIT_SPECS above.
+     S (shaker): [nzAtk, nzDec, nzHz, nzQ] — one filtered noise burst.
+     M (tambourine): [decM, hzM, metalVol, metalDec] — noise plus a two-partial jingle ring.
+     T (triangle): [vol, dec] — the ring shape (partials) is shared; only level and length vary.
+     W (woodblock/clave): { parts, dec, vol? } — ringing metal partials.
+     L (cowbell): { parts, vol, dec, clank } — clank adds a short noise knock (an "assistant" pair);
+       kits with a fixed-pitch idea of a cowbell (a real hit, not a struck bell) drop it.
+     C/G/B (congas, low conga, 808 boom): [hz0, hz1, vol, dec] — a tuned membrane dropping in pitch. */
+const PERC_KIT_SPECS = {
+  hand: { S:[0.004,0.055,6200,1.6], M:[0.14,7600,0.05,0.12], T:[0.055,0.9],
+    W:{ parts:[[2100,1],[3300,0.25]], dec:0.045 }, L:{ parts:[[540,1],[800,0.85]], vol:0.16, dec:0.22, clank:true },
+    C:[230,185,0.26,0.16], G:[165,130,0.28,0.28], B:[400,330,0.22,0.09] },
+  machine: { S:[0.001,0.035,7800,3], M:[0.08,8800,0.03,0.06], T:[0.055,0.3],
+    W:{ parts:[[2500,1]], dec:0.03 }, L:{ parts:[[540,1],[800,0.85]], vol:0.16, dec:0.14, clank:false },
+    C:[310,305,0.24,0.09], G:[220,216,0.26,0.14], B:[470,462,0.2,0.06] },
+  electro: { S:[0.001,0.022,9400,3.5], M:[0.045,9800,0.035,0.04], T:[0.055,0.4],
+    W:{ parts:[[2900,1],[4300,0.2]], dec:0.02 }, L:{ parts:[[560,1],[840,0.9]], vol:0.16, dec:0.1, clank:false },
+    C:[340,332,0.22,0.06], G:[240,232,0.24,0.1], B:[500,490,0.18,0.045] },
+  lofi: { S:[0.007,0.09,3600,1], M:[0.2,5000,0.06,0.18], T:[0.04,0.65],
+    W:{ parts:[[1700,1]], dec:0.07 }, L:{ parts:[[480,1],[720,0.7]], vol:0.1, dec:0.3, clank:true },
+    C:[210,175,0.22,0.22], G:[150,120,0.24,0.36], B:[370,300,0.2,0.12] },
+  latin: { S:[0.006,0.09,5400,1.3], M:[0.18,7200,0.06,0.16], T:[0.06,1.1],   // warm and resonant — a live congas-and-timbales set
+    W:{ parts:[[2000,1],[3100,0.3]], dec:0.05 }, L:{ parts:[[560,1],[820,0.8]], vol:0.18, dec:0.26, clank:true },
+    C:[235,190,0.28,0.2], G:[160,125,0.3,0.32], B:[410,335,0.24,0.11] },
+  trap: { S:[0.001,0.02,8200,3.2], M:[0.035,9600,0.03,0.03], T:[0.05,0.25],   // tight and punchy — shorter and more clipped than machine
+    W:{ parts:[[2700,1]], dec:0.015 }, L:{ parts:[[520,1],[780,0.9]], vol:0.14, dec:0.08, clank:false },
+    C:[330,320,0.22,0.05], G:[230,222,0.24,0.08], B:[490,478,0.18,0.04] },
+  industrial: { S:[0.001,0.05,5200,0.7], M:[0.1,6600,0.07,0.15], T:[0.07,0.5],   // noisy, metallic, distorted
+    W:{ parts:[[1900,1],[2600,0.6]], dec:0.06 }, L:{ parts:[[460,1],[700,0.9]], vol:0.22, dec:0.3, clank:true },
+    C:[260,150,0.3,0.28], G:[180,100,0.32,0.4], B:[430,280,0.26,0.16] },
+  jungle: { S:[0.0005,0.018,9800,3.8], M:[0.03,10200,0.04,0.03], T:[0.05,0.35],   // bright and fast — sharper than electro
+    W:{ parts:[[3000,1],[4500,0.25]], dec:0.015 }, L:{ parts:[[580,1],[860,0.9]], vol:0.15, dec:0.09, clank:false },
+    C:[350,340,0.2,0.045], G:[250,240,0.22,0.07], B:[510,498,0.16,0.035] },
+  dub: { S:[0.01,0.13,3200,0.9], M:[0.24,4600,0.05,0.22], T:[0.035,1],   // soft, muted, brushed — everything gentle and long
+    W:{ parts:[[1500,1]], dec:0.09 }, L:{ parts:[[440,1],[660,0.6]], vol:0.09, dec:0.34, clank:false },
+    C:[195,160,0.2,0.26], G:[140,110,0.22,0.4], B:[350,285,0.18,0.14] },
+  bright: { S:[0.001,0.045,10400,2.2], M:[0.16,10600,0.06,0.2], T:[0.07,1.3],   // shimmering, high-overtone, a longer metallic ring
+    W:{ parts:[[3200,1],[4800,0.35],[6400,0.15]], dec:0.06 }, L:{ parts:[[600,1],[900,0.95],[1350,0.4]], vol:0.17, dec:0.3, clank:true },
+    C:[300,250,0.2,0.12], G:[210,175,0.22,0.2], B:[460,400,0.16,0.06] },
+};
 function percSound(ctx, t, ch, noise, dest, vel = 1, kit = "hand") {
-  const mach = kit === "machine";   // the drum machine's idea of each instrument: fixed pitch, tighter, brighter
-  const elec = kit === "electro";   // brighter and shorter still — a 909-adjacent, almost clipped percussion voice
-  const lofi = kit === "lofi";      // muffled and dusty — everything darker and a touch longer, like an old sample
+  const KP = PERC_KIT_SPECS[kit] || PERC_KIT_SPECS.hand;
   const nz = (vol0, atk, dec, type, hz, Q) => {
     const vol = vol0 * vel;
     const n = ctx.createBufferSource(); n.buffer = noise;
@@ -745,28 +810,19 @@ function percSound(ctx, t, ch, noise, dest, vel = 1, kit = "hand") {
     }
   };
   switch (ch) {
-    case "S": nz(0.11, elec ? 0.001 : mach ? 0.001 : lofi ? 0.007 : 0.004,
-      elec ? 0.022 : mach ? 0.035 : lofi ? 0.09 : 0.055, "bandpass",
-      elec ? 9400 : mach ? 7800 : lofi ? 3600 : 6200, elec ? 3.5 : mach ? 3 : lofi ? 1 : 1.6); break;
-    case "M": nz(0.09, 0.001, elec ? 0.045 : mach ? 0.08 : lofi ? 0.2 : 0.14, "highpass",           // tambourine —
-      elec ? 9800 : mach ? 8800 : lofi ? 5000 : 7600, 0.8);
-      metal([[7900, 0.4], [9100, 0.3]], elec ? 0.035 : mach ? 0.03 : lofi ? 0.06 : 0.05,
-        elec ? 0.04 : mach ? 0.06 : lofi ? 0.18 : 0.12); break;                                     // noise + jingle ring
-    case "T": metal([[5100, 1], [7635, 0.55], [10250, 0.25]], lofi ? 0.04 : 0.055,
-      elec ? 0.4 : mach ? 0.3 : lofi ? 0.65 : 0.9); break;                                          // triangle
-    case "W": metal(elec ? [[2900, 1], [4300, 0.2]] : mach ? [[2500, 1]]
-      : lofi ? [[1700, 1]] : [[2100, 1], [3300, 0.25]], 0.3,
-      elec ? 0.02 : mach ? 0.03 : lofi ? 0.07 : 0.045); break;                                      // woodblock → 808 clave
-    case "L": metal(lofi ? [[480, 1], [720, 0.7]] : elec ? [[560, 1], [840, 0.9]] : [[540, 1], [800, 0.85]],
-      lofi ? 0.1 : 0.16, elec ? 0.1 : mach ? 0.14 : lofi ? 0.3 : 0.22, "square");                   // cowbell —
-      if (!mach && !elec) nz(0.04, 0.001, 0.03, "bandpass", 900, 2); break;                         // the 808/electro pair have no clank
-    // the machine's and electro's "congas" are fixed-pitch tuned blips rather than a struck skin
-    case "C": elec ? skin(340, 332, 0.22, 0.06) : mach ? skin(310, 305, 0.24, 0.09)
-      : lofi ? skin(210, 175, 0.22, 0.22) : skin(230, 185, 0.26, 0.16); break;
-    case "G": elec ? skin(240, 232, 0.24, 0.1) : mach ? skin(220, 216, 0.26, 0.14)
-      : lofi ? skin(150, 120, 0.24, 0.36) : skin(165, 130, 0.28, 0.28); break;
-    case "B": elec ? skin(500, 490, 0.18, 0.045) : mach ? skin(470, 462, 0.2, 0.06)
-      : lofi ? skin(370, 300, 0.2, 0.12) : skin(400, 330, 0.22, 0.09); break;
+    case "S": nz(0.11, KP.S[0], KP.S[1], "bandpass", KP.S[2], KP.S[3]); break;
+    case "M": { const [decM, hzM, mVol, mDec] = KP.M;
+      nz(0.09, 0.001, decM, "highpass", hzM, 0.8);                   // tambourine — noise + jingle ring
+      metal([[7900, 0.4], [9100, 0.3]], mVol, mDec); break; }
+    case "T": metal([[5100, 1], [7635, 0.55], [10250, 0.25]], KP.T[0], KP.T[1]); break;
+    case "W": metal(KP.W.parts, KP.W.vol == null ? 0.3 : KP.W.vol, KP.W.dec); break;   // woodblock → 808 clave
+    case "L": metal(KP.L.parts, KP.L.vol, KP.L.dec, "square");
+      if (KP.L.clank) nz(0.04, 0.001, 0.03, "bandpass", 900, 2); break;
+    // a kit's "congas" are a fixed-pitch tuned blip when its own C/G/B pitches sit close together,
+    // a struck skin (a wider drop) otherwise — same call either way, just different numbers
+    case "C": skin(...KP.C); break;
+    case "G": skin(...KP.G); break;
+    case "B": skin(...KP.B); break;
     default: break;
   }
 }
