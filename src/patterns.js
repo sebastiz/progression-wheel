@@ -149,6 +149,7 @@ const BASS = {};
 ["funk16", "Funk syncopation", "R--R--O--R-F--R-", "pushed and skipped sixteenths — the holes are the funk"],
 ["subhold", "Held sub", "R---------------", "one long note a bar — trap, dubstep and every half-time drop"],
 ["walk", "Root–fifth walk", "R---F---O---F---", "sturdy alternation under any chord — reaches from country to hardstyle"],
+["acidline", "Acid 303 line", "R-RO-R-FR-O-RR-R", "a near-constant, syncopated 16th-note run that barely leaves the root — pair it with the Acid 303 bass voice for the squelch"],
 ].forEach(([id, name, pat, desc]) =>
   BASS[id] = { name, pattern: pat ? pat.split("") : null, desc });
 // token → semitones above the chord root, in the octave below the chord voicing

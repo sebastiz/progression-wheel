@@ -899,6 +899,12 @@ const DEFS = [
   progId:"deepHouse", baseTemplate:"techhouse",
   narrative:"ostinato", vary:0.3, sync:1,
   tip:"A Solotoko tech house anthem built on one chugging bass-and-vocal-chop groove sustained for most of its runtime, its two big sections distinguished mainly by what's been dropped out. `ostinato` writes that same barely-developing loop." },
+
+{ id:"techhouse_dietcoke", name:"Diet Coke", artist:"Fallon", year:2025, bpm:128, tonic:2,
+  progId:"edm", baseTemplate:"techhouse",
+  narrative:"chant", vary:0.3, sync:2,
+  tip:"Diet Coke chops a vintage rap vocal sample into a short, repeating cell over a driving, percussion-forward groove rather than writing a new vocal line - the drop is that same chop landing at full width, not new material arriving. `chant` keeps a held, mostly-static reciting phrase, syncopated hard to match how tightly the chop bounces off the beat." },
+
 { id:"deeptech_needu100", name:"Need U (100%)", artist:"Duke Dumont ft. A*M*E", year:2013, bpm:123, tonic:5,
   progId:"deepHouse", baseTemplate:"deeptech",
   narrative:"chant", vary:0.4, sync:2,
@@ -1179,10 +1185,10 @@ const DEFS = [
   narrative:"ostinato", vary:0.3, sync:2,
   tip:"Mush, Mush's whole hook is a bouncing filtered synth stab repeated near-verbatim while the arrangement strips in and out around it, closer to bass house's filtered-stab hook than a melodic lead. `ostinato` matches that fixed cell." },
 
-{ id:"basshouse_likeilikeit", name:"Like I Like It", artist:"Mau P", year:2022, bpm:128, tonic:6,
+{ id:"basshouse_likeilikeit", name:"Like I Like It", artist:"Mau P", year:2025, bpm:128, tonic:6,
   progId:"aeolian", baseTemplate:"basshouse",
   narrative:"chant", vary:0.4, sync:2,
-  tip:"Like I Like It's whole hook is a filtered, funk16-patterned bass stab bouncing hard off the beat under a chopped vocal chant that barely leaves one pitch - the track's momentum comes almost entirely from how hard that stab and vocal are pumped, not from melodic movement. `chant` writes that same held reciting note that only moves at phrase ends, syncopated at the harder of the two levels." },
+  tip:"Like I Like It's hook loops a chopped vocal phrase sampled from Aurra's 1983 boogie-funk record of the same name, repeating almost unchanged under a funky, sliding bass rather than developing into a new tune. `chant` writes that same fixed, barely-moving reciting phrase, syncopated at the harder of the two levels to match how hard it's pumped against the beat." },
 
 { id:"dutchhouse_moombah", name:"Moombah", artist:"Silvio Ecomo & Chuckie", year:2008, bpm:128, tonic:7,
   progId:"axisMinor", baseTemplate:"dutchhouse",
