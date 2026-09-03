@@ -522,10 +522,14 @@ export default function ProgressionWheel() {
   /* The page used to be one five-screen scroll that mixed choosing a key with drawing automation.
      Four modes instead, each about a screen: what the song is, what it sounds like, how it is laid
      out, and keeping it. The transport and the global actions stay outside them. */
-  const TABS = [["write", "Write"], ["sound", "Sound"], ["sketch", "Sketch"], ["arrange", "Arrange"], ["session", "Session"], ["save", "Save"]];
+  // icon-only so all six fit on one row without wrapping — the label still reaches the user via title/aria-label
+  const TABS = [["write", "\u{1F3BC}", "Write"], ["sound", "\u{1F39A}️", "Sound"], ["sketch", "✏️", "Sketch"],
+    ["arrange", "\u{1F9E9}", "Arrange"], ["session", "▦", "Session"], ["save", "\u{1F4BE}", "Save"]];
   const [tab, setTab] = useState("write");
   const [wheelOpen, setWheelOpen] = useState(true);
   const [styleRefOpen, setStyleRefOpen] = useState(false);
+  const [arrGlobalOpen, setArrGlobalOpen] = useState(true);   // Arrange tab's "Global settings" collapsible
+  const [arrExportOpen, setArrExportOpen] = useState(false); // Arrange tab's "Export" collapsible, nested inside it
   const [tips, setTips] = useState(false);  // show the longer explanatory guidance (off = neat)
   const [adv, setAdv] = useState(false);    // reveal the advanced harmony controls (secondary doms, etc.)
   const [showPar, setShowPar] = useState(false);
@@ -8790,6 +8794,7 @@ export default function ProgressionWheel() {
           border-radius:var(--r-md); border:1px solid transparent; background:transparent; color:var(--muted); cursor:pointer; }
         .tabs button:hover { color:var(--text); background:var(--hover); }
         .tabs button.on { background:var(--hover); border-color:var(--line-3); color:${GOLD}; }
+        .tabs button.icon { padding:6px 12px; font-size:19px; line-height:1; }
         .tabs .tabaux { margin-left:auto; font-size:var(--fs-sm); font-weight:500; padding:6px 10px; color:var(--muted-2); }
         .tabs .tabaux:hover { color:var(--text); }
         .grouphdr { font-size:var(--fs-xs); font-weight:700; letter-spacing:.14em; text-transform:uppercase;
@@ -9148,8 +9153,9 @@ export default function ProgressionWheel() {
           </div>
         </div>
         <div className="tabs">
-          {TABS.map(([id, label]) => (
-            <button key={id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>{label}</button>
+          {TABS.map(([id, icon, label]) => (
+            <button key={id} className={"icon" + (tab === id ? " on" : "")} onClick={() => setTab(id)}
+              title={label} aria-label={label}>{icon}</button>
           ))}
           {tab === "write" && <button className="tabaux" onClick={() => setWheelOpen(v => !v)}
             title={wheelOpen ? "Hide the wheel — the chord pills below carry the same information"
@@ -10442,7 +10448,15 @@ export default function ProgressionWheel() {
 
         {/* song & melody */}
         {tab === "arrange" && <div className="panel accent">
-          <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
+          {/* Everything that shapes the whole song at once — structure, style, melodic narrative,
+              export — tucked behind one collapsible so the section list below (the thing you edit
+              most) isn't buried under it. */}
+          <button className={"mini" + (arrGlobalOpen ? " on" : "")} onClick={() => setArrGlobalOpen(v => !v)}
+            title="Structure, style, melodic narrative and export — everything that shapes the whole song at once.">
+            {arrGlobalOpen ? "▾" : "▸"} Global settings
+          </button>
+          {arrGlobalOpen && <>
+          <div className="row" style={{ justifyContent:"space-between", alignItems:"center", marginTop:8 }}>
             <div className="progtitle" style={{ fontSize:17 }}>Song & melody</div>
             {structPicker()}
           </div>
@@ -10608,28 +10622,37 @@ export default function ProgressionWheel() {
               title="Merge the melody notes into one flowing line — smoother, less stodgy">
               <div className="sw" /> Legato
             </div>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as one multi-track MIDI file">↓ Export MIDI</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidiSplit}
-              title="One MIDI file per track, zipped — for a DAW that imports multi-track files badly, or when you want to drag one part onto one track">↓ MIDI ×tracks</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportAls}
-              title="Export as an Ableton Live Set — named, coloured tracks laid out as an arrangement, at this tempo, with every section a locator on the ruler and the drawn Level lane as master-volume automation. Each track's info text carries its settings. The tracks arrive without instruments (a Web Audio synth is not something Live can be handed), so drop your own on each and use the stems as the reference for how it should sound.">↓ Live Set</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportLiveProject}
-              disabled={rendering || stemming || claudeExporting || projExporting}
-              title="The whole handoff in one zip, laid out like a Live project: the .als, the stems in Samples/Imported beside it, and the settings snapshot. Open the set, drag the stems onto the arrangement at 1.1.1, and the project plays the sketch while you rebuild each sound on its MIDI track.">
-              {projExporting ? pctLabel("Bouncing") : "↓ Live project"}</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportChart}
-              title="A plain-text chord chart — the form, the chords and the bar counts, for a player rather than a DAW">↓ Chart</button>
-            <button className="mini" onClick={copyChart} title="Copy the chord chart to the clipboard">⧉ Copy chart</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming || claudeExporting || projExporting}
-              title="Render the whole song to a .wav you can send or post — the same sound you hear on Play">
-              {rendering ? pctLabel("Rendering") : "↓ Export audio"}</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportStems} disabled={rendering || stemming || claudeExporting || projExporting}
-              title="Bounce drums, chords and each melody part to separate .wav files, zipped — drop them straight onto a DAW timeline">
-              {stemming ? pctLabel("Bouncing") : "↓ Export stems"}</button>
-            <button className="btn" style={{ padding:"5px 11px" }} onClick={exportForClaude} disabled={rendering || stemming || claudeExporting || projExporting}
-              title="Two files to hand to Claude for analysis: the full arrangement rendered to a .wav, and a JSON snapshot of every setting that shaped it — key, arrangement, every part's synth settings, effects and automation. Upload both together in one message.">
-              {claudeExporting ? pctLabel("Rendering") : "↓ Export for Claude"}</button>
           </div>
+          <button className={"mini" + (arrExportOpen ? " on" : "")} style={{ marginTop:8 }}
+            onClick={() => setArrExportOpen(v => !v)}
+            title="Every way to get the song out of the app — MIDI, an Ableton Live Set or project, a chord chart, or a rendered .wav.">
+            {arrExportOpen ? "▾" : "▸"} Export
+          </button>
+          {arrExportOpen && (
+            <div className="row" style={{ marginTop:8, gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidi} title="Export the song as one multi-track MIDI file">↓ Export MIDI</button>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportMidiSplit}
+                title="One MIDI file per track, zipped — for a DAW that imports multi-track files badly, or when you want to drag one part onto one track">↓ MIDI ×tracks</button>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportAls}
+                title="Export as an Ableton Live Set — named, coloured tracks laid out as an arrangement, at this tempo, with every section a locator on the ruler and the drawn Level lane as master-volume automation. Each track's info text carries its settings. The tracks arrive without instruments (a Web Audio synth is not something Live can be handed), so drop your own on each and use the stems as the reference for how it should sound.">↓ Live Set</button>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportLiveProject}
+                disabled={rendering || stemming || claudeExporting || projExporting}
+                title="The whole handoff in one zip, laid out like a Live project: the .als, the stems in Samples/Imported beside it, and the settings snapshot. Open the set, drag the stems onto the arrangement at 1.1.1, and the project plays the sketch while you rebuild each sound on its MIDI track.">
+                {projExporting ? pctLabel("Bouncing") : "↓ Live project"}</button>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportChart}
+                title="A plain-text chord chart — the form, the chords and the bar counts, for a player rather than a DAW">↓ Chart</button>
+              <button className="mini" onClick={copyChart} title="Copy the chord chart to the clipboard">⧉ Copy chart</button>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={renderAudio} disabled={rendering || stemming || claudeExporting || projExporting}
+                title="Render the whole song to a .wav you can send or post — the same sound you hear on Play">
+                {rendering ? pctLabel("Rendering") : "↓ Export audio"}</button>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportStems} disabled={rendering || stemming || claudeExporting || projExporting}
+                title="Bounce drums, chords and each melody part to separate .wav files, zipped — drop them straight onto a DAW timeline">
+                {stemming ? pctLabel("Bouncing") : "↓ Export stems"}</button>
+              <button className="btn" style={{ padding:"5px 11px" }} onClick={exportForClaude} disabled={rendering || stemming || claudeExporting || projExporting}
+                title="Two files to hand to Claude for analysis: the full arrangement rendered to a .wav, and a JSON snapshot of every setting that shaped it — key, arrangement, every part's synth settings, effects and automation. Upload both together in one message.">
+                {claudeExporting ? pctLabel("Rendering") : "↓ Export for Claude"}</button>
+            </div>
+          )}
           {openMel && (
             <div className="sugmel" style={{ marginTop:8 }}>
               <div className="row" style={{ gap:"8px 10px", alignItems:"center", flexWrap:"wrap" }}>
@@ -10683,6 +10706,7 @@ export default function ProgressionWheel() {
               )}
             </div>
           )}
+          </>}
 
 
           {tips && <p className="keytag" style={{ marginTop:8 }}>
@@ -10729,39 +10753,10 @@ export default function ProgressionWheel() {
                       ? `${g.word}${/s$/i.test(g.word) ? "es" : "s"} ×${g.items.length}`
                       : g.word}
                   </div>
-                  <label className="secdrum" title="Drum kit for every pass of this section — overrides the global Drums choice, and clears anything set on a single pass below">
-                    <span className="optlbl"><span aria-hidden="true">🥁</span> Drums</span>
-                    {/* a pass's own drums win over the type's, so setting the type has to clear them —
-                        otherwise this control would appear to do nothing on a section a template
-                        (or the strip) has already arranged pass by pass */}
-                    <select value={secDrum[g.base] || ""}
-                      onChange={e => { const next = { ...secDrum, [g.base]: e.target.value };
-                        g.items.forEach(d => { delete next[d.key]; });
-                        setSecDrum(next); }}>
-                      <option value="">— the song's drums —</option>
-                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
-                    </select>
-                  </label>
-                  {/* the move for every pass of this section type. Each pass can override it in
-                      its own card below — the second chorus wanting a different build from the
-                      first is the normal case, not the exception. */}
-                  <label className="secdrum" title={"Arrangement move for every " + g.word.toLowerCase()
-                    + " — a filter sweep, riser or drop, run across the section's whole length. Some also"
-                    + " reshape an instrument's own pattern as it goes — an arp speeding up, a Euclidean line"
-                    + " filling back in, a snare rolling in on the kit. Any single one can override it below."}>
-                    <span className="optlbl"><span aria-hidden="true">🎛</span> Move</span>
-                    <select value={secMove[g.base] || ""}
-                      onChange={e => setSecMove({ ...secMove, [g.base]: e.target.value })}>
-                      {Object.entries(MOVES).map(([id, mv]) => <option key={id} value={id}>{mv.name}</option>)}
-                    </select>
-                  </label>
-                  {/* and what happens at the seam *into* every one of them. A move shapes the
-                      section; this shapes the bar it arrives on. */}
-                  <label className="secdrum" title={"Transition into every " + g.word.toLowerCase()
-                    + " — a riser, a crash, a bar of silence, a fade. It runs across the boundary rather than the section, so most of it sounds in the section before. Any single one can override it below."}>
-                    <span className="optlbl"><span aria-hidden="true">⇥</span> Way in</span>
-                    {transSelect(secTrans[g.base] || "", e => setSecTrans({ ...secTrans, [g.base]: e.target.value }), null)}
-                  </label>
+                  {/* Drums / Move / Way in for every pass of this type used to live here too — the
+                      same three controls each pass already has in its own ▸ Transitions & presets
+                      panel below, just aimed at g.base instead of d.key. Kept in one place only, to
+                      match every other section-level control in the app. */}
                 </div>
                 {g.items.map((d, di) => sectionCard(d, di))}
               </div>

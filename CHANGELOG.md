@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **Tidied tabs, and a Global settings panel on Arrange.** The six top-level tabs (Write, Sound,
+  Sketch, Arrange, Session, Save) are now icons, so all of them fit on one row instead of wrapping —
+  hover or long-press for the name. On the Arrange tab, everything that shapes the whole song at
+  once — structure, style, melodic narrative, vary/syncopate, add-a-melody and the contrast loop —
+  now sits behind one ▸ **Global settings** collapsible, open by default, so the section list below
+  (the thing you edit most) isn't buried under it; the export buttons inside it (MIDI, Live Set,
+  Live project, chart, audio, stems, Claude) are further tucked under their own ▸ **Export**
+  collapsible, closed by default. Each section-type group heading (e.g. "Choruses ×2") also lost its
+  own Drums / Move / Way in row — those three duplicated what every section already has in its own
+  ▸ Transitions & presets panel, so they're set there now, one place instead of two.
 - **Melody variation, turned up.** The **Vary repeats** / **Vary these notes** engine used to apply
   the same small, fixed number of edits regardless of how many bars it was given, so a whole
   eight-bar chorus barely sounded different between repeats — it now scales with the section, and
