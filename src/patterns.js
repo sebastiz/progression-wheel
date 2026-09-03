@@ -256,10 +256,13 @@ const PERC_VOICES = [
 const PERC_ORDER = PERC_VOICES.map(([ch]) => ch);
 // letter → GM percussion note for the exported channel-10 Percussion track
 const PERC_MIDI = { S:70, M:54, T:81, W:76, L:56, C:63, G:64, B:60 };
-// how the eight instruments are voiced: played by hand, the drum machine's idea of them, a
-// brighter almost-clipped electro voice, or a muffled, dusty lo-fi one (see percSound)
+// how the eight instruments are voiced — ten characters from a live room to a distortion pedal
+// (see PERC_KIT_SPECS / percSound)
 const PERC_KITS = [["hand", "Hand percussion"], ["machine", "Machine perc (808-ish)"],
-  ["electro", "Electro perc (bright & tight)"], ["lofi", "Lo-fi perc (muffled & dusty)"]];
+  ["electro", "Electro perc (bright & tight)"], ["lofi", "Lo-fi perc (muffled & dusty)"],
+  ["latin", "Latin perc (warm & resonant)"], ["trap", "Trap perc (tight & punchy)"],
+  ["industrial", "Industrial perc (noisy & metallic)"], ["jungle", "Jungle perc (bright & fast)"],
+  ["dub", "Dub perc (soft & brushed)"], ["bright", "Bright perc (shimmering overtones)"]];
 const PERCS = {};
 [
 ["shaker16", "Shaker sixteenths", "S S S S S S S S S S S S S S S S"],
@@ -277,9 +280,14 @@ const PERCS = {};
 ].forEach(([id, name, pat]) =>
   PERCS[id] = { name, pattern: pat.split(" ").map(s => s === "." ? "" : s) });
 
-// Kit voicings for the drum channels above (see drumSound).
+// Kit voicings for the drum channels above — sixteen characters spanning six decades of drum
+// machines and studio kits (see DRUM_KIT_SPECS / drumSound).
 const DRUM_KITS = [["acoustic","Acoustic kit"], ["909","TR-909 · house & techno"], ["808","TR-808 · trap & hip-hop"],
-  ["707","TR-707 · 80s pop & Latin house"], ["606","TR-606 · analog punk & early techno"], ["linn","LinnDrum · 80s gated pop"]];
+  ["707","TR-707 · 80s pop & Latin house"], ["606","TR-606 · analog punk & early techno"], ["linn","LinnDrum · 80s gated pop"],
+  ["cr78","CR-78 · soft early box"], ["dmx","DMX · boom-bap"], ["sp1200","SP-1200 · gritty sample crunch"],
+  ["mpc60","MPC60 · warm 90s hip-hop"], ["hardtechno","Hard techno · distorted & aggressive"],
+  ["gabber","Gabber · extreme hardcore"], ["dubstep","Dubstep · heavy sub & metal snare"],
+  ["jungle","Jungle · bright breakbeat"], ["minimal","Minimal · dry & clicky"], ["vinyl","Vinyl · dusty & soft"]];
 // How hard the kick ducks everything pitched. "classic" is the familiar house pump.
 const PUMPS = [["off","No pump"], ["subtle","Subtle"], ["classic","Classic pump"], ["hard","Hard pump"]];
 const PUMP_AMT = { off:0, subtle:0.3, classic:0.6, hard:0.85 };
