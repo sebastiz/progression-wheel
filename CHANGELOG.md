@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+- **Song settings, closed by default; instrument and style, in every section.** "Global settings"
+  on the Arrange tab is renamed **Song settings** and starts collapsed instead of open. Each
+  section's Drums, Percussion, Bass, Pad and Chords panel now carries its own **Style** (the
+  pattern — a groove, a bassline, a strum) and, where the sound has one, its own **Instrument**
+  (a kit, a voice, a GM patch) — Pad already had a voice picker; Bass, Percussion, Drums and Chords
+  are new. Each resolves instance → this section's type → the song's own, exactly like the melodic
+  narrative already did: leave it blank and it inherits, pick one and it's yours, and "→ every
+  {section}" promotes that pick to every pass of the type at once ("↺ every {section}" clears that
+  shared default back to the song's). This replaces the old "plays" row in ▸ Transitions & presets,
+  which only ever reached the style half of that pair. Wired all the way into what you actually
+  hear — Play, render, stems and Claude export — not just the grid preview.
+- **A tidier melody workbench.** The Write/Suggest/Check/Duel and Draw/Move toggles used to sit as
+  loose buttons floating between the part settings and the grid; they're now one bordered toolbar,
+  reading as part of the melody panel instead of chrome that happened to land nearby. The six
+  note-editing tools (Vary these notes, Decorate, Rearrange, Shuffle pitches, Reshape, Syncopate)
+  no longer stack open by default — they're behind a single ▸ ✦ Variation toggle in that same
+  toolbar, closed by default, with a ● when one of them has actually been used on the part so
+  nothing gets hidden along with the controls.
+- **Instrument options moved to their instrument.** In each section's ▸ Transitions & presets panel,
+  the old "plays" row — which kit this section's drums use, whether its chords are in or out, which
+  bass/perc pattern or pad voice it plays — is gone; those five controls now live inside the ▸
+  Drums / ▸ Chords / ▸ Bass / ▸ Percussion / ▸ Pad grid they actually govern, visible exactly when
+  that instrument's own grid is open. **Shape** (this section's own melodic narrative) moved the same
+  way, into ▸ Melody. **Way in** and **Move** (the seam) and the **lift** row stay exactly where they
+  were, since neither belongs to one instrument. Each instrument's collapsed bar picked up a ●
+  indicator so a choice made this way is still visible without opening it.
 - **Tidied tabs, and a Global settings panel on Arrange.** The six top-level tabs (Write, Sound,
   Sketch, Arrange, Session, Save) are now icons, so all of them fit on one row instead of wrapping —
   hover or long-press for the name. On the Arrange tab, everything that shapes the whole song at
