@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **Instrument options moved to their instrument.** In each section's ▸ Transitions & presets panel,
+  the old "plays" row — which kit this section's drums use, whether its chords are in or out, which
+  bass/perc pattern or pad voice it plays — is gone; those five controls now live inside the ▸
+  Drums / ▸ Chords / ▸ Bass / ▸ Percussion / ▸ Pad grid they actually govern, visible exactly when
+  that instrument's own grid is open. **Shape** (this section's own melodic narrative) moved the same
+  way, into ▸ Melody. **Way in** and **Move** (the seam) and the **lift** row stay exactly where they
+  were, since neither belongs to one instrument. Each instrument's collapsed bar picked up a ●
+  indicator so a choice made this way is still visible without opening it.
 - **Tidied tabs, and a Global settings panel on Arrange.** The six top-level tabs (Write, Sound,
   Sketch, Arrange, Session, Save) are now icons, so all of them fit on one row instead of wrapping —
   hover or long-press for the name. On the Arrange tab, everything that shapes the whole song at

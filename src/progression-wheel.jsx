@@ -7036,8 +7036,9 @@ export default function ProgressionWheel() {
             const padGOpen = !!openPads[d.key];
             const chordGOpen = !!openChordGrids[d.key];
             const optsOpen = !!openOpts[d.key];
-            const optsSet = [secDrum, secQuiet, secMove, secTrans, secNar, secBassPat, secPercPat, secPadVoice]
-              .some(m2 => m2[d.key]);
+            // Drums/Chords/Bass/Perc/Pad/Shape moved into their own instrument panels below — each
+            // shows its own dot there, so this button's dot is just the seam (Way in/Move)
+            const optsSet = [secMove, secTrans].some(m2 => m2[d.key]);
             const has = secHasNotes(sec);
             const donor = !has && sections.insts.find(o => o.base === d.base && o.key !== d.key
               && secHasNotes(secMelos[o.key]));
@@ -7185,104 +7186,6 @@ export default function ProgressionWheel() {
                         ? <option key={id} value={id}>{mv.name}</option> : null)}
                     </select>
                   </label>
-                  <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
-                    + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
-                    <span className="optlbl"><span aria-hidden="true">🎵</span> Shape</span>
-                    <select value={secNar[d.key] || ""} onChange={e => applySecNarrative(d, e.target.value)}>
-                      <option value="">{curNar ? "as the song — " + curNar.name : "— no shape written —"}</option>
-                      {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
-                    </select>
-                  </label>
-                  {secNar[d.key] && <button className="mini"
-                    title="Write this section's shape again — after a key change, or edits you want to throw away"
-                    onClick={() => applySecNarrative(d, secNar[d.key])}>↻</button>}
-                </div>
-                <div className="row secopts">
-                  <span className="optlbl" style={{ opacity:0.6 }}>plays</span>
-                  <label className="secopt" title={"Drums for this " + d.word.toLowerCase()
-                    + " alone — its own kit, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it."}>
-                    <span className="optlbl"><span aria-hidden="true">🥁</span> Drums</span>
-                    <select value={secDrum[d.key] || ""}
-                      onChange={e => setSecDrum({ ...secDrum, [d.key]: e.target.value })}>
-                      <option value="">{secDrum[d.base] && DRUMS[secDrum[d.base]]
-                        ? "as every " + d.word.toLowerCase() + " — " + DRUMS[secDrum[d.base]].name
-                        : "— the song's drums —"}</option>
-                      {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="secopt" title={"Whether the chords sound in this " + d.word.toLowerCase()
-                    + " alone. A drums-only intro and a breakdown with no harmony under it are both this switch."}>
-                    <span className="optlbl"><span aria-hidden="true">🎹</span> Chords</span>
-                    <select value={secQuiet[d.key] == null ? "" : (secQuiet[d.key] ? "out" : "in")}
-                      onChange={e => { const v = e.target.value, next = { ...secQuiet };
-                        if (v === "") delete next[d.key]; else next[d.key] = v === "out";
-                        setSecQuiet(next); }}>
-                      <option value="">{secQuiet[d.base]
-                        ? "as every " + d.word.toLowerCase() + " — chords out"
-                        : "— chords in —"}</option>
-                      <option value="in">Chords in</option>
-                      <option value="out">Chords out</option>
-                    </select>
-                  </label>
-                  <label className="secopt" title={"The bassline for this " + d.word.toLowerCase()
-                    + " alone — a pattern from the catalogue, or none. Independent of the chords, so a breakdown can lose the harmony and keep the bass running. Open ▸ bass above to write the line note by note."}>
-                    <span className="optlbl"><span aria-hidden="true">🎸</span> Bass</span>
-                    <select value={secBassPat[d.key] || ""}
-                      onChange={e => { const v = e.target.value, next = { ...secBassPat };
-                        if (!v) delete next[d.key]; else next[d.key] = v;
-                        setSecBassPat(next);
-                        // the menu supersedes a written grid — the grid re-seeds from the new choice
-                        if (secBassBeat[d.key]) { const nb = { ...secBassBeat }; delete nb[d.key]; setSecBassBeat(nb); } }}>
-                      <option value="">{(() => {
-                        const p = secBassPat[d.base];
-                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no bass"
-                          : "as every " + d.word.toLowerCase() + " — " + ((BASS[p] || {}).name || p);
-                        return bass && !secBass[d.base] && !secBass[d.key]
-                          ? "as the song — " + ((BASS[bass] || {}).name || bass) : "— no bass —";
-                      })()}</option>
-                      <option value="off">No bass</option>
-                      {Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="secopt" title={"The percussion layer for this " + d.word.toLowerCase()
-                    + " alone — a second pattern from the drum table riding over the groove on the song's kit. The classic move is perc entering a build before the kick returns. Open ▸ perc above to write it step by step."}>
-                    <span className="optlbl"><span aria-hidden="true">🥁</span> Perc</span>
-                    <select value={secPercPat[d.key] || ""}
-                      onChange={e => { const v = e.target.value, next = { ...secPercPat };
-                        if (!v) delete next[d.key]; else next[d.key] = v;
-                        setSecPercPat(next);
-                        if (secPercBeat[d.key]) { const nb = { ...secPercBeat }; delete nb[d.key]; setSecPercBeat(nb); } }}>
-                      <option value="">{(() => {
-                        const p = secPercPat[d.base];
-                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no perc"
-                          : "as every " + d.word.toLowerCase() + " — " + ((PERCS[p] || DRUMS[p] || {}).name || p);
-                        return perc && !secPerc[d.base] && !secPerc[d.key]
-                          ? "as the song — " + ((PERCS[perc] || DRUMS[perc] || {}).name || perc) : "— no percussion —";
-                      })()}</option>
-                      <option value="off">No percussion</option>
-                      {Object.entries(PERCS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="secopt" title={"The pad for this " + d.word.toLowerCase()
-                    + " alone — a second chord voice holding the upper voicing a bar at a time, reverbed and barely pumped. Pads carry breakdowns and sit out of DJ intros."}>
-                    <span className="optlbl"><span aria-hidden="true">🌫️</span> Pad</span>
-                    <select value={secPadVoice[d.key] || ""}
-                      onChange={e => { const v = e.target.value, next = { ...secPadVoice };
-                        if (!v) delete next[d.key]; else next[d.key] = v;
-                        setSecPadVoice(next);
-                        if (secPadBeat[d.key]) { const nb = { ...secPadBeat }; delete nb[d.key]; setSecPadBeat(nb); } }}>
-                      <option value="">{(() => {
-                        const p = secPadVoice[d.base];
-                        if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no pad"
-                          : "as every " + d.word.toLowerCase() + " — " + ((PAD_VOICES.find(([id]) => id === p) || [])[1] || p);
-                        return pad && !secPad[d.base] && !secPad[d.key]
-                          ? "as the song — " + ((PAD_VOICES.find(([id]) => id === pad) || [])[1] || pad) : "— no pad —";
-                      })()}</option>
-                      <option value="off">No pad</option>
-                      {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                      {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    </select>
-                  </label>
                 </div>
                 {/* The chorus lift: the standard kit for making one section land bigger, as one tap
                     or ingredient by ingredient. Each chip shows whether it is on, and tapping an
@@ -7303,7 +7206,7 @@ export default function ProgressionWheel() {
                 </div>
                 </>}
                 {gridBar("🎵", "Melody", open,
-                  () => setOpenSecs({ ...openSecs, [d.key]: !open }), has ? "●" : "",
+                  () => setOpenSecs({ ...openSecs, [d.key]: !open }), (has || secNar[d.key]) ? "●" : "",
                   "The tune, note by note — every part the groove's melody carries")}
                 {open && (() => {
                   const tab = melTab[d.key] || "write";
@@ -7330,6 +7233,21 @@ export default function ProgressionWheel() {
                   </>);
                   return (
                   <div style={{ marginTop:8 }}>
+                    {/* This section's own melodic shape, written onto part A alone — moved here from
+                        the old Transitions & presets panel so it sits with the melody it writes. */}
+                    {!view.groove && <div className="row" style={{ gap:"8px 10px", alignItems:"center", flexWrap:"wrap", marginBottom:8 }}>
+                      <label className="secopt" title={"Write a melodic shape onto this " + d.word.toLowerCase()
+                        + " alone, over whatever is there. The bridge that should not be another arch, or the second chorus you want to climb where the first one fell."}>
+                        <span className="optlbl"><span aria-hidden="true">🎵</span> Shape</span>
+                        <select value={secNar[d.key] || ""} onChange={e => applySecNarrative(d, e.target.value)}>
+                          <option value="">{curNar ? "as the song — " + curNar.name : "— no shape written —"}</option>
+                          {NARRATIVES.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                        </select>
+                      </label>
+                      {secNar[d.key] && <button className="mini"
+                        title="Write this section's shape again — after a key change, or edits you want to throw away"
+                        onClick={() => applySecNarrative(d, secNar[d.key])}>↻</button>}
+                    </div>}
                     {/* One tab per instrument in this section, then that instrument's own settings
                         panel. The panel is tinted and inset because everything in it belongs to
                         this section alone — the same instrument is a different sound in the chorus,
@@ -7491,7 +7409,7 @@ export default function ProgressionWheel() {
                     first thing you do is change a groove rather than build one from nothing. */}
                 {gridBar("🥁", "Drums", beatOpen,
                   () => setOpenBeats({ ...openBeats, [d.key]: !beatOpen }),
-                  secBeat[d.key] ? "● " + beatHits(secBeat[d.key]) : "",
+                  secBeat[d.key] ? "● " + beatHits(secBeat[d.key]) : secDrum[d.key] ? "●" : "",
                   "The drum grid — it opens on whatever is playing now, and painting it makes the pattern yours")}
                 {beatOpen && (() => {
                   const dLayer = activeLayerOf("drums", d.key);
@@ -7513,6 +7431,17 @@ export default function ProgressionWheel() {
                         {trackTabStrip("drums", d)}
                         {/* the pattern menu lives inside the section, so the collapsed page shows
                             no dropdowns — open the bar and the choice is here */}
+                        {!view.groove && <label className="secopt" title={"Drums for this " + d.word.toLowerCase()
+                          + " alone — its own kit, or silence. Taking the drums out of one section is the biggest single arrangement move there is: what follows sounds bigger without anything being added to it."}>
+                          <span className="optlbl">kit</span>
+                          <select value={secDrum[d.key] || ""}
+                            onChange={e => setSecDrum({ ...secDrum, [d.key]: e.target.value })}>
+                            <option value="">{secDrum[d.base] && DRUMS[secDrum[d.base]]
+                              ? "as every " + d.word.toLowerCase() + " — " + DRUMS[secDrum[d.base]].name
+                              : "— the song's drums —"}</option>
+                            {metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                          </select>
+                        </label>}
                         {view.groove && dLayer === 0 && <label className="secopt" title="The drum pattern the grid opens on — paint the grid and the pattern is yours">
                           <span className="optlbl">starts from</span>
                           <select value={drum} onChange={e => { setDrumSt({ key: progId, val: e.target.value });
@@ -7581,7 +7510,7 @@ export default function ProgressionWheel() {
                 })()}
                 {gridBar("🥁", "Percussion", percOpen,
                   () => setOpenPercs({ ...openPercs, [d.key]: !percOpen }),
-                  secPercBeat[d.key] ? "● " + beatHits(secPercBeat[d.key]) : "",
+                  secPercBeat[d.key] ? "● " + beatHits(secPercBeat[d.key]) : secPercPat[d.key] ? "●" : "",
                   "A second layer over the drums — shakers, congas and offbeat hats")}
                 {percOpen && (() => {
                   const pLayer = activeLayerOf("perc", d.key);
@@ -7599,6 +7528,25 @@ export default function ProgressionWheel() {
                           : src ? (src.loop ? "following the groove" : "following " + ((cat && cat.name) || "the section's perc"))
                           : "no perc here — paint some"}</span>
                         {trackTabStrip("perc", d)}
+                        {!view.groove && <label className="secopt" title={"The percussion layer for this " + d.word.toLowerCase()
+                          + " alone — a second pattern from the drum table riding over the groove on the song's kit. The classic move is perc entering a build before the kick returns."}>
+                          <span className="optlbl">pattern</span>
+                          <select value={secPercPat[d.key] || ""}
+                            onChange={e => { const v = e.target.value, next = { ...secPercPat };
+                              if (!v) delete next[d.key]; else next[d.key] = v;
+                              setSecPercPat(next);
+                              if (secPercBeat[d.key]) { const nb = { ...secPercBeat }; delete nb[d.key]; setSecPercBeat(nb); } }}>
+                            <option value="">{(() => {
+                              const p = secPercPat[d.base];
+                              if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no perc"
+                                : "as every " + d.word.toLowerCase() + " — " + ((PERCS[p] || DRUMS[p] || {}).name || p);
+                              return perc && !secPerc[d.base] && !secPerc[d.key]
+                                ? "as the song — " + ((PERCS[perc] || DRUMS[perc] || {}).name || perc) : "— no percussion —";
+                            })()}</option>
+                            <option value="off">No percussion</option>
+                            {Object.entries(PERCS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>)}
+                          </select>
+                        </label>}
                         {view.groove && pLayer === 0 && <label className="secopt" title="The percussion pattern the groove starts from — shakers, congas and offbeat hats over the drums">
                           <span className="optlbl">starts from</span>
                           <select value={perc} onChange={e => { setPercSt({ key: progId, val: e.target.value || "off" });
@@ -7662,7 +7610,7 @@ export default function ProgressionWheel() {
                 })()}
                 {gridBar("🎸", "Bass", bassOpen,
                   () => setOpenBass({ ...openBass, [d.key]: !bassOpen }),
-                  secBassBeat[d.key] ? "●" : "",
+                  (secBassBeat[d.key] || secBassPat[d.key]) ? "●" : "",
                   "The bassline — root, fifth and octave of whatever chord each bar holds, so the line follows the changes by itself")}
                 {bassOpen && (() => {
                   const bLayer = activeLayerOf("bass", d.key);
@@ -7680,6 +7628,26 @@ export default function ProgressionWheel() {
                           : src ? (src.loop ? "following the groove" : "following " + ((cat && cat.name) || "the section's bass"))
                           : "no bass here — paint a line"}</span>
                         {trackTabStrip("bass", d)}
+                        {!view.groove && <label className="secopt" title={"The bassline for this " + d.word.toLowerCase()
+                          + " alone — a pattern from the catalogue, or none. Independent of the chords, so a breakdown can lose the harmony and keep the bass running. Paint the grid below to write the line note by note."}>
+                          <span className="optlbl">pattern</span>
+                          <select value={secBassPat[d.key] || ""}
+                            onChange={e => { const v = e.target.value, next = { ...secBassPat };
+                              if (!v) delete next[d.key]; else next[d.key] = v;
+                              setSecBassPat(next);
+                              // the menu supersedes a written grid — the grid re-seeds from the new choice
+                              if (secBassBeat[d.key]) { const nb = { ...secBassBeat }; delete nb[d.key]; setSecBassBeat(nb); } }}>
+                            <option value="">{(() => {
+                              const p = secBassPat[d.base];
+                              if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no bass"
+                                : "as every " + d.word.toLowerCase() + " — " + ((BASS[p] || {}).name || p);
+                              return bass && !secBass[d.base] && !secBass[d.key]
+                                ? "as the song — " + ((BASS[bass] || {}).name || bass) : "— no bass —";
+                            })()}</option>
+                            <option value="off">No bass</option>
+                            {Object.entries(BASS).map(([id, b]) => <option key={id} value={id} title={b.desc}>{b.name}</option>)}
+                          </select>
+                        </label>}
                         {view.groove && bLayer === 0 && <label className="secopt" title="The bassline pattern the groove starts from — paint the bass grid to make the line your own">
                           <span className="optlbl">starts from</span>
                           <select value={bass} onChange={e => { setBassSt({ key: progId, val: e.target.value });
@@ -7759,7 +7727,7 @@ export default function ProgressionWheel() {
                 })()}
                 {gridBar("🌫️", "Pad", padGOpen,
                   () => setOpenPads({ ...openPads, [d.key]: !padGOpen }),
-                  secPadBeat[d.key] ? "●" : "",
+                  (secPadBeat[d.key] || secPadVoice[d.key]) ? "●" : "",
                   "The pad's rhythm — holds that ring to the next hit, and short stabs")}
                 {padGOpen && (() => {
                   const qLayer = activeLayerOf("pad", d.key);
@@ -7776,6 +7744,26 @@ export default function ProgressionWheel() {
                           : padOnOf(dl) ? "one hold a bar — the pad's natural state"
                           : "no pad here — paint a rhythm"}</span>
                         {trackTabStrip("pad", d)}
+                        {!view.groove && <label className="secopt" title={"The pad for this " + d.word.toLowerCase()
+                          + " alone — a second chord voice holding the upper voicing a bar at a time, reverbed and barely pumped. Pads carry breakdowns and sit out of DJ intros."}>
+                          <span className="optlbl">voice</span>
+                          <select value={secPadVoice[d.key] || ""}
+                            onChange={e => { const v = e.target.value, next = { ...secPadVoice };
+                              if (!v) delete next[d.key]; else next[d.key] = v;
+                              setSecPadVoice(next);
+                              if (secPadBeat[d.key]) { const nb = { ...secPadBeat }; delete nb[d.key]; setSecPadBeat(nb); } }}>
+                            <option value="">{(() => {
+                              const p = secPadVoice[d.base];
+                              if (p) return p === "off" ? "as every " + d.word.toLowerCase() + " — no pad"
+                                : "as every " + d.word.toLowerCase() + " — " + ((PAD_VOICES.find(([id]) => id === p) || [])[1] || p);
+                              return pad && !secPad[d.base] && !secPad[d.key]
+                                ? "as the song — " + ((PAD_VOICES.find(([id]) => id === pad) || [])[1] || pad) : "— no pad —";
+                            })()}</option>
+                            <option value="off">No pad</option>
+                            {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                            {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                          </select>
+                        </label>}
                         {view.groove && qLayer === 0 && <label className="secopt" title="The pad voice — the chord's upper voicing held a bar at a time. Write its rhythm on this grid.">
                           <span className="optlbl">voice</span>
                           <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}>
@@ -7839,7 +7827,7 @@ export default function ProgressionWheel() {
                 })()}
                 {gridBar("🎹", "Chords", chordGOpen,
                   () => setOpenChordGrids({ ...openChordGrids, [d.key]: !chordGOpen }),
-                  secChordBeat[d.key] ? "●" : "",
+                  (secChordBeat[d.key] || secQuiet[d.key] != null) ? "●" : "",
                   "The chord rhythm — accents, downstrokes and upstrokes on the strum's own vocabulary")}
                 {chordGOpen && (() => {
                   const bars = chordGridBars(d);
@@ -7852,6 +7840,20 @@ export default function ProgressionWheel() {
                         <span className="gridname">🎹 {own ? `${who}'s own chord rhythm`
                           : (d.key !== GROOVE && secChordBeat[GROOVE] && secChordBeat[GROOVE].length) ? "following the groove"
                           : "following " + rhythm.name}</span>
+                        {!view.groove && <label className="secopt" title={"Whether the chords sound in this " + d.word.toLowerCase()
+                          + " alone. A drums-only intro and a breakdown with no harmony under it are both this switch."}>
+                          <span className="optlbl">on/off</span>
+                          <select value={secQuiet[d.key] == null ? "" : (secQuiet[d.key] ? "out" : "in")}
+                            onChange={e => { const v = e.target.value, next = { ...secQuiet };
+                              if (v === "") delete next[d.key]; else next[d.key] = v === "out";
+                              setSecQuiet(next); }}>
+                            <option value="">{secQuiet[d.base]
+                              ? "as every " + d.word.toLowerCase() + " — chords out"
+                              : "— chords in —"}</option>
+                            <option value="in">Chords in</option>
+                            <option value="out">Chords out</option>
+                          </select>
+                        </label>}
                         {view.groove && wholeSongBtn("chords")}
                         {own && <button className="mini" onClick={() => resetChordBeat(d.key)}
                           title="Hand this section back to the song's strum pattern — the grid goes on showing it, unwritten">↺ Reset</button>}
