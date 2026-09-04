@@ -82,7 +82,15 @@ Then score it. Give each element a weight, sum per section, and plot the result:
 | --- | --- |
 | 3 | Kick, sub, lead, vocal |
 | 2 | Bass, clap/snare, chords |
+| 1.5 | The Filter and Level automation lanes |
 | 1 | Hat, perc, pad, ear candy |
+
+The automation lanes score lighter than the layers because they colour a section rather than
+define it, but leaving them out entirely misses the move that often matters most: a DJ filter
+opening across a build, or a fader riding into the hole before a drop, can be the single biggest
+energy event in the track, bigger than any layer it adds or removes. An undrawn lane costs a
+section nothing — it scores as if it rested at fully open — so a track that never touches Filter or
+Level scores exactly as it always did.
 
 You are looking for a staircase with **deliberate collapses**, because of the one idea that governs
 the whole form:
@@ -166,14 +174,14 @@ Each idea above has a control that does it.
 | Idea | Where |
 | --- | --- |
 | Subtraction as the workflow itself | The **Sketch tab** — build the full groove as one looping section (drums, perc, bass, pad, chords and melody, grids and settings together), draft the running order underneath (each section arrives silent; click the cells to fill it with the groove's instruments), then **✍ Write to Arrange** commits the lot as the song's arrangement. Every section inherits the groove until it is given something of its own |
-| The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — thirteen dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build. The strip's **Energy** lane draws the resulting staircase |
+| The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — thirteen dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build. The strip's **Energy** lane draws the resulting staircase as a stepped red line |
 | The staircase of sections | The **structure** chooser, and the arrangement strip's rows and reps — *make the drop twice as long* is a reps edit |
 | Layer entries and exits | The **arrangement strip's lanes** — one per layer, a block per run of sections, clicked to bring a layer in or drop it out, per pass |
 | Variation within a layer | A **drum grid per section**, so the second chorus gets the busier hat and the last verse the fill |
 | The six roles, in the drum stack | The grid's nine voices — crash, ride, open hat, hat, clap, rim, snare, boom, kick — read top to bottom as air ⟶ backbeat ⟶ floor |
 | Entry and variation | **Section moves**: *build* opens the filter across the section, *riser* adds the noise under it, *drop* slams open with a crash, *fade*, *underwater* and *swell* |
 | The last bar before a boundary | **Transitions**, which belong to the section they lead *into* and schedule their riser, roll or silence ahead of its downbeat |
-| The energy curve, drawn rather than stepped | The **automation lanes** — Filter is the DJ filter across the whole mix, Level is the fade and the hole before a drop |
+| The energy curve, drawn rather than stepped | The **automation lanes** — Filter is the DJ filter across the whole mix, Level is the fade and the hole before a drop. Both feed the Energy lane's score too, sampled at each section's midpoint |
 | The Hook across the whole form | **Melodic narratives**, which pick each section's register, density and contour from its role and its place in the running order |
 | The Hook itself, made sticky | The melody grid's **🩺 Check** (the earworm properties as a report card, each failing line with a one-tap fix), **⚔ Duel** (rivals bred from the hook, auditioned pairwise on the looping section) and **⇢ Syncopate** (the anticipation push, one tap) |
 | Foundation as Hook | **✦ Riff the holes** on the bass grid — a riff written into the sixteenths the section's own kick leaves free, so bass and Clock interlock by construction |

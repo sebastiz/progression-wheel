@@ -1455,16 +1455,25 @@ const resolveArrangement = (plan, insts) => {
 /* What a section is worth on the energy staircase, which is the picture the strip draws. The
    weights are the ones in docs/DANCE-LAYERING.md: clock and foundation carry a track, the hook is
    worth as much as the drums, and everything else is a point each. Relative, not absolute — the
-   number means nothing on its own and everything next to the section before it. */
-const ENERGY_W = { drums: 3, chords: 2, lead: 3, part: 1 };
+   number means nothing on its own and everything next to the section before it.
+   `filter` and `level` are lighter — they colour a section rather than define it, and a track with
+   neither lane drawn should score exactly as it did before they existed — but a DJ filter opening
+   across a build or a fader riding into a drop is often the single biggest energy event in a
+   track, so leaving them unscored entirely missed the move that mattered most. */
+const ENERGY_W = { drums: 3, chords: 2, lead: 3, part: 1, filter: 1.5, level: 1.5 };
 /* `drums` is an amount rather than a switch, because the subtraction that matters most is not
    silence but a kit with its kick taken out: tops-only under a build is half a drum kit, and
    scoring it as a whole one hides the exact dip the build exists to create. `true` still means the
    lot, so a caller that only knows on/off is not wrong. */
-const energyOf = ({ drums, chords, parts }) =>
+const energyOf = ({ drums, chords, parts, filter, level }) =>
   ENERGY_W.drums * (drums === true ? 1 : Math.max(0, Math.min(1, +drums || 0)))
   + (chords ? ENERGY_W.chords : 0)
-  + (parts || []).reduce((n, on, i) => n + (on ? (i === 0 ? ENERGY_W.lead : ENERGY_W.part) : 0), 0);
+  + (parts || []).reduce((n, on, i) => n + (on ? (i === 0 ? ENERGY_W.lead : ENERGY_W.part) : 0), 0)
+  // an undrawn lane rests at "wide open" (filter) or "full" (level) — the same rest value the
+  // synth itself uses when nothing has been drawn — so a song with neither lane touched scores
+  // exactly as it always did, and only a lane someone actually drew can pull a section down
+  + ENERGY_W.filter * (filter == null ? 1 : Math.max(0, Math.min(1, filter)))
+  + ENERGY_W.level * (level == null ? 1 : Math.max(0, Math.min(1, level)));
 /* How much of a drum kit a pattern is. A pattern with no kick or sub in it anywhere is the
    arrangement's half-measure — the tops left running while the floor is taken away. */
 const drumAmountOf = pat => !pat || !pat.length ? 0 : (pat.some(st => /[KB]/.test(st || "")) ? 1 : 0.5);

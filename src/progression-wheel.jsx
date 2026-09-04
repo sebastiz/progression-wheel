@@ -8567,6 +8567,11 @@ export default function ProgressionWheel() {
                collapses: a drop lands because the breakdown took the kick and the sub away, not
                because the drop added anything, and a flat bar across the whole song is exactly the
                shape of a track where everything plays from the first bar to the last. */
+            // filter and level are continuous, drawn across the whole song rather than per section,
+            // so an instance reads them at its own midpoint — the point in its span least biased by
+            // whichever way a ramp happens to be heading at its edges
+            const autoValAt = (lane, d) => auto.key === planKey
+              ? autoAt(auto[lane], d.startBar + (d.nbars - 1) / 2) : null;
             const energyAt = d => energyOf({
               // half a kit, for a pattern with the kick taken out of it: the tops left running
               // under a build are the dip the build is made of, and scoring them as a whole kit
@@ -8574,7 +8579,8 @@ export default function ProgressionWheel() {
               drums: drumAmountOf(!effDrum(d) && !ownBeat(d) && grooveDrums
                 ? grooveDrums[0] : (DRUMS[effDrum(d) || drum] || {}).pattern),
               chords: !effQuiet(d),
-              parts: Array.from({ length: nParts }, (_, i) => partIn(d, i)) });
+              parts: Array.from({ length: nParts }, (_, i) => partIn(d, i)),
+              filter: autoValAt("filter", d), level: autoValAt("level", d) });
             const runEnergy = r => r.items.reduce((n, d) => n + energyAt(d), 0) / r.items.length;
             // a lane is full, empty, or partly on across the run's instances
             const laneState = (l, r) => {
@@ -8664,14 +8670,19 @@ export default function ProgressionWheel() {
                       })}
                     </div>
                   ))}
-                  {/* The staircase. Read-only on purpose: it is the sum of every lane above it,
-                      so it is changed by changing them. */}
+                  {/* The staircase, drawn as a line rather than bars — a section-by-section subtraction
+                      reads more clearly as a line dropping than as one bar among many shrinking.
+                      Read-only on purpose: it is the sum of every lane above it, so it is changed by
+                      changing them. Stepped, not smoothed — energy changes at a section boundary, not
+                      gradually across it, and a straight line between two sections would draw a ramp
+                      that was never arranged. */}
                   {(() => {
                     const es = runs.map(runEnergy), top = Math.max(1, ...es);
                     /* Relative scaling has nothing to divide by when every section scores the same,
                        and drawing them all full height claims everything is maxed when what is true
                        is that nothing changes across this song. That draws flat instead. */
                     const flat = Math.max(...es) === Math.min(...es);
+                    const heightOf = ri => flat ? 45 : Math.max(7, Math.round(es[ri] / top * 100));
                     return (
                       <div className="tlrow tlnrg">
                         {runs.map((r, ri) => (
@@ -8681,11 +8692,16 @@ export default function ProgressionWheel() {
                                 : ri > 0 ? (es[ri] > es[ri - 1] ? " — a step up from the section before"
                                 : es[ri] < es[ri - 1] ? " — a step down: this is what makes what follows land"
                                 : " — level with the section before") : "")
-                              + ". Drums and the lead count 3, the chords 2, every other part 1. Energy is relative, not absolute: the biggest event in a dance record is usually a subtraction."}>
-                            <div className="tlnrgb" style={{ height: (flat ? 45 : Math.max(7, Math.round(es[ri] / top * 100))) + "%",
-                              background: (SEC_COL[r.base] || "#8B94A3") + "CC" }} />
-                          </div>
+                              + ". Drums and the lead count 3, the chords 2, every other part 1, the filter and level lanes 1.5 each. Energy is relative, not absolute: the biggest event in a dance record is usually a subtraction."} />
                         ))}
+                        {/* one point at each run's start and end, so the line runs flat across the
+                            section and jumps — vertically, at the boundary's shared x — into the next */}
+                        <svg viewBox={`0 0 ${total} 100`} preserveAspectRatio="none" className="tlnrgline" aria-hidden="true">
+                          <polyline points={runs.map((r, ri) => {
+                            const y = 100 - heightOf(ri);
+                            return `${r.startBar},${y} ${r.startBar + r.bars},${y}`;
+                          }).join(" ")} />
+                        </svg>
                       </div>
                     );
                   })()}
@@ -9161,11 +9177,15 @@ export default function ProgressionWheel() {
           font-size:var(--fs-xs); border-radius:var(--r-xs); background:var(--hover); color:var(--muted); border:1px solid var(--line-2);
           cursor:pointer; }
         .tlautox:hover { color:#E9B3AB; border-color:#7A4A44; }
-        /* the energy staircase: one bar per section, height = what is playing in it */
-        .tlnrg { height:26px; align-items:flex-end; }
-        .tlnrgw { min-width:0; display:flex; align-items:flex-end; height:100%;
-          border-bottom:1px solid var(--line-2); }
-        .tlnrgb { width:100%; border-radius:var(--r-xs) var(--r-xs) 0 0; transition:height .12s; }
+        /* the energy staircase: a stepped line, height = what is playing in the section it crosses.
+           The per-run divs are hit areas for the tooltip only now — the line itself is one SVG
+           drawn across the whole row, so a step reads as one continuous drop rather than as bars
+           of differing height that have to be compared one at a time. */
+        .tlnrg { height:26px; position:relative; }
+        .tlnrgw { min-width:0; height:100%; border-bottom:1px solid var(--line-2); }
+        .tlnrgline { position:absolute; inset:0 0 1px 0; width:100%; height:calc(100% - 1px); pointer-events:none; }
+        .tlnrgline polyline { fill:none; stroke:#E9B3AB; stroke-width:2; vector-effect:non-scaling-stroke;
+          stroke-linejoin:round; }
         .tlgnrg { height:26px; line-height:26px; }
         .tlgauto { height:30px; line-height:30px; }
         /* what a template did, said in words beside the strip that draws it */
