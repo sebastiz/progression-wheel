@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
-import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
+import { BASS, BASS_IV, isSlideTok, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxMultiRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord, customVoiceName, isCustomVoice, measureVoiceLoudness, resetCustomVoices, setCustomVoice, deleteCustomVoice } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
@@ -3818,7 +3818,7 @@ export default function ProgressionWheel() {
   const m = { ctx, master, music, cduck, chordBus, chordLp, bduck, padDuck, wetDuck, filt, mhp,
     trDrums, trPerc, trBass, trPad, fxLead, fxMaster, fxActiveId,
     bassLp: trBass.lp, percLp: trPerc.lp, padLp: trPad.lp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
-    lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
+    lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1, lastBassHz: {},
     partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
     partDrive: [], partDriveAmt: [], partHp: [], partLp: [], partTrem: [], partPan: [],
     partWob: [], partTremLfo: [], partPanLfo: [],
@@ -4170,8 +4170,12 @@ export default function ProgressionWheel() {
             let gap = 1;                     // steps until the next hit — the room this note has
             while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
             const stepDur = tick * (L / bpat.length);
-            playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
-              bassVoices[li], m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
+            // a lowercase token slides in from whatever this track last played, if anything has —
+            // the note-to-note memory a one-shot-per-note scheduler otherwise has no way to keep
+            const bkey = "m" + li;
+            const hz = playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
+              bassVoices[li], m.trBass.in, humVel(accentAt(i, ticksPerBeat)), isSlideTok(tok) ? m.lastBassHz[bkey] : null);
+            m.lastBassHz[bkey] = hz;
           }
         }
       });
@@ -4198,8 +4202,10 @@ export default function ProgressionWheel() {
           let gap = 1;
           while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
           const stepDur = tick * (L / bpat.length);
-          playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
-            bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
+          const bkey = "s:" + k2;
+          const hz = playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
+            bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)), isSlideTok(tok) ? m.lastBassHz[bkey] : null);
+          m.lastBassHz[bkey] = hz;
         }
       });
       /* The pad track: the chord's upper voicing held a bar at a time, legato, into its own

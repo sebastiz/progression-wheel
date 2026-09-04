@@ -1646,9 +1646,13 @@ function resetCustomVoices(list) {
 }
 // legato=true softens the attack and lets the note ring past its slot so a
 // moving line flows together instead of re-articulating on every eighth.
-function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape) {
+// glideHz, when given, is the Hz the *previous* note left off at: this note's oscillators start
+// there and slide onto their own pitch instead of jumping straight to it — portamento, the way a
+// TB-303's slide step (or a bass player's finger) moves between two notes rather than re-plucking.
+function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape, glideHz = null) {
   const V = specFor(kind) || LEAD_SPECS.synth;
   const hz = midiHz(midi);
+  const glideTime = Math.max(0.02, Math.min(dur * 0.6, 0.09));
   /* The part's own envelope, folded into the voice's rather than replacing it. `add` lengthens the
      attack, the three multipliers stretch or squash the stages the voice already has. That way a
      bell and a pad both keep their character when the same control is moved, and NO_SHAPE — every
@@ -1712,8 +1716,14 @@ function leadNote(ctx, t, midi, dur, kind = "synth", legato = false, dest, shape
       const vHz = hz * mult * Math.pow(2, cents / 1200);
       const o = ctx.createOscillator();
       o.type = type; o.frequency.value = vHz;
-      // the hoover's falling whoop: start above the note and slide down onto it
-      if (V.bend) {
+      if (glideHz) {
+        // portamento: this partial starts at the previous note's pitch (scaled by the same
+        // partial multiplier and unison detune) and slides onto its own over glideTime
+        const fromHz = glideHz * mult * Math.pow(2, cents / 1200);
+        o.frequency.setValueAtTime(Math.max(20, fromHz), t);
+        o.frequency.exponentialRampToValueAtTime(Math.max(20, vHz), t + glideTime);
+      } else if (V.bend) {
+        // the hoover's falling whoop: start above the note and slide down onto it
         o.frequency.setValueAtTime(vHz * Math.pow(2, V.bend / 12), t);
         o.frequency.exponentialRampToValueAtTime(vHz, t + Math.max(0.06, atk * 4));
       }
@@ -1822,10 +1832,15 @@ const PAD_VOICES = [["strings", "Strings"], ["glass", "Glass pad"], ["voice", "V
    because one low note has to carry the way a whole chord does — every bass voice lands at the
    same K-weighted loudness, so swapping the bass sound never moves the bass level. */
 const BASS_LVL = { sub: 2.9, saw: 2.7, square: 2.8, pluck: 3.5, acid: 3.4, reese: 3.0, growl: 2.7 };
-function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
+// glideHz: passed straight through to leadNote for a slide step. Returns the Hz this note
+// actually played at, so the caller can hand it back in as the *next* note's glideHz — the
+// scheduler is one-shot-per-note (see leadNote), so that chain is the only memory a slide has of
+// "the note before it".
+function playBass(ctx, t, root, off, dur, kind, dest, vel = 1, glideHz = null) {
   const k = specFor(kind) ? kind : "sub";
-  // C2 upward: below the chord window (VOICE_LO 55), above the kick's fundamental
-  leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 3.0) * vel });
+  const midi = 36 + root + off;   // C2 upward: below the chord window (VOICE_LO 55), above the kick's fundamental
+  leadNote(ctx, t, midi, dur, k, false, dest, { lvl: (BASS_LVL[k] || 3.0) * vel }, glideHz);
+  return midiHz(midi);
 }
 
 export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, customVoiceName, deleteCustomVoice, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isCustomVoice, isGM, ksPluck, leadNote, makeDelay, makeFxMultiRack, makeFxMultiSlot, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, measureVoiceLoudness, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, resetCustomVoices, sampleVoicing, setCustomVoice, sfFetch, sfName, sfPrefetch, sfRawCache, specFor, strumChord, voiceChord };

@@ -149,11 +149,14 @@ const BASS = {};
 ["funk16", "Funk syncopation", "R--R--O--R-F--R-", "pushed and skipped sixteenths — the holes are the funk"],
 ["subhold", "Held sub", "R---------------", "one long note a bar — trap, dubstep and every half-time drop"],
 ["walk", "Root–fifth walk", "R---F---O---F---", "sturdy alternation under any chord — reaches from country to hardstyle"],
-["acidline", "Acid 303 line", "R-RO-R-FR-O-RR-R", "a near-constant, syncopated 16th-note run that barely leaves the root — pair it with the Acid 303 bass voice for the squelch"],
+["acidline", "Acid 303 line", "R-Ro-R-rf-o-RR-r", "a near-constant, syncopated 16th-note run that barely leaves the root, sliding into a few of its own notes — pair it with the Acid 303 bass voice for the squelch"],
 ].forEach(([id, name, pat, desc]) =>
   BASS[id] = { name, pattern: pat ? pat.split("") : null, desc });
-// token → semitones above the chord root, in the octave below the chord voicing
-const BASS_IV = { R: 0, F: 7, O: 12 };
+// token → semitones above the chord root, in the octave below the chord voicing. Lowercase is the
+// same three degrees, but marks the step as a *slide*: the note glides in from whatever the bass
+// was last playing instead of re-attacking, the TB-303 "slide" step next to its "normal" one.
+const BASS_IV = { R: 0, F: 7, O: 12, r: 0, f: 7, o: 12 };
+const isSlideTok = tok => tok === "r" || tok === "f" || tok === "o";
 
 const DRUMS = {};
 [
@@ -361,4 +364,4 @@ const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16"
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
+export { BASS, BASS_IV, isSlideTok, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
