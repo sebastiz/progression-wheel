@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **The Energy lane is now a line, and scores the Filter and Level automation.** The arrangement
+  strip's energy staircase was bars, one per section — it's now a stepped red line, so a drop reads
+  as the line falling rather than as one bar among many getting shorter. The score itself also now
+  counts the Filter and Level automation lanes (sampled at each section's midpoint), weighted at 1.5
+  — lighter than a layer, but enough to register a filter sweep or a fader ride as the energy event
+  it often is. A song with neither lane drawn scores exactly as it did before.
 - **A huge jump in kit choice.** Drums go from 6 kits to 16: acoustic/909/808/707/606/LinnDrum are
   joined by the **CR-78** (soft, early-box), **DMX** (boom-bap), **SP-1200** (gritty sample crunch),
   **MPC60** (warm 90s hip-hop), **Hard techno**, **Gabber**, **Dubstep**, **Jungle**, **Minimal** and
