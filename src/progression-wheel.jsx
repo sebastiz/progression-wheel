@@ -8580,7 +8580,10 @@ export default function ProgressionWheel() {
                 ? grooveDrums[0] : (DRUMS[effDrum(d) || drum] || {}).pattern),
               chords: !effQuiet(d),
               parts: Array.from({ length: nParts }, (_, i) => partIn(d, i)),
-              filter: autoValAt("filter", d), level: autoValAt("level", d) });
+              filter: autoValAt("filter", d), level: autoValAt("level", d),
+              // bass, perc and pad used to be invisible to the score — a breakdown that drops all
+              // three (the textbook move) still needs to cost something even when the drums stay
+              bass: !!bassSrcOf(d), perc: !!percSrcOf(d), pad: padOnOf(d) });
             const runEnergy = r => r.items.reduce((n, d) => n + energyAt(d), 0) / r.items.length;
             // a lane is full, empty, or partly on across the run's instances
             const laneState = (l, r) => {
@@ -8678,11 +8681,18 @@ export default function ProgressionWheel() {
                       that was never arranged. */}
                   {(() => {
                     const es = runs.map(runEnergy), top = Math.max(1, ...es);
+                    const lo = Math.min(...es), hi = Math.max(...es);
                     /* Relative scaling has nothing to divide by when every section scores the same,
                        and drawing them all full height claims everything is maxed when what is true
                        is that nothing changes across this song. That draws flat instead. */
-                    const flat = Math.max(...es) === Math.min(...es);
-                    const heightOf = ri => flat ? 45 : Math.max(7, Math.round(es[ri] / top * 100));
+                    const flat = hi === lo;
+                    /* Stretched between this song's own quietest and loudest section, not scaled down
+                       from the theoretical maximum — a breakdown that is genuinely this song's floor
+                       reads as the floor of the chart, even when it still scores most of the drop's
+                       points on paper (a held chord and the hook are real energy, just less of it).
+                       Scaling off the max alone left every section clustered near the top the moment
+                       nothing in the song scored badly on paper, which was most songs. */
+                    const heightOf = ri => flat ? 45 : Math.round(7 + (es[ri] - lo) / (hi - lo) * 93);
                     return (
                       <div className="tlrow tlnrg">
                         {runs.map((r, ri) => (
@@ -8692,7 +8702,7 @@ export default function ProgressionWheel() {
                                 : ri > 0 ? (es[ri] > es[ri - 1] ? " — a step up from the section before"
                                 : es[ri] < es[ri - 1] ? " — a step down: this is what makes what follows land"
                                 : " — level with the section before") : "")
-                              + ". Drums and the lead count 3, the chords 2, every other part 1, the filter and level lanes 1.5 each. Energy is relative, not absolute: the biggest event in a dance record is usually a subtraction."} />
+                              + ". Drums and the lead count 3, the bass and chords 2, every other part 1, perc and pad 1, the filter and level lanes 1.5 each. Energy is relative, not absolute: the biggest event in a dance record is usually a subtraction."} />
                         ))}
                         {/* one point at each run's start and end, so the line runs flat across the
                             section and jumps — vertically, at the boundary's shared x — into the next */}

@@ -92,6 +92,13 @@ energy event in the track, bigger than any layer it adds or removes. An undrawn 
 section nothing — it scores as if it rested at fully open — so a track that never touches Filter or
 Level scores exactly as it always did.
 
+The app's own Energy lane scores exactly this table — Bass, Perc and Pad included. Leaving any of
+the three unscored (as an earlier version of the score did) hid the textbook breakdown move
+entirely: pull the bass, the perc and the pad out at once and the drums-plus-chords score barely
+moved, so the lane never showed the collapse the section was actually making. With all three
+counted, dropping the whole stack down to just a kick and a held chord reads as the subtraction it
+is, not a flat line near the top.
+
 You are looking for a staircase with **deliberate collapses**, because of the one idea that governs
 the whole form:
 

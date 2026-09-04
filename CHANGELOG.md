@@ -1,12 +1,17 @@
 # Changelog
 
 ## Unreleased
-- **The Energy lane is now a line, and scores the Filter and Level automation.** The arrangement
-  strip's energy staircase was bars, one per section — it's now a stepped red line, so a drop reads
-  as the line falling rather than as one bar among many getting shorter. The score itself also now
-  counts the Filter and Level automation lanes (sampled at each section's midpoint), weighted at 1.5
-  — lighter than a layer, but enough to register a filter sweep or a fader ride as the energy event
-  it often is. A song with neither lane drawn scores exactly as it did before.
+- **The Energy lane is now a line, scores Bass/Perc/Pad and the automation lanes, and actually
+  reaches the bottom.** The arrangement strip's energy staircase was bars, one per section — it's
+  now a stepped red line, so a drop reads as the line falling rather than as one bar among many
+  getting shorter. The score itself now also counts the Bass, Perc and Pad tracks (weighted 2/1/1,
+  same tier as the doc's own table) and the Filter and Level automation lanes (1.5 each, sampled at
+  each section's midpoint) — previously none of the five counted for anything, so a textbook
+  breakdown that pulled all of them out while holding the chord and the hook barely moved the
+  score. And the line is now stretched between the song's own quietest and loudest section rather
+  than scaled down from the maximum, so a real low point reads as the floor of the chart instead of
+  hovering near the top with everything else. A song that never touches Filter or Level, or never
+  used Bass/Perc/Pad at all, scores exactly as it did before any of this.
 - **A huge jump in kit choice.** Drums go from 6 kits to 16: acoustic/909/808/707/606/LinnDrum are
   joined by the **CR-78** (soft, early-box), **DMX** (boom-bap), **SP-1200** (gritty sample crunch),
   **MPC60** (warm 90s hip-hop), **Hard techno**, **Gabber**, **Dubstep**, **Jungle**, **Minimal** and
