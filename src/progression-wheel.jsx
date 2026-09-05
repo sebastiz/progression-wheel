@@ -447,7 +447,7 @@ const TRACK_LVL = { k:"lvl", name:"Level", kind:"amt", dflt:100, max:100, unit:"
 const TRACK_MODS = [TRACK_LVL, ...["cut","res","hp","drive","wob","wobRate","trem","tremRate",
   "pan","apan","apanRate","send","verb","duck"].map(k => MOD_BY_KEY[k])];
 const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
-  ["bass", "Bass", "🎸"], ["pad", "Pad", "🌫️"]];
+  ["bass", "Bass", "🎸"], ["pad", "Pad", "🌫️"], ["chords", "Chords", "🎹"]];
 /* Extra tracks for drums/perc/bass/pad — the same "add a 2nd one" idea melody's layers (A-F)
    already give the lead. Rather than a second family of per-section state, an extra track reuses
    every map the first one already has (secDrum, secBassPat, secBassBeat, secBass mute, …), just
@@ -460,8 +460,8 @@ const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
 const LSEP = "#";
 const layerSuf = key => { const i = key == null ? -1 : key.indexOf(LSEP); return i < 0 ? "" : key.slice(i); };
 const layered = (d, li) => (!li || !d) ? d : { ...d, key: d.key + LSEP + li, base: d.base + LSEP + li };
-/* The insert-effects rack's six buses. Drums, Perc, Bass and Pad each get their rack as a fifth
-   "FX" tab inside their own trackFxRow (Sound tab and, per section, under their own grid in
+/* The insert-effects rack's seven buses. Drums, Perc, Bass, Pad and Chords each get their rack as
+   a fifth "FX" tab inside their own trackFxRow (Sound tab and, per section, under their own grid in
    Arrange/Sketch) — see trackFxRow. "lead" is one shared rack all six melody parts feed into (see
    the note beside its wiring in chainOf) rather than a rack per part — one set of knobs, the
    simplest thing that is still useful, matching how the delay and reverb sends are one shared bus
@@ -470,8 +470,8 @@ const layered = (d, li) => (!li || !d) ? d : { ...d, key: d.key + LSEP + li, bas
    included, and belongs to no instrument at all, so it keeps its own small spot on the Sound tab.
    No bus picker remains anywhere: each bus's rack now lives at the one place that reads it. */
 // icon for the one bus that still carries a per-section FX sub-panel of its own (sectionCard) —
-// melody parts have no per-track tab strip to fold "lead"'s rack into the way drums/perc/bass/pad
-// do, so it keeps this small standalone collapsible under the melody grid instead.
+// melody parts have no per-track tab strip to fold "lead"'s rack into the way drums/perc/bass/pad/
+// chords do, so it keeps this small standalone collapsible under the melody grid instead.
 const FX_BUS_ICON = { lead:"🎵" };
 /* Default make-up gain for the pitched sources, setting the mix's default hierarchy: the
    melody on top level with the drums, the bass beside them (its own anchor in audio.js already
@@ -3738,14 +3738,6 @@ export default function ProgressionWheel() {
   const wetDuck = ctx.createGain(); wetDuck.gain.value = 1; wetDuck.connect(filt);
   const music = makeReverb(ctx, filt, 1.6, 0.16, wetDuck);   // reverb bus for pitched sources
   const cduck = ctx.createGain(); cduck.gain.value = 1; cduck.connect(music);
-  // the chords' make-up gain — its own node upstream of the duck, because duckAt resets the
-  // duck node to exactly 1 and would silently eat a boost written onto it
-  const chordBus = ctx.createGain(); chordBus.gain.value = CHORD_MAKEUP;
-  // the chords' own low-pass — the one part with no mkChain of its own. Open by default, so it
-  // is transparent everywhere except when the Session view's per-column filter rides it down.
-  const chordLp = ctx.createBiquadFilter();
-  chordLp.type = "lowpass"; chordLp.frequency.value = FILTER_OPEN; chordLp.Q.value = 0.7;
-  chordBus.connect(chordLp); chordLp.connect(cduck);
   // the bass track's own duck: straight into the move filter, not the reverb bus — low end in a
   // room is mud — and pumped harder than the chords when the kick lands
   const bduck = ctx.createGain(); bduck.gain.value = 1; bduck.connect(filt);
@@ -3767,7 +3759,7 @@ export default function ProgressionWheel() {
      LFOs (wobble, tremolo, auto-pan) running from t0 so stems line up with the mix. Every default
      is transparent: a song that never opens the panels is what it always was. */
   const t0v = ctx.currentTime;
-  /* Each track's own insert rack, built here (not inside `mkChain`, which is shared by all four
+  /* Each track's own insert rack, built here (not inside `mkChain`, which is shared by all five
      tracks and would otherwise build one rack per call and have no way to tell them apart) and
      handed in as `fx`. Slotted between the chain's own duck and `out` — after the filter/drive/
      pan/duck stage every track already has, so an insert here never disturbs the sidechain-duck,
@@ -3776,6 +3768,7 @@ export default function ProgressionWheel() {
   const fxPerc = makeFxMultiRack(ctx, ...fxIdsFor("perc"), fxT0, fxActiveFor("perc"));
   const fxBass = makeFxMultiRack(ctx, ...fxIdsFor("bass"), fxT0, fxActiveFor("bass"));
   const fxPad = makeFxMultiRack(ctx, ...fxIdsFor("pad"), fxT0, fxActiveFor("pad"));
+  const fxChords = makeFxMultiRack(ctx, ...fxIdsFor("chords"), fxT0, fxActiveFor("chords"));
   // one shared rack for every melody part — connected once, here, to the reverb bus every part's
   // chain already fed straight into; each part's own duck fans into `fxLead.input` below, in
   // chainOf, so six parts get one rack and one set of knobs rather than six independent ones
@@ -3810,13 +3803,17 @@ export default function ProgressionWheel() {
   const trBass = mkChain(bduck, fxBass);
   trBass.in.gain.value = BASS_MAKEUP;              // audible before the first beat's applyFx runs
   const trPad = mkChain(padDuck, fxPad);
+  // the chords' own chain — full mkChain like the other three tracks (level/drive/filter/
+  // tremolo/pan/insert-fx), into the same duck node it always used
+  const trChords = mkChain(cduck, fxChords);
+  trChords.in.gain.value = CHORD_MAKEUP;           // audible before the first beat's applyFx runs
   // which id is currently audible in each bus/slot — starts matching what was just built (the
   // song's own type), and is the thing the per-beat block below compares each tick's resolved
   // section type against, switching (`writeFxRack`) when they disagree
   const fxActiveId = { drums: fxActiveFor("drums"), perc: fxActiveFor("perc"), bass: fxActiveFor("bass"),
-    pad: fxActiveFor("pad"), lead: fxActiveFor("lead"), master: fxActiveFor("master") };
-  const m = { ctx, master, music, cduck, chordBus, chordLp, bduck, padDuck, wetDuck, filt, mhp,
-    trDrums, trPerc, trBass, trPad, fxLead, fxMaster, fxActiveId,
+    pad: fxActiveFor("pad"), chords: fxActiveFor("chords"), lead: fxActiveFor("lead"), master: fxActiveFor("master") };
+  const m = { ctx, master, music, cduck, bduck, padDuck, wetDuck, filt, mhp,
+    trDrums, trPerc, trBass, trPad, trChords, fxLead, fxMaster, fxActiveId,
     bassLp: trBass.lp, percLp: trPerc.lp, padLp: trPad.lp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
     lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
     partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
@@ -4124,8 +4121,8 @@ export default function ProgressionWheel() {
       if (sym !== "-" && !sessionModeRef.current) {
         if (chord && !quiet && (!m.stem || m.stem.kind === "chords")) {
           // while the bass track carries the root, the chords stop doubling it an octave down
-          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.chordBus, m.voicing, bassOn);
-          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.chordBus, m.voicing, bassOn);
+          const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, sym, eighth, m.trChords.in, m.voicing, bassOn);
+          if (!played) playHit(m.ctx, t, chord, sym, inst, eighth, m.trChords.in, m.voicing, bassOn);
         }
       }
       /* Session view: each session track resolves against its own live clip's own bars, looped
@@ -4146,8 +4143,8 @@ export default function ProgressionWheel() {
           const bar = (bars && bars.length) ? (bars[localBar(bars.length)] || []) : null;
           const tok = bar ? (bar[stepAt(bar.length, i, L)] || "-") : (sampleAt(patRef.current, i, L) || "-");
           if (tok !== "-" && !quiet) {
-            const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, tok, eighth, m.chordBus, m.voicing, sessionBassOn);
-            if (!played) playHit(m.ctx, t, chord, tok, inst, eighth, m.chordBus, m.voicing, sessionBassOn);
+            const played = realRef.current && playSampled(m.sampler, inst, m.ctx, t, chord, tok, eighth, m.trChords.in, m.voicing, sessionBassOn);
+            if (!played) playHit(m.ctx, t, chord, tok, inst, eighth, m.trChords.in, m.voicing, sessionBassOn);
           }
         }
       });
@@ -4458,9 +4455,7 @@ export default function ProgressionWheel() {
         applyFx(m.trPerc, F3.perc, "cutperc", 1, sessCutMul("perc"));
         applyFx(m.trBass, F3.bass, "cutbass", BASS_MAKEUP, sessCutMul("bass"));
         applyFx(m.trPad, F3.pad, "cutpad", 1, sessCutMul("pad"));
-        // the chords' own node — nothing else writes it, so a plain set per beat is enough
-        if (m.chordLp) m.chordLp.frequency.setValueAtTime(
-          nyq(m, Math.max(120, FILTER_OPEN * sessCutMul("chords"))), t);
+        applyFx(m.trChords, F3.chords, "cutchords", CHORD_MAKEUP, sessCutMul("chords"));
         // session audio chains: the clip's level and its column's performance filter, once a
         // beat like every other track — so both respond while the file loops
         for (const tid in (m.sessAudio || {})) {
@@ -4502,6 +4497,7 @@ export default function ProgressionWheel() {
         writeFxRack(m.trPerc.fx, m.fxActiveId.perc, secFxOf("perc") || FXR.perc);
         writeFxRack(m.trBass.fx, m.fxActiveId.bass, secFxOf("bass") || FXR.bass);
         writeFxRack(m.trPad.fx, m.fxActiveId.pad, secFxOf("pad") || FXR.pad);
+        writeFxRack(m.trChords.fx, m.fxActiveId.chords, secFxOf("chords") || FXR.chords);
         writeFxRack(m.fxLead, m.fxActiveId.lead, secFxOf("lead") || FXR.lead);
         writeFxRack(m.fxMaster, m.fxActiveId.master, FXR.master);
       }
@@ -4610,13 +4606,13 @@ export default function ProgressionWheel() {
       // it does not — that is what makes the stems sum back to the mix. Melody parts duck on
       // their own nodes further down, each by its own amount.
       if (pumpRef.current && kickNow) {
-        duckAt(m.cduck, t, pumpRef.current, beat * 0.8);
+        const F2 = trackFxRef.current || {};
+        const dk = k => (F2[k] && F2[k].duck != null) ? F2[k].duck : null;
+        duckAt(m.cduck, t, dk("chords") != null ? dk("chords") : pumpRef.current, beat * 0.8);
         duckAt(m.wetDuck, t, pumpRef.current, beat * 0.8);
         /* Per-track pump. The panel's Pump knob overrides the genre defaults — the bass ducks
            hardest (the kick and the bassline share a register), the pad barely moves, and the
            perc doesn't duck at all unless its knob says so. */
-        const F2 = trackFxRef.current || {};
-        const dk = k => (F2[k] && F2[k].duck != null) ? F2[k].duck : null;
         duckAt(m.bduck, t, dk("bass") != null ? dk("bass") : Math.min(1, pumpRef.current * 1.3), beat * 0.8);
         duckAt(m.padDuck, t, dk("pad") != null ? dk("pad") : pumpRef.current * 0.5, beat * 0.8);
         if (dk("perc")) duckAt(m.trPerc.duck, t, dk("perc"), beat * 0.8);
@@ -8008,6 +8004,7 @@ export default function ProgressionWheel() {
                           </div>
                         ))}
                       </div>
+                      {trackFxRow("chords", secFxCtx)}
                       {tips && <p className="keytag" style={{ marginTop:5 }}>
                         The chord track's rhythm for these bars alone, on the strum's own vocabulary:
                         Accent is the big hit, Down a full strum, Up the light answer. It replaces the
@@ -8539,6 +8536,8 @@ export default function ProgressionWheel() {
                  across a build, the pad blooms into a drop. Undrawn, the track plays wide open. */
               ...(bassAnywhere ? [{ id: "cutbass", name: "Bass filter",
                 tip: "Draw the bass track's own brightness across the song — it darkens or opens while everything else stays put." }] : []),
+              { id: "cutchords", name: "Chords filter",
+                tip: "Draw the chords track's own brightness across the song — the classic disco/house move: chords filtered shut in the intro, opened at the drop." },
               ...(percAnywhere ? [{ id: "cutperc", name: "Perc filter",
                 tip: "Draw the percussion layer's own brightness across the song — open it through a build, shut it for a verse." }] : []),
               ...(padAnywhere ? [{ id: "cutpad", name: "Pad filter",
