@@ -1818,8 +1818,8 @@ export default function ProgressionWheel() {
           })}
           <button className={"modtab" + (grp === "fx" ? " on" : "")}
             title={secCtx
-              ? `This ${secCtx.word}'s own copy of the ${trName.toLowerCase()} insert rack — chorus, flanger, phaser, bitcrusher, compressor, stereo widener.`
-              : `Insert effects on the whole ${trName.toLowerCase()} bus — chorus, flanger, phaser, bitcrusher, compressor, stereo widener. The default a new section starts from; open a section's own FX panel to give it a different type entirely.`}
+              ? `This ${secCtx.word}'s own copy of the ${trName.toLowerCase()} insert rack — chorus, flanger, phaser, stutter, bitcrusher, compressor, stereo widener.`
+              : `Insert effects on the whole ${trName.toLowerCase()} bus — chorus, flanger, phaser, stutter, bitcrusher, compressor, stereo widener. The default a new section starts from; open a section's own FX panel to give it a different type entirely.`}
             onClick={() => setTrackFxTab({ ...trackFxTab, [trId]: "fx" })}>
             FX{fxOn > 0 && <i className="lydot">{fxOn}</i>}
           </button>
@@ -3640,7 +3640,7 @@ export default function ProgressionWheel() {
   // an OfflineAudioContext for rendering the song to a file. Everything downstream of `master`
   // is identical either way, so a render sounds like what you heard.
   const buildGraph = (ctx, from, stem) => {
-  // fixed once, here, so every LFO-bearing insert (chorus/flanger/phaser) built below — on the
+  // fixed once, here, so every LFO-bearing insert (chorus/flanger/phaser/stutter) built below — on the
   // master path or on a track — shares the same phase reference every other LFO in this graph
   // already uses (see `t0v` and the part-chain LFOs further down)
   const fxT0 = ctx.currentTime;
@@ -9655,7 +9655,7 @@ export default function ProgressionWheel() {
             const leadFxOpen = !!openFx.lead;
             return (<>
               <button className="mini" onClick={() => setOpenFx({ ...openFx, lead: !leadFxOpen })}
-                title="Insert effects on the shared bus all six melody parts feed into — chorus, flanger, phaser, bitcrusher, compressor, stereo widener.">
+                title="Insert effects on the shared bus all six melody parts feed into — chorus, flanger, phaser, stutter, bitcrusher, compressor, stereo widener.">
                 {leadFxOpen ? "▾" : "▸"} 🎵 Lead FX{leadOn ? " ● " + leadOn : ""}
               </button>
               {leadFxOpen && (
@@ -9796,11 +9796,11 @@ export default function ProgressionWheel() {
           })}
 
           {/* ---- insert-effects rack: master ----
-              A second, independent processing stage — chorus, flanger, phaser, a bitcrusher, a
-              compressor, a stereo widener, and a second drive stage — on top of the
-              filter/drive/pan chain every track and part already has above. Drums, Perc, Bass and
-              Pad each keep their own rack behind their own instrument's FX tab above (and again,
-              per section, in Arrange/Sketch); Lead's shared rack sits by its voice picker above.
+              A second, independent processing stage — chorus, flanger, phaser, stutter, a
+              bitcrusher, a compressor, a stereo widener, and a second drive stage — on top of the
+              filter/drive/pan chain every track and part already has above. Drums, Perc, Bass, Pad
+              and Chords each keep their own rack behind their own instrument's FX tab above (and
+              again, per section, in Arrange/Sketch); Lead's shared rack sits by its voice picker above.
               Master is the one bus with no instrument of its own to live inside — it sits just
               before the limiter, colouring the whole song, drums included — so it keeps this
               small dedicated spot, with no bus picker now that it is the only bus left here. */}

@@ -1,15 +1,22 @@
 # Changelog
 
 ## Unreleased
+- **A Stutter insert effect, on every FX rack.** A rhythmic buffer-repeat: the signal cuts out on a
+  square-wave gate and a short, self-feeding delay line — always quietly holding a smeared copy of
+  what just played — surfaces into the gap, so a passage sounds like it catches and rapidly
+  re-plays itself before resuming, on a Rate/Depth/Feedback knob set matching the other modulation
+  types. It joins chorus/flanger/phaser/bitcrusher/compressor/widener in every insert-FX rack this
+  app has — Drums, Perc, Bass, Pad, Chords, the shared Lead bus and Master — with no separate
+  wiring, since every bus already builds one chain per effect type the song could need.
 - **The chords track gets its own effects.** Chords was the one bus built without the level/
   drive/filter/tremolo/pan chain the other four tracks (Drums, Perc, Bass, Pad) already had, so it
   had no FX panel, no insert rack, and no way to override its sidechain pump — a plain make-up gain
   into an always-open low-pass was all it got. It now runs through the same chain as everything
   else: a **Chords** panel on the Sound tab (and per-section in Arrange/Sketch) with Mix/Tone/
-  Movement/Space controls and its own chorus/flanger/phaser/bitcrusher/compressor/widener rack, a
-  **Duck** knob that overrides how hard it pumps under the kick, and a drawable **Chords filter**
-  automation lane for the classic disco/house move — chords filtered shut in the intro, opened at
-  the drop.
+  Movement/Space controls and its own chorus/flanger/phaser/stutter/bitcrusher/compressor/widener
+  rack, a **Duck** knob that overrides how hard it pumps under the kick, and a drawable **Chords
+  filter** automation lane for the classic disco/house move — chords filtered shut in the intro,
+  opened at the drop.
 - **The Energy lane is now a line, scores Bass/Perc/Pad and the automation lanes, and actually
   reaches the bottom.** The arrangement strip's energy staircase was bars, one per section — it's
   now a stepped red line, so a drop reads as the line falling rather than as one bar among many
