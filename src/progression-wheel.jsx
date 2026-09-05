@@ -803,6 +803,23 @@ export default function ProgressionWheel() {
   /* Syncopation, per section+part — the same baseline idea as varyIn: level 1 pushes the backbeats
      early, level 2 every beat, a third press puts the melody back. UI state, not song state. */
   const [syncIn, setSyncIn] = useState({});
+  /* The same six edit tools (✦ Vary/🎨 Decorate/🔀 Rearrange/🎲 Shuffle/🎼 Reshape/⇢ Syncopate),
+     offered again in Song settings so a writer can run one across melody A of every section at
+     once rather than opening each section in turn. Same baseline/level/undo discipline as the
+     per-part state above, keyed by progression like varySt rather than by section+part, with a
+     `cells` map holding each section's own baseline+last-written-grid — a manual edit to one
+     section resets only that section's baseline, the rest keep stepping from where they were. */
+  const [gVaryOpen, setGVaryOpen] = useState(false);
+  const [gVaryIn, setGVaryIn] = useState({ key:"", level:0, pick:"", cells:{}, note:"" });
+  const [gVaryPick, setGVaryPick] = useState("");
+  const [gDecIn, setGDecIn] = useState({ key:"", level:0, pick:"", cells:{}, note:"" });
+  const [gDecPick, setGDecPick] = useState("");
+  const [gRerIn, setGRerIn] = useState({ key:"", level:0, pick:"", cells:{}, note:"" });
+  const [gRerPick, setGRerPick] = useState("");
+  const [gShufIn, setGShufIn] = useState({ key:"", level:0, cells:{}, note:"" });
+  const [gReshIn, setGReshIn] = useState({ key:"", level:0, pick:"", cells:{}, note:"" });
+  const [gReshPick, setGReshPick] = useState("");
+  const [gSyncIn, setGSyncIn] = useState({ key:"", level:0, cells:{}, note:"" });
   // ✦ Riff the holes, per section: which riff the next press writes. UI state — the riff itself
   // lands in the bass grid and is saved from there like any painted line.
   const [riffSeed, setRiffSeed] = useState({});
@@ -2146,6 +2163,20 @@ export default function ProgressionWheel() {
     }
     setMelos({ progId, secs: next });
   };
+  /* Replace part L's bars across several sections at once, in one state update — the batched
+     counterpart to putLayer, for the same reason setLayerPropMany exists beside setLayerProp: a
+     loop of putLayer calls would each spread this render's stale melos, so only the last
+     section's write would survive. */
+  const putLayerMany = (barsByKey, L) => {
+    const secs = melos.progId === progId ? melos.secs : {};
+    const next = { ...secs };
+    for (const key of Object.keys(barsByKey)) {
+      const sec = secMelos[key]; if (!sec || !sec.layers[L]) continue;
+      next[key] = { ids: sec.ids,
+        layers: sec.layers.map((ly, i) => i === L ? { ...cloneLayer(ly), bars: barsByKey[key] } : cloneLayer(ly)) };
+    }
+    setMelos({ progId, secs: next });
+  };
   /* Allocate a groove part across sections that *inherit* it. Writing the mute onto the layers
      (setLayerPropMany) would materialise a copy of the groove into each section, and a groove
      edited afterwards would no longer reach them — the allocation therefore lives in its own map,
@@ -3364,6 +3395,231 @@ export default function ProgressionWheel() {
       note: level === 0 ? "back as written"
         : !moved ? "nothing square on the beat to push"
         : level === 1 ? "backbeats pushed early" : "every beat pushed early" } });
+  };
+
+  /* ---- the six edit tools above, run across melody A of every section at once ----
+     Song settings' ✦ Variation panel offers the same Vary/Decorate/Rearrange/Shuffle/Reshape/
+     Syncopate tools as each part's own panel, but writes every section's part A in one state
+     update instead of one section at a time. Each keeps a `cells` map — one {base, grid} pair per
+     section — so a manual edit to a single section (its grid no longer matches what this tool
+     last wrote there) resets only that section's own baseline; the rest keep stepping from where
+     they were. A change of pick, like the per-part versions, is a change of mind and resets every
+     section's baseline together. */
+  const globalMelBase = (cells, key, cur) => {
+    const c = cells[key];
+    return (c && melKey(cur) === c.grid) ? c.base : dupBars(cur);
+  };
+  const varyRepeatsAll = pickNow => {
+    const pick = pickNow != null ? pickNow : gVaryPick;
+    const st = gVaryIn.key === progId ? gVaryIn : null;
+    const fresh = !st || st.pick !== pick;
+    const level = (fresh ? 0 : st.level) + 1;
+    const back = level > VARY_IN_MAX;
+    const cells = fresh ? {} : st.cells;
+    const barsByKey = {}, newCells = {};
+    let varied = 0, any = false, touched = false;
+    sections.insts.forEach(d => {
+      const sec = secMelos[d.key]; const cur = barsOf(sec, 0); if (!cur) return;
+      touched = true;
+      const base = fresh ? dupBars(cur) : globalMelBase(cells, d.key, cur);
+      let bars;
+      if (back) bars = dupBars(base);
+      else {
+        const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + 500009;
+        const res = pick
+          ? varyWithinPick(base, { id: pick, nd: scaleSemis.length, seed, level })
+          : varyWithin(base, { nd: scaleSemis.length, amount: level, seed });
+        const out = res.varied ? res : varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level });
+        if (out.varied) { any = true; varied += out.varied; }
+        bars = out.varied ? out.bars : dupBars(base);
+      }
+      barsByKey[d.key] = bars; newCells[d.key] = { base, grid: melKey(bars) };
+    });
+    if (!touched) return;
+    putLayerMany(barsByKey, 0);
+    setGVaryIn({ key: progId, level: back ? 0 : level, pick, cells: back ? {} : newCells,
+      note: back ? "back to the melodies you wrote" : any ? `${varied} note${varied === 1 ? "" : "s"} changed across the song`
+        : "nothing here to vary" });
+  };
+  const resetVaryInAll = () => {
+    if (gVaryIn.key !== progId || !gVaryIn.level) return;
+    const barsByKey = {};
+    Object.keys(gVaryIn.cells).forEach(key => { barsByKey[key] = dupBars(gVaryIn.cells[key].base); });
+    putLayerMany(barsByKey, 0);
+    setGVaryIn({ key:"", level:0, pick:"", cells:{}, note:"" });
+  };
+  const decorateAllMel = pickNow => {
+    const pick = pickNow != null ? pickNow : gDecPick;
+    const st = gDecIn.key === progId ? gDecIn : null;
+    const fresh = !st || st.pick !== pick;
+    const level = (fresh ? 0 : st.level) + 1;
+    const back = level > VARY_IN_MAX;
+    const cells = fresh ? {} : st.cells;
+    const barsByKey = {}, newCells = {};
+    let varied = 0, any = false, squeezed = false, touched = false;
+    sections.insts.forEach(d => {
+      const sec = secMelos[d.key]; const cur = barsOf(sec, 0); if (!cur) return;
+      touched = true;
+      const base = fresh ? dupBars(cur) : globalMelBase(cells, d.key, cur);
+      let bars;
+      if (back) bars = dupBars(base);
+      else {
+        const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + 590011;
+        const out = decorateSection(base, { id: pick || undefined, nd: scaleSemis.length, seed, level });
+        if (out.varied) { any = true; varied += out.varied; if (out.squeezed) squeezed = true; }
+        bars = out.varied ? out.bars : dupBars(base);
+      }
+      barsByKey[d.key] = bars; newCells[d.key] = { base, grid: melKey(bars) };
+    });
+    if (!touched) return;
+    putLayerMany(barsByKey, 0);
+    setGDecIn({ key: progId, level: back ? 0 : level, pick, cells: back ? {} : newCells,
+      note: back ? "back to the melodies you wrote"
+        : any ? (squeezed ? `packed solid in places — ${varied} note${varied === 1 ? "" : "s"} added, some tails shortened to fit`
+                          : `${varied} note${varied === 1 ? "" : "s"} added across the song`)
+        : "nothing here to decorate" });
+  };
+  const resetDecInAll = () => {
+    if (gDecIn.key !== progId || !gDecIn.level) return;
+    const barsByKey = {};
+    Object.keys(gDecIn.cells).forEach(key => { barsByKey[key] = dupBars(gDecIn.cells[key].base); });
+    putLayerMany(barsByKey, 0);
+    setGDecIn({ key:"", level:0, pick:"", cells:{}, note:"" });
+  };
+  const rearrangeAllMel = pickNow => {
+    const pick = pickNow != null ? pickNow : gRerPick;
+    const st = gRerIn.key === progId ? gRerIn : null;
+    const fresh = !st || st.pick !== pick;
+    const level = (fresh ? 0 : st.level) + 1;
+    const back = level > VARY_IN_MAX;
+    const cells = fresh ? {} : st.cells;
+    const barsByKey = {}, newCells = {};
+    let varied = 0, any = false, touched = false;
+    sections.insts.forEach(d => {
+      const sec = secMelos[d.key]; const cur = barsOf(sec, 0); if (!cur) return;
+      touched = true;
+      const base = fresh ? dupBars(cur) : globalMelBase(cells, d.key, cur);
+      let bars;
+      if (back) bars = dupBars(base);
+      else {
+        const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + 680012;
+        const out = varyWhole(base, { id: pick || undefined, nd: scaleSemis.length, seed, level, pool: REARRANGE_VARIATIONS });
+        if (out.varied) { any = true; varied += out.varied; }
+        bars = out.varied ? out.bars : dupBars(base);
+      }
+      barsByKey[d.key] = bars; newCells[d.key] = { base, grid: melKey(bars) };
+    });
+    if (!touched) return;
+    putLayerMany(barsByKey, 0);
+    setGRerIn({ key: progId, level: back ? 0 : level, pick, cells: back ? {} : newCells,
+      note: back ? "back to the melodies you wrote" : any ? `${varied} note${varied === 1 ? "" : "s"} moved across the song`
+        : "nothing here to rearrange" });
+  };
+  const resetRerInAll = () => {
+    if (gRerIn.key !== progId || !gRerIn.level) return;
+    const barsByKey = {};
+    Object.keys(gRerIn.cells).forEach(key => { barsByKey[key] = dupBars(gRerIn.cells[key].base); });
+    putLayerMany(barsByKey, 0);
+    setGRerIn({ key:"", level:0, pick:"", cells:{}, note:"" });
+  };
+  const shuffleAllMel = () => {
+    const st = gShufIn.key === progId ? gShufIn : null;
+    const level = (st ? st.level : 0) + 1;
+    const back = level > VARY_IN_MAX;
+    const cells = st ? st.cells : {};
+    const barsByKey = {}, newCells = {};
+    let varied = 0, any = false, touched = false;
+    sections.insts.forEach(d => {
+      const sec = secMelos[d.key]; const cur = barsOf(sec, 0); if (!cur) return;
+      touched = true;
+      const base = globalMelBase(cells, d.key, cur);
+      let bars;
+      if (back) bars = dupBars(base);
+      else {
+        const seed = [...d.key].reduce((a, c) => a + c.charCodeAt(0), 0) * 131 + 770013;
+        const out = shufflePitches(base, { nd: scaleSemis.length, seed, level });
+        if (out.varied) { any = true; varied += out.varied; }
+        bars = out.varied ? out.bars : dupBars(base);
+      }
+      barsByKey[d.key] = bars; newCells[d.key] = { base, grid: melKey(bars) };
+    });
+    if (!touched) return;
+    putLayerMany(barsByKey, 0);
+    setGShufIn({ key: progId, level: back ? 0 : level, cells: back ? {} : newCells,
+      note: back ? "back to the melodies you wrote" : any ? `${varied} note${varied === 1 ? "" : "s"} shuffled across the song`
+        : "nothing here to shuffle" });
+  };
+  const resetShufInAll = () => {
+    if (gShufIn.key !== progId || !gShufIn.level) return;
+    const barsByKey = {};
+    Object.keys(gShufIn.cells).forEach(key => { barsByKey[key] = dupBars(gShufIn.cells[key].base); });
+    putLayerMany(barsByKey, 0);
+    setGShufIn({ key:"", level:0, cells:{}, note:"" });
+  };
+  const reshapeAllMel = pickNow => {
+    const pick = pickNow != null ? pickNow : (gReshPick || RESHAPE_TYPES[0].id);
+    const type = RESHAPE_TYPES.find(t => t.id === pick) || RESHAPE_TYPES[0];
+    const toggle = pick === "invert" || pick === "reverse";
+    const st = gReshIn.key === progId ? gReshIn : null;
+    const fresh = !st || st.pick !== pick;
+    const level = (fresh ? 0 : st.level) + 1;
+    const back = !toggle && level > VARY_IN_MAX;
+    const cells = fresh ? {} : st.cells;
+    const barsByKey = {}, newCells = {};
+    let varied = 0, repeats = 0, any = false, touched = false;
+    sections.insts.forEach(d => {
+      const sec = secMelos[d.key]; const cur = barsOf(sec, 0); if (!cur) return;
+      touched = true;
+      const base = fresh ? dupBars(cur) : globalMelBase(cells, d.key, cur);
+      let bars;
+      if (back) bars = dupBars(base);
+      else {
+        const out = type.apply(base, { nd: scaleSemis.length, level });
+        if (toggle || out.varied) any = true;
+        varied += out.varied || 0;
+        if (out.repeats) repeats += out.repeats;
+        bars = (toggle || out.varied) ? out.bars : dupBars(base);
+      }
+      barsByKey[d.key] = bars; newCells[d.key] = { base, grid: melKey(bars) };
+    });
+    if (!touched) return;
+    putLayerMany(barsByKey, 0);
+    const note = back ? "back to the melodies you wrote"
+      : !any ? (pick === "answer" ? "nothing repeats anywhere to answer"
+               : pick.startsWith("seq") ? "nothing repeats anywhere to sequence" : "already there")
+      : toggle ? (level % 2 === 1 ? (pick === "invert" ? "inverted across the song" : "reversed across the song")
+                                   : "back to how you wrote it")
+      : pick === "answer" ? `${varied} of ${repeats} repeat${repeats === 1 ? "" : "s"} now resolve home`
+      : `${varied} of ${repeats} repeat${repeats === 1 ? "" : "s"} shifted`;
+    setGReshIn({ key: progId, level: back ? 0 : level, pick, cells: back ? {} : newCells, note });
+  };
+  const resetReshInAll = () => {
+    if (gReshIn.key !== progId || !gReshIn.level) return;
+    const barsByKey = {};
+    Object.keys(gReshIn.cells).forEach(key => { barsByKey[key] = dupBars(gReshIn.cells[key].base); });
+    putLayerMany(barsByKey, 0);
+    setGReshIn({ key:"", level:0, pick:"", cells:{}, note:"" });
+  };
+  const syncopateAllMel = () => {
+    const st = gSyncIn.key === progId ? gSyncIn : null;
+    const cells = st ? st.cells : {};
+    const level = ((st ? st.level : 0) + 1) % 3;
+    const barsByKey = {}, newCells = {};
+    let moved = false, touched = false;
+    sections.insts.forEach(d => {
+      const sec = secMelos[d.key]; const cur = barsOf(sec, 0); if (!cur) return;
+      touched = true;
+      const base = globalMelBase(cells, d.key, cur);
+      const bars = level ? syncopateBars(base, meloSub, level) : dupBars(base);
+      if (melKey(bars) !== melKey(base)) moved = true;
+      barsByKey[d.key] = bars; newCells[d.key] = { base, grid: melKey(bars) };
+    });
+    if (!touched) return;
+    putLayerMany(barsByKey, 0);
+    setGSyncIn({ key: progId, level, cells: newCells,
+      note: level === 0 ? "back as written"
+        : !moved ? "nothing square on the beat anywhere to push"
+        : level === 1 ? "backbeats pushed early across the song" : "every beat pushed early across the song" });
   };
 
   /* ---- the hook duel ----
@@ -10755,6 +11011,103 @@ export default function ProgressionWheel() {
                 withheld top note — using each section's role and its place in the running order to pick
                 its register and shape. A quick way to get a whole song's worth of melody to argue with.
               </p>}
+
+          {/* ✦ Variation, whole song — the same six edit tools each section's own melody workbench
+              offers (✦ Vary/🎨 Decorate/🔀 Rearrange/🎲 Shuffle/🎼 Reshape/⇢ Syncopate), run across
+              melody A of every section in one press instead of opening each section in turn. */}
+          {sections.insts.length > 0 && <>
+          <div className="row" style={{ marginTop:8 }}>
+            <button className={"mini" + (gVaryOpen ? " on" : "")} onClick={() => setGVaryOpen(v => !v)}
+              title="Reshape melody A across every section at once — small edits, ornaments, a shuffle, a reshuffle, or a deliberate reshape — instead of opening each section separately.">
+              {gVaryOpen ? "▾" : "▸"} ✦ Variation — whole song
+            </button>
+          </div>
+          {gVaryOpen && <>
+            <div className="row" style={{ marginTop:6, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
+              <select className="fxsel" style={{ maxWidth:170 }} value={gVaryPick}
+                title="Which edit ✦ Vary these notes writes next, across every section — choosing one only sets it up; press the button to write it. Left on the auto mix it picks from the whole catalogue itself."
+                onChange={e => setGVaryPick(e.target.value)}>
+                <option value="">Vary these notes — auto mix</option>
+                {VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+              </select>
+              <button className={"mini" + (gVaryIn.key === progId && gVaryIn.level ? " on" : "")}
+                onClick={() => varyRepeatsAll()}
+                title="Nudge a handful of notes in melody A of every section — a different landing note, a note added or thinned, a phrase pushed early. Tap again for more; one past the top puts every melody back as written.">
+                ✦ Vary these notes{gVaryIn.key === progId && gVaryIn.level ? " ×" + gVaryIn.level : ""}
+              </button>
+              {gVaryIn.key === progId && gVaryIn.level > 0 &&
+                <button className="mini" onClick={resetVaryInAll} title="Put every melody back as it was before the first tap">↺</button>}
+              {gVaryIn.key === progId && gVaryIn.note && <span className="rlbl" style={{ opacity:.75 }}>{gVaryIn.note}</span>}
+            </div>
+            <div className="row" style={{ marginTop:4, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
+              <select className="fxsel" style={{ maxWidth:170 }} value={gDecPick}
+                title="Which ornament 🎨 Decorate adds next, across every section — every note already written keeps its pitch and its place; this mostly adds around it."
+                onChange={e => setGDecPick(e.target.value)}>
+                <option value="">Decorate — auto mix</option>
+                {DECORATE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+              </select>
+              <button className={"mini" + (gDecIn.key === progId && gDecIn.level ? " on" : "")}
+                onClick={() => decorateAllMel()}
+                title="Add ornaments on top of melody A of every section — a passing tone, an extra note, a grace note. Tap again for more; one past the top puts every melody back as written.">
+                🎨 Decorate{gDecIn.key === progId && gDecIn.level ? " ×" + gDecIn.level : ""}
+              </button>
+              {gDecIn.key === progId && gDecIn.level > 0 &&
+                <button className="mini" onClick={resetDecInAll} title="Put every melody back as it was before the first tap">↺</button>}
+              {gDecIn.key === progId && gDecIn.note && <span className="rlbl" style={{ opacity:.75 }}>{gDecIn.note}</span>}
+            </div>
+            <div className="row" style={{ marginTop:4, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
+              <select className="fxsel" style={{ maxWidth:170 }} value={gRerPick}
+                title="Which move 🔀 Rearrange makes next, across every section — a note may slide earlier or later, or trade places with its neighbour, but never becomes a pitch the melody didn't already have."
+                onChange={e => setGRerPick(e.target.value)}>
+                <option value="">Rearrange — auto mix</option>
+                {REARRANGE_VARIATIONS.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+              </select>
+              <button className={"mini" + (gRerIn.key === progId && gRerIn.level ? " on" : "")}
+                onClick={() => rearrangeAllMel()}
+                title="Move melody A's own notes around, in every section — never a new pitch, never a lost note. Tap again for more; one past the top puts every melody back as written.">
+                🔀 Rearrange{gRerIn.key === progId && gRerIn.level ? " ×" + gRerIn.level : ""}
+              </button>
+              {gRerIn.key === progId && gRerIn.level > 0 &&
+                <button className="mini" onClick={resetRerInAll} title="Put every melody back as it was before the first tap">↺</button>}
+              {gRerIn.key === progId && gRerIn.note && <span className="rlbl" style={{ opacity:.75 }}>{gRerIn.note}</span>}
+            </div>
+            <div className="row" style={{ marginTop:4, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
+              <button className={"mini" + (gShufIn.key === progId && gShufIn.level ? " on" : "")}
+                onClick={shuffleAllMel}
+                title="Randomly nudge some notes in melody A of every section up or down from wherever they already sit. Tap again for a bigger shuffle; one past the top puts every melody back as written.">
+                🎲 Shuffle pitches{gShufIn.key === progId && gShufIn.level ? " ×" + gShufIn.level : ""}
+              </button>
+              {gShufIn.key === progId && gShufIn.level > 0 &&
+                <button className="mini" onClick={resetShufInAll} title="Put every melody back as it was before the first tap">↺</button>}
+              {gShufIn.key === progId && gShufIn.note && <span className="rlbl" style={{ opacity:.75 }}>{gShufIn.note}</span>}
+            </div>
+            <div className="row" style={{ marginTop:4, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
+              <select className="fxsel" style={{ maxWidth:170 }}
+                value={gReshPick || RESHAPE_TYPES[0].id}
+                title="Which melodic-development technique 🎼 Reshape makes next, across every section — flip its contour, play it backwards, restate its repeated motif a step higher or lower, or resolve each restatement home."
+                onChange={e => setGReshPick(e.target.value)}>
+                {RESHAPE_TYPES.map(v => <option key={v.id} value={v.id} title={v.tip}>{v.name}</option>)}
+              </select>
+              <button className={"mini" + (gReshIn.key === progId && gReshIn.level ? " on" : "")}
+                onClick={() => reshapeAllMel()}
+                title="Apply the chosen reshape to melody A of every section. Tap again for more; Invert and Reverse just flip back on the next tap.">
+                🎼 {(RESHAPE_TYPES.find(v => v.id === (gReshPick || RESHAPE_TYPES[0].id)) || RESHAPE_TYPES[0]).name}
+                {gReshIn.key === progId && gReshIn.level ? " ×" + gReshIn.level : ""}
+              </button>
+              {gReshIn.key === progId && gReshIn.level > 0 &&
+                <button className="mini" onClick={resetReshInAll} title="Put every melody back as it was before the first tap">↺</button>}
+              {gReshIn.key === progId && gReshIn.note && <span className="rlbl" style={{ opacity:.75 }}>{gReshIn.note}</span>}
+            </div>
+            <div className="row" style={{ marginTop:4, gap:"6px 8px", alignItems:"center", flexWrap:"wrap" }}>
+              <button className={"mini" + (gSyncIn.key === progId && gSyncIn.level ? " on" : "")}
+                onClick={syncopateAllMel}
+                title="Syncopate melody A of every section — on-beat notes pushed half a beat early, held through the beat they left. One tap pushes the backbeats, two pushes every beat, three puts it back.">
+                ⇢ Syncopate{gSyncIn.key === progId && gSyncIn.level === 2 ? " ××" : gSyncIn.key === progId && gSyncIn.level ? " ×" : ""}
+              </button>
+              {gSyncIn.key === progId && gSyncIn.note && gSyncIn.level > 0 && <span className="rlbl" style={{ opacity:.75 }}>{gSyncIn.note}</span>}
+            </div>
+          </>}
+          </>}
 
           {(() => {
             // where a hummed / imported / recorded melody lands: the chosen section, else the first

@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **The melody variation toolkit now works on the whole song, not just one section at a time.**
+  Song settings gets its own ✦ Variation panel with the same six tools each part's workbench has —
+  ✦ Vary these notes, 🎨 Decorate, 🔀 Rearrange, 🎲 Shuffle pitches, 🎼 Reshape (Invert/Reverse/
+  Sequence/Call & response) and ⇢ Syncopate — but every press runs across melody A of every section
+  in one go instead of needing each section opened in turn. Same tap-for-more, one-past-the-top-
+  resets discipline as the per-part versions, and a manual edit to a single section only resets
+  that section's own baseline — the rest keep stepping from where they were.
 - **The Energy lane is now a line, scores Bass/Perc/Pad and the automation lanes, and actually
   reaches the bottom.** The arrangement strip's energy staircase was bars, one per section — it's
   now a stepped red line, so a drop reads as the line falling rather than as one bar among many
