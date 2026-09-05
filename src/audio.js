@@ -1233,9 +1233,10 @@ function driveCurve(amt) {
 
 /* ===== insert effects =====
    A two-slot rack — chosen once per track/part bus and once more on the master path — for
-   processing the existing chains don't already carry: modulation (chorus/flanger/phaser), lo-fi
-   destruction, dynamics and stereo width. `makeFxSlot`/`makeFxRack` build exactly one type per
-   slot — used directly by the test harness below and wherever only one type is ever needed.
+   processing the existing chains don't already carry: modulation (chorus/flanger/phaser),
+   rhythmic glitch (stutter), lo-fi destruction, dynamics and stereo width. `makeFxSlot`/
+   `makeFxRack` build exactly one type per slot — used directly by the test harness below and
+   wherever only one type is ever needed.
    `progression-wheel.jsx`'s `buildGraph` instead uses `makeFxMultiSlot`/`makeFxMultiRack`: every
    bus is built with one chain per type id the *song* could need there (its own default plus every
    section's own override), so which one a section hears can switch live, at a boundary, rather
@@ -1244,15 +1245,16 @@ function driveCurve(amt) {
    move live beat to beat, exactly like the track panel's own drive/filter. "Off" builds a single
    unity gain and nothing else — no added node, no added latency, so a song that never opens the FX
    panel is bit-for-bit what it always was. Every other type is built once, eagerly, when its rack
-   is made (never on first note through it), so a chorus/flanger/phaser's LFO starts at the same
-   `t0` every other LFO in the graph does and a stem's modulation phase still
-   lines up with the mix it came from. */
+   is made (never on first note through it), so a chorus/flanger/phaser/stutter's LFO starts at the
+   same `t0` every other LFO in the graph does and a stem's modulation phase still lines up with
+   the mix it came from. */
 const FX_TYPES = [
   ["off", "Off", "No insert here — the signal passes through untouched, at no extra cost"],
   ["drive", "Distortion", "A second, independent drive stage — see the note on fxDrive below"],
   ["chorus", "Chorus", "Two detuned, modulated delay voices — thickens a part without truly doubling it"],
   ["flanger", "Flanger", "A very short modulated delay with feedback — a sweeping, resonant comb"],
   ["phaser", "Phaser", "Cascaded allpass filters swept together — a swirling notch sweep, no comb ring"],
+  ["stutter", "Stutter", "A rhythmic buffer-repeat — the signal cuts out and a quick echo catches and re-plays the gap"],
   ["crush", "Bitcrusher", "Reduces bit depth and effective sample rate for lo-fi, aliased grit"],
   ["comp", "Compressor", "Pulls the loud peaks down and lifts the rest — evens a part out, or glues a bus"],
   ["wide", "Stereo widener", "Mid/side widens the stereo image — 100% width is the untouched signal"],
@@ -1269,6 +1271,8 @@ const FX_PARAMS = {
             ["fb", "Feedback", 0, 100, 1, 45, "%"]],
   phaser:  [["rate", "Rate", 0, 100, 1, 20, "%"], ["depth", "Depth", 0, 100, 1, 60, "%"],
             ["fb", "Feedback", 0, 100, 1, 35, "%"]],
+  stutter: [["rate", "Rate", 0, 100, 1, 40, "%"], ["depth", "Depth", 0, 100, 1, 60, "%"],
+            ["fb", "Feedback", 0, 100, 1, 55, "%"]],
   crush:   [["bits", "Bit depth", 1, 16, 1, 8, "bit"], ["red", "Rate reduce", 0, 100, 1, 45, "%"],
             ["mix", "Mix", 0, 100, 1, 100, "%"]],
   comp:    [["thresh", "Threshold", -60, 0, 1, -24, "dB"], ["ratio", "Ratio", 1, 20, 1, 4, ":1"],
@@ -1388,6 +1392,45 @@ function fxPhaser(ctx, t0) {
     fb.gain.setValueAtTime(fbAmt, t);
   } };
 }
+/* Stutter. A short delay line feeds back on itself continuously, at a fixed amount, so it is always
+   quietly holding a smeared copy of whatever just played — but its send to the output stays muted
+   except in the gaps a square-wave gate cuts from the dry signal, so what reaches the speaker is
+   the normal passage, then a rapid, decaying repeat of itself filling the cut, on repeat. One
+   square LFO drives both the dry gate and the repeat send in opposite phase (the same push/pull
+   trick as `fxChorus`'s two delay times, just with opposite-signed coefficients so the two can never
+   overlap): dry plays while the gate is high and the repeat is silent, then swaps the instant the
+   gate drops. The base delay (25–50ms, tied to the gate's own rate) keeps several repeats inside
+   each gap rather than one long echo; feedback is clamped under 0.9, short of the runaway point. */
+function fxStutter(ctx, t0) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const gateGain = ctx.createGain(); gateGain.gain.value = 1;
+  input.connect(gateGain); gateGain.connect(output);
+  const delay = ctx.createDelay(0.2); delay.delayTime.value = 0.05;
+  const fb = ctx.createGain(); fb.gain.value = 0;
+  const wetSend = ctx.createGain(); wetSend.gain.value = 0;
+  input.connect(delay); delay.connect(fb); fb.connect(delay);
+  delay.connect(wetSend); wetSend.connect(output);
+  const lfo = ctx.createOscillator(); lfo.type = "square"; lfo.frequency.value = 4;
+  const gateDepth = ctx.createGain(); gateDepth.gain.value = 0;
+  const wetDepth = ctx.createGain(); wetDepth.gain.value = 0;
+  lfo.connect(gateDepth); gateDepth.connect(gateGain.gain);
+  lfo.connect(wetDepth); wetDepth.connect(wetSend.gain);
+  lfo.start(t0); lfo.stop(t0 + 3600);
+  return { input, output, write(t, p) {
+    const rateHz = 1 + ((p.rate != null ? p.rate : 40) / 100) * 19;        // 1–20Hz chop
+    const depthAmt = (p.depth != null ? p.depth : 60) / 100;
+    const fbAmt = ((p.fb != null ? p.fb : 55) / 100) * 0.9;
+    lfo.frequency.setValueAtTime(rateHz, t);
+    delay.delayTime.setValueAtTime(Math.min(0.05, 0.5 / rateHz), t);
+    fb.gain.setValueAtTime(fbAmt, t);
+    // dry gate: base + AC swings [1-depthAmt, 1] as the square swings -1..+1
+    gateGain.gain.setValueAtTime(1 - depthAmt / 2, t);
+    gateDepth.gain.setValueAtTime(depthAmt / 2, t);
+    // repeat send: the inverse — silent while the gate is open, up to fbAmt while it is shut
+    wetSend.gain.setValueAtTime(fbAmt / 2, t);
+    wetDepth.gain.setValueAtTime(-fbAmt / 2, t);
+  } };
+}
 /* Bitcrusher. Web Audio has no built-in for this, so it is hand-rolled: hold-and-round each sample
    to a fixed step count (bit depth) and only refresh that hold every few samples (the sample-rate
    reduction). A ScriptProcessorNode runs it — deprecated, but it is what this app already uses for
@@ -1475,7 +1518,7 @@ function fxWide(ctx) {
   } };
 }
 const FX_BUILD = { drive: fxDrive, chorus: fxChorus, flanger: fxFlanger, phaser: fxPhaser,
-  crush: fxCrush, comp: fxComp, wide: fxWide };
+  stutter: fxStutter, crush: fxCrush, comp: fxComp, wide: fxWide };
 function makeFxSlot(ctx, id, t0) {
   const build = FX_BUILD[id];
   if (!build) return { id: "off", ...fxOff(ctx) };
