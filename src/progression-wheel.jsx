@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_IDS, QSUF, SEMI_NAME, chordIvs, chordName, famMin, modeFamily, modeId, posOf, spell } from "./theory.js";
-import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor } from "./progressions.js";
+import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor, progListFor } from "./progressions.js";
 import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
 import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxMultiRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord, customVoiceName, isCustomVoice, measureVoiceLoudness, resetCustomVoices, setCustomVoice, deleteCustomVoice } from "./audio.js";
@@ -16,6 +16,7 @@ import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, pl
 import { SESSION_PREFIX, TRACK_TYPES, TRACK_TYPE_BY_ID, newClip, newTrack, nextClipNum, sessionKey } from "./session.js";
 import { DANCE_TEMPLATES, FAMILY_OF, FAMILY_ORDER, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 import { TRACK_PRESETS } from "./track-presets.js";
+import { resolveGenreEmotionStyle } from "./genre-emotion-presets.js";
 // The Progression Wheel — v3 (slim)
 const APP_VERSION = "dev";   // replaced with package.json version at build time (scripts/build.mjs)
 
@@ -875,16 +876,7 @@ export default function ProgressionWheel() {
   const meloRef = useRef(null);
 
   // Emotion leads the ranking so changing it always changes the chords
-  const progList = useMemo(() => {
-    const g = CATEGORIES[0].items.find(i => i.name === genre)?.progs || [];
-    const e = CATEGORIES[1].items.find(i => i.name === emotion)?.progs || [];
-    if (g.length && e.length) {
-      const both = e.filter(p => g.includes(p));
-      return [...both, ...new Set([...e, ...g].filter(p => !both.includes(p)))];
-    }
-    const one = g.length ? g : e;
-    return one.length ? one : ["axis"];
-  }, [genre, emotion]);
+  const progList = useMemo(() => progListFor(genre, emotion), [genre, emotion]);
 
   const progId = force && PROGRESSIONS[force] ? force : progList[0];
   const prog = PROGRESSIONS[progId];
@@ -1480,6 +1472,47 @@ export default function ProgressionWheel() {
     const selVal = tplIdx >= 0 ? pid + ":t:" + tplIdx : "";
     setSelStruct(selVal);
     trackPresetRef.current = tplIdx >= 0 ? { stage:"arrange", tplIdx, selVal, preset } : null;
+  };
+
+  /* ---- genre + emotion: prefill everything from one pair of pickers ----
+     Picking a genre or an emotion already re-ranked which progression loads (`progList`, above) —
+     this is what also makes that pick prefill the rest of the song: the tempo and groove, every
+     instrument, an arrangement where the genre has a matching one, and a melody narrative/variation
+     to steer it, exactly as `applyTrackPreset` does for a named track. `genre-emotion-presets.js`
+     supplies the data (a genre's own sound, an emotion's own melodic character) and composes them;
+     this only decides when it is safe to apply each piece, for the same reason `applyTrackPreset`
+     does — `progId` itself is about to change here, so `chords`/`sections` still describe the *old*
+     progression until next render, and the arrangement/narrative writes have to wait for it. */
+  const applyGenreEmotion = (g, e) => {
+    setGenre(g); setEmotion(e); setForce(null); setMode(null);
+    const pid = progListFor(g, e)[0];
+    const prog = PROGRESSIONS[pid];
+    const style = resolveGenreEmotionStyle(g, e, DANCE_TEMPLATES);
+    setEdits({ key:"", map:{} }); setInserts({ key:"", list:[] });
+    setQuals({ key:"", map:{} }); setRemoved({ key:"", list:[] }); setOrder({ key:"", list:null });
+    const natLenNew = prog ? prog.numerals.length : 4;
+    const n = Math.max(CHORDS_MIN, Math.min(CHORDS_MAX, natLenNew + (style.chordDelta || 0)));
+    setNChordsSt({ key: pid, val: n === natLenNew ? 0 : n });
+    if (style.bpm) setBpmSt({ key: pid, val: style.bpm });
+    if (style.pat && PATTERNS[style.pat]) setPatSel({ key: pid, id: style.pat });
+    if (style.drum && DRUMS[style.drum]) setDrumSt({ key: pid, val: style.drum });
+    if (style.kit) setKitSt({ key: pid, val: style.kit });
+    if (style.pump) setPumpSt({ key: pid, val: style.pump });
+    setBassSt({ key: pid, val: style.bass && BASS[style.bass] ? style.bass : "" });
+    setBassVoiceSt({ key: pid, val: style.bassVoice || "" });
+    setPadSt({ key: pid, val: style.pad && PAD_VOICES.some(([id]) => id === style.pad) ? style.pad : "" });
+    setPercKitSt({ key: pid, val: style.percKit || "" });
+    setDelaySt({ key: pid, val: style.delay || "" });
+    setSwingSt({ key: pid, val: style.swing != null ? style.swing : 0 });
+    setInstrSt({ key: pid, val: style.instr || "acoustic_guitar_steel" });
+    setMelInstrSt({ key: pid, val: style.melInstr || "flute" });
+    setHumaniseSt({ key: pid, val: style.humanise != null ? style.humanise : 0 });
+    setTrackFx(style.trackFx || {});
+    setSelRow(0); setCustom({ key:"", plan:null });
+    const selVal = style.templateIdx >= 0 ? pid + ":t:" + style.templateIdx : "";
+    setSelStruct(selVal);
+    const preset = { narrative: style.narrative, vary: style.vary, sync: style.sync, within: style.within };
+    trackPresetRef.current = style.templateIdx >= 0 ? { stage:"arrange", tplIdx: style.templateIdx, selVal, preset } : { stage:"melody", preset };
   };
 
   /* ---- melody scale + targets ---- */
@@ -9351,7 +9384,8 @@ export default function ProgressionWheel() {
             </label>
             <label className="selwrap" style={{ flex:"1 1 88px" }}>
               <span className="lbl" style={{ margin:0 }}>Genre</span>
-              <select value={genre || ""} onChange={e => { setGenre(e.target.value || null); setForce(null); setMode(null); }}>
+              <select value={genre || ""} onChange={e => applyGenreEmotion(e.target.value || null, emotion)}
+                title="Prefills the chord count, tempo, every instrument and (where the genre has one) a full arrangement, plus a melody narrative shaped by the Emotion picker.">
                 <option value="">Any</option>
                 {GENRE_GROUPS.map(([cat, list]) => (
                   <optgroup key={cat} label={cat}>
@@ -9362,7 +9396,8 @@ export default function ProgressionWheel() {
             </label>
             <label className="selwrap" style={{ flex:"1 1 88px" }}>
               <span className="lbl" style={{ margin:0 }}>Emotion</span>
-              <select value={emotion || ""} onChange={e => { setEmotion(e.target.value || null); setForce(null); setMode(null); }}>
+              <select value={emotion || ""} onChange={e => applyGenreEmotion(genre, e.target.value || null)}
+                title="Steers the melody narrative, its variation and syncopation, and nudges the tempo/swing/feel the Genre picker set.">
                 <option value="">Any</option>
                 {CATEGORIES[1].items.map(it => <option key={it.name} value={it.name}>{it.name}</option>)}
               </select>
