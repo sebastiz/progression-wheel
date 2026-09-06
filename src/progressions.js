@@ -225,6 +225,18 @@ const CATEGORIES = [
     { name:"Dreamy", progs:["lydian","dorian","pachelbel"] },
     { name:"Melancholic", progs:["aeolian","andalusian","axisMinor"] } ]},
 ];
+// Emotion leads the ranking so changing it always changes the chords. Shared by the wheel's own
+// progList useMemo and by the genre+emotion preset picker, so both always agree on the same default.
+const progListFor = (genre, emotion) => {
+  const g = CATEGORIES[0].items.find(i => i.name === genre)?.progs || [];
+  const e = CATEGORIES[1].items.find(i => i.name === emotion)?.progs || [];
+  if (g.length && e.length) {
+    const both = e.filter(p => g.includes(p));
+    return [...both, ...new Set([...e, ...g].filter(p => !both.includes(p)))];
+  }
+  const one = g.length ? g : e;
+  return one.length ? one : ["axis"];
+};
 
 /* ===== colour-move songs ===== */
 const SEC_SONGS = {
@@ -410,4 +422,4 @@ function letterFor(sec) {
 }
 
 
-export { BLUES12, BLUES12Q, CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, defStruct, letterFor, mkPlan };
+export { BLUES12, BLUES12Q, CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, defStruct, letterFor, mkPlan, progListFor };
