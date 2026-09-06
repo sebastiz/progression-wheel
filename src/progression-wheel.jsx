@@ -1474,20 +1474,22 @@ export default function ProgressionWheel() {
     trackPresetRef.current = tplIdx >= 0 ? { stage:"arrange", tplIdx, selVal, preset } : null;
   };
 
-  /* ---- genre + emotion: prefill everything from one pair of pickers ----
-     Picking a genre or an emotion already re-ranked which progression loads (`progList`, above) —
-     this is what also makes that pick prefill the rest of the song: the tempo and groove, every
-     instrument, an arrangement where the genre has a matching one, and a melody narrative/variation
-     to steer it, exactly as `applyTrackPreset` does for a named track. `genre-emotion-presets.js`
-     supplies the data (a genre's own sound, an emotion's own melodic character) and composes them;
-     this only decides when it is safe to apply each piece, for the same reason `applyTrackPreset`
-     does — `progId` itself is about to change here, so `chords`/`sections` still describe the *old*
-     progression until next render, and the arrangement/narrative writes have to wait for it. */
-  const applyGenreEmotion = (g, e) => {
-    setGenre(g); setEmotion(e); setForce(null); setMode(null);
-    const pid = progListFor(g, e)[0];
+  /* ---- "Write the template" — prefill everything from the Genre + Emotion picked above ----
+     The Genre/Emotion selects only re-rank which progression loads (`progList`, above) — picking
+     one is silent otherwise, which is deliberate: browsing genres shouldn't blow away a tempo or
+     an instrument someone already dialled in. This button is the explicit, visible commit: it
+     writes the chord count, the tempo and groove, every instrument, an arrangement where the genre
+     has a matching one, and a melody narrative/variation to steer it, exactly as `applyTrackPreset`
+     does for a named track. `genre-emotion-presets.js` supplies the data (a genre's own sound, an
+     emotion's own melodic character) and composes them; this only decides when it is safe to apply
+     each piece, for the same reason `applyTrackPreset` does — `progId` itself is about to change
+     here, so `chords`/`sections` still describe the *old* progression until next render, and the
+     arrangement/narrative writes have to wait for it. */
+  const writeTemplate = () => {
+    setForce(null); setMode(null);
+    const pid = progListFor(genre, emotion)[0];
     const prog = PROGRESSIONS[pid];
-    const style = resolveGenreEmotionStyle(g, e, DANCE_TEMPLATES);
+    const style = resolveGenreEmotionStyle(genre, emotion, DANCE_TEMPLATES);
     setEdits({ key:"", map:{} }); setInserts({ key:"", list:[] });
     setQuals({ key:"", map:{} }); setRemoved({ key:"", list:[] }); setOrder({ key:"", list:null });
     const natLenNew = prog ? prog.numerals.length : 4;
@@ -9384,8 +9386,7 @@ export default function ProgressionWheel() {
             </label>
             <label className="selwrap" style={{ flex:"1 1 88px" }}>
               <span className="lbl" style={{ margin:0 }}>Genre</span>
-              <select value={genre || ""} onChange={e => applyGenreEmotion(e.target.value || null, emotion)}
-                title="Prefills the chord count, tempo, every instrument and (where the genre has one) a full arrangement, plus a melody narrative shaped by the Emotion picker.">
+              <select value={genre || ""} onChange={e => { setGenre(e.target.value || null); setForce(null); setMode(null); }}>
                 <option value="">Any</option>
                 {GENRE_GROUPS.map(([cat, list]) => (
                   <optgroup key={cat} label={cat}>
@@ -9396,8 +9397,7 @@ export default function ProgressionWheel() {
             </label>
             <label className="selwrap" style={{ flex:"1 1 88px" }}>
               <span className="lbl" style={{ margin:0 }}>Emotion</span>
-              <select value={emotion || ""} onChange={e => applyGenreEmotion(genre, e.target.value || null)}
-                title="Steers the melody narrative, its variation and syncopation, and nudges the tempo/swing/feel the Genre picker set.">
+              <select value={emotion || ""} onChange={e => { setEmotion(e.target.value || null); setForce(null); setMode(null); }}>
                 <option value="">Any</option>
                 {CATEGORIES[1].items.map(it => <option key={it.name} value={it.name}>{it.name}</option>)}
               </select>
@@ -10597,6 +10597,15 @@ export default function ProgressionWheel() {
             {showSec && <span style={{ color:GOLD }}><i className="dash" /> secondary dominant</span>}
             <span>numbers = order in the loop</span>
           </div>}
+        </div>}
+
+        {/* one deliberate commit: prefill the chord count, tempo, every instrument, arrangement and
+            melody narrative from the Genre + Emotion picked above — see writeTemplate's comment */}
+        {tab === "write" && <div className="panel" style={{ textAlign:"center" }}>
+          <button className="btn" style={{ padding:"9px 18px", fontWeight:600 }} onClick={writeTemplate}
+            title="Prefills the chord count, tempo, every instrument, the arrangement (where the genre has one) and a melody narrative from the Genre and Emotion picked above.">
+            Write the template
+          </button>
         </div>}
 
         {/* notation — the song on a stave */}
