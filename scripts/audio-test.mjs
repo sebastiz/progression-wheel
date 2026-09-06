@@ -3722,7 +3722,9 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const padVoices = new Set(M.PAD_VOICES.map(([v]) => v)), percKits = new Set(M.PERC_KITS.map(([v]) => v));
   const delayTimes = new Set(M.DELAY_TIMES.map(([v]) => v)), syncLevels = new Set(M.SYNC_LEVELS.map(([v]) => v));
   const leadVoices = new Set(M.LEAD_VOICES.map(([v]) => v)), narrativeIds = new Set(M.NARRATIVES.map(n => n.id));
-  let rows = 0, subtractions = 0, silences = 0;
+  const bassVoices = new Set(M.BASS_VOICES.map(([v]) => v)), fxTypes = new Set(M.FX_TYPES.map(([v]) => v));
+  const fxBuses = new Set(["drums", "perc", "bass", "pad", "chords", "lead"]);
+  let rows = 0, subtractions = 0, silences = 0, revoiced = 0;
   for (const t of M.DANCE_TEMPLATES) {
     const where = `template ${t.id}`;
     if (!M.DRUMS[t.drum] || !M.DRUMS[t.drum].pattern) problems.push(`${where}: unknown drum pattern "${t.drum}"`);
@@ -3766,6 +3768,33 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (a.move && !M.MOVES[a.move]) problems.push(`${where} / ${row.sec}: unknown move "${a.move}"`);
       if (a.trans && !M.TRANS[a.trans]) problems.push(`${where} / ${row.sec}: unknown transition "${a.trans}"`);
       if (a.parts != null && /[^A-F]/.test(a.parts)) problems.push(`${where} / ${row.sec}: parts "${a.parts}" names something that is not a part`);
+      /* The band rows re-voice a section rather than subtract from it — every one of these is a
+         section-menu choice, so it has to be an id that menu offers, in the meter the template is
+         written in, or the section silently plays the song's own and the re-voicing is lost. */
+      if (a.kit && !kits.has(a.kit)) problems.push(`${where} / ${row.sec}: unknown kit "${a.kit}"`);
+      if (a.chordInstr && !M.isGM(a.chordInstr)) problems.push(`${where} / ${row.sec}: unknown chord instrument "${a.chordInstr}"`);
+      if (a.chordPat && !M.PATTERNS[a.chordPat]) problems.push(`${where} / ${row.sec}: unknown chord rhythm "${a.chordPat}"`);
+      if (a.chordPat && M.PATTERNS[a.chordPat] && M.meterOf(M.PATTERNS[a.chordPat]) !== "4/4")
+        problems.push(`${where} / ${row.sec}: chord rhythm "${a.chordPat}" is not 4/4`);
+      if (a.bassPat && a.bassPat !== "off" && !M.BASS[a.bassPat]) problems.push(`${where} / ${row.sec}: unknown bass pattern "${a.bassPat}"`);
+      if (a.bassVoice && !bassVoices.has(a.bassVoice)) problems.push(`${where} / ${row.sec}: unknown bass voice "${a.bassVoice}"`);
+      if (a.percPat && a.percPat !== "off" && !M.PERCS[a.percPat]) problems.push(`${where} / ${row.sec}: unknown perc pattern "${a.percPat}"`);
+      if (a.percKit && !percKits.has(a.percKit)) problems.push(`${where} / ${row.sec}: unknown perc kit "${a.percKit}"`);
+      if (a.padVoice && a.padVoice !== "off" && !padVoices.has(a.padVoice)) problems.push(`${where} / ${row.sec}: unknown pad voice "${a.padVoice}"`);
+      // a section's insert rack: a real bus, a real type, and every param one the type has, in range
+      if (a.fx) for (const [bus, slots] of Object.entries(a.fx)) {
+        if (!fxBuses.has(bus)) problems.push(`${where} / ${row.sec}: fx names a bus "${bus}" that has no insert rack`);
+        if (!Array.isArray(slots) || slots.length > 2) problems.push(`${where} / ${row.sec}: fx.${bus} is not one or two slots`);
+        for (const s of (Array.isArray(slots) ? slots : [])) {
+          if (!s || !fxTypes.has(s.type)) { problems.push(`${where} / ${row.sec}: fx.${bus} names an unknown type "${s && s.type}"`); continue; }
+          for (const [k, v] of Object.entries(s)) {
+            if (k === "type") continue;
+            const p = (M.FX_PARAMS[s.type] || []).find(q => q[0] === k);
+            if (!p) problems.push(`${where} / ${row.sec}: fx.${bus} ${s.type} has no param "${k}"`);
+            else if (!(v >= p[2] && v <= p[3])) problems.push(`${where} / ${row.sec}: fx.${bus} ${s.type}.${k} = ${v} is outside ${p[2]}–${p[3]}`);
+          }
+        }
+      }
       for (const lane of ["filter", "level", "hp", "res"]) {
         const v = a[lane];
         if (v == null) continue;
@@ -3781,6 +3810,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (a.drums === "off" && (a.parts === "" || a.parts == null) && a.chords === 0)
         problems.push(`${where} / ${row.sec}: nothing plays at all`);
       if (a.drums === "off") silences++;
+      if (a.fx || ["kit", "chordInstr", "chordPat", "bassPat", "bassVoice", "percPat", "percKit", "padVoice"].some(k => a[k])) revoiced++;
     }
 
     const insts = M.planInsts(t.plan, barsOfRow, M.letterFor);
@@ -3793,6 +3823,12 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (bad.length) problems.push(`${where}: ${name} keys ${bad.join(",")} are not sections of this plan`);
       if (Object.keys(map).length !== keys.length)
         problems.push(`${where}: ${name} covers ${Object.keys(map).length} of ${keys.length} passes — applying it would leave the last arrangement half in place`);
+    }
+    // the re-voicing maps are sparse by design (a row that says nothing leaves the song's own in
+    // charge), but every key they do write still has to be a pass of this plan
+    for (const name of ["secKit", "secChordInstr", "secChordPat", "secBassPat", "secBassVoice", "secPercPat", "secPercKit", "secPadVoice", "secFx"]) {
+      const bad = Object.keys(A[name] || {}).filter(k => !keys.includes(k));
+      if (bad.length) problems.push(`${where}: ${name} keys ${bad.join(",")} are not sections of this plan`);
     }
     // a transition belongs to the seam into a row, so a row played four times gets one, not four
     const byRow = {};
@@ -3859,8 +3895,8 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (Object.keys(A2.secDrum).length !== insts.length)
       problems.push("arrangement templates: re-applying after an edit misses some of the sections");
   }
-  console.log(`arrangement templates: ${M.DANCE_TEMPLATES.length} templates, ${rows} sections, `
-    + `${silences} of them with the drums out; every one rises, collapses and rises again (${subtractions})`);
+  console.log(`arrangement templates: ${M.DANCE_TEMPLATES.length} templates (${M.BAND_IDS.size} band / song-form), ${rows} sections, `
+    + `${silences} of them with the drums out, ${revoiced} re-voiced; every one rises, collapses and rises again (${subtractions})`);
 }
 
 /* ---- track presets: "recreate a famous track" ----

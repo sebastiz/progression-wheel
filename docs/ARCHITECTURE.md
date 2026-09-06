@@ -231,6 +231,36 @@ counts as a song even with no catalogue structure picked (`sections` builds its 
 any picked structure. The draft itself is saved in the song document, so the sketch can keep
 being reshaped and re-committed.
 
+### Arrangement templates, dance and band
+
+A structure is a running order; a template (`DANCE_TEMPLATES`, `src/arrange-templates.js`) is a
+running order plus what plays in each section, carried on each plan row as `arr` so the editor's
+move/duplicate operations carry it the way they carry melodies. The 68 dance styles are made of
+*subtraction* — `drums: "off"`, `chords: 0`, `bass: 0`, `parts: "A"`, a `move`, a `trans`, and the
+four automation lanes as `[from, to]` across the row.
+
+The 28 band and song-form archetypes (`src/band-templates.js`, appended after the dance styles so
+every saved `pid:t:index` still points where it did) are made of *re-voicing*: a verse is the same
+band as the chorus with the guitar palm-muted and the strings sat out. So a row can also set, per
+section, `kit`, `chordInstr`, `chordPat`, `bassPat`, `bassVoice`, `percPat`, `percKit`,
+`padVoice` and an insert rack `fx: { bus: [slot, slot] }` — every one an ordinary section-menu
+choice afterwards. `resolveArrangement` returns these as *sparse* maps (`secKit`, `secChordInstr`,
+…, `secFx`): a row that says nothing leaves that section on the song's own, and `applyArrangement`
+still replaces each map wholesale so the last arrangement's re-voicings are cleared rather than
+left underneath. `npm test` validates every id a row names against the menu it would appear in,
+and holds the band templates to the same energy staircase as the dance ones: three distinct
+levels, a dip and a rise, a build less dense than what follows it, the fullest stack rare.
+
+A band archetype is the shape of a *form*, not a genre — its own sound bundle is deliberately
+neutral — and the genre lays its instruments over it. Which is the whole of **Write the template**
+(`writeTemplate` in the component, data in `src/genre-emotion-presets.js`): every one of the 106
+genres names a template (a dance style of its own, or the form it is played in — Country and Folk
+share the storyteller's running order and sound nothing alike), and a genre's own bundle overrides
+the archetype's, then the emotion's small deltas ride on the genre's numbers. The button writes
+the chord count, tempo, every instrument, the song-level track FX and insert rack, then — staged
+over the following renders exactly as `applyTrackPreset` is, and for the same reason — the
+arrangement and the melody narrative.
+
 ## The song document
 
 `src/song.js` holds one serialisable shape used by *both* the sketch and the shareable link, so
