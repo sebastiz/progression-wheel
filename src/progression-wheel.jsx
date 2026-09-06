@@ -3,7 +3,7 @@ import { FUNC_MAJOR, FUNC_MINOR, MAJOR_NUM, MAJOR_SIG, MINOR_NUM, MODES, MODE_ID
 import { CATEGORIES, GENRE_GROUPS, LETTER_WORD, PAR_SONGS, PLANS, PROGRESSIONS, SEC_SONGS, SONG_KEYS, STRUCTURES, STRUCT_FAMILIES, UNIVERSAL, letterFor, progListFor } from "./progressions.js";
 import { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_MIDI, DRUM_VOICES, METERS, METER_BY_ID, beatFrom, beatHits, beatSteps, beatToggle, blankBeat, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, KIT_DEFAULT, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, lcm, sampleAt, stepAt, subOf } from "./patterns.js";
 import { audioBufferToWav, peakOf } from "./wav.js";
-import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxMultiRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord, customVoiceName, isCustomVoice, measureVoiceLoudness, resetCustomVoices, setCustomVoice, deleteCustomVoice } from "./audio.js";
+import { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_CATS, GM_LABEL, LEAD_VOICES, MOVES, TRANS, TRANS_CATS, applyMove, applyTrans, makeTrans, clickSound, drumSound, duckAt, fxDefaults, gmFam, gmKey, isGM, leadNote, driveCurve, makeDelay, makeFxMultiRack, makeNoise, makeReverb, makeSampler, makeVerbSend, NO_SHAPE, playHit, playLeadSampled, playSampled, programOf, sfPrefetch, voiceChord, customVoiceName, isCustomVoice, measureVoiceLoudness, resetCustomVoices, setCustomVoice, deleteCustomVoice } from "./audio.js";
 import { midiBytes, parseMidiMelody } from "./midi.js";
 import { ALS_COLORS, alsBytes } from "./als.js";
 import { REC_SOURCES, hzToMidiF, recDetectPitch, recToEvents, recTrackNotes } from "./pitch.js";
@@ -1515,6 +1515,14 @@ export default function ProgressionWheel() {
     setSelStruct(selVal);
     const preset = { narrative: style.narrative, vary: style.vary, sync: style.sync, within: style.within };
     trackPresetRef.current = style.templateIdx >= 0 ? { stage:"arrange", tplIdx: style.templateIdx, selVal, preset } : { stage:"melody", preset };
+    // a visible receipt — the actual effect (tempo, instruments, arrangement) lives on other tabs,
+    // so without this the click has no on-screen proof anything happened at all
+    const narName = NARRATIVES.find(n => n.id === style.narrative)?.name || style.narrative;
+    const melName = (LEAD_VOICES.find(([id]) => id === style.melInstr) || [])[1] || style.melInstr;
+    const tplName = style.templateIdx >= 0 ? DANCE_TEMPLATES[style.templateIdx].name : null;
+    setIoNote(`Wrote ${genre || "Any genre"} + ${emotion || "any emotion"} — ${style.bpm} bpm, `
+      + `${GM_LABEL[style.instr] || style.instr} + ${melName} lead, ${narName} narrative`
+      + (tplName ? `, ${tplName} arrangement` : "") + ".");
   };
 
   /* ---- melody scale + targets ---- */
@@ -10606,6 +10614,7 @@ export default function ProgressionWheel() {
             title="Prefills the chord count, tempo, every instrument, the arrangement (where the genre has one) and a melody narrative from the Genre and Emotion picked above.">
             Write the template
           </button>
+          {ioNote && <div className="keytag" style={{ marginTop:8, display:"inline-block" }}>{ioNote}</div>}
         </div>}
 
         {/* notation — the song on a stave */}
