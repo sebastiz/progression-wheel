@@ -37,6 +37,13 @@ strip stays either way, since that is the part you actually edit.
 - **Key / Genre / Emotion** — the three dropdowns choose the progression. Emotion leads the ranking:
   progressions matching *both* selections come first, then the emotion's picks, then the genre's, so
   changing emotion always changes the chords. Either can be set to "Any".
+- **Write the template** — one press writes a whole song from the Genre and Emotion picked: the
+  chord count, the tempo and groove, every instrument, a full arrangement in the form that genre is
+  played in (a rock song's riff, verses, chorus and solo; a jazz standard's head and solos; a
+  strophic folk song; a film cue's arc), what each section plays and on which instrument — the
+  palm-muted verse, the strings that only join for the chorus, the fuzz pedal that comes on for the
+  last one — what happens at every seam, and a melody narrative shaped by the emotion. Every one of
+  those is an ordinary control afterwards. A line under the button says exactly what it wrote.
 - **Parallel / Sec. dominants toggles** — draw the visual overlays on the wheel (lavender dashed
   parallels; gold secondary dominants with V/x arrows into their targets).
 - **Triads | 7ths | 9ths** — re-voices every chord in the app by rule. In 7ths: I→maj7, ii→m7,

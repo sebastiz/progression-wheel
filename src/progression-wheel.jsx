@@ -14,7 +14,7 @@ import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 import { SESSION_PREFIX, TRACK_TYPES, TRACK_TYPE_BY_ID, newClip, newTrack, nextClipNum, sessionKey } from "./session.js";
-import { DANCE_TEMPLATES, FAMILY_OF, FAMILY_ORDER, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
+import { BAND_IDS, DANCE_TEMPLATES, FAMILY_OF, FAMILY_ORDER, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 import { TRACK_PRESETS } from "./track-presets.js";
 import { resolveGenreEmotionStyle } from "./genre-emotion-presets.js";
 // The Progression Wheel — v3 (slim)
@@ -1338,8 +1338,14 @@ export default function ProgressionWheel() {
     setSecDrum(A.secDrum); setSecQuiet(A.secQuiet); setSecBass(A.secBass);
     setSecPerc(A.secPerc); setSecPad(A.secPad);
     // the template takes over the section menus (written grids survive, exactly as the drum
-    // grids do) — half an old arrangement under a new one is what "apply" exists to prevent
-    setSecBassPat({}); setSecPercPat({}); setSecPadVoice({}); setSecTrackLayers({}); setTrackTab({});
+    // grids do) — half an old arrangement under a new one is what "apply" exists to prevent.
+    // A band template re-voices as much as it subtracts, so each section's kit, chord
+    // instrument and rhythm, bass/perc patterns, pad voice and insert rack come from the plan
+    // too; a row that names none of them leaves that section on the song's own, as before.
+    setSecBassPat(A.secBassPat); setSecPercPat(A.secPercPat); setSecPadVoice(A.secPadVoice);
+    setSecKit(A.secKit); setSecChordInstr(A.secChordInstr); setSecChordPat(A.secChordPat);
+    setSecBassVoice(A.secBassVoice); setSecPercKit(A.secPercKit); setSecFx(A.secFx);
+    setSecTrackLayers({}); setTrackTab({});
     setSecMove(A.secMove); setSecTrans(A.secTrans);
     setAuto({ key: progId + "|" + sel, filter: A.filter, level: A.level, hp: A.hp, res: A.res });
     applyPartMutes(A.parts);
@@ -1510,6 +1516,10 @@ export default function ProgressionWheel() {
     setMelInstrSt({ key: pid, val: style.melInstr || "flute" });
     setHumaniseSt({ key: pid, val: style.humanise != null ? style.humanise : 0 });
     setTrackFx(style.trackFx || {});
+    // the song-level insert rack: the pedal that is on for the whole song. Per-section racks
+    // (the fuzz that only comes on for the chorus) arrive with the arrangement a render later.
+    setFxRack(style.fxRack ? Object.fromEntries(Object.entries(style.fxRack).map(([bus, slots]) =>
+      [bus, [0, 1].map(i => ({ ...((slots && slots[i]) || { type:"off" }) }))])) : {});
     setSelRow(0); setCustom({ key:"", plan:null });
     const selVal = style.templateIdx >= 0 ? pid + ":t:" + style.templateIdx : "";
     setSelStruct(selVal);
@@ -8370,8 +8380,13 @@ export default function ProgressionWheel() {
       <option value="">No structure — just the loop</option>
       {/* First, because they are the ones that arrive arranged: everything below sets the
           order of the sections and then plays every element through all of them. */}
+      <optgroup label="Band & song-form arrangement templates — arranged, not just ordered">
+        {DANCE_TEMPLATES.map((t, i) => BAND_IDS.has(t.id)
+          ? <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option> : null)}
+      </optgroup>
       <optgroup label="Dance arrangement templates — arranged, not just ordered">
-        {DANCE_TEMPLATES.map((t, i) => <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option>)}
+        {DANCE_TEMPLATES.map((t, i) => BAND_IDS.has(t.id)
+          ? null : <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option>)}
       </optgroup>
       {(STRUCTURES[progId] || []).length > 0 && (
         <optgroup label={"Written for " + prog.label}>
@@ -10667,7 +10682,7 @@ export default function ProgressionWheel() {
           </div>
           <div className="row" style={{ marginTop:6 }}>
             <button className="mini" onClick={() => setStyleRefOpen(v => !v)}
-              title="A reference table of every dance-arrangement style above, grouped the way the dance-music family tree groups them — for looking things up, not for picking one (use the dropdown above for that).">
+              title="A reference table of every arrangement style above — the dance styles grouped the way the dance-music family tree groups them, then the band and song-form archetypes by the music they are played in — for looking things up, not for picking one (use the dropdown above for that).">
               {styleRefOpen ? "▾" : "▸"} All {DANCE_TEMPLATES.length} styles — family tree reference
             </button>
           </div>

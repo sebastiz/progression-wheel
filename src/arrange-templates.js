@@ -1,5 +1,6 @@
 import { mkPlan } from "./progressions.js";
 import { autoSet } from "./arrange.js";
+import { BAND_DEFS, BAND_FAMILIES } from "./band-templates.js";
 /* arrange-templates — a structure says what order the sections come in. A template says what
    *plays* in each of them, which is the part that was missing.
 
@@ -22,6 +23,23 @@ import { autoSet } from "./arrange.js";
    from below; 0 is off) and `res` (how hard the drawn filters bite; 0 is the polite default) —
    written as `[from, to]` across the row so a sixteen-bar climb is one line in the table rather
    than sixteen points to place by hand.
+
+   Band music subtracts less and *re-voices* more — the verse is the same band as the chorus with
+   the guitar palm-muted, the drummer on the rim and the strings sat out — so a row can also set
+   what each instrument *is* for that section, every one an ordinary section-menu choice afterwards:
+
+     bass / perc / pad   0 to take that track out for the row (the same shape as `chords`)
+     kit                 the drum kit the row plays on (a DRUM_KITS id)
+     chordInstr          the chord instrument (a GM key) — a clean guitar under the verse
+     chordPat            the chord rhythm (a PATTERNS id) — picked in the verse, strummed in the chorus
+     bassPat / bassVoice the bassline pattern (a BASS id, or "off") and its voice
+     percPat / percKit   the percussion pattern (a PERCS id, or "off") and its kit
+     padVoice            the pad voice (a PAD_VOICES id, or "off")
+     fx                  the row's own insert racks, `{ bus: [slot, slot] }` with a slot being
+                         `{ type, ...params }` — a fuzz pedal that only comes on for the chorus
+
+   These resolve *sparse* rather than complete: a row that says nothing about its kit leaves the
+   section following the song's own, exactly as leaving the section menu on "the song's kit" does.
 
    Two properties matter more than they look:
 
@@ -1369,10 +1387,16 @@ const DEFS = [
 /* Each template's rows become a plan in exactly the shape the structure catalogue produces, with
    the arrangement carried on the row itself as `arr` — see the note at the top about why that
    matters when the plan is later edited. */
-const DANCE_TEMPLATES = DEFS.map(([id, name, tip, sound, rows]) => ({
+/* The band and song-form archetypes (band-templates.js) come *after* the dance catalogue, so every
+   existing "pid:t:index" pick — saved songs, shared links, TRACK_PRESETS' baseTemplate lookups —
+   keeps pointing at the template it always did. `DANCE_TEMPLATES` keeps its name because it is
+   what thirty call sites and the test suite know the catalogue by; `BAND_IDS` is how a caller tells
+   the two halves apart. */
+const DANCE_TEMPLATES = [...DEFS, ...BAND_DEFS].map(([id, name, tip, sound, rows]) => ({
   id, name, tip, ...sound,
   plan: mkPlan(rows.map(r => r[0])).map((row, i) => ({ ...row, arr: rows[i][1] || null })),
 }));
+const BAND_IDS = new Set(BAND_DEFS.map(([id]) => id));
 
 /* ---- the family tree the catalogue is drawn from ----
    The six branches are the dance-music family tree's own top-level categories — not something
@@ -1380,9 +1404,10 @@ const DANCE_TEMPLATES = DEFS.map(([id, name, tip, sound, rows]) => ({
    tree lists them, so a reference view can group the 68 styles the way the tree itself does rather
    than by catalogue-insertion order. */
 const FAMILY_ORDER = ["House / Disco", "Techno / Electro / EBM", "Trance", "Breakbeat / Jungle / D&B",
-  "Hardcore / Hardstyle", "Garage / Bass / Dubstep"];
+  "Hardcore / Hardstyle", "Garage / Bass / Dubstep", ...BAND_FAMILIES.map(([fam]) => fam)];
 const FAMILY_OF = {};
 [
+ ...BAND_FAMILIES,
  ["House / Disco", ["disco", "balearic", "postdisco", "italodisco", "hinrg", "house", "acidhouse",
    "deephouse", "brokenbeat", "afrohouse", "amapiano", "gqom", "tribalhouse", "filterhouse", "nudisco",
    "techhouse", "deeptech", "organichouse", "proghouse", "electrohouse", "bigroom", "basshouse",
@@ -1406,8 +1431,21 @@ const FAMILY_OF = {};
    Everything is keyed by instance (D1, D2 …). The maps are complete rather than sparse: a row that
    plays everything still writes "" for its drums and its move, so applying a template *clears* the
    last one instead of leaving half of it behind. */
+/* The per-section *voicing* fields (kit, chord instrument, patterns, voices, insert FX) resolve
+   sparse: only rows that name one write a key. Applying a template still replaces each map
+   wholesale, so a previous arrangement's re-voicings are cleared rather than left underneath. */
+const VOICING_FIELDS = [["kit", "secKit"], ["chordInstr", "secChordInstr"], ["chordPat", "secChordPat"],
+  ["bassPat", "secBassPat"], ["bassVoice", "secBassVoice"], ["percPat", "secPercPat"],
+  ["percKit", "secPercKit"], ["padVoice", "secPadVoice"]];
+// a row's `fx` is `{ bus: [slot] | [slot, slot] }`; the rack always holds exactly two slots, and
+// every section gets its own copy of each slot object so editing one pass never moves another
+const fxRackOf = fx => Object.fromEntries(Object.entries(fx).map(([bus, slots]) =>
+  [bus, [0, 1].map(i => ({ ...((slots && slots[i]) || { type: "off" }) }))]));
+
 const resolveArrangement = (plan, insts) => {
   const secDrum = {}, secQuiet = {}, secBass = {}, secPerc = {}, secPad = {}, secMove = {}, secTrans = {}, parts = {};
+  const voicing = Object.fromEntries(VOICING_FIELDS.map(([, m]) => [m, {}]));
+  const secFx = {};
   const rows = {};
   (insts || []).forEach(d => (rows[d.row] = rows[d.row] || []).push(d));
   const arrOf = r => (plan && plan[r] && plan[r].arr) || null;
@@ -1442,6 +1480,8 @@ const resolveArrangement = (plan, insts) => {
          four — a riser before every pass of a drop is a fire alarm, not an arrangement. */
       secTrans[d.key] = i === 0 ? (a.trans || "") : "";
       if (a.parts != null) parts[d.key] = PARTS.map(P => a.parts.includes(P));
+      for (const [field, map] of VOICING_FIELDS) if (a[field]) voicing[map][d.key] = a[field];
+      if (a.fx) secFx[d.key] = fxRackOf(a.fx);
     });
     if (useF) filter = span(filter, list, a.filter != null ? a.filter : 1);
     if (useL) level = span(level, list, a.level != null ? a.level : 1);
@@ -1449,7 +1489,8 @@ const resolveArrangement = (plan, insts) => {
     if (useH) hp = span(hp, list, a.hp != null ? a.hp : 0);
     if (useR) res = span(res, list, a.res != null ? a.res : 0);
   });
-  return { secDrum, secQuiet, secBass, secPerc, secPad, secMove, secTrans, parts, filter, level, hp, res };
+  return { secDrum, secQuiet, secBass, secPerc, secPad, secMove, secTrans, parts, filter, level, hp, res,
+    ...voicing, secFx };
 };
 
 /* What a section is worth on the energy staircase, which is the picture the strip draws. The
@@ -1484,4 +1525,4 @@ const energyOf = ({ drums, chords, parts, filter, level, bass, perc, pad }) =>
    arrangement's half-measure — the tops left running while the floor is taken away. */
 const drumAmountOf = pat => !pat || !pat.length ? 0 : (pat.some(st => /[KB]/.test(st || "")) ? 1 : 0.5);
 
-export { DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, resolveArrangement };
+export { BAND_IDS, DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, resolveArrangement };
