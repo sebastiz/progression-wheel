@@ -427,6 +427,63 @@ for (const kit of ["acoustic", "909", "808"]) {
     if ((main.match(/<AutomationEnvelope /g) || []).length !== 3)
       problems.push("als: the lane did not join the main track's envelope list");
   }
+  /* ---- the Session grid ----
+     Scenes turn the arrangement into something to launch, and Live is strict about the shape: every
+     clip-slot list in the document — the main track's and both of each track's — has to be exactly
+     as long as the scene list, or the grid has a hole in it and Live walks off the end of it. A
+     session clip differs from an arrangement clip in one value, LoopOn, and in running the section's
+     length rather than the song's. Sending no scenes must leave the template's own eight alone,
+     which is what every check above is still testing. */
+  {
+    const sc = { ...spec, scenes: [{ name: "Intro" }, { name: "Chorus & drop" }] };
+    sc.tracks = [
+      { ...spec.tracks[0], slots: [{ name: "Intro", notes: [{ t: 0, dur: 2, note: 60, vel: 78 }], length: 8 },
+                                   { name: "Chorus & drop", notes: [{ t: 0, dur: 4, note: 67, vel: 78 }], length: 16 }] },
+      // a part that is silent in the intro: an empty slot, not a silent clip
+      { ...spec.tracks[1], slots: [null, { name: "Chorus & drop", notes: [{ t: 0, dur: 0.25, note: 36, vel: 92 }], length: 16 }] },
+    ];
+    const g = M.alsXml(sc);
+    const stack = [];
+    for (const m of g.matchAll(/<(\/?)([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?)(\/?)>/g)) {
+      const [, close, tag, , self] = m;
+      if (close) { if (stack.pop() !== tag) { problems.push(`als: the session grid broke nesting at </${tag}>`); break; } }
+      else if (!self) stack.push(tag);
+    }
+    const nScenes = (g.match(/<Scene Id=/g) || []).length;
+    if (nScenes !== 2) problems.push(`als: ${nScenes} scenes written for 2 sections`);
+    if (!/<Scene Id="1">[\s\S]*?<Name Value="Chorus &amp; drop" \/>/.test(g))
+      problems.push("als: a scene did not take its section's name, escaped");
+    if (!/<Scene Id="0">[\s\S]*?<TimeSignatureId Value="201" \/>/.test(g))
+      problems.push("als: a scene kept the reference set's meter rather than the song's");
+    for (const list of g.match(/<ClipSlotList>[\s\S]*?<\/ClipSlotList>/g) || []) {
+      const n = (list.match(/<ClipSlot Id=/g) || []).length;
+      if (n !== nScenes) problems.push(`als: a clip-slot list holds ${n} slots for ${nScenes} scenes`);
+    }
+    if ((g.match(/<ClipSlotList>/g) || []).length !== 5)
+      problems.push("als: expected five clip-slot lists — the main track's and two per MIDI track");
+    // three session clips (one track full, one silent in the intro) on top of the four arrangement copies
+    if ((g.match(/<MidiClip /g) || []).length !== 7)
+      problems.push(`als: ${(g.match(/<MidiClip /g) || []).length} clips, expected 4 arrangement + 3 session`);
+    if ((g.match(/<LoopOn Value="true" \/>/g) || []).length !== 3)
+      problems.push("als: a session clip did not come out looping");
+    if (/<LoopOn Value="true"/.test(M.alsXml(spec))) problems.push("als: an arrangement clip was set looping");
+    // the intro clip runs the intro, not the song: 8 beats, from 0
+    if (!/<MidiClip Id="0" Time="0">[\s\S]*?<CurrentEnd Value="8" \/>[\s\S]*?<Name Value="Intro" \/>/.test(g))
+      problems.push("als: a session clip did not take its section's length");
+    // the freeze sequencer holds frozen audio, which an export has none of
+    for (const t of [...g.matchAll(/<FreezeSequencer>[\s\S]*?<\/FreezeSequencer>/g)])
+      if (t[0].includes("<MidiClip ")) problems.push("als: a clip was written into the freeze sequencer");
+    // and the ids still hold up, now that clones carry clips through the renumbering
+    {
+      const isDoc = tag => tag === "MidiTrack" || tag === "Pointee"
+        || /(?:AutomationTarget|ModulationTarget)$/.test(tag) || /^ControllerTargets\./.test(tag);
+      const ids = [...g.matchAll(/<([A-Za-z][\w.]*)((?:[^>"]|"[^"]*")*?\s)Id="(\d+)"/g)]
+        .filter(m => isDoc(m[1])).map(m => Number(m[3]));
+      if (new Set(ids).size !== ids.length) problems.push("als: the session grid left a duplicate document id");
+      const npi = Number((g.match(/<NextPointeeId Value="(\d+)"/) || [])[1]);
+      if (ids.some(x => x >= npi)) problems.push("als: an id reached NextPointeeId once the grid was written");
+    }
+  }
   // names arrive from the user: every & in the document has to be part of an entity, since one bare
   // ampersand from a section name is a file Live refuses to parse at all
   if (/&(?!(amp|lt|gt|quot|apos);)/.test(xml)) problems.push("als: a bare & reached the document");

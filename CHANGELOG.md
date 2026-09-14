@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **The Live Set now arrives as scenes too, not just an arrangement.** Open the exported `.als` in
+  Ableton's Session view and the song is there as a grid: one scene per section, each track's clip
+  for that section in its slot, looping — so a chorus with its own drums and its own bass is one
+  thing to press rather than six clips to hunt down. A part that is silent in a section leaves that
+  slot empty, which is how the grid says a section drops the bass. The scenes are the song's
+  *unique* sections rather than every instance of them, since two verses and three choruses as five
+  rows is the timeline written out again rather than something to play — but a later pass that was
+  actually given its own drums or bass keeps its own scene (**Chorus 2** beside **Chorus**), so
+  nothing is quietly lost. The arrangement on the timeline is unchanged; the set now holds both
+  views of the same song. Live has no command that does this — by hand it is Consolidate and drag,
+  once per track per section — so it is built where the sections are still known.
 - **A Stutter insert effect, on every FX rack.** A rhythmic buffer-repeat: the signal cuts out on a
   square-wave gate and a short, self-feeding delay line — always quietly holding a smeared copy of
   what just played — surfaces into the gap, so a passage sounds like it catches and rapidly

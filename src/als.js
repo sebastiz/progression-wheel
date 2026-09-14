@@ -123,15 +123,65 @@ const alsClip = ({ name, notes, end, color, tsNum, tsDen }) => ALS_CLIP
   .replace(/%NEXTNOTE%/g, (notes || []).length + 1)
   .replace(/%KEYTRACKS%/g, keyTracks(notes));
 
-/* The set. `tracks` is [{ name, color, vol, pan, instrument, notes:[{t,dur,note,vel}], end }] — every time in
-   beats; `locators` is [{ beat, name }] — the section markers, which is what makes the arrangement
-   legible on Live's ruler rather than an undifferentiated run of bars. */
-function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = "song", mainAuto = null }) {
+/* ---- the Session grid ----
+   The template carries Live's own eight scenes, one eight-slot clip list on the main track and two
+   more in every MIDI track — the playing sequencer's and the freeze sequencer's — all of them
+   empty. A song has as many scenes as it has distinct sections, so when the caller sends scenes
+   every one of those lists is rebuilt to that length, from the template's own first entry rather
+   than from a shape written out here. None of it is renumbered: a scene, a clip slot and a clip are
+   numbered within their own list rather than across the document (see isDocumentId above), which is
+   why Live's own tracks can all carry ClipSlot 0-7.
+
+   The clip in a slot is the arrangement clip with its time base moved — it starts at 0, loops, and
+   runs the section's length rather than the song's — so launching a section in the Session view
+   plays what that section plays on the timeline. */
+const ALS_SCENE = (ALS_DOC.match(/<Scene Id="0">[\s\S]*?<\/Scene>/) || [""])[0];
+const ALS_SLOT = (ALS_TRACK.match(
+  /<ClipSlot Id="0">[\s\S]*?<HasStop Value="[^"]*" \/><\/ClipSlot>/) || [""])[0];
+const SLOT_LIST = /<ClipSlotList>[\s\S]*?<\/ClipSlotList>/g;
+
+const scenesXml = (scenes, tsId) => scenes.map((s, i) => ALS_SCENE
+  .replace('<Scene Id="0">', `<Scene Id="${i}">`)
+  .replace('<Name Value="" />', () => `<Name Value="${esc(s.name)}" />`)
+  // a scene's own meter is switched off, but it is the song's that should sit behind the switch
+  .replace(/<TimeSignatureId Value="\d+" \/>/, `<TimeSignatureId Value="${tsId}" />`)).join("");
+
+/* One track's column of the grid. `slots` is one entry per scene: a clip, or null where the part
+   is silent in that section — an empty slot you cannot launch, which is what makes the grid read as
+   the arrangement rather than as a wall of clips. */
+const slotsXml = (slots, tsNum, tsDen, color) => slots.map((s, i) => {
+  const slot = ALS_SLOT.replace('<ClipSlot Id="0">', `<ClipSlot Id="${i}">`);
+  if (!s) return slot;
+  const clip = alsClip({ name: s.name, notes: s.notes, end: s.length, color, tsNum, tsDen })
+    // the one thing a session clip does that an arrangement clip does not
+    .replace('<LoopOn Value="false" />', '<LoopOn Value="true" />');
+  return slot.replace("<Value />", () => `<Value>${clip}</Value>`);
+}).join("");
+
+/* Rewrite the clip-slot lists in one track (or in the document shell, whose single list is the main
+   track's scene-stop column): the first gets the clips, and the freeze sequencer's second list
+   stays empty — it holds frozen audio, which an export has none of. `filled` null leaves the
+   template's own eight alone, which is what a caller that sent no scenes gets. */
+const withSlots = (xml, filled, empty) => {
+  if (filled == null) return xml;
+  let n = 0;
+  return xml.replace(SLOT_LIST, () => `<ClipSlotList>${n++ ? empty : filled}</ClipSlotList>`);
+};
+
+/* The set. `tracks` is [{ name, color, vol, pan, instrument, notes:[{t,dur,note,vel}], end, slots }] —
+   every time in beats; `locators` is [{ beat, name }] — the section markers, which is what makes the
+   arrangement legible on Live's ruler rather than an undifferentiated run of bars. `scenes` is
+   [{ name }] — the Session grid's rows, with each track's `slots` holding one entry per scene. Send no
+   scenes and the set is the arrangement alone, on the template's own eight empty ones. */
+function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], scenes = [],
+                  name = "song", mainAuto = null }) {
   const total = Math.max(4, ...tracks.map(t => t.end || 0));
   // clones start above every id the template shell already uses, and each one moves the mark along
   let next = maxId(ALS_DOC) + 1;
   const nextId = () => next++;
-  const trackXml = tracks.map(t => renumber(ALS_TRACK
+  // every clip-slot list is as long as the scene list, or the template's own eight when there is none
+  const emptySlots = scenes.length ? slotsXml(scenes.map(() => null), tsNum, tsDen, 0) : null;
+  const trackXml = tracks.map(t => renumber(withSlots(ALS_TRACK
     .replace(/%CLIP%/g, () => alsClip({ name: t.name, notes: t.notes, end: t.end || total,
       color: t.color, tsNum, tsDen }))
     .replace(/%NAME%/g, esc(t.name)).replace(/%NOTE%/g, esc(t.note || ""))
@@ -141,7 +191,8 @@ function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = 
     .replace(/%COLOR%/g, t.color).replace(/%VOL%/g, alsNum(t.vol == null ? 0.85 : t.vol))
     // Live's pan is -1..1 where the app's is -100..100, and the two mean the same thing
     .replace(/%PAN%/g, alsNum(Math.max(-1, Math.min(1, (t.pan || 0) / 100)))),
-    nextId)).join("");
+    scenes.length ? slotsXml(t.slots || scenes.map(() => null), tsNum, tsDen, t.color) : null,
+    emptySlots), nextId)).join("");
   const locXml = (locators || []).map((l, i) =>
     `<Locator Id="${i}"><LomId Value="0" /><Time Value="${alsNum(l.beat)}" />`
     + `<Name Value="${esc(l.name)}" /><Annotation Value="" />`
@@ -154,6 +205,13 @@ function alsXml({ bpm, tsNum = 4, tsDen = 4, tracks = [], locators = [], name = 
     const at = doc.indexOf("<MainTrack");
     const end = doc.indexOf("</Envelopes></AutomationEnvelopes>", at);
     if (end >= 0) doc = doc.slice(0, end) + levelEnv + doc.slice(end);
+  }
+  /* The scenes, and with them the main track's own slot column. This runs on the shell, before the
+     tracks are substituted in below, so the only clip-slot list in reach is the main track's. */
+  if (scenes.length) {
+    doc = doc.replace(/<Scenes>[\s\S]*?<\/Scenes>/,
+      () => `<Scenes>${scenesXml(scenes, tsEnum(tsNum, tsDen))}</Scenes>`);
+    doc = withSlots(doc, emptySlots, emptySlots);
   }
   return doc
     .replace("%TRACKS%", () => trackXml)
