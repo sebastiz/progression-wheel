@@ -452,6 +452,23 @@ colour and strum, the bass's voice and pattern — so recreating a sound is read
 notes rather than cross-referencing a file. (The filter lanes describe a device the empty tracks
 don't have; they travel in the settings snapshot below instead.)
 
+**And the sections arrive as scenes, ready to launch.** Switch to Live's **Session view** and the
+same song is there as a grid: one scene per section — Intro, Verse, Chorus, Bridge, Outro — with
+each track's clip for that section sitting in its slot, looping. Press a scene and the whole
+section plays; press a single clip and just that part does. A section that drops the bass leaves
+that slot **empty**, so the grid reads as the arrangement rather than as a wall of clips.
+
+The scenes are the song's *unique* sections, not every instance of them: two verses and three
+choruses become one **Verse** row and one **Chorus** row, because a grid with a row per instance is
+the timeline written out again rather than something to play. A later pass that was given its own
+drums or its own bass is genuinely a different section, so it keeps its own scene — **Chorus 2**
+beside **Chorus** — and nothing is lost. The arrangement on the timeline is untouched either way:
+you get both views of the same song in one file.
+
+Live itself has no command for this — turning an arrangement into scenes by hand means selecting
+each section, **Consolidate** (Cmd/Ctrl-J) and dragging the result into a slot, once per track per
+section — which is why the grid is built here, where the sections are still known.
+
 **↓ Live project** beside it is the whole handoff in one zip, laid out the way a Live project sits
 on disk: the `.als` at the top, the **stems in `Samples/Imported`** beside it, a `settings.json`
 and a README. Unzip it, open the set, select everything in Samples/Imported and drag it onto the

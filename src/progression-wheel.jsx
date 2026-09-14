@@ -5863,6 +5863,12 @@ export default function ProgressionWheel() {
      laid out as an arrangement, at the right tempo, with every section a locator on the ruler.
      A MIDI file gives Live bare clips and nothing around them; this gives it the song.
 
+     And the song twice over: the arrangement on the timeline, and the same sections again as
+     scenes in the Session view, so the set opens as something to play as well as something to
+     read. Live has no command that turns an arrangement into scenes — the manual route is
+     Consolidate and drag, once per track per section — so the grid is built here, where the
+     sections are still known.
+
      What it cannot give is the sound. Every instrument here is a Web Audio graph, and there is no
      way to hand Live one — so the tracks arrive empty of devices for you to drop your own on. That
      is a limit of what the two programs share, not of the file format: the MIDI export has exactly
@@ -6023,6 +6029,54 @@ export default function ProgressionWheel() {
         notes, end: bars.length * B,
         note: partInfo(partOf(p)) || ("was " + (part.voice || melInstr)) });
     });
+    /* ---- the Session grid ----
+       The same arrangement a second time, cut into launchable clips: one scene per section, each
+       track's slot holding what that part plays there, so a chorus with its own drums and its own
+       bass is one thing to press rather than six clips to hunt down.
+
+       The scenes are the song's *unique* sections, not its section instances. A song is mostly two
+       verses and three choruses, and a grid with a row per instance is the timeline written out
+       again rather than something to play. So a section name gets one scene — and a later instance
+       of that name joins it only when its clips actually differ, which they do whenever a pass was
+       given drums or a bass of its own. Dropping such an instance would silently lose a part of the
+       song; keeping every instance would bury the five rows you actually want.
+
+       A section's clip is a slice of the track's notes, moved to start at 0 and cut off at the
+       section's end so a note held across the boundary cannot overhang the loop. Where a part plays
+       nothing the slot stays empty rather than holding a silent clip — an empty slot is how the
+       grid says this section drops the bass. */
+    const spans = [];
+    bars.forEach((b, bi) => {
+      if (b.inst == null) return;
+      const last = spans[spans.length - 1];
+      if (last && last.key === b.inst) last.end = bi + 1;
+      else spans.push({ key: b.inst, name: b.sec || b.word || b.inst, start: bi, end: bi + 1 });
+    });
+    const sliceNotes = (notes, from, to) => (notes || [])
+      .filter(n => n.t >= from - 1e-6 && n.t < to - 1e-6)
+      .map(n => ({ ...n, t: n.t - from, dur: Math.min(n.dur, to - n.t) }));
+    // what makes two passes of one section the same scene: the notes, not the name
+    const clipSig = ns => ns.map(n =>
+      [Math.round(n.t * 960), Math.round(n.dur * 960), n.note, Math.round(n.vel)].join(",")).join(";");
+    const scenes = [];
+    if (spans.length) {
+      const seen = new Map();     // section name → the signatures it has already been given a scene for
+      for (const sp of spans) {
+        const clips = tracks.map(t => sliceNotes(t.notes, sp.start * B, sp.end * B));
+        const sig = (sp.end - sp.start) + "|" + clips.map(clipSig).join("|");
+        const group = seen.get(sp.name) || [];
+        if (group.includes(sig)) continue;
+        group.push(sig); seen.set(sp.name, group);
+        scenes.push({ name: sp.name + (group.length > 1 ? " " + group.length : ""),
+          beats: (sp.end - sp.start) * B, clips });
+      }
+    } else if (bars.length) {
+      // no structure, just the chord loop: one scene holding it, which is still a thing to launch
+      scenes.push({ name: "Loop", beats: bars.length * B, clips: tracks.map(t => t.notes) });
+    }
+    tracks.forEach((t, ti) => { t.slots = scenes.map(sc =>
+      sc.clips[ti].length ? { name: sc.name, notes: sc.clips[ti], length: sc.beats } : null); });
+
     const M = METER_BY_ID[curMeter] || METERS[0];
     /* The drawn Level lane rides out as master-volume automation — the one master lane Live can
        take without a device to point at. The filter lanes describe a device the empty tracks don't
@@ -6031,16 +6085,19 @@ export default function ProgressionWheel() {
       ? auto.level.map(p2 => ({ beat: p2.bar * B, v: p2.v })) : null;
     return { bpm: effBpm, tsNum: M.num, tsDen: M.den, tracks,
       locators: (meta.markers || []).map(mk => ({ beat: mk.bar * B, name: mk.name })),
+      scenes: scenes.map(sc => ({ name: sc.name })),
       mainAuto: lvl ? { level: lvl } : null,
       name: sketchName.trim() || "Progression Wheel" };
   };
   const exportAls = async () => {
     try {
-      const bytes = await alsBytes(alsSpec());
+      const spec = alsSpec();
+      const bytes = await alsBytes(spec);
       if (!bytes) { setIoNote("This browser cannot gzip — use Export MIDI instead."); return; }
       download(bytes, "application/gzip", "als");
-      const n = alsSpec().tracks.length;
-      setIoNote(`Live Set exported — ${n} track${n === 1 ? "" : "s"} at ${effBpm} bpm, sections as locators. `
+      const n = spec.tracks.length, sc = spec.scenes.length;
+      setIoNote(`Live Set exported — ${n} track${n === 1 ? "" : "s"} at ${effBpm} bpm, sections as locators, `
+        + `and ${sc} scene${sc === 1 ? "" : "s"} in the Session view to launch them from. `
         + "The tracks arrive without instruments: drop your own on each, and use the stems as the reference.");
     } catch (e) { setIoNote("Live Set export failed in this viewer — try on desktop."); }
   };
@@ -6080,8 +6137,10 @@ export default function ProgressionWheel() {
         `${base} — a Live project from the Progression Wheel\n\n`
         + `${base}.als — the arrangement: tempo, meter, named MIDI tracks with their settings in\n`
         + `  each track's info text, every section a locator, and the drawn Level lane as\n`
-        + `  master-volume automation. The tracks arrive without instruments: the app's sounds\n`
-        + `  are Web Audio graphs, which no file format can hand to Live.\n\n`
+        + `  master-volume automation. The Session view holds the same song as scenes — one per\n`
+        + `  section, each track's clip in its slot — so the sections can be launched at will.\n`
+        + `  The tracks arrive without instruments: the app's sounds are Web Audio graphs,\n`
+        + `  which no file format can hand to Live.\n\n`
         + `Samples/Imported/ — the stems, pre-master, so they sum to the mix. Open the set,\n`
         + `  select all of them in this folder and drag onto the arrangement at 1.1.1: Live puts\n`
         + `  each on its own audio track and the project plays the sketch immediately. Rebuild\n`

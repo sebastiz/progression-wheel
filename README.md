@@ -68,9 +68,9 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   harmonisations, ear training, dice, MIDI export, persistent sketches
 - **↓ Live project** — the Ableton handoff as one zip laid out like a Live project: the `.als`
   (tracks carrying their settings in the info text, sections as locators, the drawn Level lane as
-  master-volume automation), the stems in `Samples/Imported` beside it — drag them onto the
-  arrangement and the project plays the sketch — and the settings snapshot for everything no file
-  format can carry
+  master-volume automation, and the sections again as **Session-view scenes** to launch at will),
+  the stems in `Samples/Imported` beside it — drag them onto the arrangement and the project plays
+  the sketch — and the settings snapshot for everything no file format can carry
 - **Fingerings** — tap any chord for guitar chord boxes (open + barre shapes) and highlighted piano
   keys
 

@@ -15,7 +15,7 @@ DAG, so any module can be read (or tested) without loading the app:
 | `src/patterns.js` | strum and drum patterns, kits, pumps, grid-resolution helpers, the drum-grid voices | — |
 | `src/audio.js` | synth voices, drum kits, sidechain, section moves, the GM sampler | theory |
 | `src/midi.js` | writing and reading Standard MIDI Files | theory, patterns |
-| `src/als.js` | writing an Ableton Live Set — gzipped XML | als-template |
+| `src/als.js` | writing an Ableton Live Set — gzipped XML, arrangement and Session grid | als-template |
 | `src/als-template.js` | the shape of a Live Set, generated from one Live saved | — |
 | `src/pitch.js` | the McLeod-Pitch-Method transcriber | — |
 | `src/melody.js` | melody parts, grid helpers, pattern and narrative generators | — |
