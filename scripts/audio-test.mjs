@@ -3972,8 +3972,10 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
        identical bar of the identical kit from the first bar of the track to the last, because the
        only thing a row ever said about its drums was "off", "nokick", "kickonly" or "ohats". So
        the kit stack — the pattern, the tracks stacked over it, the percussion under it — has to
-       change across a dance arrangement, and has to both gain layers and lose them. */
-    if (!M.BAND_IDS.has(t.id)) {
+       change across an arrangement, and has to both gain layers and lose them. Every template with
+       a ladder is held to it, band archetypes included; the three that opt out (every row of them
+       has the drums off, so there is no stack to arrange) are the only ones exempt. */
+    if (M.ladderFor(t.id)) {
       const stackOf = row => {
         const a = row.arr || {};
         return [a.drums || t.drum, a.drums2 || "", a.drums3 || "",

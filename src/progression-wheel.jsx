@@ -10717,7 +10717,7 @@ export default function ProgressionWheel() {
             melody narrative from the Genre + Emotion picked above — see writeTemplate's comment */}
         {tab === "write" && <div className="panel" style={{ textAlign:"center" }}>
           <button className="btn" style={{ padding:"9px 18px", fontWeight:600 }} onClick={writeTemplate}
-            title="Prefills the chord count, tempo, every instrument, the percussion, the arrangement (where the genre has one) and a melody narrative from the Genre and Emotion picked above. A dance arrangement arrives with its drums stacked: a groove adds an offbeat top and a shaker, a drop adds a second top and a second percussion track, a build rolls a fill in, and a breakdown takes the lot back off.">
+            title="Prefills the chord count, tempo, every instrument, the percussion, the arrangement (where the genre has one) and a melody narrative from the Genre and Emotion picked above. The drums arrive arranged rather than looping. A dance groove adds an offbeat top and a shaker, a drop adds a second top and a second percussion track, a build rolls a fill in, and a breakdown takes the lot back off; a band form keeps it shallower — a shaker through the verses and one overdub, handclaps or a ride, arriving with the chorus.">
             Write the template
           </button>
           {ioNote && <div className="keytag" style={{ marginTop:8, display:"inline-block" }}>{ioNote}</div>}

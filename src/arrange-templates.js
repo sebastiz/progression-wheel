@@ -1491,27 +1491,67 @@ const rungOf = a => {
   return RUNG.FULL;
 };
 
+/* The band and song-form archetypes are read differently, because they say different things. A
+   dance row announces its size by what it silences and by where it parks the filter; a band row
+   almost never touches a lane at all — the verse and the chorus are the same five people, and what
+   separates them is how many parts are singing and whether the strings are sat out. So the band
+   reading counts the melody parts (`"A"` is a verse, `"AB"` a chorus, `"ABC"` the last one) and
+   treats a row that mutes the pad, drops the bass or fades itself out as one held back. Running
+   the dance rule over these would have filed nearly every verse in the catalogue at full size,
+   since a verse silences nothing and draws no lane. */
+const bandRungOf = a => {
+  if (a.drums === "off") return RUNG.SILENT;
+  if (a.drums && DRUM_CUTS.has(a.drums)) return RUNG.CUT;
+  const n = a.parts == null ? PARTS.length : a.parts.length;
+  if (!n || (a.chords != null && !a.chords)) return RUNG.BARE;
+  const held = FADE_MOVES.has(a.move) || (a.bass != null && !a.bass) || (a.pad != null && !a.pad);
+  return (n >= 2 && !held) ? RUNG.FULL : RUNG.GROOVE;
+};
+
 /* One ladder per family, because the stack is what a family *is*: house layers an offbeat rim and
-   a shaker, breaks layer a skipping rim, trance layers open hats and a ride. A family with no
-   ladder — the band and song-form archetypes — is left exactly as it was: those re-voice rather
-   than stack, and a tambourine appearing in every chorus of every band template is a different
-   decision from this one. */
+   a shaker, breaks layer a skipping rim, trance layers open hats and a ride — and a pop record
+   layers a tambourine on the chorus and handclaps on the last one, which is the same idea played
+   by people rather than programmed. `rung` is the family's reading of a row (see `rungOf` and
+   `bandRungOf`), so each half of the catalogue is asked the question it can actually answer. */
 const FAMILY_LADDER = {
-  "House / Disco": { percThin:"shakeroff", perc:"shaker16", percPeak:"tamb",
+  "House / Disco": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"tamb",
     top:"topsrim", peak:"tops16", fill:"riseroll" },
-  "Techno / Electro / EBM": { percThin:"shakeroff", perc:"shaker16", percPeak:"woodskip",
+  "Techno / Electro / EBM": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"woodskip",
     top:"topsrim", peak:"tops16", fill:"risehats" },
-  "Trance": { percThin:"shakeroff", perc:"shaker16", percPeak:"tritamb",
+  "Trance": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"tritamb",
     top:"topsoff16", peak:"topsride16", fill:"riseroll" },
-  "Breakbeat / Jungle / D&B": { percThin:"shakeroff", perc:"shaker16", percPeak:"bongos",
+  "Breakbeat / Jungle / D&B": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"bongos",
     top:"topsskip", peak:"topsride16", fill:"riseroll" },
-  "Hardcore / Hardstyle": { percThin:"shakeroff", perc:"shaker8", percPeak:"tamb8",
+  "Hardcore / Hardstyle": { rung: rungOf, percThin:"shakeroff", perc:"shaker8", percPeak:"tamb8",
     top:"topsclap", peak:"tops16", fill:"riseroll" },
-  "Garage / Bass / Dubstep": { percThin:"shakeroff", perc:"shaker16", percPeak:"tambshake",
+  "Garage / Bass / Dubstep": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"tambshake",
     top:"topsskip", peak:"topsclap16", fill:"riseclap" },
+  /* The band half. Two differences run all the way through it. A band ladder leaves `top` empty —
+     a section gets *one* extra track, at full size, because a real record overdubs a tambourine or
+     moves the drummer to the ride for the chorus rather than stacking three kit parts through the
+     whole song — and it leaves `fill` empty, because these rows already reach for `snaproll` where
+     the form wants a roll, and a pop pre-chorus is not a dance build. What varies instead is the
+     percussion overdub: nothing under an intro, a shaker or tambourine through the verses, both
+     plus a clap or a ride when the chorus lands. */
+  "Pop & Rock": { rung: bandRungOf, percThin:"", perc:"shaker8", percPeak:"tamb",
+    top:"", peak:"topsclap", fill:"" },
+  "Metal & Heavy": { rung: bandRungOf, percThin:"", perc:"", percPeak:"",
+    top:"", peak:"topsride", fill:"" },
+  "Blues, Soul & Funk": { rung: bandRungOf, percThin:"", perc:"tamb", percPeak:"tambshake",
+    top:"", peak:"topsclap", fill:"" },
+  "Jazz & Latin": { rung: bandRungOf, percThin:"", perc:"clave32", percPeak:"tumbao",
+    top:"", peak:"topsride", fill:"" },
+  "Folk & Roots": { rung: bandRungOf, percThin:"", perc:"shaker8", percPeak:"tamb",
+    top:"", peak:"topsclap", fill:"" },
+  "Hip-Hop & Downtempo": { rung: bandRungOf, percThin:"", perc:"shakeroff", percPeak:"tamb",
+    top:"", peak:"tops16", fill:"" },
+  // the one cinematic archetype that has drums at all; the other three opt out below
+  "Cinematic & Classical": { rung: bandRungOf, percThin:"", perc:"", percPeak:"",
+    top:"", peak:"topsroll", fill:"" },
 };
 /* …and the styles whose percussion *is* the style, where the family default would be wrong rather
-   than merely generic. Everything omitted falls back to the family's rung. */
+   than merely generic. Everything omitted falls back to the family's rung. `null` opts a template
+   out altogether. */
 const LADDER = {
   // the hand-drum styles: congas and bongos are the arrangement, so they climb the ladder instead
   // of a shaker doing it
@@ -1540,8 +1580,34 @@ const LADDER = {
   trap:        { percThin:"shakeroff", perc:"shaker16", percPeak:"tritamb", top:"tops16", peak:"topsclap16" },
   brostep:     { percThin:"shakeroff", perc:"shakeroff", percPeak:"tambshake", top:"tops16", peak:"topsclap16" },
   riddim:      { percThin:"shakeroff", perc:"shakeroff", percPeak:"tambshake", top:"tops16", peak:"topsclap16" },
+
+  // ---- the band and song-form archetypes ----
+  // the post-rock crescendo is cymbals, not percussion
+  postrock:    { perc:"", percPeak:"", peak:"topsride" },
+  // a blues band has no percussion section; the shuffle moves to the ride for the last head
+  bluesform:   { perc:"", percPeak:"tamb", peak:"topsride" },
+  funkgroove:  { perc:"congaoff", percPeak:"tumbao" },
+  // the jazz drummer's own move is the ride, and the only hand percussion is a colour
+  jazzstandard:{ perc:"", percPeak:"triangle", peak:"topsride" },
+  bossasong:   { perc:"shaker16", percPeak:"bongos", peak:"topsrim" },
+  salsaform:   { perc:"tumbao", percPeak:"fiesta", peak:"topsrim" },
+  // palmas: in flamenco the handclaps *are* the percussion section
+  flamencoform:{ perc:"", percPeak:"tambshake", peak:"topsclap" },
+  boleroballad:{ perc:"", percPeak:"tamb", peak:"" },
+  // a storyteller's arrangement grows a shaker, never a handclap
+  storyteller: { perc:"", percPeak:"shaker8", peak:"" },
+  celticset:   { perc:"", percPeak:"tamb", peak:"" },
+  reggaesong:  { perc:"shaker16", percPeak:"tamb", peak:"topsrim" },
+  lofiloop:    { perc:"shakeroff", percPeak:"", peak:"tops16" },
+  /* No ladder at all. Every row of these three has `drums: "off"` — they are written for players
+     and a room, not a kit — so there is no stack to arrange and a shaker appearing under a film
+     cue would be an invention rather than an arrangement. */
+  ambientdrift: null,
+  filmcue: null,
+  classicalform: null,
 };
 const ladderFor = id => {
+  if (LADDER[id] === null) return null;
   const fam = FAMILY_LADDER[FAMILY_OF[id]];
   return fam ? { ...fam, ...(LADDER[id] || {}) } : null;
 };
@@ -1549,9 +1615,11 @@ const ladderFor = id => {
 /* Substituting a build's move for its fill-carrying twin. A plain "riser" sweeps the filter and
    lifts a noise riser while the kit plays the bar it played in the groove; the twins add the snare
    roll, the hat run or the clap double-up that a build actually does. They are separate ids rather
-   than a change to "riser" itself, so a song saved with a plain riser goes on sounding as saved. */
-const fillTwin = (move, lad) => move === "riser" ? (lad.fill || move)
-  : move === "hpbuild" ? "hpbuildroll" : move;
+   than a change to "riser" itself, so a song saved with a plain riser goes on sounding as saved.
+   A ladder with no `fill` — every band family — leaves the row's own move alone, since those
+   already reach for `snaproll` where the form wants a roll. */
+const fillTwin = (move, lad) => !lad.fill ? move
+  : move === "riser" ? lad.fill : move === "hpbuild" ? "hpbuildroll" : move;
 
 /* The expansion, run once as the catalogue is built — so what a template holds afterwards is
    ordinary rows with ordinary fields, readable in the debugger and checkable by the test suite,
@@ -1561,15 +1629,22 @@ const withLadder = (id, rows) => {
   if (!lad) return rows;
   return rows.map(([head, arr]) => {
     const a = arr || {};
-    const rung = rungOf(a);
+    const rung = lad.rung(a);
     const add = {};
     // a row that takes the perc track out keeps it out — the ladder fills silence, it does not argue
     const percOut = a.perc != null && !a.perc;
     const wantPerc = rung >= RUNG.GROOVE ? lad.perc : lad.percThin;
     if (!a.percPat && !percOut && wantPerc) add.percPat = wantPerc;
     if (!a.perc2 && !percOut && rung >= RUNG.FULL && lad.percPeak) add.perc2 = lad.percPeak;
-    if (!a.drums2 && rung >= RUNG.GROOVE && lad.top) add.drums2 = lad.top;
-    if (!a.drums3 && rung >= RUNG.FULL && lad.peak) add.drums3 = lad.peak;
+    /* Packed in order rather than one field each, so a ladder that stacks only at full size — the
+       band half, where `top` is empty — still lands its one layer on the section's *2nd* track
+       rather than leaving a hole where the 2nd should be. A row that stacks anything of its own
+       keeps its whole stack. */
+    const stack = [rung >= RUNG.GROOVE && lad.top, rung >= RUNG.FULL && lad.peak].filter(Boolean);
+    if (!a.drums2 && !a.drums3 && stack.length) {
+      add.drums2 = stack[0];
+      if (stack[1]) add.drums3 = stack[1];
+    }
     if (a.move) add.move = fillTwin(a.move, lad);
     return Object.keys(add).length ? [head, { ...a, ...add }] : [head, arr];
   });
@@ -1724,4 +1799,4 @@ const energyOf = ({ drums, chords, parts, filter, level, bass, perc, pad, tops }
    arrangement's half-measure — the tops left running while the floor is taken away. */
 const drumAmountOf = pat => !pat || !pat.length ? 0 : (pat.some(st => /[KB]/.test(st || "")) ? 1 : 0.5);
 
-export { BAND_IDS, DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, resolveArrangement };
+export { BAND_IDS, DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, ladderFor, resolveArrangement };

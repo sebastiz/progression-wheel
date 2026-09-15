@@ -1,13 +1,13 @@
 # Changelog
 
 ## Unreleased
-- **The drums are arranged now, not looped.** Press **Write the template** on a dance genre and
+- **The drums are arranged now, not looped.** Press **Write the template** and
   every section used to play the identical bar of the identical kit from the first bar of the track
   to the last: the only thing an arrangement row could ever say about its drums was *off*, *no
   kick*, *kick only* or *offbeat hats*, so the arrangement had a shape and the drums did not. And
   the percussion track was never switched on at all — every style set a percussion *kit*, which was
-  a voicing for a pattern nobody had chosen. Each of the 68 dance styles now declares its own drum
-  stack, and every section climbs to the rung its own arrangement already implies. A DJ intro gets
+  a voicing for a pattern nobody had chosen. Every style now declares its own drum stack, and every
+  section climbs to the rung its own arrangement already implies. A DJ intro gets
   the kit and a thin offbeat shaker; a groove adds the style's top layer (an offbeat rim under
   house, a skipping rim under garage, sixteenth hats under trap, a ride under disco) and the
   groove's own percussion; a drop stacks a third drums track and a second percussion track over
@@ -15,6 +15,17 @@
   off and leaves hand percussion holding the bar. Nothing is invented for it: every layer lands as
   an ordinary **＋ 2nd drums** / **＋ 2nd perc** track on that section, with its own pattern, grid
   and kit, saved in the song and exported as its own MIDI and Live track.
+- **The band and song-form archetypes are laddered too, played rather than programmed.** A pop
+  record does not stack three kit parts through the whole song — it overdubs a tambourine on the
+  chorus and moves the drummer to the ride — so their ladder is deliberately shallower: nothing
+  under the intro, a shaker or tambourine through the verses, and one extra track arriving only
+  when the chorus does. Handclaps on a pop or Motown hook, palmas in flamenco (where the claps
+  genuinely *are* the percussion section), congas under a funk groove, the ride for a metal or jazz
+  last head, a bossa rim, a snare bed under a trailer release. They are also read differently: a
+  band row silences almost nothing and draws no automation lane, so its size is counted in melody
+  parts — one is a verse, two a chorus — rather than in what it takes away. **Ambient drift**,
+  **film cue** and **classical form** are left exactly as they were, since every section of them
+  has the drums off and there is no stack to arrange.
 - **Nine top-layer drum patterns and five percussion patterns**, written to ride *over* a groove
   rather than be one: clap on 2 & 4, rim on the offbeats, ride eighths, sixteenth hats, offbeat open
   hats at sixteenths, ride sixteenths, a skipping rim, a clap with a pickup, and a sixteenth snare

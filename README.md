@@ -34,13 +34,16 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   the entire chosen structure. A **Real** toggle plays actual recorded instruments (FluidR3
   soundfont samples, cached for offline) for the guitar / piano / organ / bass, falling back to an
   improved synth (Karplus–Strong plucked guitar, convolution reverb) when offline
-- **Layered drums that arrange themselves** — every dance style declares its own drum stack, so
+- **Layered drums that arrange themselves** — every style declares its own drum stack, so
   **Write the template** hands back a track whose drums climb and collapse with the arrangement
   rather than looping one bar for four minutes: a DJ intro on the kit and a thin shaker, a groove
   adding the style's own top layer and percussion, a drop stacking a third drums track and a second
   percussion track over that, a build cutting the kit and rolling a fill in under the riser, a
-  breakdown taking the lot off and leaving hand percussion holding the bar. Every layer lands as an
-  ordinary **＋ 2nd drums** track on that section, with its own pattern, grid and kit
+  breakdown taking the lot off and leaving hand percussion holding the bar. The band and song-form
+  archetypes get the same idea played rather than programmed, and much shallower — a shaker through
+  the verses and one overdub arriving with the chorus: handclaps on a pop or Motown hook, palmas in
+  flamenco, the ride for a metal or jazz last head. Every layer lands as an ordinary
+  **＋ 2nd drums** track on that section, with its own pattern, grid and kit
 - **Melody grid** — eighth-note, polyphonic, spanning the whole progression, with per-chord landing
   notes and a scale/pentatonic reference; melodies persist through every edit and transpose with the
   key. A **Suggest** tab writes 16 common melody shapes (chord-tone arpeggios, scale runs, call &
