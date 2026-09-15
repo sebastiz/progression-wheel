@@ -1,6 +1,37 @@
 # Changelog
 
 ## Unreleased
+- **The drums are arranged now, not looped.** Press **Write the template** on a dance genre and
+  every section used to play the identical bar of the identical kit from the first bar of the track
+  to the last: the only thing an arrangement row could ever say about its drums was *off*, *no
+  kick*, *kick only* or *offbeat hats*, so the arrangement had a shape and the drums did not. And
+  the percussion track was never switched on at all — every style set a percussion *kit*, which was
+  a voicing for a pattern nobody had chosen. Each of the 68 dance styles now declares its own drum
+  stack, and every section climbs to the rung its own arrangement already implies. A DJ intro gets
+  the kit and a thin offbeat shaker; a groove adds the style's top layer (an offbeat rim under
+  house, a skipping rim under garage, sixteenth hats under trap, a ride under disco) and the
+  groove's own percussion; a drop stacks a third drums track and a second percussion track over
+  that; a build cuts the kit and rolls a fill in under the riser; a breakdown takes the whole stack
+  off and leaves hand percussion holding the bar. Nothing is invented for it: every layer lands as
+  an ordinary **＋ 2nd drums** / **＋ 2nd perc** track on that section, with its own pattern, grid
+  and kit, saved in the song and exported as its own MIDI and Live track.
+- **Nine top-layer drum patterns and five percussion patterns**, written to ride *over* a groove
+  rather than be one: clap on 2 & 4, rim on the offbeats, ride eighths, sixteenth hats, offbeat open
+  hats at sixteenths, ride sixteenths, a skipping rim, a clap with a pickup, and a sixteenth snare
+  roll; plus offbeat shaker, tambourine & shaker, conga offbeats, a woodblock skip and triangle &
+  tambourine. Each owns one band and one rhythmic slot and leaves the kick alone, which is the rule
+  that makes a stack a stack rather than a blur.
+- **Builds that do something to the kit.** Three new section moves — **riser + snare roll**, **riser
+  + hats to 16ths** and **riser + claps double up** (and **bass drains + snare roll**) — are the
+  same filter sweep and noise riser with a fill rolling in underneath, spread by the same Euclidean
+  spacing the melody parts use so it thickens bar by bar instead of switching on. A plain *riser*
+  is untouched and sounds exactly as it always did, so a saved song is unchanged.
+- **Fixed: a section's 2nd or 3rd drums track only sounded where the first one already had a hit.**
+  Which silenced the only hits a stacked layer is worth adding — the offbeat open hat over a
+  pattern whose offbeats are empty, the rim in the sixteenths between the kicks.
+- **Fixed: moving or duplicating a section flattened its stacked tracks.** A section's extra drums,
+  perc, bass and pad tracks now travel with it through every arrangement edit, counts included, the
+  same way its melodies and its drum grid already did.
 - **The Live Set now arrives as scenes too, not just an arrangement.** Open the exported `.als` in
   Ableton's Session view and the song is there as a grid: one scene per section, each track's clip
   for that section in its slot, looping — so a chorus with its own drums and its own bass is one

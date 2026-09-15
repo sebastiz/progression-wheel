@@ -239,6 +239,36 @@ move/duplicate operations carry it the way they carry melodies. The 68 dance sty
 *subtraction* — `drums: "off"`, `chords: 0`, `bass: 0`, `parts: "A"`, a `move`, a `trans`, and the
 four automation lanes as `[from, to]` across the row.
 
+#### The drum ladder
+
+Subtraction alone left one hole. The only thing a row ever said about its kit was `"off"`,
+`"nokick"`, `"kickonly"` or `"ohats"`, so every section that did not cut the drums played the
+*identical* bar of the identical pattern from the first bar of the track to the last — the
+arrangement had a shape and the drums did not — and the percussion track was never switched on at
+all, which made every template's `percKit` a voicing for a pattern nobody had chosen.
+
+So each dance family declares its stack once, as a ladder (`FAMILY_LADDER` / `LADDER` /
+`ladderFor`), and every row climbs to the rung its own existing declarations already imply
+(`rungOf`: silent ⟶ cut ⟶ bare ⟶ groove ⟶ full, read off `drums`, `chords`, `bass`, `parts`, the
+`move`, and how open the filter/level lanes it draws get to be). A rung writes `percPat` and, at
+full size, `perc2`, `drums2` and `drums3` — the section's 2nd and 3rd drums tracks — and swaps a
+plain `riser` for the style's fill-carrying twin (`riseroll` / `risehats` / `riseclap`, which are
+the same sweep and noise riser with a `DRUM_MOVES` fill Euclid-spread across the section).
+
+Two properties make it a ladder rather than six hundred hand-written rows. The rung is *read off*
+what the row already says, so a row that silences the chords and mutes every part is a DJ intro and
+a row that silences the chords with the hook over it is a bass-music drop — the distinction the
+styles already drew, now audible in the drums. And it never overrides an author: a row naming its
+own `percPat`/`drums2`/`drums3` keeps it, and `perc: 0` stays out. The expansion runs once as the
+catalogue is built, so what a template holds afterwards is ordinary rows with ordinary fields.
+
+`drums2`/`drums3`/`perc2` resolve into the very same maps the first track uses, at the section's
+key with a `#N` suffix (`LSEP`, `src/melody.js`) plus a `secTrackLayers` count — which is exactly
+the state the section's own **＋ 2nd drums** button writes, so every stacked layer is editable,
+saveable and exportable with no new idea in the app. `npm test` holds every dance template to it:
+at least three distinct drum stacks across its sections, one section stacking a layer the one
+before it did not have, and one taking a layer away.
+
 The 28 band and song-form archetypes (`src/band-templates.js`, appended after the dance styles so
 every saved `pid:t:index` still points where it did) are made of *re-voicing*: a verse is the same
 band as the chorus with the guitar palm-muted and the strings sat out. So a row can also set, per
@@ -257,7 +287,8 @@ neutral — and the genre lays its instruments over it. Which is the whole of **
 genres names a template (a dance style of its own, or the form it is played in — Country and Folk
 share the storyteller's running order and sound nothing alike), and a genre's own bundle overrides
 the archetype's, then the emotion's small deltas ride on the genre's numbers. The button writes
-the chord count, tempo, every instrument, the song-level track FX and insert rack, then — staged
+the chord count, tempo, every instrument, the percussion pattern (a dance genre inherits its
+template's own opening rung off the ladder), the song-level track FX and insert rack, then — staged
 over the following renders exactly as `applyTrackPreset` is, and for the same reason — the
 arrangement and the melody narrative.
 

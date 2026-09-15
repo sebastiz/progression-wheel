@@ -20,6 +20,12 @@ const blankBars = (nBars, B) => Array.from({ length: nBars }, () => Array.from({
 // defaults after it are picked to be audibly distinct from each other out of the box.
 const MAX_LAYERS = 6;
 const LAYER_NAMES = ["A", "B", "C", "D", "E", "F"];
+/* How an extra track of one instrument is keyed. A section's 2nd drums track lives at
+   `D1#1` in exactly the maps its first one lives in at `D1` — same for perc, bass and pad — so
+   every reader that already resolves a section key resolves a layer key with no new idea in it.
+   It lives here, beside the part count it is the track-side twin of, because the arrangement
+   templates write layer keys too and both sides have to agree on the separator. */
+const LSEP = "#";
 // grid + notation ink per part, in order. A is the app's green; the rest stay clearly separable.
 const LAYER_INK = ["#54B79D", "#B98CF0", "#E8A33D", "#6EA8FF", "#E0687F", "#5FCBC3"];
 const LAYER_DEFAULT_INSTR = ["", "ep", "synth_bass_1", "pad_2_warm", "lead_2_sawtooth", "vibraphone"];
@@ -331,6 +337,12 @@ const DRUM_MOVES = {
   kickstutter: { ch: "K", from: 0, to: 10 },
   hatrun:      { ch: "H", from: 0, to: 16 },
   megabuild:   { ch: "S", from: 0, to: 12 },
+  // the three build moves that pair a filter sweep with a fill (see MOVES) — the roll, the hat run
+  // and the clap double-up, which are what a dance build actually does to the kit
+  riseroll:    { ch: "S", from: 0, to: 16 },
+  risehats:    { ch: "H", from: 0, to: 16 },
+  riseclap:    { ch: "C", from: 0, to: 8 },
+  hpbuildroll: { ch: "S", from: 0, to: 16 },
 };
 const fillHitAt = (from, to, mb, nbars, step, n) => {
   const k = Math.round(rampAt(from, to, mb, nbars));
@@ -1880,4 +1892,4 @@ const NARRATIVES = [
        return s.i === 0 ? tone + 1 : tone; }); } },
 ];
 
-export { MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, decorateSection, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };
+export { LSEP, MEL_GRIDS, gridSub, MOD_GROUPS, MODS, MOD_BY_KEY, LFO_RATES, ECHO_TIMES, euclidHit, modOf, modCount, VARIATIONS, DECORATE_VARIATIONS, decorateSection, REARRANGE_VARIATIONS, shufflePitches, RESHAPE_TYPES, VARY_LEVELS, SAME_MOTIF, barNotes, motifRuns, sameMotif, unitSpans, varyBars, varyPass, varyWithin, varyWithinPick, varyWhole, ARPS, ARP_BY_ID, ARP_RATES, GATES, GATE_BY_ID, LAYER_FX, hash01, layerFx, LAYER_DEFAULT_INSTR, LAYER_DEFAULT_OCT, LAYER_DEFAULT_VOL, LAYER_INK, LAYER_NAMES, LAYER_OCT_MAX, LAYER_OCT_MIN, MAX_LAYERS, MELODY_PATTERNS, NARRATIVES, RHYTHMS, RHYTHM_BY_ID, ROLE_LIFT, ROLE_N, ROLE_RHYTHM, blankBars, chordSnap, clampDeg, colPrefs, isHook, layBar, layerGain, nCols, narBars, pickSpread, qbeats, rescaleBar, rhythmSpots, roleLift, roleN, winFor, withLens, wrap7, rampAt, PART_MOVES, partMoveOf, DRUM_MOVES, fillHitAt };

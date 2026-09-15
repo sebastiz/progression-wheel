@@ -10,6 +10,7 @@
    old plan (or -1 if it is brand new). `remapSecs` uses that to carry each section's melodies to
    wherever its row ended up.
 */
+import { LSEP } from "./melody.js";
 
 /* The instance keys a plan produces, grouped by row — the same numbering the scheduler uses.
    `letterOf` is passed in rather than imported so this module stays free of the catalogue. */
@@ -51,7 +52,11 @@ const MAX_ROWS = 24;          // a song with more sections than this is a differ
    prefix name a clip, not an arrangement instance, so they ride through every plan edit exactly as
    the groove's "*" does, rather than being pruned as an orphaned instance key. */
 const SESSION_PREFIX = "$";
-const isSurvivorKey = k => k.length === 1 || k[0] === SESSION_PREFIX;
+/* A section's 2nd/3rd track of an instrument lives in the very same map as its first, at the same
+   key with a `#N` on the end (see LSEP in melody.js) — so every question this file asks of a key is
+   asked of the key with that suffix taken off, and the answer carries the whole stack with it. */
+const baseKeyOf = k => { const i = k.indexOf(LSEP); return i < 0 ? k : k.slice(0, i); };
+const isSurvivorKey = k => { const b = baseKeyOf(k); return b.length === 1 || b[0] === SESSION_PREFIX; };
 
 // swap a row with its neighbour
 const planMove = (rows, i, dir) => {
@@ -135,13 +140,20 @@ const remapKeyed = (map, oldPlan, newPlan, origin, letterOf, clone = v => v) => 
     const src = oldKeys[from] || [];
     if (!src.length) return;
     ks.forEach((k, j) => {                                   // extra passes repeat the last written one
-      const v = map[src[Math.min(j, src.length - 1)]];
+      const from2 = src[Math.min(j, src.length - 1)];
+      const v = map[from2];
       // cloned, because a value that is an object — a section's drum bars — would otherwise be the
       // *same* array in two sections, and editing one pass would edit the other.
       // `false` is carried like anything else: for the maps that hold a switch rather than an id,
       // one pass set to *off* against a section type set to *on* is a real setting, and dropping it
       // as falsy silently handed that pass back to the type it was overriding.
       if (v != null && v !== "") out[k] = clone(v);
+      // …and every stacked track of the same section, which is this same map at `from2#1`, `#2`.
+      // Without this a move or a duplicate quietly flattened a drop's layered drums back to one.
+      for (const [mk, mv] of entries) {
+        if (mk.length <= from2.length || !mk.startsWith(from2 + LSEP)) continue;
+        if (mv != null && mv !== "") out[k + mk.slice(from2.length)] = clone(mv);
+      }
     });
   });
   return out;

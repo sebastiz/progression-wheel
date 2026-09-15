@@ -3735,7 +3735,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   const tickBody = code.slice(code.indexOf("const emitTick ="), code.indexOf("const startMetro ="));
   const GATES = [
     [/if \(chord && [^)]*\(!m\.stem \|\| m\.stem\.kind === "chords"\)\)/, "chords are not gated on m.stem"],
-    [/if \(!m\.stem \|\| \(m\.stem\.kind === "drums" && \(m\.stem\.i \|\| 0\) === 0\)\)\s*\n\s*for \(const ch of dstep\)/, "drum voices are not gated on m.stem"],
+    [/if \(dstep && \(!m\.stem \|\| \(m\.stem\.kind === "drums" && \(m\.stem\.i \|\| 0\) === 0\)\)\)\s*\n\s*for \(const ch of dstep\)/, "drum voices are not gated on m.stem"],
     [/if \(m\.stem && !\(m\.stem\.kind === "part" && m\.stem\.i === li\)\) return;/, "melody parts are not gated on m.stem"],
     [/if \(clickRef\.current && !m\.stem\)/, "the metronome click is not excluded from stems"],
   ];
@@ -3794,6 +3794,7 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     if (M.DRUMS[t.drum] && !M.drumFitsMeter(M.DRUMS[t.drum], "4/4")) problems.push(`${where}: "${t.drum}" does not fit 4/4`);
     // the sound-shaping and melodic-narrative defaults every style now carries
     if (t.pad && !padVoices.has(t.pad)) problems.push(`${where}: unknown pad voice "${t.pad}"`);
+    if (t.perc && !M.PERCS[t.perc]) problems.push(`${where}: unknown percussion pattern "${t.perc}"`);
     if (t.percKit && !percKits.has(t.percKit)) problems.push(`${where}: unknown perc kit "${t.percKit}"`);
     if (t.delay && !delayTimes.has(t.delay)) problems.push(`${where}: unknown delay time "${t.delay}"`);
     if (t.swing != null && !(t.swing >= 0 && t.swing <= 0.6)) problems.push(`${where}: swing ${t.swing} is outside 0–0.6`);
@@ -3822,6 +3823,18 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (a.drums && !M.DRUMS[a.drums]) problems.push(`${where} / ${row.sec}: unknown drums "${a.drums}"`);
       if (a.drums && a.drums !== "off" && !M.drumFitsMeter(M.DRUMS[a.drums], "4/4"))
         problems.push(`${where} / ${row.sec}: drums "${a.drums}" do not fit 4/4`);
+      /* The stacked tracks the drum ladder writes: a section's 2nd/3rd drums track and its 2nd
+         perc track. Same catalogues as the first one, same meter, and a stack is pointless where
+         the kit it rides over has been silenced. */
+      for (const f of ["drums2", "drums3"]) {
+        if (!a[f]) continue;
+        if (!M.DRUMS[a[f]] || !M.DRUMS[a[f]].pattern) { problems.push(`${where} / ${row.sec}: unknown ${f} "${a[f]}"`); continue; }
+        if (!M.drumFitsMeter(M.DRUMS[a[f]], "4/4")) problems.push(`${where} / ${row.sec}: ${f} "${a[f]}" does not fit 4/4`);
+        if (a.drums === "off") problems.push(`${where} / ${row.sec}: ${f} stacks over a kit this row silences`);
+      }
+      if (a.drums3 && !a.drums2) problems.push(`${where} / ${row.sec}: a 3rd drums track with no 2nd`);
+      if (a.perc2 && a.perc2 !== "off" && !M.PERCS[a.perc2]) problems.push(`${where} / ${row.sec}: unknown perc2 "${a.perc2}"`);
+      if (a.perc2 && a.perc != null && !a.perc) problems.push(`${where} / ${row.sec}: a 2nd perc track on a row that mutes the perc`);
       if (a.move && !M.MOVES[a.move]) problems.push(`${where} / ${row.sec}: unknown move "${a.move}"`);
       if (a.trans && !M.TRANS[a.trans]) problems.push(`${where} / ${row.sec}: unknown transition "${a.trans}"`);
       if (a.parts != null && /[^A-F]/.test(a.parts)) problems.push(`${where} / ${row.sec}: parts "${a.parts}" names something that is not a part`);
@@ -3875,16 +3888,40 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     const keys = insts.map(d => d.key);
     // every map is keyed by pass (D1, D2 …), which is the only level at which "the second drop is
     // bigger than the first" can be said at all
+    // a section's 2nd/3rd track of an instrument lives in the very same map as its first, at the
+    // section's own key with a `#N` on the end — so "is this a pass of the plan" is asked of the
+    // key with the layer suffix taken off, and the completeness count is of first tracks only
+    const baseKey = k => (k.includes("#") ? k.slice(0, k.indexOf("#")) : k);
     for (const [name, map] of [["secDrum", A.secDrum], ["secQuiet", A.secQuiet], ["secMove", A.secMove], ["secTrans", A.secTrans]]) {
-      const bad = Object.keys(map).filter(k => !keys.includes(k));
+      const bad = Object.keys(map).filter(k => !keys.includes(baseKey(k)));
       if (bad.length) problems.push(`${where}: ${name} keys ${bad.join(",")} are not sections of this plan`);
-      if (Object.keys(map).length !== keys.length)
-        problems.push(`${where}: ${name} covers ${Object.keys(map).length} of ${keys.length} passes — applying it would leave the last arrangement half in place`);
+      const firsts = Object.keys(map).filter(k => k === baseKey(k));
+      if (firsts.length !== keys.length)
+        problems.push(`${where}: ${name} covers ${firsts.length} of ${keys.length} passes — applying it would leave the last arrangement half in place`);
+    }
+    /* Every layer key has to be backed by a `secTrackLayers` count and vice versa, or the
+       scheduler and the exporters never look the pattern up: they run to the count, not to the
+       keys that happen to exist. */
+    for (const [type, map] of [["drums", A.secDrum], ["perc", A.secPercPat]]) {
+      for (const k of Object.keys(map)) {
+        if (k === baseKey(k)) continue;
+        const li = +k.slice(k.indexOf("#") + 1);
+        const n = (A.secTrackLayers[baseKey(k)] || {})[type] || 1;
+        if (!(li >= 1 && li < n)) problems.push(`${where}: ${type} layer ${k} is outside the ${n} track(s) secTrackLayers gives ${baseKey(k)}`);
+      }
+    }
+    for (const [k, counts] of Object.entries(A.secTrackLayers)) {
+      if (!keys.includes(k)) { problems.push(`${where}: secTrackLayers key ${k} is not a section of this plan`); continue; }
+      for (const [type, n] of Object.entries(counts)) {
+        const map = type === "drums" ? A.secDrum : A.secPercPat;
+        for (let li = 1; li < n; li++)
+          if (!map[k + "#" + li]) problems.push(`${where}: ${k} is given ${n} ${type} tracks but #${li} has no pattern`);
+      }
     }
     // the re-voicing maps are sparse by design (a row that says nothing leaves the song's own in
     // charge), but every key they do write still has to be a pass of this plan
     for (const name of ["secKit", "secChordInstr", "secChordPat", "secBassPat", "secBassVoice", "secPercPat", "secPercKit", "secPadVoice", "secFx"]) {
-      const bad = Object.keys(A[name] || {}).filter(k => !keys.includes(k));
+      const bad = Object.keys(A[name] || {}).filter(k => !keys.includes(baseKey(k)));
       if (bad.length) problems.push(`${where}: ${name} keys ${bad.join(",")} are not sections of this plan`);
     }
     // a transition belongs to the seam into a row, so a row played four times gets one, not four
@@ -3930,6 +3967,28 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
       if (nrg[i + 1] <= nrg[i])
         problems.push(`${where} / ${row.sec}: the build (${nrg[i]}) is at least as dense as the ${t.plan[i + 1].sec} it leads into (${nrg[i + 1]})`);
     });
+    /* And the complaint this whole ladder exists to answer: the *drums* were flat. Energy could
+       rise and fall through the filter, the parts and the bass while every section played the
+       identical bar of the identical kit from the first bar of the track to the last, because the
+       only thing a row ever said about its drums was "off", "nokick", "kickonly" or "ohats". So
+       the kit stack — the pattern, the tracks stacked over it, the percussion under it — has to
+       change across a dance arrangement, and has to both gain layers and lose them. */
+    if (!M.BAND_IDS.has(t.id)) {
+      const stackOf = row => {
+        const a = row.arr || {};
+        return [a.drums || t.drum, a.drums2 || "", a.drums3 || "",
+          (a.perc != null && !a.perc) ? "" : (a.percPat || t.perc || ""), a.perc2 || ""].join("/");
+      };
+      const stacks = t.plan.map(stackOf);
+      const depth = row => { const a = row.arr || {}; return (a.drums2 ? 1 : 0) + (a.drums3 ? 1 : 0) + (a.perc2 ? 1 : 0); };
+      const depths = t.plan.map(depth);
+      if (new Set(stacks).size < 3)
+        problems.push(`${where}: only ${new Set(stacks).size} drum stack(s) across ${stacks.length} sections — the same beat plays the whole track`);
+      if (!depths.some((d, i) => i && d > depths[i - 1]))
+        problems.push(`${where}: no section ever stacks a layer the one before it did not have`);
+      if (!depths.some((d, i) => i && d < depths[i - 1]))
+        problems.push(`${where}: layers are only ever added, never taken away`);
+    }
     // the full stack is worth having only if it is rare
     const top = Math.max(...nrg);
     if (nrg.filter(e => e === top).length > 4)
@@ -3949,7 +4008,8 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     // …and re-resolving after an edit still lands on the passes that now exist
     const insts = M.planInsts(moved, r => (r.nums === "LOOP" ? 4 : 2), M.letterFor);
     const A2 = M.resolveArrangement(moved, insts);
-    if (Object.keys(A2.secDrum).length !== insts.length)
+    // first tracks only — a section that stacks a 2nd drums track has a `#1` key in here too
+    if (Object.keys(A2.secDrum).filter(k => !k.includes("#")).length !== insts.length)
       problems.push("arrangement templates: re-applying after an edit misses some of the sections");
   }
   console.log(`arrangement templates: ${M.DANCE_TEMPLATES.length} templates (${M.BAND_IDS.size} band / song-form), ${rows} sections, `

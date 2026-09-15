@@ -231,6 +231,16 @@ const MOVES = {};
 ["kickstutter",  "Build · kick stutters",           null],
 ["hatrun",       "Build · hats run to sixteenths",  null],
 ["megabuild",    "Build · everything intensifies",  { from: 260, to: 16000, riser: true, riserSpan: 0.4 }],
+/* The build moves with a drum fill built in. "riser" sweeps the filter and lifts a noise riser but
+   leaves the kit playing the same bar it played in the groove, which is the one thing no real
+   build does: the snare rolls in, or the hats run up to sixteenths, or the claps double. These are
+   that pairing, as their own ids rather than as a change to "riser" — a song saved with a plain
+   riser has to go on sounding exactly as it was saved. The arrangement templates reach for them
+   through their ladder (see arrange-templates.js), and they are ordinary Move-menu choices after. */
+["riseroll",     "Build · riser + snare roll",      { from: 260, to: 16000, riser: true }],
+["risehats",     "Build · riser + hats to 16ths",   { from: 260, to: 16000, riser: true }],
+["riseclap",     "Build · riser + claps double up", { from: 260, to: 16000, riser: true }],
+["hpbuildroll",  "Build · bass drains + snare roll",{ from: 16000, to: 16000, hp: { from: 30, to: 700 } }],
 ].forEach(([id, name, spec]) => { MOVES[id] = { name, spec }; });
 const FILTER_OPEN = 18000;                       // "no filtering", still inside Nyquist at 44.1k
 
