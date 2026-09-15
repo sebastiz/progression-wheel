@@ -231,12 +231,37 @@ const DRUMS = {};
 ["fivejazz","5/4 jazz ride","KR R SR R KR R R SR R R"],
 ["fiverock","5/4 rock","KH KH SH H KH H KH SH H H"],
 ["fivefloor","5/4 four-plus","K H KS H K H K H KS H"],
+/* ===== top layers =====
+   Additions, where the block above them is subtractions. A dance kit is not one pattern but a
+   stack of them — the kick and clap on one track, the offbeat open hat on a second, the ride or
+   the rim on a third — and what makes a drop arrive is a layer joining the stack rather than the
+   one groove getting louder. These are written to ride *over* a full groove on a section's 2nd or
+   3rd drums track (see `secTrackLayers`), so each one deliberately owns a single band and a single
+   rhythmic slot and leaves the kick alone: two layers may share at most one of spectrum, slot and
+   space, which is the rule the whole of docs/DANCE-LAYERING.md turns on.
+   On their own they are not grooves — `topsroll` is sixteen snares and nothing else — which is
+   exactly what a build's top track should be. */
+["topsclap",   "Tops · clap on 2 & 4",        ". . C . . . C ."],
+["topsrim",    "Tops · rim on the offbeats",  ". P . P . P . P"],
+["topsride",   "Tops · ride eighths",         "R R R R R R R R"],
+["tops16",     "Tops · sixteenth hats",       "H H H H H H H H H H H H H H H H"],
+["topsoff16",  "Tops · offbeat open hats (16ths)", ". . O . . . O . . . O . . . O ."],
+["topsride16", "Tops · ride sixteenths",      "R R R R R R R R R R R R R R R R"],
+["topsskip",   "Tops · skipping rim",         ". . P . . P . . . . P . . P . ."],
+["topsclap16", "Tops · clap with a pickup",   ". . . . C . . . . . . . C . . C"],
+["topsroll",   "Tops · snare sixteenths (roll)", "S S S S S S S S S S S S S S S S"],
 ].forEach(([id, name, pat]) =>
   DRUMS[id] = { name, pattern: pat ? pat.split(" ").map(s => s === "." ? "" : s) : null });
 /* The subtraction patterns above, as a set: arrangement, not material. A build's kick-out or a
    DJ intro's bare kick is part of a song's *layout*, so "write the sketch's drums across the
    song" keeps these while every full groove hands back to the sketch. */
 const DRUM_CUTS = new Set(["nokick", "kickonly", "ohats"]);
+/* …and the top layers as a set, for the same reason: a section's 2nd drums track is arrangement
+   too. Unlike a cut it has no sketch of its own to hand back to — an extra drums track never
+   falls back to the song-wide kit — so clearing one does not restore a groove, it silences a
+   layer. */
+const DRUM_TOPS = new Set(["topsclap", "topsrim", "topsride", "tops16", "topsoff16", "topsride16",
+  "topsskip", "topsclap16", "topsroll"]);
 
 /* ===== the percussion layer's own instruments =====
    The perc track used to borrow the drum kit's voices, which made it a second drum pattern rather
@@ -278,6 +303,15 @@ const PERCS = {};
 ["cowbell", "Cowbell quarters", "L . . . L . . . L . . . L . . ."],
 ["triangle", "Triangle on the twos", ". . . . T . . . . . . . T . . ."],
 ["fiesta", "Full fiesta", "S . SW S SM . S C S . SW S GM . S C"],
+/* The layering rungs. The perc track is the cheapest layer a dance arrangement has — it costs no
+   low end, so it can arrive under a groove without anything having to move out of its way — and
+   these are written as a staircase rather than as twelve alternatives: `shakeroff` is the one that
+   goes under a DJ intro, `shaker16` the groove's own, and the two-instrument ones the drop's. */
+["shakeroff", "Shaker offbeats", ". S . S . S . S . S . S . S . S"],
+["tambshake", "Tambourine & shaker", "S . M S S . M S S . M S S . M S"],
+["congaoff", "Conga offbeats", ". . C . . . G . . . C . . . G ."],
+["woodskip", "Woodblock skip", ". . W . . W . . . . W . . W . ."],
+["tritamb", "Triangle & tambourine", ". . M . T . M . . . M . T . M ."],
 ].forEach(([id, name, pat]) =>
   PERCS[id] = { name, pattern: pat.split(" ").map(s => s === "." ? "" : s) });
 
@@ -361,4 +395,4 @@ const DRUM_DEFAULT = { edm:"house16d", deepHouse:"house16d", festival:"techno16"
 const KIT_DEFAULT = { edm:"909", deepHouse:"909", festival:"909", futureBass:"808" };
 const PUMP_DEFAULT = { edm:"classic", deepHouse:"classic", festival:"hard", futureBass:"classic" };
 
-export { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };
+export { BASS, BASS_IV, PERCS, STYLE_PRESETS, PERC_VOICES, PERC_ORDER, PERC_MIDI, PERC_KITS, BPM_DEFAULT, DRUMS, DRUM_CUTS, DRUM_TOPS, METERS, METER_BY_ID, drumFitsMeter, meterOf, DRUM_DEFAULT, DRUM_KITS, DRUM_MIDI, DRUM_VOICES, DRUM_ORDER, beatSteps, blankBeat, beatSort, beatToggle, beatHits, beatFrom, KIT_DEFAULT, KIT_PROGRAM, PATTERNS, PATTERN_DEFAULT, PUMPS, PUMP_AMT, PUMP_DEFAULT, accentAt, beatsOf, drumBeatsOf, gcd, lcm, sampleAt, stepAt, subOf };

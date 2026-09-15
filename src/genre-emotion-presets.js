@@ -196,7 +196,10 @@ function resolveGenreEmotionStyle(genre, emotion, templates) {
     bpm: Math.round(Math.max(40, Math.min(220, (base.bpm || 100) + (em ? em.bpmDelta : 0)))),
     pat: base.pat, drum: base.drum, kit: base.kit, pump: base.pump,
     bass: base.bass, bassVoice: base.bassVoice,
-    pad: base.pad, percKit: base.percKit,
+    // the percussion track and the kit it is voiced on. A dance genre inherits its template's
+    // own opening rung (see the drum ladder in arrange-templates.js); a genre that names a
+    // percussion pattern of its own overrides it, the way it overrides every other field here
+    pad: base.pad, perc: base.perc, percKit: base.percKit,
     delay: base.delay,
     swing: clamp01((base.swing || 0) + (em ? em.swingDelta : 0)),
     instr: base.instr, melInstr: base.melInstr,

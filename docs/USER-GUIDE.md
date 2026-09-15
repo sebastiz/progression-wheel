@@ -44,6 +44,24 @@ strip stays either way, since that is the part you actually edit.
   palm-muted verse, the strings that only join for the chorus, the fuzz pedal that comes on for the
   last one — what happens at every seam, and a melody narrative shaped by the emotion. Every one of
   those is an ordinary control afterwards. A line under the button says exactly what it wrote.
+
+  In a **dance** genre the drums arrive arranged rather than looping. The kit is one track and the
+  style's own top layer is a second — an offbeat rim under house, a skipping rim under garage,
+  sixteenth hats under trap, a ride under disco — and a drop stacks a third on top of that plus a
+  second percussion track. A DJ intro gets the kit and a thin offbeat shaker; a groove adds the top
+  and the groove's own percussion; a build cuts the kit and rolls a fill in underneath the riser; a
+  breakdown takes the whole stack off and leaves the hand percussion holding the bar. So the drums
+  climb into each drop and strip back out of it instead of playing the same beat for four minutes.
+  Every layer it writes is an ordinary **＋ 2nd drums** / **＋ 2nd perc** track on that section
+  afterwards, with its own pattern, its own grid and its own kit — change one, add a fourth, or
+  take one away.
+
+  A **band or song-form** genre gets the same idea played by people rather than programmed, and
+  kept much shallower: nothing under the intro, a shaker or a tambourine through the verses, and
+  one overdub arriving when the chorus does — handclaps on a pop or Motown chorus, palmas in
+  flamenco, the drummer moving to the ride for a metal or jazz last head, a snare bed under a
+  trailer release. Ambient drift, film cue and classical form are left alone: every section of them
+  has the drums off, so there is no stack to arrange.
 - **Parallel / Sec. dominants toggles** — draw the visual overlays on the wheel (lavender dashed
   parallels; gold secondary dominants with V/x arrows into their targets).
 - **Triads | 7ths | 9ths** — re-voices every chord in the app by rule. In 7ths: I→maj7, ii→m7,

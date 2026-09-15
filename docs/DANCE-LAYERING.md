@@ -83,7 +83,7 @@ Then score it. Give each element a weight, sum per section, and plot the result:
 | 3 | Kick, sub, lead, vocal |
 | 2 | Bass, clap/snare, chords |
 | 1.5 | The Filter and Level automation lanes |
-| 1 | Hat, perc, pad, ear candy |
+| 1 | Hat, perc, pad, ear candy, and each *stacked* track beyond the first (a section's 2nd/3rd drums track, its 2nd perc track) |
 
 The automation lanes score lighter than the layers because they colour a section rather than
 define it, but leaving them out entirely misses the move that often matters most: a DJ filter
@@ -181,12 +181,14 @@ Each idea above has a control that does it.
 | Idea | Where |
 | --- | --- |
 | Subtraction as the workflow itself | The **Sketch tab** — build the full groove as one looping section (drums, perc, bass, pad, chords and melody, grids and settings together), draft the running order underneath (each section arrives silent; click the cells to fill it with the groove's instruments), then **✍ Write to Arrange** commits the lot as the song's arrangement. Every section inherits the groove until it is given something of its own |
-| The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — thirteen dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build. The strip's **Energy** lane draws the resulting staircase as a stepped red line |
+| The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — the dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build, and the drum stack climbing and collapsing with them. The strip's **Energy** lane draws the resulting staircase as a stepped red line |
+| The stack itself, arranged | Each dance template's **drum ladder** — the kit is one track and the style's own top layer (offbeat rim, skipping rim, sixteenth hats, ride) is a second, with a third and a second percussion track arriving only at full size. A DJ intro gets the kit and a thin shaker; a groove adds the top and the groove's own percussion; a drop adds both peak layers; a build cuts the kit and rolls a fill in; a breakdown takes the lot back off and leaves hand percussion holding the bar. Everything it writes is an ordinary **＋ 2nd drums** track on the section afterwards |
 | The staircase of sections | The **structure** chooser, and the arrangement strip's rows and reps — *make the drop twice as long* is a reps edit |
 | Layer entries and exits | The **arrangement strip's lanes** — one per layer, a block per run of sections, clicked to bring a layer in or drop it out, per pass |
-| Variation within a layer | A **drum grid per section**, so the second chorus gets the busier hat and the last verse the fill |
+| Variation within a layer | A **drum grid per section**, so the second chorus gets the busier hat and the last verse the fill — and a **＋ 2nd / 3rd drums track** on any section, each with its own pattern, grid and kit, which is how a stack is varied without touching the groove underneath it |
 | The six roles, in the drum stack | The grid's nine voices — crash, ride, open hat, hat, clap, rim, snare, boom, kick — read top to bottom as air ⟶ backbeat ⟶ floor |
 | Entry and variation | **Section moves**: *build* opens the filter across the section, *riser* adds the noise under it, *drop* slams open with a crash, *fade*, *underwater* and *swell* |
+| The build doing something to the kit | The **riser + snare roll / hats to 16ths / claps double up** moves — the same filter sweep and noise riser, with a fill rolling in underneath across the section, Euclid-spread so it thickens bar by bar instead of switching on. A plain *riser* leaves the kit playing the groove's own bar, which is the one thing no real build does |
 | The last bar before a boundary | **Transitions**, which belong to the section they lead *into* and schedule their riser, roll or silence ahead of its downbeat |
 | The energy curve, drawn rather than stepped | The **automation lanes** — Filter is the DJ filter across the whole mix, Level is the fade and the hole before a drop. Both feed the Energy lane's score too, sampled at each section's midpoint |
 | The Hook across the whole form | **Melodic narratives**, which pick each section's register, density and contour from its role and its place in the running order |

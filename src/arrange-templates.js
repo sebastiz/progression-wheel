@@ -1,6 +1,8 @@
 import { mkPlan } from "./progressions.js";
 import { autoSet } from "./arrange.js";
 import { BAND_DEFS, BAND_FAMILIES } from "./band-templates.js";
+import { DRUM_CUTS } from "./patterns.js";
+import { LSEP } from "./melody.js";
 /* arrange-templates — a structure says what order the sections come in. A template says what
    *plays* in each of them, which is the part that was missing.
 
@@ -29,6 +31,9 @@ import { BAND_DEFS, BAND_FAMILIES } from "./band-templates.js";
    what each instrument *is* for that section, every one an ordinary section-menu choice afterwards:
 
      bass / perc / pad   0 to take that track out for the row (the same shape as `chords`)
+     drums2 / drums3     the section's 2nd and 3rd drums tracks — a DRUMS id each, stacked over
+                         the first one rather than replacing it (see the drum ladder below)
+     perc2               the same for a 2nd percussion track (a PERCS id)
      kit                 the drum kit the row plays on (a DRUM_KITS id)
      chordInstr          the chord instrument (a GM key) — a clean guitar under the verse
      chordPat            the chord rhythm (a PATTERNS id) — picked in the verse, strummed in the chorus
@@ -1384,20 +1389,6 @@ const DEFS = [
 
 ];
 
-/* Each template's rows become a plan in exactly the shape the structure catalogue produces, with
-   the arrangement carried on the row itself as `arr` — see the note at the top about why that
-   matters when the plan is later edited. */
-/* The band and song-form archetypes (band-templates.js) come *after* the dance catalogue, so every
-   existing "pid:t:index" pick — saved songs, shared links, TRACK_PRESETS' baseTemplate lookups —
-   keeps pointing at the template it always did. `DANCE_TEMPLATES` keeps its name because it is
-   what thirty call sites and the test suite know the catalogue by; `BAND_IDS` is how a caller tells
-   the two halves apart. */
-const DANCE_TEMPLATES = [...DEFS, ...BAND_DEFS].map(([id, name, tip, sound, rows]) => ({
-  id, name, tip, ...sound,
-  plan: mkPlan(rows.map(r => r[0])).map((row, i) => ({ ...row, arr: rows[i][1] || null })),
-}));
-const BAND_IDS = new Set(BAND_DEFS.map(([id]) => id));
-
 /* ---- the family tree the catalogue is drawn from ----
    The six branches are the dance-music family tree's own top-level categories — not something
    invented for this app. Every template above traces back to exactly one of them, in the order the
@@ -1423,6 +1414,266 @@ const FAMILY_OF = {};
    "dubstep", "brostep", "trap", "riddim", "futurebass", "futuregarage"]],
 ].forEach(([fam, ids]) => ids.forEach(id => { FAMILY_OF[id] = fam; }));
 
+/* ---- the drum ladder: what is *added* as a section grows ----
+   Everything above this line is subtraction. A row can take the kick out, silence the kit, mute the
+   bass or shut the filter, and that is most of what an arrangement does — but it is not all of it,
+   and a catalogue that only subtracts leaves one groove playing the identical bar from the first
+   section to the last. Every one of the rows above resolved to the *same* drum pattern unless it
+   said "off", "nokick", "kickonly" or "ohats"; the percussion track was never switched on at all.
+   So the arrangement had a shape and the drums did not, which is the one thing a dancer hears.
+
+   A real dance kit is not a pattern, it is a stack of them: the kick and clap on one track, the
+   offbeat open hat on a second, the ride or the rim on a third, a shaker under the lot. What makes
+   a drop arrive is a layer joining that stack — not the same loop getting louder. So each style
+   declares its stack once, as a ladder of rungs, and every row climbs to the rung its own existing
+   declarations already imply:
+
+     percThin  the hand percussion that keeps time where the kit is cut or bare
+     perc      the groove's own percussion, once the chords are in
+     percPeak  a second percussion track, at full size only
+     top       the section's 2nd drums track through a groove
+     peak      its 3rd, at full size only
+     fill      the build move to use in place of a plain "riser" — the same filter sweep and riser
+               with the style's own fill rolling in under it (see MOVES / DRUM_MOVES)
+
+   Two properties make this worth doing as a ladder rather than as six hundred hand-written rows:
+
+   1. **The rung is read off what the row already says.** A row that silences the chords *and*
+      every melody part is a DJ intro; one that mutes the parts alone is a groove; one that cuts
+      the kit is a build or a breakdown; one that parks its filter short of open, pulls the bass
+      out or sweeps itself shut is deliberately smaller than the section it leads to. None of that
+      had to be restated — it is the arrangement, and the drums now follow it instead of ignoring
+      it.
+   2. **It never overrides an author.** A row that names its own `percPat`, `drums2` or `drums3`
+      keeps it, and a row that takes the perc track out (`perc: 0`) stays out. The ladder fills
+      silence; it does not argue.
+
+   Everything it writes is an ordinary section-menu choice afterwards — a 2nd drums track is the
+   same "＋ 2nd drums" a section gets by hand — so this is a starting arrangement, not a fixture. */
+
+/* The rungs, lowest first. `drums: "off"` is the floor: the kit is gone and only the hand
+   percussion is left holding the bar, which is what stops a house breakdown being a hole rather
+   than a subtraction. */
+const RUNG = { SILENT: 0, CUT: 1, BARE: 2, GROOVE: 3, FULL: 4 };
+/* The moves that are shutting a section down rather than opening it up. A row sweeping closed is
+   not where the fullest stack in the track belongs, whatever else it says about itself. */
+const FADE_MOVES = new Set(["fade", "under", "phone", "thinout", "swell"]);
+/* How open a row gets to be: per lane, the average it sits at or the value it lands on, whichever
+   is the more generous, and then the least open of its lanes.
+   The average and not the peak, because a row written `[1, 0.3]` is a section sweeping shut — on
+   average half closed, which is also what it sounds like — and reading its peak would file the
+   mix-out alongside the drop. And the landing value as well as the average, because a row written
+   `[0.65, 0.95]` is a section *arriving*: it spends itself climbing, so its average is middling,
+   but it ends wide open and what it ends at is what the section after it has to beat. A row that
+   draws no lane at all rests wide open, exactly as the lanes themselves rest. */
+const opennessOf = a => Math.min(...["filter", "level"].map(l => {
+  const v = a[l];
+  if (v == null) return 1;
+  const list = [].concat(v);
+  return Math.max(list.reduce((n, x) => n + x, 0) / list.length, list[list.length - 1]);
+}));
+const rungOf = a => {
+  if (a.drums === "off") return RUNG.SILENT;
+  if (a.drums && DRUM_CUTS.has(a.drums)) return RUNG.CUT;
+  const partsIn = a.parts == null || a.parts.length > 0;
+  /* Note what this deliberately does *not* read as "bare": the chords being out. Half the bass
+     music here — dubstep, brostep, riddim, neurofunk — drops the harmony *at the drop*, because
+     the mid-range bass replaces it rather than sitting on top of it, and an earlier rule that
+     called any chordless row a DJ intro filed every one of those drops at the bottom of the
+     ladder and left the whole style with one drum stack from end to end. Chordless *and* with no
+     melody part playing is a DJ intro; chordless with the hook over it is a drop. */
+  const open = opennessOf(a);
+  if ((a.chords != null && !a.chords && !partsIn) || open < 0.4) return RUNG.BARE;
+  // held back on purpose: the filter parked short of open, the foundation pulled out from under
+  // it, a move that is closing it down, or the hook still being withheld. "The second drop cannot
+  // be bigger unless this is smaller" is said in every one of those four ways somewhere above.
+  if (open < 0.95 || (a.bass != null && !a.bass) || FADE_MOVES.has(a.move) || !partsIn) return RUNG.GROOVE;
+  return RUNG.FULL;
+};
+
+/* The band and song-form archetypes are read differently, because they say different things. A
+   dance row announces its size by what it silences and by where it parks the filter; a band row
+   almost never touches a lane at all — the verse and the chorus are the same five people, and what
+   separates them is how many parts are singing and whether the strings are sat out. So the band
+   reading counts the melody parts (`"A"` is a verse, `"AB"` a chorus, `"ABC"` the last one) and
+   treats a row that mutes the pad, drops the bass or fades itself out as one held back. Running
+   the dance rule over these would have filed nearly every verse in the catalogue at full size,
+   since a verse silences nothing and draws no lane. */
+const bandRungOf = a => {
+  if (a.drums === "off") return RUNG.SILENT;
+  if (a.drums && DRUM_CUTS.has(a.drums)) return RUNG.CUT;
+  const n = a.parts == null ? PARTS.length : a.parts.length;
+  if (!n || (a.chords != null && !a.chords)) return RUNG.BARE;
+  const held = FADE_MOVES.has(a.move) || (a.bass != null && !a.bass) || (a.pad != null && !a.pad);
+  return (n >= 2 && !held) ? RUNG.FULL : RUNG.GROOVE;
+};
+
+/* One ladder per family, because the stack is what a family *is*: house layers an offbeat rim and
+   a shaker, breaks layer a skipping rim, trance layers open hats and a ride — and a pop record
+   layers a tambourine on the chorus and handclaps on the last one, which is the same idea played
+   by people rather than programmed. `rung` is the family's reading of a row (see `rungOf` and
+   `bandRungOf`), so each half of the catalogue is asked the question it can actually answer. */
+const FAMILY_LADDER = {
+  "House / Disco": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"tamb",
+    top:"topsrim", peak:"tops16", fill:"riseroll" },
+  "Techno / Electro / EBM": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"woodskip",
+    top:"topsrim", peak:"tops16", fill:"risehats" },
+  "Trance": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"tritamb",
+    top:"topsoff16", peak:"topsride16", fill:"riseroll" },
+  "Breakbeat / Jungle / D&B": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"bongos",
+    top:"topsskip", peak:"topsride16", fill:"riseroll" },
+  "Hardcore / Hardstyle": { rung: rungOf, percThin:"shakeroff", perc:"shaker8", percPeak:"tamb8",
+    top:"topsclap", peak:"tops16", fill:"riseroll" },
+  "Garage / Bass / Dubstep": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"tambshake",
+    top:"topsskip", peak:"topsclap16", fill:"riseclap" },
+  /* The band half. Two differences run all the way through it. A band ladder leaves `top` empty —
+     a section gets *one* extra track, at full size, because a real record overdubs a tambourine or
+     moves the drummer to the ride for the chorus rather than stacking three kit parts through the
+     whole song — and it leaves `fill` empty, because these rows already reach for `snaproll` where
+     the form wants a roll, and a pop pre-chorus is not a dance build. What varies instead is the
+     percussion overdub: nothing under an intro, a shaker or tambourine through the verses, both
+     plus a clap or a ride when the chorus lands. */
+  "Pop & Rock": { rung: bandRungOf, percThin:"", perc:"shaker8", percPeak:"tamb",
+    top:"", peak:"topsclap", fill:"" },
+  "Metal & Heavy": { rung: bandRungOf, percThin:"", perc:"", percPeak:"",
+    top:"", peak:"topsride", fill:"" },
+  "Blues, Soul & Funk": { rung: bandRungOf, percThin:"", perc:"tamb", percPeak:"tambshake",
+    top:"", peak:"topsclap", fill:"" },
+  "Jazz & Latin": { rung: bandRungOf, percThin:"", perc:"clave32", percPeak:"tumbao",
+    top:"", peak:"topsride", fill:"" },
+  "Folk & Roots": { rung: bandRungOf, percThin:"", perc:"shaker8", percPeak:"tamb",
+    top:"", peak:"topsclap", fill:"" },
+  "Hip-Hop & Downtempo": { rung: bandRungOf, percThin:"", perc:"shakeroff", percPeak:"tamb",
+    top:"", peak:"tops16", fill:"" },
+  // the one cinematic archetype that has drums at all; the other three opt out below
+  "Cinematic & Classical": { rung: bandRungOf, percThin:"", perc:"", percPeak:"",
+    top:"", peak:"topsroll", fill:"" },
+};
+/* …and the styles whose percussion *is* the style, where the family default would be wrong rather
+   than merely generic. Everything omitted falls back to the family's rung. `null` opts a template
+   out altogether. */
+const LADDER = {
+  // the hand-drum styles: congas and bongos are the arrangement, so they climb the ladder instead
+  // of a shaker doing it
+  afrohouse:   { percThin:"shakeroff", perc:"congaride", percPeak:"tumbao", peak:"tops16" },
+  tribalhouse: { percThin:"congaoff", perc:"tumbao", percPeak:"bongos" },
+  ukfunky:     { percThin:"congaoff", perc:"tumbao", percPeak:"bongos" },
+  amapiano:    { percThin:"shakeroff", perc:"shaker16", percPeak:"congaoff", top:"topsrim", peak:"topsclap16" },
+  moombahton:  { percThin:"woodskip", perc:"congaoff", percPeak:"tumbao" },
+  gqom:        { percThin:"woodskip", perc:"congaoff", percPeak:"bongos" },
+  brokenbeat:  { percThin:"shakeroff", perc:"congaoff", percPeak:"bongos", top:"topsskip" },
+  // disco is played, not programmed: a tambourine rather than a shaker, and a ride rather than a rim
+  disco:       { percThin:"tamb", perc:"tamb8", percPeak:"tambshake", top:"topsride", peak:"tops16" },
+  nudisco:     { percThin:"shakeroff", perc:"tamb", percPeak:"tambshake", top:"topsride", peak:"tops16" },
+  postdisco:   { percThin:"shakeroff", perc:"tamb", percPeak:"tambshake", top:"topsride", peak:"tops16" },
+  italodisco:  { percThin:"shakeroff", perc:"tamb", percPeak:"tambshake", top:"topsride", peak:"tops16" },
+  hinrg:       { percThin:"shakeroff", perc:"tamb8", percPeak:"tambshake", top:"topsride", peak:"tops16" },
+  // the styles that live on being minimal — one extra layer at the top and nothing under the rest
+  minimaltechno: { percThin:"", perc:"shakeroff", percPeak:"woodskip", top:"topsrim", peak:"tops16" },
+  dubtechno:     { percThin:"", perc:"shakeroff", percPeak:"woodskip", top:"topsrim", peak:"topsride16" },
+  techhouse:     { percThin:"shakeroff", perc:"shakeroff", percPeak:"congaoff", top:"topsrim", peak:"tops16" },
+  deeptech:      { percThin:"shakeroff", perc:"shakeroff", percPeak:"congaoff", top:"topsrim", peak:"tops16" },
+  // and the ones where nothing is allowed to compete with the kick
+  gabber:      { percThin:"", perc:"", percPeak:"", top:"topsclap", peak:"tops16" },
+  speedcore:   { percThin:"", perc:"", percPeak:"", top:"topsclap", peak:"tops16" },
+  // trap's tops are the record — the rolling hat and the tambourine, not a shaker under a kit
+  trap:        { percThin:"shakeroff", perc:"shaker16", percPeak:"tritamb", top:"tops16", peak:"topsclap16" },
+  brostep:     { percThin:"shakeroff", perc:"shakeroff", percPeak:"tambshake", top:"tops16", peak:"topsclap16" },
+  riddim:      { percThin:"shakeroff", perc:"shakeroff", percPeak:"tambshake", top:"tops16", peak:"topsclap16" },
+
+  // ---- the band and song-form archetypes ----
+  // the post-rock crescendo is cymbals, not percussion
+  postrock:    { perc:"", percPeak:"", peak:"topsride" },
+  // a blues band has no percussion section; the shuffle moves to the ride for the last head
+  bluesform:   { perc:"", percPeak:"tamb", peak:"topsride" },
+  funkgroove:  { perc:"congaoff", percPeak:"tumbao" },
+  // the jazz drummer's own move is the ride, and the only hand percussion is a colour
+  jazzstandard:{ perc:"", percPeak:"triangle", peak:"topsride" },
+  bossasong:   { perc:"shaker16", percPeak:"bongos", peak:"topsrim" },
+  salsaform:   { perc:"tumbao", percPeak:"fiesta", peak:"topsrim" },
+  // palmas: in flamenco the handclaps *are* the percussion section
+  flamencoform:{ perc:"", percPeak:"tambshake", peak:"topsclap" },
+  boleroballad:{ perc:"", percPeak:"tamb", peak:"" },
+  // a storyteller's arrangement grows a shaker, never a handclap
+  storyteller: { perc:"", percPeak:"shaker8", peak:"" },
+  celticset:   { perc:"", percPeak:"tamb", peak:"" },
+  reggaesong:  { perc:"shaker16", percPeak:"tamb", peak:"topsrim" },
+  lofiloop:    { perc:"shakeroff", percPeak:"", peak:"tops16" },
+  /* No ladder at all. Every row of these three has `drums: "off"` — they are written for players
+     and a room, not a kit — so there is no stack to arrange and a shaker appearing under a film
+     cue would be an invention rather than an arrangement. */
+  ambientdrift: null,
+  filmcue: null,
+  classicalform: null,
+};
+const ladderFor = id => {
+  if (LADDER[id] === null) return null;
+  const fam = FAMILY_LADDER[FAMILY_OF[id]];
+  return fam ? { ...fam, ...(LADDER[id] || {}) } : null;
+};
+
+/* Substituting a build's move for its fill-carrying twin. A plain "riser" sweeps the filter and
+   lifts a noise riser while the kit plays the bar it played in the groove; the twins add the snare
+   roll, the hat run or the clap double-up that a build actually does. They are separate ids rather
+   than a change to "riser" itself, so a song saved with a plain riser goes on sounding as saved.
+   A ladder with no `fill` — every band family — leaves the row's own move alone, since those
+   already reach for `snaproll` where the form wants a roll. */
+const fillTwin = (move, lad) => !lad.fill ? move
+  : move === "riser" ? lad.fill : move === "hpbuild" ? "hpbuildroll" : move;
+
+/* The expansion, run once as the catalogue is built — so what a template holds afterwards is
+   ordinary rows with ordinary fields, readable in the debugger and checkable by the test suite,
+   rather than a rule that has to be re-run to be understood. */
+const withLadder = (id, rows) => {
+  const lad = ladderFor(id);
+  if (!lad) return rows;
+  return rows.map(([head, arr]) => {
+    const a = arr || {};
+    const rung = lad.rung(a);
+    const add = {};
+    // a row that takes the perc track out keeps it out — the ladder fills silence, it does not argue
+    const percOut = a.perc != null && !a.perc;
+    const wantPerc = rung >= RUNG.GROOVE ? lad.perc : lad.percThin;
+    if (!a.percPat && !percOut && wantPerc) add.percPat = wantPerc;
+    if (!a.perc2 && !percOut && rung >= RUNG.FULL && lad.percPeak) add.perc2 = lad.percPeak;
+    /* Packed in order rather than one field each, so a ladder that stacks only at full size — the
+       band half, where `top` is empty — still lands its one layer on the section's *2nd* track
+       rather than leaving a hole where the 2nd should be. A row that stacks anything of its own
+       keeps its whole stack. */
+    const stack = [rung >= RUNG.GROOVE && lad.top, rung >= RUNG.FULL && lad.peak].filter(Boolean);
+    if (!a.drums2 && !a.drums3 && stack.length) {
+      add.drums2 = stack[0];
+      if (stack[1]) add.drums3 = stack[1];
+    }
+    if (a.move) add.move = fillTwin(a.move, lad);
+    return Object.keys(add).length ? [head, { ...a, ...add }] : [head, arr];
+  });
+};
+
+/* Each template's rows become a plan in exactly the shape the structure catalogue produces, with
+   the arrangement carried on the row itself as `arr` — see the note at the top about why that
+   matters when the plan is later edited. */
+/* The band and song-form archetypes (band-templates.js) come *after* the dance catalogue, so every
+   existing "pid:t:index" pick — saved songs, shared links, TRACK_PRESETS' baseTemplate lookups —
+   keeps pointing at the template it always did. `DANCE_TEMPLATES` keeps its name because it is
+   what thirty call sites and the test suite know the catalogue by; `BAND_IDS` is how a caller tells
+   the two halves apart. */
+const DANCE_TEMPLATES = [...DEFS, ...BAND_DEFS].map(([id, name, tip, sound, rows]) => {
+  const laddered = withLadder(id, rows);
+  const lad = ladderFor(id);
+  return {
+    id, name, tip,
+    // the percussion track the song opens on. It used to be the one part of a style the catalogue
+    // never named — every template set a perc *kit* and then left the track itself switched off,
+    // so the kit was a voicing for a pattern that was never chosen. A style with a ladder opens on
+    // its groove rung; a style that names its own `perc` keeps it.
+    perc: (lad && lad.perc) || "",
+    ...sound,
+    plan: mkPlan(laddered.map(r => r[0])).map((row, i) => ({ ...row, arr: laddered[i][1] || null })),
+  };
+});
+const BAND_IDS = new Set(BAND_DEFS.map(([id]) => id));
+
 /* ---- resolving a template onto a song ----
    The plan says what the sections are; `insts` says what they became once the progression had its
    say — four chords or eight, a row played twice or four times. Only here do the two meet, which is
@@ -1442,10 +1693,16 @@ const VOICING_FIELDS = [["kit", "secKit"], ["chordInstr", "secChordInstr"], ["ch
 const fxRackOf = fx => Object.fromEntries(Object.entries(fx).map(([bus, slots]) =>
   [bus, [0, 1].map(i => ({ ...((slots && slots[i]) || { type: "off" }) }))]));
 
+/* The extra drums and perc tracks a row stacks on top of its first one. `drums2`/`drums3` are a
+   section's 2nd and 3rd drums tracks and `perc2` its 2nd percussion track — the same "＋ 2nd drums"
+   a section gets by hand, which is why they resolve into the very same maps the first track uses,
+   just at a `#N`-suffixed key, plus the `secTrackLayers` count that tells the scheduler and the
+   exporters how many tracks that section carries. A gap is impossible by construction: the ids a
+   row names are packed onto #1, #2 … in order, so `drums3` alone still lands on #1. */
 const resolveArrangement = (plan, insts) => {
   const secDrum = {}, secQuiet = {}, secBass = {}, secPerc = {}, secPad = {}, secMove = {}, secTrans = {}, parts = {};
   const voicing = Object.fromEntries(VOICING_FIELDS.map(([, m]) => [m, {}]));
-  const secFx = {};
+  const secFx = {}, secTrackLayers = {};
   const rows = {};
   (insts || []).forEach(d => (rows[d.row] = rows[d.row] || []).push(d));
   const arrOf = r => (plan && plan[r] && plan[r].arr) || null;
@@ -1481,6 +1738,13 @@ const resolveArrangement = (plan, insts) => {
       secTrans[d.key] = i === 0 ? (a.trans || "") : "";
       if (a.parts != null) parts[d.key] = PARTS.map(P => a.parts.includes(P));
       for (const [field, map] of VOICING_FIELDS) if (a[field]) voicing[map][d.key] = a[field];
+      const tops = [a.drums2, a.drums3].filter(Boolean);
+      tops.forEach((id, li) => { secDrum[d.key + LSEP + (li + 1)] = id; });
+      const percTops = [a.perc2].filter(Boolean);
+      percTops.forEach((id, li) => { voicing.secPercPat[d.key + LSEP + (li + 1)] = id; });
+      if (tops.length || percTops.length) secTrackLayers[d.key] = {
+        ...(tops.length ? { drums: tops.length + 1 } : {}),
+        ...(percTops.length ? { perc: percTops.length + 1 } : {}) };
       if (a.fx) secFx[d.key] = fxRackOf(a.fx);
     });
     if (useF) filter = span(filter, list, a.filter != null ? a.filter : 1);
@@ -1490,7 +1754,7 @@ const resolveArrangement = (plan, insts) => {
     if (useR) res = span(res, list, a.res != null ? a.res : 0);
   });
   return { secDrum, secQuiet, secBass, secPerc, secPad, secMove, secTrans, parts, filter, level, hp, res,
-    ...voicing, secFx };
+    ...voicing, secFx, secTrackLayers };
 };
 
 /* What a section is worth on the energy staircase, which is the picture the strip draws. The
@@ -1506,12 +1770,19 @@ const resolveArrangement = (plan, insts) => {
    drum kit and the chords. They score at the same tier the doc's table gives them (bass beside
    chords, perc and pad beside the hat), so pulling every one of them out now shows up as the
    subtraction it is. */
-const ENERGY_W = { drums: 3, chords: 2, lead: 3, part: 1, filter: 1.5, level: 1.5, bass: 2, perc: 1, pad: 1 };
+const ENERGY_W = { drums: 3, chords: 2, lead: 3, part: 1, filter: 1.5, level: 1.5, bass: 2, perc: 1, pad: 1,
+  /* …and one per *stacked* track — a section's 2nd/3rd drums track or its 2nd perc track — at the
+     same tier the doc's table gives a hat or a perc layer, because that is exactly what one is.
+     Without this the picture lied about the move the drum ladder exists to make: a drop that
+     stacks a rim and a sixteenth hat over the groove and adds a tambourine under it scored
+     identically to the groove it arrived from, and the lane drew the flat line the whole feature
+     was written to get rid of. */
+  tops: 1 };
 /* `drums` is an amount rather than a switch, because the subtraction that matters most is not
    silence but a kit with its kick taken out: tops-only under a build is half a drum kit, and
    scoring it as a whole one hides the exact dip the build exists to create. `true` still means the
    lot, so a caller that only knows on/off is not wrong. */
-const energyOf = ({ drums, chords, parts, filter, level, bass, perc, pad }) =>
+const energyOf = ({ drums, chords, parts, filter, level, bass, perc, pad, tops }) =>
   ENERGY_W.drums * (drums === true ? 1 : Math.max(0, Math.min(1, +drums || 0)))
   + (chords ? ENERGY_W.chords : 0)
   + (parts || []).reduce((n, on, i) => n + (on ? (i === 0 ? ENERGY_W.lead : ENERGY_W.part) : 0), 0)
@@ -1520,9 +1791,12 @@ const energyOf = ({ drums, chords, parts, filter, level, bass, perc, pad }) =>
   // exactly as it always did, and only a lane someone actually drew can pull a section down
   + ENERGY_W.filter * (filter == null ? 1 : Math.max(0, Math.min(1, filter)))
   + ENERGY_W.level * (level == null ? 1 : Math.max(0, Math.min(1, level)))
-  + (bass ? ENERGY_W.bass : 0) + (perc ? ENERGY_W.perc : 0) + (pad ? ENERGY_W.pad : 0);
+  + (bass ? ENERGY_W.bass : 0) + (perc ? ENERGY_W.perc : 0) + (pad ? ENERGY_W.pad : 0)
+  // stacked tracks beyond the first of each instrument; a caller that knows nothing about them
+  // passes nothing and scores exactly as it always did
+  + ENERGY_W.tops * Math.max(0, Math.min(4, +tops || 0));
 /* How much of a drum kit a pattern is. A pattern with no kick or sub in it anywhere is the
    arrangement's half-measure — the tops left running while the floor is taken away. */
 const drumAmountOf = pat => !pat || !pat.length ? 0 : (pat.some(st => /[KB]/.test(st || "")) ? 1 : 0.5);
 
-export { BAND_IDS, DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, resolveArrangement };
+export { BAND_IDS, DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, ladderFor, resolveArrangement };
