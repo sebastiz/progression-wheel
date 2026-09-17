@@ -37,6 +37,15 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   the entire chosen structure. A **Real** toggle plays actual recorded instruments (FluidR3
   soundfont samples, cached for offline) for the guitar / piano / organ / bass, falling back to an
   improved synth (Karplus–Strong plucked guitar, convolution reverb) when offline
+- **One chord track, three textures** — the pad was never a separate instrument, just a way of
+  playing the chords, so it is a menu on the chord track now rather than a track of its own:
+  **Pad** holds the voicing on to the next hit, **Stab** is a short chord hit, **Pluck** rolls the
+  notes across and lets them ring. Per song and per section, with a voice list that follows the
+  texture — strings and warm pads, or house stab and clav, or pizzicato and music box
+- **Pick a typical arrangement** — the Sketch tab's draft can be filled from any of the 96 running
+  orders in the catalogue, listed by genre, laid over *your* groove: the shape and the
+  section-by-section allocation come from the genre, every sound stays yours. It is still a draft —
+  re-tick any cell — and **✍ Write to Arrange** puts it on the Arrange tab
 - **Layered drums that arrange themselves** — every style declares its own drum stack, so
   **Write the template** hands back a track whose drums climb and collapse with the arrangement
   rather than looping one bar for four minutes: a DJ intro on the kit and a thin shaker, a groove

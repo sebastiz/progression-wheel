@@ -226,7 +226,7 @@ The tab's second half is a **draft arrangement** (`sketchArr`), deliberately not
 rows the writer adds (`{sec, reps, on}`), where `on` is that row's fills — which of the groove's
 tracks and melody parts the section plays. A new section arrives empty and every instrument is
 clicked in, so the matrix is read the way the record is heard. Its rows run top to bottom as a
-mixer reads — melody parts, bass, chords, pad, perc, drums at the floor — and the Arrange strip's
+mixer reads — melody parts, bass, chords, the chord texture, perc, drums at the floor — and the Arrange strip's
 lanes sort the same way. The draft's row operations are plain array transforms (no remapping,
 because nothing is an instance yet — a row carries its fills with it), and nothing in it is heard
 until **✍ Write to Arrange** commits it. The commit turns rows into a custom plan of `LOOP`
@@ -239,6 +239,33 @@ counts as a song even with no catalogue structure picked (`sections` builds its 
 `effPlan`, not `structSel`), which is what lets a committed draft play, export and be edited like
 any picked structure. The draft itself is saved in the song document, so the sketch can keep
 being reshaped and re-committed.
+
+#### A genre's running order, laid over the sketch
+
+The draft starts empty, which is the right tool when you know the shape and the wrong one when you
+want a genre's — and the catalogue already holds 96 of them. **🗺 Typical arrangement**
+(`applySketchTemplate`, beside ✍ Write to Arrange) reads one straight into `sketchArr`, grouped in
+the menu by `FAMILY_OF`/`FAMILY_ORDER`, the same family tree the Arrange tab's reference table
+draws.
+
+The translation is exact rather than approximate, because the two documents say the same thing in
+different words: a template row already declares what its section *subtracts* — `drums: "off"`,
+`chords: 0`, `bass: 0`, `perc: 0`, `pad: 0`, `parts: "A"` — and the draft matrix is one tick per
+track. So each row becomes `{sec, reps, on}` with `on` read off those declarations against the
+tracks *this* groove actually carries (`sketchTracks()`), and a row that names no `parts` plays
+every one. Nothing else of the template is taken: not its tempo, not its instruments, not its
+patterns, kits, voices or drum ladder. That is the whole distinction from picking the same style on
+the Arrange tab, where `applyArrangement` deliberately replaces all of it — here the genre supplies
+the shape and the sketch supplies everything that plays it.
+
+One exception, and it is not an instrument: a row's *shape* — `move`, `trans` and the four
+automation lanes — rides along on the draft row as `arr`, because those name no sound and they are
+most of what makes a genre's arrangement read as that genre. The commit passes them back through
+`resolveArrangement` and writes `secMove`, `secTrans` and `auto` alongside the mutes, but only when
+some row actually carries one: a draft built by hand carries none, and then the commit leaves
+sweeps drawn by hand on the Arrange tab exactly where they were. Every hand edit to the draft
+clears the menu's "laid out from" echo (`setDraft`), since a moved or re-ticked running order is
+the writer's, not the catalogue's.
 
 ### Arrangement templates, dance and band
 
@@ -841,6 +868,28 @@ The scheduler calls `playSampled`/`playLeadSampled` first and falls back to `pla
 they return false, so a sample that hasn't finished loading simply plays as synth until it's ready.
 All voices take an optional `dest` node; pitched voices + melody route to the reverb bus, click and
 drums stay dry, and the whole mix passes through a `DynamicsCompressor` limiter before the output.
+
+### The chord texture (formerly the Pad track)
+
+There was a **Pad** track: its own bus, its own lane, its own tab, playing the chord's upper voicing
+under the chord track, which was playing the same chords at the same time. One idea in two tracks,
+and the only real difference between them was how long a hit rang for. So the track is gone and the
+difference is a menu on the chords: `CHORD_TEXTURES` (`src/audio.js`) — **pad** holds the voicing on
+to the next hit, **stab** is a short chord hit, **pluck** rolls the notes across and lets them ring.
+
+Nothing underneath moved. The bus, the maps (`secPadVoice`, `secPadBeat`, `secPad`, `trackFx.pad`,
+`fxRack.pad`), the `#N` layer suffixes and every template field keep the id `pad`, which is what
+lets every saved song, shared link, arrangement template and track preset go on meaning exactly
+what it meant. What is new is one dimension: `chordTex` (song) / `secChordTex` (instance, then
+letter — the same fallback chain the voice uses), resolved by `chordTexOf`, and `textureHit(tex,
+tok, gapDur, stepDur, beat)`, which turns a grid token into a duration, a legato flag and a roll
+offset. The grid's vocabulary is unchanged — H rings to the next hit, S is short — and the texture
+decides what a hold is *worth*; `textureHit("pad", …)` reproduces the old pad note for note, which
+is why songs saved before this sound the way they were saved. `TEXTURE_VOICES` narrows the voice
+menu to the sounds each texture is made of (every id is still a `LEAD_SPECS` voice, so a voice
+borrowed from another texture's list plays fine), and `TEXTURE_NAME` is what the lanes, rows, tabs
+and stems read instead of "Pad". A row of an arrangement template can name a `chordTex` like any
+other voicing field.
 
 ## Melody persistence
 
