@@ -451,8 +451,13 @@ ride, open hat, hat, clap, rim, snare, boom, kick — across that section's bars
   start by changing a groove rather than building one from nothing. Until you click a cell the
   section is still just *following* that pattern; the header tells you which.
 - **It belongs to that pass alone.** The second chorus can have the busier hat, and the last verse
-  the fill, without touching the others. **copy to every chorus** puts it on the siblings when you
-  do want them the same, and **↺ Reset** hands the section back to the menu.
+  the fill, without touching the others. **⧉ copy to…** puts it somewhere else when you do want
+  them the same — *every other chorus*, *every other section* in the song, or one section picked by
+  name — and **↺ Reset** hands the section back to the menu. Every grid has the menu (drums, perc,
+  bass, pad and the chord rhythm), and it is how one bassline gets under a whole dance track: write
+  it once, copy it to every section, then take it back out of the sections that want the break.
+  Only the grid travels — each destination keeps its own pattern, voice and level. Copying a second
+  track (the *B* tab) onto a section that hasn't got one gives that section the track.
 - **Hold the button down and drag to paint a row.** Press an empty cell and you are drawing, press a
   full one and you are rubbing out, so a sixteenth hat across four bars is one stroke rather than
   sixty-four clicks — and one undo step. A drag on a touchscreen still scrolls the page; tap to

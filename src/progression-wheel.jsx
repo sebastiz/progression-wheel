@@ -2473,6 +2473,59 @@ export default function ProgressionWheel() {
       (_, b) => [...bars[Math.min(b, bars.length - 1)]]);
     setSecChordBeat(next);
   };
+  /* Grow a destination's track count so a copied grid has something to play on. Copying the 2nd
+     bassline onto a section that only has one bass track would otherwise write a grid under a key
+     nothing reads — the same reason copyPartSettings grows a section with fewer melody parts. */
+  const growTrackLayers = (type, keys, n) => {
+    if (!type || n <= 1) return;
+    setSecTrackLayers(prev => {
+      const next = { ...prev };
+      for (const key of keys) {
+        const cur = Math.max(1, Math.min(MAX_LAYERS, (next[key] && next[key][type]) || 1));
+        if (cur < n) next[key] = { ...(next[key] || {}), [type]: Math.min(MAX_LAYERS, n) };
+      }
+      return next;
+    });
+  };
+  /* Where a grid's copy can go. The drums, perc, bass, pad and chord grids each had one button —
+     "copy to every verse" — which is the destination you want while filling in a section's
+     siblings, and no use at all when what you want is the bassline you just wrote playing under
+     the whole record: most dance music has one bassline, not one per section, and doing it by hand
+     is eleven visits to eleven grids. This is the melody parts' own copy menu pointed at a grid:
+     the other passes of this section, every section in the song, or one picked by name. The grid
+     travels on its own — each destination keeps its own sound, voice and level, exactly as
+     "copy notes to…" does for a melody part. */
+  const gridCopyMenu = (type, d, li, copyFn, what) => {
+    if (!sections.insts.some(o => o.key === d.key)) return null;   // the groove and Session clips write across differently
+    const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+    const others = sections.insts.filter(o => o.key !== d.key);
+    if (!others.length) return null;
+    const doCopy = (list, where) => {
+      if (!list.length) return;
+      growTrackLayers(type, list.map(o => o.key), li + 1);
+      copyFn(layered(d, li), list.map(o => layered(o, li)));
+      setIoNote(`${what}${li ? " · " + LAYER_NAMES[li] : ""} copied to ${where}.`);
+    };
+    const role = d.word.toLowerCase();
+    return (
+      <select className="fxsel partcopy" value=""
+        title={`Put this ${what.toLowerCase()} on other sections — every other ${role}, every section in the song, or one of them. `
+          + "Only the grid travels: each destination keeps whatever pattern, voice and level it already had."}
+        onChange={e => {
+          const v = e.target.value;
+          if (v === "role") doCopy(sameRole, `every other ${role}`);
+          else if (v === "all") doCopy(others, "every other section");
+          else if (v) doCopy(others.filter(o => o.key === v), v);
+        }}>
+        <option value="">⧉ copy to…</option>
+        {sameRole.length > 0 && <option value="role">every other {role} ({sameRole.length})</option>}
+        <option value="all">every other section ({others.length})</option>
+        <optgroup label="just one">
+          {others.map(o => <option key={o.key} value={o.key}>{o.key} · {o.word}</option>)}
+        </optgroup>
+      </select>
+    );
+  };
   /* ---- Session view: track + clip management ----
      A clip's content lives in the same per-instance maps a section's own track already uses
      (melos.secs for melody, secBeat/secBassBeat/secPadBeat/secPercBeat/secChordBeat for the
@@ -7679,7 +7732,6 @@ export default function ProgressionWheel() {
                   const bars = beatBars(dl);
                   const n = bars[0].length, cols = n * d.nbars;
                   const own = !!secBeat[dl.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
                   const cat = DRUMS[effDrum(dl) || drum];
                   return (
                     <div style={{ marginTop:6 }}>
@@ -7723,9 +7775,7 @@ export default function ProgressionWheel() {
                         {view.groove && dLayer === 0 && wholeSongBtn("drums")}
                         {own && <button className="mini" onClick={() => resetBeat(dl.key)}
                           title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBeat(dl, sameRole.map(o => layered(o, dLayer)))}
-                          title={"Put these drums on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                        {gridCopyMenu("drums", d, dLayer, copyBeat, "These drums")}
                       </div>
                       <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
                         {/* the same chord header the melody grid carries, on the same columns —
@@ -7783,7 +7833,6 @@ export default function ProgressionWheel() {
                   const bars = percGridBars(dl);
                   const n = bars[0].length, cols = n * d.nbars;
                   const own = !!secPercBeat[dl.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
                   const src = percSrcOf(dl);
                   const cat = src && src.pat ? (PERCS[src.pat] || DRUMS[src.pat]) : null;
                   return (
@@ -7824,9 +7873,7 @@ export default function ProgressionWheel() {
                         {view.groove && pLayer === 0 && wholeSongBtn("perc")}
                         {own && <button className="mini" onClick={() => resetPercBeat(dl.key)}
                           title="Hand this section back to the perc menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPercBeat(dl, sameRole.map(o => layered(o, pLayer)))}
-                          title={"Put this perc on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                        {gridCopyMenu("perc", d, pLayer, copyPercBeat, "This percussion")}
                       </div>
                       <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
                         <div className="mline" style={{ gap:beatGap,
@@ -7878,7 +7925,6 @@ export default function ProgressionWheel() {
                   const bars = bassGridBars(dl);
                   const n = bars[0].length, cols = n * d.nbars;
                   const own = !!secBassBeat[dl.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
                   const src = bassSrcOf(dl);
                   const cat = src && src.pat ? BASS[src.pat] : null;
                   return (
@@ -7940,9 +7986,7 @@ export default function ProgressionWheel() {
                           ✦ Riff the holes</button>
                         {own && <button className="mini" onClick={() => resetBassBeat(dl.key)}
                           title="Hand this section back to the bass menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyBassBeat(dl, sameRole.map(o => layered(o, bLayer)))}
-                          title={"Put this bassline on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                        {gridCopyMenu("bass", d, bLayer, copyBassBeat, "This bassline")}
                       </div>
                       <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
                         <div className="mline" style={{ gap:beatGap,
@@ -7995,7 +8039,6 @@ export default function ProgressionWheel() {
                   const bars = padGridBars(dl);
                   const n = bars[0].length, cols = n * d.nbars;
                   const own = !!secPadBeat[dl.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
                   return (
                     <div style={{ marginTop:6 }}>
                       <div className="row gridhdr">
@@ -8031,9 +8074,7 @@ export default function ProgressionWheel() {
                         {view.groove && qLayer === 0 && wholeSongBtn("pad")}
                         {own && <button className="mini" onClick={() => resetPadBeat(dl.key)}
                           title="Back to the pad's one-hold-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(dl, sameRole.map(o => layered(o, qLayer)))}
-                          title={"Put this pad rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                        {gridCopyMenu("pad", d, qLayer, copyPadBeat, "This pad rhythm")}
                       </div>
                       <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
                         <div className="mline" style={{ gap:beatGap,
@@ -8083,7 +8124,6 @@ export default function ProgressionWheel() {
                   const bars = chordGridBars(d);
                   const n = bars[0].length, cols = n * d.nbars;
                   const own = !!secChordBeat[d.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
                   return (
                     <div style={{ marginTop:6 }}>
                       <div className="row gridhdr">
@@ -8124,9 +8164,7 @@ export default function ProgressionWheel() {
                         {view.groove && wholeSongBtn("chords")}
                         {own && <button className="mini" onClick={() => resetChordBeat(d.key)}
                           title="Hand this section back to the song's strum pattern — the grid goes on showing it, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyChordBeat(d, sameRole)}
-                          title={"Put this chord rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                        {gridCopyMenu(null, d, 0, copyChordBeat, "This chord rhythm")}
                       </div>
                       <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
                         <div className="mline" style={{ gap:beatGap,

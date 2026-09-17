@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- **A grid can be copied to every section now, not just to the sections like it.** The drums, perc,
+  bass, pad and chord grids each had one copy button — *copy to every verse* — which is the right
+  destination while you are filling in a section's siblings and no use at all for the thing dance
+  music actually does: one bassline under the whole record. Getting it there meant opening eleven
+  grids and writing it eleven times. Each grid now has the melody parts' own **⧉ copy to…** menu
+  instead — *every other verse*, *every other section*, or one section picked by name — and only the
+  grid travels, so every destination keeps the pattern, voice and level it already had. Copying a
+  second track (the *B* tab) onto a section that has only one gives that section the second track
+  rather than writing a grid nothing plays.
 - **One chord is now a choice in the Chords menu.** Most dance music has no progression: a house or
   techno track is a groove over a single chord, and everything that moves is the filter, the bass,
   the percussion and the arrangement — but the chord count started at two, so the one thing most of
