@@ -298,8 +298,14 @@ function buildExportState(x) {
     })(),
   });
 
+  /* Per track, not per bus: a section can carry a 2nd bassline or a 3rd drums track, each with
+     its own chain and its own settings under a "#N"-suffixed id ("bass#1"), and a track with none
+     of its own plays the first one's. Whatever the song actually stored is listed, so an extra
+     track that was given its own drive says so and one that follows the first is simply absent. */
   const trackFxOut = {};
-  for (const trId of ["drums", "perc", "bass", "pad"]) {
+  const trackIds = base => [base, ...Object.keys(x.trackFx || {})
+    .filter(k => k.startsWith(base + "#")).sort()];
+  for (const trId of ["drums", "perc", "bass", "pad"].flatMap(trackIds)) {
     const fx = (x.trackFx || {})[trId];
     if (!fx) continue;
     const changed = {};
@@ -313,7 +319,9 @@ function buildExportState(x) {
   // audio.js), off by default. Only slots actually set to something are listed, named and unit-ed
   // the same way MODS are above — a slot left at "off" needs no explanation, it did nothing.
   const fxRackOut = {};
-  for (const bus of ["master", "drums", "perc", "bass", "pad", "lead"]) {
+  const rackIds = base => [base, ...Object.keys(x.fxRack || {})
+    .filter(k => k.startsWith(base + "#")).sort()];
+  for (const bus of ["master", "drums", "perc", "bass", "pad", "lead"].flatMap(rackIds)) {
     const shaped = shapeFxBus((x.fxRack || {})[bus]);
     if (shaped) fxRackOut[bus] = shaped;
   }
@@ -390,11 +398,11 @@ function buildExportState(x) {
       note: "each section's resolved drum/bass/perc/pad source is listed with that section",
     },
     track_effects: {
-      note: "per-track versions of the part controls (level, filter, drive, LFOs, sends); only tracks with non-default settings are listed",
+      note: "per-track versions of the part controls (level, filter, drive, LFOs, sends); only tracks with non-default settings are listed. A \"#N\" suffix is an extra track of that instrument (bass#1 is a section's second bassline, with its own chain); an extra track that is not listed plays the first track's settings",
       ...trackFxOut,
     },
     insert_fx: {
-      note: "a second, independent two-slot processing rack per bus (chorus/flanger/phaser/stutter/bitcrusher/compressor/stereo widener, plus a second distortion stage) — 'lead' is one shared rack all six melody parts feed into; only buses with a slot set to something other than Off are listed. This is the song-wide default every section inherits; a section with its own copy of a bus lists it under that section's own insert_fx_override instead, with the same slot type (a slot's type is fixed for the whole song) but its own amount",
+      note: "a second, independent two-slot processing rack per bus (chorus/flanger/phaser/stutter/bitcrusher/compressor/stereo widener, plus a second distortion stage) — 'lead' is one shared rack all six melody parts feed into; only buses with a slot set to something other than Off are listed, and a \"#N\" suffix is an extra track of that instrument with a rack of its own (an unlisted extra track plays the first track's). This is the song-wide default every section inherits; a section with its own copy of a bus lists it under that section's own insert_fx_override instead, with the same slot type (a slot's type is fixed for the whole song) but its own amount",
       master_note: "the master rack sits just before the limiter on the full mix render; like the limiter, it is bypassed for stem exports so the stems still sum to the mix without it applied twice — it also has no per-section override, since it colours the whole song by design",
       ...fxRackOut,
     },

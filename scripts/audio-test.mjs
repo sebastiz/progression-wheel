@@ -2206,6 +2206,42 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     + `(${fromLoop} of them one the loop already plays), all 4 section tokens stay non-empty`);
 }
 
+/* ---- one chain per track, not one per bus ----
+   A section can carry a 2nd bassline, and while both fed one chain there was one filter, one drive
+   and one insert rack across the pair — "distort the sub, leave the riff alone" could not be said.
+   The graph itself needs a browser, so what is held here is the wiring the component describes:
+   every track addressed by the same #N-suffixed id its grids already use, its notes routed into
+   its own chain, and a track with nothing of its own reading the first track's so that a song
+   saved before any of this sounds exactly as it did. */
+{
+  const want = [
+    [/const busKey = \(type, li\) => \(li \? type \+ LSEP \+ li : type\);/,
+      "busKey no longer names an extra track's bus"],
+    [/const busL = \{ drums: mkBus\("drums"/, "the four rhythm buses are not built per track"],
+    [/bass: mkBus\("bass", duckFor\(bduck, filt\), BASS_MAKEUP\)/,
+      "an extra bassline has no sidechain node of its own"],
+    [/const trackFxOf = id => F3\[id\] \|\| F3\[trackBus\(id\)\];/,
+      "a track with no settings of its own no longer follows the first track"],
+    [/applyFx\(tr, trackFxOf\(busKey\(type, li\)\)/, "the track settings are not applied per track"],
+    [/const rackOf = id => \(busLayer\(id\) && \(secFxOf\(id\) \|\| FXR\[id\]\)\)/,
+      "an extra track's insert rack is not resolved within the track first"],
+    [/writeFxRack\(tr\.fx, m\.fxActiveId\[id\], rackOf\(id\)\)/, "the insert rack is not written per track"],
+    [/const fxActiveForTrack = id => fxActiveFor\(FR\[id\] \? id : trackBus\(id\)\);/,
+      "an extra track's rack no longer starts on what it is following"],
+  ];
+  for (const [re, why] of want)
+    if (!re.test(code)) problems.push(`progression-wheel.jsx: ${why}`);
+  // every source that can have more than one track routes its notes into that track's own chain
+  for (const [what, re] of [["bass", /bus\("bass", li\)\.in/], ["pad", /bus\("pad", li\)\.in/],
+    ["perc", /bus\("perc", li\)\.in/], ["drums", /bus\("drums", li\)\.in/]])
+    if (!re.test(code)) problems.push(`progression-wheel.jsx: an extra ${what} track still plays into the first one's chain`);
+  // and the panels are per track: each grid's FX row follows that grid's own track tab
+  for (const [bus, tab] of [["drums", "dLayer"], ["perc", "pLayer"], ["bass", "bLayer"], ["pad", "qLayer"]])
+    if (!code.includes(`trackFxRow(busKey("${bus}", ${tab}), secFxCtx)`))
+      problems.push(`progression-wheel.jsx: the ${bus} FX panel is not pointed at the open track`);
+  console.log(`per-track effects: ${want.length} wiring properties hold, 4 sources routed per track, 4 panels per track`);
+}
+
 /* ---- song structures are well-formed, and the dance ones phrase properly ---- */
 {
   const TOKENS = ["LOOP", "HALF1", "HALF2", "HOLD1"];
@@ -4134,7 +4170,8 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
     totalBars: 16, sections: [src, { ...src, key: "C2", startBar: 12 }], groove: null,
     instr: "acoustic_guitar_steel", melInstr: "flute", kit: "909", percKit: "hand",
     pump: "classic", bassVoice: "saw", padId: "strings", drum: "four", patId: "pop",
-    delayId: "8d", trackFx: { bass: { lvl: 80, drive: 30, wobRate: 2 } },
+    delayId: "8d", trackFx: { bass: { lvl: 80, drive: 30, wobRate: 2 }, "bass#1": { drive: 70 } },
+    fxRack: { bass: [{ type: "chorus", amt: 40 }], "bass#1": [{ type: "bitcrusher", amt: 60 }] },
     realSounds: true, legato: true, clickOn: false,
     auto: { key: "x", filter: [{ bar: 0, v: 0.2 }, { bar: 8, v: 1 }], cut0: [{ bar: 4, v: 0.5 }] },
   });
@@ -4160,6 +4197,17 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   if (clean.a !== null || clean.b !== null || clean.d !== null || clean.e !== null
       || clean.loop !== null || clean.f[0] !== null || clean.f[1] !== 1 || "c" in clean)
     problems.push("export state: sanitizeJson leaks NaN, Infinity, undefined, functions or cycles");
+  // 2b. an extra track is its own track in the snapshot: a section's 2nd bassline has its own
+  // chain, so its settings and its rack are listed under the same "#N" id the app keys them by,
+  // and an extra track with nothing of its own is simply absent (it plays the first track's)
+  const tfx = state.track_effects || {};
+  if (!tfx.bass || !tfx["bass#1"])
+    problems.push("export state: an extra track's own settings are not listed as their own track");
+  else if (tfx["bass#1"].drive_percent !== 70 || tfx.bass.drive_percent !== 30)
+    problems.push("export state: the two basslines' settings are not kept apart");
+  const frk = state.insert_fx || {};
+  if (!frk["bass#1"] || JSON.stringify(frk["bass#1"]) === JSON.stringify(frk.bass))
+    problems.push("export state: an extra track's own insert rack is not listed as its own");
   // 3. the reference covers every modulation in the tables, under a unique readable name
   const ref = state.modulation_reference.flatMap(g => g.controls);
   if (ref.length !== M.MODS.length)

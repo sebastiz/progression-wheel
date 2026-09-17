@@ -471,6 +471,26 @@ The grid follows your time signature — 16 steps in 4/4, 12 in 3/4 and 6/8, 20 
 write goes into the exported MIDI, the Live Set and the drum stem, because an edited bar is a drum
 pattern like any other.
 
+### A second track, with effects of its own
+
+**＋ 2nd drums** (and **＋ 2nd perc / bass / pad**) gives the section another track of that
+instrument, with its own pattern, grid, kit or voice, behind an **A / B** tab strip.
+
+Each of those tracks is a separate instrument in the mix: **its own chain, its own effects and its
+own insert rack.** The effects panel under the grid follows the tab you have open, so a sub on *A*
+and a riff on *B* can be filtered, driven, panned, ducked and processed apart — distort the riff and
+leave the sub alone, which is the usual reason for writing a second bassline in the first place. The
+same tabs appear on the **Sound** tab's Track effects panels, so each track's song-wide settings are
+reachable from there too.
+
+A second track starts out **following the first**, and the panel says so: it sounds exactly as track
+A does until you move something in it, and that first move is what gives it settings of its own
+(**↺ follow Bass A** hands them back). So nothing you saved before changes, and adding a track never
+silently changes the mix.
+
+One thing stays shared: the drawn **filter lane** for a track is the instrument's, and rides every
+track of it — that lane is a DJ filter on the bass, not on one bassline.
+
 ### Opening the song in Ableton
 
 **↓ Live Set** on the Arrange tab writes a `.als`. Where a MIDI file gives Live bare clips, this

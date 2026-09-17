@@ -460,6 +460,12 @@ const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
    track follows the groove's 2nd track rather than its 1st. */
 const layerSuf = key => { const i = key == null ? -1 : key.indexOf(LSEP); return i < 0 ? "" : key.slice(i); };
 const layered = (d, li) => (!li || !d) ? d : { ...d, key: d.key + LSEP + li, base: d.base + LSEP + li };
+/* An extra track's *bus* id, suffixed the same way its section keys are: the first bassline is
+   "bass" and the second is "bass#1", so one string addresses one track's chain, its settings
+   (`trackFx`), its insert rack (`fxRack`) and a section's own copy of that rack (`secFx`). */
+const busKey = (type, li) => (li ? type + LSEP + li : type);
+const trackBus = id => { const i = id == null ? -1 : id.indexOf(LSEP); return i < 0 ? id : id.slice(0, i); };
+const busLayer = id => { const suf = layerSuf(id); return suf ? +suf.slice(LSEP.length) || 0 : 0; };
 /* The insert-effects rack's seven buses. Drums, Perc, Bass, Pad and Chords each get their rack as
    a fifth "FX" tab inside their own trackFxRow (Sound tab and, per section, under their own grid in
    Arrange/Sketch) — see trackFxRow. "lead" is one shared rack all six melody parts feed into (see
@@ -693,6 +699,7 @@ export default function ProgressionWheel() {
      (only values that differ from their default are stored), one per track. */
   const [trackFx, setTrackFx] = useState({});         // { drums:{...}, perc:{...}, bass:{...}, pad:{...} }
   const [openFx, setOpenFx] = useState({});           // which track effect panels are open
+  const [fxLayerTab, setFxLayerTab] = useState({});   // per bus, which of its tracks the Sound tab is showing
   const [trackFxTab, setTrackFxTab] = useState({});   // per track, which settings group is showing
   /* The insert-effects rack: two slots per bus, each `{ type, ...its own params }`. Sparse the same
      way trackFx is — a bus/slot never opened simply is not a key here, and `fxSlotRow` below hands
@@ -1829,7 +1836,14 @@ export default function ProgressionWheel() {
      pick its own type as well as its own amount. Omitted, the FX tab edits the song-wide rack
      (`fxRack`) directly, as it does on the Sound tab. */
   const trackFxRow = (trId, secCtx) => {
-    const fx = trackFx[trId] || {};
+    /* `trId` is a *track*, not a bus: "bass" is the first bassline and "bass#1" the second (see
+       busKey). An extra track with nothing of its own reads the first track's settings and the
+       first track's rack — which is what it sounds like, so the panel has to show it — and the
+       first edit here writes under the extra track's own id, forking it from that point on. That
+       is the whole switch: no checkbox, and nothing to set up before the knobs mean something. */
+    const baseId = trackBus(trId), li = busLayer(trId);
+    const ownFx = trackFx[trId], ownRack = fxRack[trId];
+    const fx = ownFx || (li ? trackFx[baseId] : null) || {};
     const ly = { lvl: 100, ...fx };
     const groups = [
       { id:"mix", name:"Mix", tip:"Where the track sits — its level, stereo place and how it answers the kick",
@@ -1845,8 +1859,10 @@ export default function ProgressionWheel() {
       .map(k => k === "lvl" ? TRACK_LVL : MOD_BY_KEY[k]) }));
     const grp = trackFxTab[trId] || "mix";
     const G = groups.find(g => g.id === grp) || groups[0];
-    const trName = (TRACKS_FX.find(([id]) => id === trId) || [null, trId])[1];
-    const song = fxRack[trId] || [];
+    const busName = (TRACKS_FX.find(([id]) => id === baseId) || [null, baseId])[1];
+    const trName = busName + (li ? " " + LAYER_NAMES[li] : "");
+    const firstName = busName + " " + LAYER_NAMES[0];
+    const song = ownRack || (li ? fxRack[baseId] : null) || [];
     const own = secCtx && secFx[secCtx.key] && secFx[secCtx.key][trId];
     const fxOn = ((secCtx ? (own || song) : song) || [])
       .filter(s => s && s.type && s.type !== "off").length;
@@ -1910,6 +1926,20 @@ export default function ProgressionWheel() {
             FX{fxOn > 0 && <i className="lydot">{fxOn}</i>}
           </button>
         </div>
+        {li > 0 && (ownFx || ownRack
+          ? <p className="keytag" style={{ margin:"4px 0 0" }}>
+              Its own {ownFx && ownRack ? "settings and effects" : ownFx ? "settings" : "effects"} —
+              <button className="mini" style={{ marginLeft:5 }}
+                onClick={() => {
+                  if (ownFx) { const n2 = { ...trackFx }; delete n2[trId]; setTrackFx(n2); }
+                  if (ownRack) { const n2 = { ...fxRack }; delete n2[trId]; setFxRack(n2); }
+                }}
+                title={`Drop this track's own settings and let it follow ${firstName} again`}>
+                ↺ follow {firstName}</button>
+            </p>
+          : <p className="keytag" style={{ margin:"4px 0 0" }}>
+              Following <b>{firstName}</b> — move anything here and this track keeps its own from then on.
+            </p>)}
         {grp === "fx" ? renderFxTab() : (
           <div className="modgrid">
             {G.mods
@@ -2848,6 +2878,11 @@ export default function ProgressionWheel() {
     setTrackTab(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [type]: Math.min(prev[key]?.[type] ?? 0, li - 1) } }));
   };
   const TRACK_NAME = { drums:"drums", perc:"perc", bass:"bass", pad:"pad" };
+  // how many of this track the song has anywhere — the groove sketch or any section. The Sound
+  // tab's panels are song-wide and have no section to read a count off, and a 2nd bassline nobody
+  // can reach from there is a 2nd bassline with no song-wide settings of its own.
+  const tracksInSong = type => Math.max(1, trackLayerCount(type, GROOVE),
+    ...sections.insts.map(x => trackLayerCount(type, x.key)));
   const activeLayerOf = (type, key) =>
     Math.min(trackLayerCount(type, key) - 1, (trackTab[key] && trackTab[key][type]) || 0);
   /* The tab strip a drums/perc/bass/pad grid opens with once it has more than one track — the
@@ -3822,6 +3857,17 @@ export default function ProgressionWheel() {
     const s = FR[bus] || [];
     return [(s[0] || {}).type || "off", (s[1] || {}).type || "off"];
   };
+  /* The same two, for an extra track (`bass#1`), which reads its own rack where it has one and the
+     first track's where it has not: it needs chains for both sets of types built, or taking its own
+     rack mid-song would have nothing to switch to, and it has to *start* on whatever it is
+     currently following rather than on "off". */
+  const fxIdsForTrack = id => {
+    const base = trackBus(id);
+    if (base === id) return fxIdsFor(id);
+    const own = fxIdsFor(id), first = fxIdsFor(base);
+    return [0, 1].map(si => Array.from(new Set([...own[si], ...first[si]])));
+  };
+  const fxActiveForTrack = id => fxActiveFor(FR[id] ? id : trackBus(id));
   // Stems are pre-master: the limiter is a compressor, and compression is not linear, so
   // limiting each stem on its own could never add back up to a limited mix. Bypassing it means
   // the stems sum to the raw mix sample for sample, and the DAW's own master chain does the
@@ -3910,10 +3956,6 @@ export default function ProgressionWheel() {
      handed in as `fx`. Slotted between the chain's own duck and `out` — after the filter/drive/
      pan/duck stage every track already has, so an insert here never disturbs the sidechain-duck,
      delay-send or reverb-send taps above it, all of which are taken off `tail`, before the duck. */
-  const fxDrums = makeFxMultiRack(ctx, ...fxIdsFor("drums"), fxT0, fxActiveFor("drums"));
-  const fxPerc = makeFxMultiRack(ctx, ...fxIdsFor("perc"), fxT0, fxActiveFor("perc"));
-  const fxBass = makeFxMultiRack(ctx, ...fxIdsFor("bass"), fxT0, fxActiveFor("bass"));
-  const fxPad = makeFxMultiRack(ctx, ...fxIdsFor("pad"), fxT0, fxActiveFor("pad"));
   const fxChords = makeFxMultiRack(ctx, ...fxIdsFor("chords"), fxT0, fxActiveFor("chords"));
   // one shared rack for every melody part — connected once, here, to the reverb bus every part's
   // chain already fed straight into; each part's own duck fans into `fxLead.input` below, in
@@ -3944,22 +3986,53 @@ export default function ProgressionWheel() {
     return { in: inG, drive, hp: chp, lp, trem, pan, duck, send, verbS, fx,
       wob: lfo(lp.frequency), tremLfo: lfo(trem.gain), panLfo: pan ? lfo(pan.pan) : null, driveAmt: 0 };
   };
-  const trDrums = mkChain(master, fxDrums);
-  const trPerc = mkChain(master, fxPerc);
-  const trBass = mkChain(bduck, fxBass);
-  trBass.in.gain.value = BASS_MAKEUP;              // audible before the first beat's applyFx runs
-  const trPad = mkChain(padDuck, fxPad);
+  /* One chain per *track*, not one per bus. A section's 2nd bassline is a second instrument —
+     the whole point of adding one is that it does something the first does not — and while both
+     fed one chain there was one filter, one drive and one insert rack over the pair of them, so
+     "distort the sub and leave the riff alone" could not be said at all. Each track now gets its
+     own chain, addressed by the same `#N`-suffixed id everything else about an extra track uses
+     (see the note beside TRACKS_FX): `bass` is the first, `bass#1` the second. Only tracks the
+     song actually has are built — a song with one bassline builds exactly what it always did —
+     and a track with no settings of its own reads the first track's, so both chains are dialled
+     identically until one of them is given something of its own and nothing that was saved
+     before this existed changes. */
+  // the most of this track any one section (or clip, or the groove) carries — `Math.min` goes
+  // around the max, not through the counts, or one section with a single bassline would decide
+  // the whole song had one
+  const busLayers = type => Math.min(MAX_LAYERS, Math.max(1,
+    ...Object.values(secTrackLayersRef.current || {}).map(o => (o && o[type]) || 1)));
+  const mkBus = (type, outFor, makeup) => Array.from({ length: busLayers(type) }, (_, li) => {
+    const id = busKey(type, li), out = outFor(li);
+    const ch = mkChain(out, makeFxMultiRack(ctx, ...fxIdsForTrack(id), fxT0, fxActiveForTrack(id)));
+    if (makeup != null) ch.in.gain.value = makeup;   // audible before the first beat's applyFx runs
+    ch.sc = out;                                     // this track's sidechain node (see duckFor)
+    return ch;
+  });
+  /* Where a track's chain lands, per track. Bass and pad duck under the kick on a shared node
+     (`bduck`/`padDuck`) that sits after the chain, so the first track keeps exactly the node it
+     always had — a one-bassline song is node-for-node what it was — and every extra track gets one
+     of its own into the same place. Without that its Pump knob would be a knob that does nothing:
+     the sidechain is the one "effect" that is not inside the chain. */
+  const duckFor = (first, dest) => li => {
+    if (!li) return first;
+    const g = ctx.createGain(); g.gain.value = 1; g.connect(dest); return g;
+  };
+  const busL = { drums: mkBus("drums", () => master), perc: mkBus("perc", () => master),
+    bass: mkBus("bass", duckFor(bduck, filt), BASS_MAKEUP), pad: mkBus("pad", duckFor(padDuck, music)) };
+  const trDrums = busL.drums[0], trPerc = busL.perc[0], trBass = busL.bass[0], trPad = busL.pad[0];
   // the chords' own chain — full mkChain like the other three tracks (level/drive/filter/
   // tremolo/pan/insert-fx), into the same duck node it always used
   const trChords = mkChain(cduck, fxChords);
   trChords.in.gain.value = CHORD_MAKEUP;           // audible before the first beat's applyFx runs
-  // which id is currently audible in each bus/slot — starts matching what was just built (the
-  // song's own type), and is the thing the per-beat block below compares each tick's resolved
-  // section type against, switching (`writeFxRack`) when they disagree
-  const fxActiveId = { drums: fxActiveFor("drums"), perc: fxActiveFor("perc"), bass: fxActiveFor("bass"),
-    pad: fxActiveFor("pad"), chords: fxActiveFor("chords"), lead: fxActiveFor("lead"), master: fxActiveFor("master") };
+  // which id is currently audible in each track/slot — starts matching what was just built (the
+  // track's own type, or the first track's where it has none), and is the thing the per-beat block
+  // below compares each tick's resolved section type against, switching (`writeFxRack`) when they
+  // disagree. Keyed by track id, so the 2nd bass's rack switches independently of the 1st's.
+  const fxActiveId = { chords: fxActiveFor("chords"), lead: fxActiveFor("lead"), master: fxActiveFor("master") };
+  for (const type in busL)
+    busL[type].forEach((_, li) => { fxActiveId[busKey(type, li)] = fxActiveForTrack(busKey(type, li)); });
   const m = { ctx, master, music, cduck, bduck, padDuck, wetDuck, filt, mhp,
-    trDrums, trPerc, trBass, trPad, trChords, fxLead, fxMaster, fxActiveId,
+    trDrums, trPerc, trBass, trPad, trChords, busL, fxLead, fxMaster, fxActiveId,
     bassLp: trBass.lp, percLp: trPerc.lp, padLp: trPad.lp, autoFilt, autoHp, autoGain, verb, tn, stem: stem || null,
     lastAutoBar: -1, lastMoveBar: -1, lastCueBar: -1,
     partGain: [], partGate: [], partDuck: [], partSend: [], partVerb: [],
@@ -3980,6 +4053,9 @@ export default function ProgressionWheel() {
   // One tick of the song: chord, drums, melody parts, moves. `live` drives the on-screen
   // playhead; an offline render passes false because there is nothing to light up.
   const emitTick = (m, live) => {
+      /* Which chain a track's notes go into: its own, or the first track's for a track added
+         since this Play started (its chain is built at Play, like everything else structural). */
+      const bus = (type, li) => { const L2 = (m.busL && m.busL[type]) || []; return L2[li] || L2[0]; };
 
       // The bar ticks at its finest active resolution; every pattern is sampled onto that grid.
       // `beat` is the musical unit the voices are shaped against (a quarter note), so note
@@ -4305,7 +4381,7 @@ export default function ProgressionWheel() {
         const bpat = bbar || (BASS[bassSrc.pat] || {}).pattern;
         if (!bbar && bassSrc.pat && !(BASS[bassSrc.pat] || {}).pattern) {
           if (sym !== "-" && sym !== "U")   // an upstroke never reaches the low string
-            playBass(m.ctx, t, chord.root, 0, eighth * 1.8, bassVoices[li], m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
+            playBass(m.ctx, t, chord.root, 0, eighth * 1.8, bassVoices[li], bus("bass", li).in, humVel(accentAt(i, ticksPerBeat)));
         } else if (bpat && bpat.length) {
           const bs = stepAt(bpat.length, i, L);
           const tok = bs == null ? "" : bpat[bs];
@@ -4314,7 +4390,7 @@ export default function ProgressionWheel() {
             while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
             const stepDur = tick * (L / bpat.length);
             playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
-              bassVoices[li], m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
+              bassVoices[li], bus("bass", li).in, humVel(accentAt(i, ticksPerBeat)));
           }
         }
       });
@@ -4342,7 +4418,7 @@ export default function ProgressionWheel() {
           while (gap < bpat.length && (!bpat[(bs + gap) % bpat.length] || bpat[(bs + gap) % bpat.length] === "-")) gap++;
           const stepDur = tick * (L / bpat.length);
           playBass(m.ctx, t, chord.root, BASS_IV[tok] || 0, Math.max(0.09, gap * stepDur * 0.92),
-            bassVoiceRef.current, m.trBass.in, humVel(accentAt(i, ticksPerBeat)));
+            bassVoiceRef.current, bus("bass", li).in, humVel(accentAt(i, ticksPerBeat)));
         }
       });
       /* The pad track: the chord's upper voicing held a bar at a time, legato, into its own
@@ -4389,13 +4465,13 @@ export default function ProgressionWheel() {
             const stepDur = tick * (L / pbar.length);
             const dur = tok === "S" ? Math.min(stepDur * 1.8, beat * 0.45) : Math.max(0.15, gap * stepDur * 0.95);
             for (const mid of (m.voicing || voiceChord(chord)))
-              leadNote(m.ctx, t, mid, dur, voice || "strings", tok !== "S", m.trPad.in, { lvl: 0.8 });
+              leadNote(m.ctx, t, mid, dur, voice || "strings", tok !== "S", bus("pad", li).in, { lvl: 0.8 });
           } else if ((pick ? pick !== "off" : li === 0 && padRef.current) && voice && i === 0) {
             // an untouched clip plays a held chord on the downbeat, the way an untouched
             // section does — in its own picked voice, or (first sub-track) the song's
             const barDur = barBeatsRef.current * beat;
             for (const mid of (m.voicing || voiceChord(chord)))
-              leadNote(m.ctx, t, mid, barDur * 0.98, voice, true, m.trPad.in, { lvl: 0.8 });
+              leadNote(m.ctx, t, mid, barDur * 0.98, voice, true, bus("pad", li).in, { lvl: 0.8 });
           }
         }
       });
@@ -4417,12 +4493,12 @@ export default function ProgressionWheel() {
             const stepDur = tick * (L / pbar.length);
             const dur = tok === "S" ? Math.min(stepDur * 1.8, beat * 0.45) : Math.max(0.15, gap * stepDur * 0.95);
             for (const mid of (m.voicing || voiceChord(chord)))
-              leadNote(m.ctx, t, mid, dur, pv, tok !== "S", m.trPad.in, { lvl: 0.8 });
+              leadNote(m.ctx, t, mid, dur, pv, tok !== "S", bus("pad", li).in, { lvl: 0.8 });
           }
         } else if (padV && i === 0) {
           const barDur = barBeatsRef.current * beat;
           for (const mid of (m.voicing || voiceChord(chord)))
-            leadNote(m.ctx, t, mid, barDur * 0.98, padV, true, m.trPad.in, { lvl: 0.8 });
+            leadNote(m.ctx, t, mid, barDur * 0.98, padV, true, bus("pad", li).in, { lvl: 0.8 });
         }
       }
       /* The percussion layer: a second pattern from the drum table riding over the main groove on
@@ -4444,8 +4520,8 @@ export default function ProgressionWheel() {
         const percKitNow = (ti != null && secPercKitRef.current[ti]) || (tb != null && secPercKitRef.current[tb]) || percKitRef.current;
         if (pstep)
           for (const ch of pstep) {
-            if (legacy) drumSound(m.ctx, t, ch, m.noise, m.trPerc.in, kitRef.current, humVel(accentAt(i, ticksPerBeat)) * 0.8);
-            else percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitNow);
+            if (legacy) drumSound(m.ctx, t, ch, m.noise, bus("perc", li).in, kitRef.current, humVel(accentAt(i, ticksPerBeat)) * 0.8);
+            else percSound(m.ctx, t, ch, m.noise, bus("perc", li).in, humVel(accentAt(i, ticksPerBeat)), percKitNow);
           }
       }
       if (sessionModeRef.current) sessionTracksRef.current.forEach(tr => {
@@ -4465,7 +4541,7 @@ export default function ProgressionWheel() {
             : li === 0 ? ((PERCS[percRef.current] || DRUMS[percRef.current] || {}).pattern) : null;
           const pstep = sampleAt(ppat, i, L);
           if (pstep) for (const ch of pstep)
-            percSound(m.ctx, t, ch, m.noise, m.trPerc.in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
+            percSound(m.ctx, t, ch, m.noise, bus("perc", li).in, humVel(accentAt(i, ticksPerBeat)), percKitRef.current);
         }
       });
       let b = null;                                     // this bar's struct entry, kept for the drum fill below
@@ -4596,11 +4672,18 @@ export default function ProgressionWheel() {
           if (tr.send) tr.send.gain.setValueAtTime(val("send") || 0, t);   // stored 0..1 like a part's
           tr.verbS.gain.setValueAtTime(val("verb") / 100, t);
         };
+        /* One pass per *track*, not per bus: each of a section's basslines has its own chain and
+           its own settings, and a track that has none of its own reads the first track's — so a
+           song written before extra tracks had settings of their own sounds exactly as it did.
+           The drawn filter lane is the bus's and rides every track on it, the way it rode the
+           summed bus before. */
         const F3 = trackFxRef.current || {};
-        applyFx(m.trDrums, F3.drums, null, 1, sessCutMul("drums"));
-        applyFx(m.trPerc, F3.perc, "cutperc", 1, sessCutMul("perc"));
-        applyFx(m.trBass, F3.bass, "cutbass", BASS_MAKEUP, sessCutMul("bass"));
-        applyFx(m.trPad, F3.pad, "cutpad", 1, sessCutMul("pad"));
+        const trackFxOf = id => F3[id] || F3[trackBus(id)];
+        const BUS_LANE = { drums: null, perc: "cutperc", bass: "cutbass", pad: "cutpad" };
+        const BUS_MAKEUP = { bass: BASS_MAKEUP };
+        for (const type in (m.busL || {}))
+          m.busL[type].forEach((tr, li) => applyFx(tr, trackFxOf(busKey(type, li)),
+            BUS_LANE[type], BUS_MAKEUP[type] || 1, sessCutMul(type)));
         applyFx(m.trChords, F3.chords, "cutchords", CHORD_MAKEUP, sessCutMul("chords"));
         // session audio chains: the clip's level and its column's performance filter, once a
         // beat like every other track — so both respond while the file loops
@@ -4639,10 +4722,16 @@ export default function ProgressionWheel() {
         const FXR = fxRackRef.current || {}, SFX = secFxRef.current || {};
         const secFxOf = bus => (tInst != null && SFX[tInst] && SFX[tInst][bus])
           || (tBase != null && SFX[tBase] && SFX[tBase][bus]) || null;
-        writeFxRack(m.trDrums.fx, m.fxActiveId.drums, secFxOf("drums") || FXR.drums);
-        writeFxRack(m.trPerc.fx, m.fxActiveId.perc, secFxOf("perc") || FXR.perc);
-        writeFxRack(m.trBass.fx, m.fxActiveId.bass, secFxOf("bass") || FXR.bass);
-        writeFxRack(m.trPad.fx, m.fxActiveId.pad, secFxOf("pad") || FXR.pad);
+        /* One rack per track, resolved within the track first — this section's own copy, then the
+           track's song-wide rack — and only then falling back to the first track's, whole. Half of
+           one track's rack and half of another's would be a rack nobody asked for. */
+        const rackOf = id => (busLayer(id) && (secFxOf(id) || FXR[id]))
+          || secFxOf(trackBus(id)) || FXR[trackBus(id)];
+        for (const type in (m.busL || {}))
+          m.busL[type].forEach((tr, li) => {
+            const id = busKey(type, li);
+            writeFxRack(tr.fx, m.fxActiveId[id], rackOf(id));
+          });
         writeFxRack(m.trChords.fx, m.fxActiveId.chords, secFxOf("chords") || FXR.chords);
         writeFxRack(m.fxLead, m.fxActiveId.lead, secFxOf("lead") || FXR.lead);
         writeFxRack(m.fxMaster, m.fxActiveId.master, FXR.master);
@@ -4720,7 +4809,7 @@ export default function ProgressionWheel() {
         const suf = LSEP + li;
         const dpatL = resolveDrumPat(tInst != null ? tInst + suf : tInst, tBase != null ? tBase + suf : tBase, GROOVE + suf, null);
         const dstepL = sampleAt(dpatL, i, L);
-        if (dstepL) for (const ch of dstepL) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitOf(suf), humVel(accent));
+        if (dstepL) for (const ch of dstepL) drumSound(m.ctx, t, ch, m.noise, bus("drums", li).in, kitOf(suf), humVel(accent));
       }
       /* Session view: each live drums track is independent — its own written grid, its own local
          bar position from the tick it was launched, no shared dpat. Any of them landing a kick
@@ -4746,7 +4835,7 @@ export default function ProgressionWheel() {
           const dstepS = sampleAt(dpatS, i, L);
           if (!dstepS) continue;
           if (/[KB]/.test(dstepS)) kickNow = true;
-          for (const ch of dstepS) drumSound(m.ctx, t, ch, m.noise, m.trDrums.in, kitRef.current, humVel(accent));
+          for (const ch of dstepS) drumSound(m.ctx, t, ch, m.noise, bus("drums", li).in, kitRef.current, humVel(accent));
         }
       });
       // Pump the pitched sources under every kick. Recovery stops just short of the next beat, so
@@ -4762,9 +4851,21 @@ export default function ProgressionWheel() {
         /* Per-track pump. The panel's Pump knob overrides the genre defaults — the bass ducks
            hardest (the kick and the bassline share a register), the pad barely moves, and the
            perc doesn't duck at all unless its knob says so. */
-        duckAt(m.bduck, t, dk("bass") != null ? dk("bass") : Math.min(1, pumpRef.current * 1.3), beat * 0.8);
-        duckAt(m.padDuck, t, dk("pad") != null ? dk("pad") : pumpRef.current * 0.5, beat * 0.8);
-        if (dk("perc")) duckAt(m.trPerc.duck, t, dk("perc"), beat * 0.8);
+        // per track, on the sidechain node that track was built with (see duckFor): the first
+        // bassline still ducks `bduck`, and a second one ducks its own by its own amount
+        const dkT = id => { const v = dk(id); return v != null ? v : dk(trackBus(id)); };
+        (m.busL.bass || []).forEach((tr, li) => {
+          const v = dkT(busKey("bass", li));
+          duckAt(tr.sc, t, v != null ? v : Math.min(1, pumpRef.current * 1.3), beat * 0.8);
+        });
+        (m.busL.pad || []).forEach((tr, li) => {
+          const v = dkT(busKey("pad", li));
+          duckAt(tr.sc, t, v != null ? v : pumpRef.current * 0.5, beat * 0.8);
+        });
+        (m.busL.perc || []).forEach((tr, li) => {
+          const v = dkT(busKey("perc", li));
+          if (v) duckAt(tr.duck, t, v, beat * 0.8);
+        });
       }
       const mel = meloRef.current;
       // Every arrangement part shares chain slots 0..MAX_LAYERS-1; a Session melody track's clip
@@ -7812,7 +7913,7 @@ export default function ProgressionWheel() {
                           </div>
                         ))}
                       </div>
-                      {trackFxRow("drums", secFxCtx)}
+                      {trackFxRow(busKey("drums", dLayer), secFxCtx)}
                       {tips && <p className="keytag" style={{ marginTop:5 }}>
                         Hold the button down and drag to paint a row — press an empty cell and you are
                         drawing, press a full one and you are rubbing out — so a sixteenth hat across
@@ -7906,7 +8007,7 @@ export default function ProgressionWheel() {
                           </div>
                         ))}
                       </div>
-                      {trackFxRow("perc", secFxCtx)}
+                      {trackFxRow(busKey("perc", pLayer), secFxCtx)}
                       {tips && <p className="keytag" style={{ marginTop:5 }}>
                         A second layer over the drum grid above, on the same kit — shakers, congas
                         and offbeat hats live here so the main groove stays untouched. It has its
@@ -8019,7 +8120,7 @@ export default function ProgressionWheel() {
                           </div>
                         ))}
                       </div>
-                      {trackFxRow("bass", secFxCtx)}
+                      {trackFxRow(busKey("bass", bLayer), secFxCtx)}
                       {tips && <p className="keytag" style={{ marginTop:5 }}>
                         One note a step — root, fifth or octave of whatever chord that bar holds, so
                         the line follows the changes by itself. A note rings until the next one, so a
@@ -8107,7 +8208,7 @@ export default function ProgressionWheel() {
                           </div>
                         ))}
                       </div>
-                      {trackFxRow("pad", secFxCtx)}
+                      {trackFxRow(busKey("pad", qLayer), secFxCtx)}
                       {tips && <p className="keytag" style={{ marginTop:5 }}>
                         The pad plays whatever chord each bar holds — this grid says when. A Hold
                         rings until the next hit; a Stab is short. One Hold on the downbeat is what
@@ -9981,18 +10082,36 @@ export default function ProgressionWheel() {
               renderer — including that track's own insert-fx rack, behind its FX tab — so a
               badge counts what a closed panel is doing and nothing hides behind a second section. */}
           <div className="grouphdr">Track effects</div>
-          {TRACKS_FX.map(([trId, trName, icon]) => {
-            const fx = trackFx[trId] || {};
-            const openP = !!openFx[trId];
-            const mods = TRACK_MODS.filter(md => !(trId === "drums" && md.k === "duck"));
+          {TRACKS_FX.map(([bus, trName, icon]) => {
+            // a bus with more than one track in the song gets the same A/B tab strip its grid has,
+            // so each bassline's own song-wide settings are reachable from here too
+            const nTr = TRACK_NAME[bus] ? tracksInSong(bus) : 1;
+            const active = Math.min(nTr - 1, fxLayerTab[bus] || 0);
+            const trId = busKey(bus, active);
+            const fx = trackFx[trId] || (active ? trackFx[bus] : null) || {};
+            const openP = !!openFx[bus];
+            const mods = TRACK_MODS.filter(md => !(bus === "drums" && md.k === "duck"));
             const nOn = mods.reduce((n2, md) =>
               n2 + ((fx[md.k] != null && fx[md.k] !== md.dflt) ? 1 : 0), 0);
             return (
-              <div key={trId} style={{ marginTop:6 }}>
-                <button className="mini" onClick={() => setOpenFx({ ...openFx, [trId]: !openP })}
-                  title={"Effects on the whole " + trName.toLowerCase() + " track — filter, drive, wobble, tremolo, pan, echo and reverb sends, and its own pump."}>
-                  {openP ? "▾" : "▸"} {icon} {trName}{nOn ? " ● " + nOn : ""}
-                </button>
+              <div key={bus} style={{ marginTop:6 }}>
+                <div className="row" style={{ gap:5, alignItems:"center", flexWrap:"wrap" }}>
+                  <button className="mini" onClick={() => setOpenFx({ ...openFx, [bus]: !openP })}
+                    title={"Effects on the whole " + trName.toLowerCase() + " track — filter, drive, wobble, tremolo, pan, echo and reverb sends, and its own pump."}>
+                    {openP ? "▾" : "▸"} {icon} {trName}{nOn ? " ● " + nOn : ""}
+                  </button>
+                  {openP && nTr > 1 && (
+                    <span className="row lytabs" style={{ gap:5 }}>
+                      {Array.from({ length: nTr }, (_, li) => (
+                        <button key={li} className={"lytab" + (active === li ? " on" : "")}
+                          style={{ "--ly": LAYER_INK[li] }}
+                          title={trName + " track " + LAYER_NAMES[li] + (li ? " — its own effects, or the first one's until you move something" : "")}
+                          onClick={() => setFxLayerTab({ ...fxLayerTab, [bus]: li })}>
+                          {LAYER_NAMES[li]}</button>
+                      ))}
+                    </span>
+                  )}
+                </div>
                 {openP && trackFxRow(trId)}
               </div>
             );

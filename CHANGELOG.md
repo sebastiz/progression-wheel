@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+- **Every track has its own effects now — a second bassline is a second instrument.** A section
+  could already carry a 2nd or 3rd bass, drums, perc or pad track, each with its own pattern, grid,
+  kit and voice — and then all of them played through one chain. One filter, one drive, one pan, one
+  pump and one insert rack across the pair, so the obvious reason for writing a second bassline
+  ("distort the riff and leave the sub alone") could not be said at all. Each track now gets its own
+  chain, addressed by the same `#N` id everything else about an extra track already uses, and the
+  effects panel under a grid follows the **A / B** tab you have open. The **Sound** tab's Track
+  effects panels grew the same tabs, so each track's song-wide settings are reachable from there
+  too, and an extra track's own settings and rack travel in the saved song, the share link and the
+  *Export for Claude* snapshot.
+- An extra track **starts out following the first one**, and its panel says so — it sounds exactly
+  as track A does until you move something in it, and that first move is what gives it settings of
+  its own (**↺ follow Bass A** hands them back). So a song saved before any of this sounds exactly
+  as it did, adding a track never silently changes the mix, and a song with one bassline builds the
+  same audio graph it always did. The drawn filter **lane** stays the instrument's and rides every
+  track of it: that lane is a DJ filter on the bass, not on one bassline.
 - **A grid can be copied to every section now, not just to the sections like it.** The drums, perc,
   bass, pad and chord grids each had one copy button — *copy to every verse* — which is the right
   destination while you are filling in a section's siblings and no use at all for the thing dance

@@ -288,7 +288,21 @@ catalogue is built, so what a template holds afterwards is ordinary rows with or
 `drums2`/`drums3`/`perc2` resolve into the very same maps the first track uses, at the section's
 key with a `#N` suffix (`LSEP`, `src/melody.js`) plus a `secTrackLayers` count — which is exactly
 the state the section's own **＋ 2nd drums** button writes, so every stacked layer is editable,
-saveable and exportable with no new idea in the app. `npm test` holds every template with a ladder to it —
+saveable and exportable with no new idea in the app.
+
+The same suffix names a track's **bus**: `busKey(type, li)` gives `bass` for the first bassline and
+`bass#1` for the second, and that one string addresses its audio chain, its settings (`trackFx`),
+its insert rack (`fxRack`) and a section's own copy of that rack (`secFx[key]`). `buildGraph` builds
+one `mkChain` per track rather than one per bus — `busLayers(type)` counts the most any section,
+clip or the groove carries, so a song with one bassline builds exactly the graph it always did — and
+each track's notes are emitted into `bus(type, li).in`. Bass and pad duck under the kick on a node
+that sits *after* the chain, so the first track keeps `bduck`/`padDuck` and every extra track is
+given one of its own (`duckFor`); without it the extra track's Pump knob would do nothing, since the
+sidechain is the one "effect" outside the chain. A track with nothing of its own reads the first
+track's — settings (`trackFxOf`), rack (`rackOf`, resolved *within* the track before falling back
+whole) and the id its rack starts active on (`fxActiveForTrack`) — so an extra track sounds exactly
+as it did when both fed one chain, and the panel's first edit writes under the track's own id and
+forks it from there. `fxIdsForTrack` unions both sets of types so the fork has chains to switch to. `npm test` holds every template with a ladder to it —
 band archetypes included: at least three distinct drum stacks across its sections, one section
 stacking a layer the one before it did not have, and one taking a layer away.
 
