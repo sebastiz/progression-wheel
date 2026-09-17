@@ -7370,6 +7370,53 @@ export default function ProgressionWheel() {
                 </label>
               );
             };
+            /* An extra track (#2, #3 …) on the *groove* has no song-level pattern behind it: the
+               song's drums, bass and percussion are the first track's, and the scheduler
+               deliberately gives the rest no global to fall back on (`drumForBarL(li, null)`). So
+               where a section card offers "as the song", a groove layer gets this — the same
+               catalogue, written straight onto the track, with silence rather than an inherited
+               default as its empty state. Without it, pressing ＋ 2nd drums on the Sketch tab
+               opened a blank grid and no menu at all: the one place in the app where adding a
+               track left you nothing to choose from. */
+            /* `offLabel` is needed wherever the catalogue has no silent entry of its own (the
+               drum table has "No drums", the percussion and bass tables do not) — a new layer is
+               seeded "off" by addTrackLayer, and a select holding a value no option carries would
+               draw as blank while the track was in fact silent. */
+            const layerPicker = (sec, label, map, setMap, options, tip, offLabel, onPick) => (
+              <label className="secopt" title={tip}>
+                <span className="optlbl">{label}</span>
+                <select value={map[sec.key] || ""} onChange={e => { const v = e.target.value;
+                    setMap({ ...map, [sec.key]: v }); if (onPick) onPick(v); }}>
+                  <option value="">— just the grid —</option>
+                  {offLabel && <option value="off">{offLabel}</option>}
+                  {options}
+                </select>
+              </label>
+            );
+            /* Pad / Stab / Pluck — the character the chord track's texture layer is struck in.
+               Drawn twice: on the Chords panel's own header row, where the question belongs, and
+               again beside the texture's voice and grid. Both write the same state — song-wide on
+               the groove (there is one groove, and it is the song's starting point), per pass on a
+               section card, with "as the song" naming what that would be. */
+            const texPicker = sec => view.groove
+              ? (<label className="secopt"
+                   title="How the chord track's texture layer is struck: Pad holds the voicing on to the next hit, Stab is a short chord hit, Pluck rolls the notes across and lets them ring. The same chords either way — only the articulation changes. Its voice and rhythm are in the Chord texture bar below.">
+                  <span className="optlbl"><span aria-hidden="true">🌫️</span> texture</span>
+                  <select value={chordTex} onChange={e => setChordTexSt({ key: progId, val: e.target.value })}>
+                    {CHORD_TEXTURES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
+                  </select>
+                </label>)
+              : (<label className="secopt" title={"How the chord texture is struck in this "
+                   + sec.word.toLowerCase() + " alone — held (pad), short (stab) or rolled (pluck)."}>
+                  <span className="optlbl"><span aria-hidden="true">🌫️</span> texture</span>
+                  <select value={secChordTex[sec.key] || ""}
+                    onChange={e => { const v = e.target.value, next = { ...secChordTex };
+                      if (v) next[sec.key] = v; else delete next[sec.key];
+                      setSecChordTex(next); }}>
+                    <option value="">{"as the song — " + (TEXTURE_NAME[chordTexOf({ key: sec.base, base: sec.base })] || "Pad")}</option>
+                    {CHORD_TEXTURES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
+                  </select>
+                </label>);
             /* A section's own copy of one bus's insert rack. Drums, Perc, Bass and Pad each get
                this as the FX tab inside their own trackFxRow (see the `secCtx` argument there) —
                nested with their Mix/Tone/Movement/Space settings rather than being a sibling of
@@ -7774,6 +7821,18 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && dLayer > 0 && layerPicker(dl, "pattern", secDrum, setSecDrum,
+                          metricDrums.map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>),
+                          "The pattern this extra drums track starts from. It has no song-level drums behind it — only the first track does — so what you pick here is what it plays until you paint the grid.",
+                          null,
+                          v => { if (!v) return;
+                            const n = beatSteps(barBeats), pat = DRUMS[v] && DRUMS[v].pattern;
+                            setSecBeat({ ...secBeat, [dl.key]: Array.from({ length: dl.nbars },
+                              () => pat ? beatFrom(pat, n) : blankBeat(n)) }); })}
+                        {view.groove && dLayer > 0 && fallbackPicker(dl, "Kit", null, secKit, setSecKit,
+                          id => (DRUM_KITS.find(([k]) => k === id) || [, id])[1],
+                          DRUM_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>),
+                          "How this extra drums track is voiced — its own kit, or the song's.")}
                         {view.groove && dLayer === 0 && wholeSongBtn("drums")}
                         {own && <button className="mini" onClick={() => resetBeat(dl.key)}
                           title="Hand this section back to the drum menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
@@ -7875,6 +7934,18 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && pLayer > 0 && layerPicker(dl, "pattern", secPercPat, setSecPercPat,
+                          Object.entries(PERCS).map(([id, dd]) => <option key={id} value={id}>{dd.name}</option>),
+                          "The pattern this extra percussion track starts from. It has no song-level percussion behind it — only the first track does — so what you pick here is what it plays until you paint the grid.",
+                          "No percussion",
+                          v => { if (!v) return;
+                            const n = beatSteps(barBeats), pat = (PERCS[v] || DRUMS[v] || {}).pattern;
+                            setSecPercBeat({ ...secPercBeat, [dl.key]: Array.from({ length: dl.nbars },
+                              () => pat ? beatFrom(pat, n, PERC_ORDER) : blankBeat(n)) }); })}
+                        {view.groove && pLayer > 0 && fallbackPicker(dl, "Kit", null, secPercKit, setSecPercKit,
+                          id => (PERC_KITS.find(([k]) => k === id) || [, id])[1],
+                          PERC_KITS.map(([id, name]) => <option key={id} value={id}>{name}</option>),
+                          "How this extra percussion track is voiced — played by hand, or one of the machine's ideas of it.")}
                         {view.groove && pLayer === 0 && wholeSongBtn("perc")}
                         {own && <button className="mini" onClick={() => resetPercBeat(dl.key)}
                           title="Hand this section back to the perc menu — the grid goes on showing what plays, unwritten">↺ Reset</button>}
@@ -7976,6 +8047,21 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && bLayer > 0 && layerPicker(dl, "pattern", secBassPat, setSecBassPat,
+                          Object.entries(BASS).map(([id, bb]) => <option key={id} value={id} title={bb.desc}>{bb.name}</option>),
+                          "The line this extra bass track starts from. It has no song-level bassline behind it — only the first track does — so what you pick here is what it plays until you paint the grid.",
+                          "No bass",
+                          v => { if (!v) return;
+                            const nb = { ...secBassBeat }, n = beatSteps(barBeats);
+                            const pat = (BASS[v] || {}).pattern;
+                            if (pat) nb[dl.key] = Array.from({ length: dl.nbars }, () =>
+                              Array.from({ length: n }, (_, s2) => { const tok = sampleAt(pat, s2, n); return tok && tok !== "-" ? tok : ""; }));
+                            else delete nb[dl.key];
+                            setSecBassBeat(nb); })}
+                        {view.groove && bLayer > 0 && fallbackPicker(dl, "Voice", null, secBassVoice, setSecBassVoice,
+                          id => (BASS_VOICES.find(([k]) => k === id) || [, id])[1],
+                          BASS_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>),
+                          "The sound this extra bass track plays with — sub, saw, acid and the rest, independent of its pattern.")}
                         {view.groove && bLayer === 0 && wholeSongBtn("bass")}
                         {/* Bass-as-hook: a riff written into the sixteenths the kick leaves free, from
                             this section's own resolved drums — so it interlocks with the groove
@@ -8085,6 +8171,11 @@ export default function ProgressionWheel() {
                               {list.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                             </optgroup>)),
                           "The instrument the chords play with for this " + d.word.toLowerCase() + " alone.")}
+                        {/* How the chord track's texture layer is struck. It lives *here*, on the
+                            chords, because that is where anybody looking for "how are the chords
+                            played" looks — the panel below it carries the same layer's voice and
+                            rhythm grid, and both menus write the one setting. */}
+                        {texPicker(d)}
                         {view.groove && wholeSongBtn("chords")}
                         {own && <button className="mini" onClick={() => resetChordBeat(d.key)}
                           title="Hand this section back to the song's strum pattern — the grid goes on showing it, unwritten">↺ Reset</button>}
@@ -8154,27 +8245,9 @@ export default function ProgressionWheel() {
                           : padOnOf(dl) ? "one hit a bar — the texture's natural state"
                           : "no texture here — pick a voice or paint a rhythm"}</span>
                         {trackTabStrip("pad", d)}
-                        {/* Pad / Stab / Pluck: the same chords, held, struck short, or rolled and
-                            left to ring. Per section on a section card, song-wide on the groove —
-                            exactly the split every other pick on this row already uses. */}
-                        {!view.groove && <label className="secopt" title={"How the chord texture is struck in this "
-                          + d.word.toLowerCase() + " alone — held (pad), short (stab) or rolled (pluck)."}>
-                          <span className="optlbl">texture</span>
-                          <select value={secChordTex[d.key] || ""}
-                            onChange={e => { const v = e.target.value, next = { ...secChordTex };
-                              if (v) next[d.key] = v; else delete next[d.key];
-                              setSecChordTex(next); }}>
-                            <option value="">{"as the song — " + (TEXTURE_NAME[chordTexOf({ ...d, key: d.base })] || "Pad")}</option>
-                            {CHORD_TEXTURES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
-                          </select>
-                        </label>}
-                        {view.groove && qLayer === 0 && <label className="secopt"
-                          title="How the chord track's texture layer is struck: Pad holds the voicing on to the next hit, Stab is a short chord hit, Pluck rolls the notes and lets them ring.">
-                          <span className="optlbl">texture</span>
-                          <select value={chordTex} onChange={e => setChordTexSt({ key: progId, val: e.target.value })}>
-                            {CHORD_TEXTURES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
-                          </select>
-                        </label>}
+                        {/* the same chooser the Chords panel above carries, on the same setting —
+                            it is one layer, and this is the other end of it */}
+                        {(!view.groove || qLayer === 0) && texPicker(d)}
                         {!view.groove && fallbackPicker(dl, "Voice", null, secPadVoice, setSecPadVoice,
                           id => id === "off" ? "no texture" : (TEX_VOICE_NAME[id] || (voices.find(v => v.id === id) || {}).name || id),
                           (<>{(TEXTURE_VOICES[chordTexOf(dl)] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
@@ -8201,6 +8274,10 @@ export default function ProgressionWheel() {
                             </optgroup>
                           </select>
                         </label>}
+                        {view.groove && qLayer > 0 && layerPicker(dl, "voice", secPadVoice, setSecPadVoice,
+                          (TEXTURE_VOICES[chordTexOf(dl)] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>),
+                          "The voice this extra texture track plays with. It has no song-level voice behind it — only the first track does — so picking one here is what makes it sound; write its rhythm on the grid below.",
+                          "No texture")}
                         {view.groove && qLayer === 0 && wholeSongBtn("pad")}
                         {own && <button className="mini" onClick={() => resetPadBeat(dl.key)}
                           title="Back to the texture's one-hit-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
