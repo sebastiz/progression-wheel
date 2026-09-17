@@ -1,6 +1,34 @@
 # Changelog
 
 ## Unreleased
+- **The Pad track is gone; the chord track has a texture instead — Pad, Stab or Pluck.** The pad
+  played the same chords as the chord track, at the same time, off its own bus — one musical idea
+  wearing two tracks, and a menu ("Pad voice") that answered only half the question anybody was
+  asking. What it did is the chord track's *texture* now: a second chord layer sitting directly
+  under the chord rhythm, with one menu for **how** the chords are struck — **Pad** holds the
+  voicing on to the next hit, **Stab** is a short chord hit, **Pluck** rolls the notes across and
+  lets them ring — and one for what they are struck with, offering the voices that texture is
+  actually made of (strings and warm pads; house stab, clav and EP; pizzicato, music box and bell).
+  It is the same everywhere the track used to appear: the Sound tab's track effects, the section
+  cards' collapsibles, the arrangement strip's lanes, the sketch matrix, the Session view's track
+  types, the stems, the MIDI and the Live export all read the texture's own name rather than "Pad".
+  Per section as well as per song, so a breakdown can hold a pad where the drop stabs, and the
+  rhythm grid is unchanged — a Hold still rings, a Stab is still short; the texture decides what a
+  Hold is *worth*. Nothing saved before this changes: Pad is the default, and Pad plays note for
+  note what the pad track played.
+- **Pick a typical arrangement at the bottom of the Sketch tab.** The draft arrangement started
+  empty and every section had to be added and ticked in by hand, which is the right tool when you
+  know the shape and the wrong one when you want a genre's. The **🗺 Typical arrangement** menu
+  beside ✍ Write to Arrange offers all 96 running orders in the catalogue, grouped by the same
+  genre family tree the Arrange tab's reference table uses — Chicago House, Liquid D&B, the
+  storyteller's form, the trailer cue — and lays one over *this* sketch: the running order and the
+  section-by-section allocation come from the genre, and every sound stays yours. Your drums, your
+  bass, your chords and their texture, your melody parts, distributed the way that genre
+  distributes them, with its own sweeps, moves and seams across the sections. It is still a draft:
+  every cell can be re-ticked, every section moved, stretched, copied or removed, and nothing is
+  heard until ✍ Write to Arrange puts it on the Arrange tab. Unlike picking the same style there,
+  it never touches the tempo, the instruments or the patterns — the genre supplies the shape and
+  the sketch supplies everything that plays it.
 - **One chord is now a choice in the Chords menu.** Most dance music has no progression: a house or
   techno track is a groove over a single chord, and everything that moves is the filter, the bass,
   the percussion and the arrangement — but the chord count started at two, so the one thing most of

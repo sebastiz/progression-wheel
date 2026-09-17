@@ -11,13 +11,15 @@ The app is in five tabs, under the transport bar:
 - **Sound** — the instruments, the time signature, the strum pattern, the drums and kit, and the
   feel controls (delay, pump, swing, humanise).
 - **Sketch** — the subtractive workflow on one page, kept apart from the song until you commit it.
-  Build the **full groove** as a single looping section (drum, perc, bass, pad and chord grids,
-  melody parts and every track's settings; ▶ 🔁 loops the full stack, whatever the song is doing).
+  Build the **full groove** as a single looping section (drum, perc, bass and chord grids, the
+  chord texture, melody parts and every track's settings; ▶ 🔁 loops the full stack, whatever the
+  song is doing).
   Underneath, draft the **arrangement**: add intro, build, drop and breakdown — each section
   arrives silent — then click the cells to fill it with the groove's instruments: drums alone for
-  the intro, bass and pads with no kick for the build, everything for the drop. Nothing is heard
-  until **✍ Write to Arrange**: the draft becomes the song's arrangement, every section playing
-  exactly what you filled in, ready to refine pass by pass on the Arrange tab. Sections keep following the groove until you give them something of their own,
+  the intro, bass and the chord texture with no kick for the build, everything for the drop. Or
+  take a genre's shape whole from **🗺 Typical arrangement** at the bottom (see below). Nothing is
+  heard until **✍ Write to Arrange**: the draft becomes the song's arrangement, every section
+  playing exactly what you filled in, ready to refine pass by pass on the Arrange tab. Sections keep following the groove until you give them something of their own,
   so a groove edited later is still heard everywhere it hasn't been overridden.
 - **Arrange** — the song structure, the melodic narrative, the arrangement strip with its automation
   lanes, every section's melodies, and the exports.
@@ -276,6 +278,42 @@ stab that slides down into the note), **Acid 303** (resonant, squelchy — try i
 **Reese bass** (the detuned drum-and-bass double-saw), **Sub bass**, **House stab**, and **Growl**
 (the beating, inharmonic dubstep wobble). They need no download and work offline.
 
+### The chord texture — Pad, Stab or Pluck
+
+The chord track has two layers: the **rhythm** (the strum — Accent, Down, Up, on its own grid) and
+the **texture** underneath it, which used to be a separate Pad track and is now a menu on the
+chords, because it was always the same chords either way. Pick how they are struck:
+
+- **Pad** — the voicing is held and rings on to the next hit. The breakdown carrier, and what the
+  pad track always did.
+- **Stab** — a short chord hit. House piano, disco keys, the thing that leaves a hole for the kick.
+- **Pluck** — the notes are rolled across, one after another, and left to ring. Harp, pizzicato,
+  the arpeggiated guitar figure.
+
+Next to it, **Texture sound** picks what plays it, offering the voices that texture is made of —
+strings, glass and warm pads for a Pad; house stab, clav, EP and brass for a Stab; pluck,
+pizzicato, music box and bell for a Pluck — plus every other voice and anything you built in the
+voice editor. Both are on the Sound tab for the whole song and inside each section's own
+**🌫️ Chord texture** bar for one pass alone, so a breakdown can hold a pad where the drop stabs.
+
+The grid under it says *when*: a **Hold** rings until the next hit, a **Stab** is short. The
+texture decides what a Hold is worth — a Pad rings, a Stab never does, a Pluck rolls and decays.
+Leave the grid alone and the texture plays one hit a bar, which is usually what you want.
+
+### Typical arrangements — a genre's running order over your sketch
+
+At the bottom of the Sketch tab, beside **✍ Write to Arrange**, is **🗺 Typical arrangement**: all
+96 running orders in the catalogue, grouped by genre — Chicago House, Liquid D&B, Psytrance, the
+storyteller's form, the trailer cue. Picking one fills the draft below with that genre's sections,
+lengths and section-by-section allocation, played by **your** sketch: your drums, your bass, your
+chords and their texture, your melody parts, distributed the way the genre distributes them, with
+its own filter sweeps, moves and seam transitions across the sections.
+
+It changes nothing else — not the tempo, not an instrument, not a pattern. (That is the difference
+from picking the same style on the Arrange tab, which replaces the lot.) And it is still a draft:
+move, stretch, copy or remove sections and re-tick any cell before pressing **✍ Write to Arrange**,
+which is what puts it on the Arrange tab as the song's arrangement.
+
 ### 🎛 The voice editor
 
 Every voice on this app up to here is hand-tuned in the source — this is the one place you build
@@ -288,7 +326,7 @@ offline and sets its level to match the default synth lead — the same measure 
 is matched to, so a voice you build sits in the mix like any of them instead of guessing at the
 level slider yourself.
 
-A saved voice shows up under **My voices** in every Lead, Bass and Pad picker in the app — the
+A saved voice shows up under **My voices** in every Lead, Bass and chord-texture picker in the app — the
 Sound tab, each section's own per-part instrument menu, and the Session view — exactly like a
 built-in voice. It's saved with the song (and travels with a share link, undo/redo, and "Export
 for Claude"), so it's yours to keep reaching for as you keep writing, not a one-off experiment.
@@ -301,7 +339,7 @@ section, as wide as that section is long, with the bar numbers along the top. Re
 
 Under the blocks is a lane for each thing that can play: **Drums**, **Chords**, and one per melody
 part (**A**, **B**, …). A lane is lit where that element is playing and dark where it isn't, so the
-picture tells you what the song's dynamics actually are: drums dropping out for the verses, the pad
+picture tells you what the song's dynamics actually are: drums dropping out for the verses, the chord texture
 only arriving at the chorus, the bassline sitting out the breakdown. A half-lit lane means the
 element is on for some passes of that section but not others. A gold playhead runs across every lane
 as the song plays, and a rule at every section boundary carries down the whole strip so a column
@@ -321,7 +359,7 @@ next drop land. A song where nothing changes draws flat rather than full.
 
 **The lanes are clickable.** Tap a cell to drop that element for that section, tap again to bring it
 back — so the strip is where you *build* the arrangement, not just where you look at it. Drop the
-drums for the verses, take the chords out of a breakdown, keep a pad off the intro, all without
+drums for the verses, take the chords out of a breakdown, keep the chord texture off the intro, all without
 leaving the strip.
 
 Every lane works per pass, so a click moves the section you clicked and the passes inside it and
@@ -350,7 +388,7 @@ squelches like an acid line. **Level** rides the overall volume — fades, and t
 near-silence right before a drop.
 
 Below those is a **filter lane per melody part** (*A filter*, *B filter*, …): that one part's
-brightness across the song, so the pad can open through a build while the bass stays dark.
+brightness across the song, so the chord texture can open through a build while the bass stays dark.
 Wherever a part's lane is drawn it overrides that part's **Low-pass** knob; clear the lane and the
 knob is back in charge.
 
@@ -402,7 +440,7 @@ Beside these, the same panel carries the **⤴ lift** row — the standard kit f
 land bigger, which is a different job from a move: a move is processing, the lift is arrangement
 and writing. **⤴ Lift this chorus** applies the lot at once — melody up a third in key, the lead
 doubled an octave up, the accents leant on, every subtraction on the section removed (drums,
-chords, bass, pad and muted parts back in), and the hook made a little busier with two additive
+chords, bass, chord texture and muted parts back in), and the hook made a little busier with two additive
 edits. Each ingredient is also its own chip: tap one to apply just that ingredient, tap an *on*
 chip to take exactly that ingredient back off, restoring the value it replaced. The kit is meant
 to be learnable — after a few uses you'll reach for the two ingredients this particular chorus
@@ -638,7 +676,7 @@ it and the session is already laid out.
 want an AI to analyse the song: `<name>-arrangement.wav` — the full arrangement, every section in
 order, rendered exactly as Play sounds — and `<name>-settings.json`, a complete snapshot of every
 setting that shaped it: key and scale, tempo and meter, the running order with each section's
-chords and resolved drum/bass/pad sources, every melody part's instrument, envelope, filter,
+chords and resolved drum/bass/chord-texture sources, every melody part's instrument, envelope, filter,
 arpeggiator and sends, the effects, the sidechain and every drawn automation lane. The JSON is
 written in plain words (with a built-in reference explaining each control), so the analysis can
 read *why* the wav sounds the way it does, not just *that* it does.
@@ -867,7 +905,7 @@ When you've edited the progression, the panel first lists songs that use your ap
 ## Start from scratch
 
 At the bottom of the **Write** page, the **🧹 Start from scratch** button clears the whole song —
-key, chords and every chord edit, drums, bass, percussion, pad, melodies, structure, automation and
+key, chords and every chord edit, drums, bass, percussion, the chord texture, melodies, structure, automation and
 effects — back to the app's defaults, a genuinely blank page. It asks before it wipes, saved
 sketches on the Save tab are untouched, and the wipe lands in the undo history like any other edit,
 so **⌘Z** brings the song straight back.

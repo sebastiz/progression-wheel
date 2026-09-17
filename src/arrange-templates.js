@@ -1687,7 +1687,7 @@ const BAND_IDS = new Set(BAND_DEFS.map(([id]) => id));
    wholesale, so a previous arrangement's re-voicings are cleared rather than left underneath. */
 const VOICING_FIELDS = [["kit", "secKit"], ["chordInstr", "secChordInstr"], ["chordPat", "secChordPat"],
   ["bassPat", "secBassPat"], ["bassVoice", "secBassVoice"], ["percPat", "secPercPat"],
-  ["percKit", "secPercKit"], ["padVoice", "secPadVoice"]];
+  ["percKit", "secPercKit"], ["padVoice", "secPadVoice"], ["chordTex", "secChordTex"]];
 // a row's `fx` is `{ bus: [slot] | [slot, slot] }`; the rack always holds exactly two slots, and
 // every section gets its own copy of each slot object so editing one pass never moves another
 const fxRackOf = fx => Object.fromEntries(Object.entries(fx).map(([bus, slots]) =>

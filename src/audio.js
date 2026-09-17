@@ -1871,6 +1871,46 @@ const BASS_VOICES = [["sub", "Sub bass"], ["saw", "Saw bass"], ["square", "Squar
    voicing a bar at a time, so everything here has a real sustain and none of it is percussive. */
 const PAD_VOICES = [["strings", "Strings"], ["glass", "Glass pad"], ["voice", "Voice (ah)"],
   ["organ", "Organ"], ["brass", "Brass"], ["supersaw", "Supersaw"], ["warmpad", "Warm pad"]];
+/* ---- the chord track's texture ----
+   The pad used to be a track of its own, sitting beside the chords and playing the same chords at
+   the same time — two tracks for one idea. It is one idea: the chord track's *texture*, the
+   sustained or struck layer under (or instead of) the strum, and the only real question was how
+   long a hit rings and whether the notes are struck together. So the track is gone and the
+   question is a menu on the chords: Pad holds the voicing, Stab is a short hit, Pluck rolls the
+   notes and lets them ring. Every map behind it is the one the pad already used, which is what
+   lets every saved song, template and preset keep meaning exactly what it meant. */
+const CHORD_TEXTURES = [
+  ["pad", "Pad", "held — the voicing rings on to the next hit"],
+  ["stab", "Stab", "short — a chord hit, house-piano territory"],
+  ["pluck", "Pluck", "rolled across the notes and left to ring"],
+];
+/* Each texture's own voices: the sustained half of LEAD_SPECS for a pad, the short and percussive
+   half for a stab, the decaying half for a pluck. A voice off another texture's list still plays
+   (they are all LEAD_SPECS ids) — this is which ones are *offered*, so the menu suggests the sound
+   the texture is made of rather than all twenty-eight. */
+const STAB_VOICES = [["stab", "House stab"], ["ep", "Electric piano"], ["organ", "Organ"],
+  ["clav", "Clav"], ["brass", "Brass"], ["supersaw", "Supersaw"], ["saw", "Bright saw"]];
+const PLUCK_VOICES = [["pluck", "Pluck"], ["pizz", "Pizzicato"], ["musicbox", "Music box"],
+  ["bell", "Bell"], ["chime", "Chime"], ["clav", "Clav"], ["ep", "Electric piano"]];
+const TEXTURE_VOICES = { pad: PAD_VOICES, stab: STAB_VOICES, pluck: PLUCK_VOICES };
+const TEXTURE_DEFAULT_VOICE = { pad: "strings", stab: "stab", pluck: "pluck" };
+const TEXTURE_NAME = Object.fromEntries(CHORD_TEXTURES.map(([id, name]) => [id, name]));
+/* One hit of the texture: how long it rings, whether it sustains into the next note, and how far
+   apart the notes of the voicing are struck. `tok` is the grid's own vocabulary — H holds, S
+   stabs — and the texture decides what a hold *means*: a pad rings to the next hit, a stab never
+   does, a pluck rings but is rolled a note at a time. `gapDur` is the distance to the next hit,
+   which is what a held note is worth. Pad + H reproduces the old pad track exactly, note for
+   note, which is why every song saved before this sounds the way it was saved. */
+const textureHit = (tex, tok, gapDur, stepDur, beat) => {
+  const short = tok === "S";
+  if (tex === "stab")
+    return { dur: Math.min(short ? stepDur * 1.1 : stepDur * 1.8, beat * 0.5), hold: false, roll: 0.005 };
+  if (tex === "pluck")
+    return { dur: short ? Math.min(stepDur * 1.6, beat * 0.6) : Math.max(0.35, Math.min(gapDur, beat * 2)),
+      hold: false, roll: 0.022 };
+  return short ? { dur: Math.min(stepDur * 1.8, beat * 0.45), hold: false, roll: 0 }
+    : { dur: Math.max(0.15, gapDur), hold: true, roll: 0 };
+};
 /* Measured like the lead vols (scripts/measure-loudness.mjs), but at C2 and to a hotter target,
    because one low note has to carry the way a whole chord does — every bass voice lands at the
    same K-weighted loudness, so swapping the bass sound never moves the bass level. */
@@ -1881,4 +1921,4 @@ function playBass(ctx, t, root, off, dur, kind, dest, vel = 1) {
   leadNote(ctx, t, 36 + root + off, dur, k, false, dest, { lvl: (BASS_LVL[k] || 3.0) * vel });
 }
 
-export { BASS_VOICES, PAD_VOICES, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, customVoiceName, deleteCustomVoice, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isCustomVoice, isGM, ksPluck, leadNote, makeDelay, makeFxMultiRack, makeFxMultiSlot, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, measureVoiceLoudness, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, resetCustomVoices, sampleVoicing, setCustomVoice, sfFetch, sfName, sfPrefetch, sfRawCache, specFor, strumChord, voiceChord };
+export { BASS_VOICES, CHORD_TEXTURES, PAD_VOICES, PLUCK_VOICES, STAB_VOICES, TEXTURE_DEFAULT_VOICE, TEXTURE_NAME, TEXTURE_VOICES, textureHit, playBass, percSound, DELAY_BEATS, DELAY_TIMES, FAM_LEAD, FILTER_OPEN, FX_TYPES, FX_PARAMS, GM_CATS, GM_FAM, GM_LABEL, GM_NAMES, GM_PROGRAM, LEAD_SPECS, LEAD_VOICES, LEGACY_INSTR, MOVES, TFX, TRANS, TRANS_CATS, applyTrans, makeTrans, transOwns, SF_BASE, SF_NAT, SYNTH_PROGRAM, VOICE_HI, VOICE_LO, anchorsFor, applyMove, clickSound, customVoiceName, deleteCustomVoice, drumSound, driveCurve, duckAt, env, fxDefaults, gmFam, gmKey, isCustomVoice, isGM, ksPluck, leadNote, makeDelay, makeFxMultiRack, makeFxMultiSlot, makeFxRack, makeFxSlot, makeNoise, makeReverb, makeSampler, makeVerbSend, measureVoiceLoudness, midiHz, NO_SHAPE, padVoice, playHit, playLeadSampled, playSampled, programOf, resetCustomVoices, sampleVoicing, setCustomVoice, sfFetch, sfName, sfPrefetch, sfRawCache, specFor, strumChord, voiceChord };

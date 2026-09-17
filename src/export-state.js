@@ -2,7 +2,7 @@ import { MODES, SEMI_NAME, modeId } from "./theory.js";
 import { DRUMS, BASS, PERCS, PATTERNS, PUMPS, PUMP_AMT, METER_BY_ID, METERS } from "./patterns.js";
 import { ARP_BY_ID, ARP_RATES, GATE_BY_ID, LAYER_NAMES, MODS, MOD_GROUPS, modOf } from "./melody.js";
 import { BASS_VOICES, DELAY_BEATS, DELAY_TIMES, FILTER_OPEN, FX_PARAMS, FX_TYPES, GM_LABEL,
-  LEAD_VOICES, MOVES, PAD_VOICES, TRANS, customVoiceName, gmKey, isCustomVoice, isGM } from "./audio.js";
+  LEAD_VOICES, MOVES, PAD_VOICES, TEXTURE_NAME, TEXTURE_VOICES, TRANS, customVoiceName, gmKey, isCustomVoice, isGM } from "./audio.js";
 
 /* export-state — the settings half of "Export for Claude": one JSON snapshot of every choice that
    shaped the rendered audio, written to be read without the source code beside it.
@@ -181,7 +181,7 @@ function describeLayer(ly, li, defaultInstr) {
 }
 
 /* ===== track sources =====
-   A section's drums/bass/perc/pad resolve through a fallback chain; the component hands the
+   A section's drums/bass/perc/chord-texture resolve through a fallback chain; the component hands the
    *resolved* source in ({beat}|{pat}|null, mirroring bassSrcOf and friends) and this turns it into
    words plus the grid itself where one was written. Grids come out as their step strings — the
    conventions block says what the letters mean. */
@@ -257,7 +257,12 @@ function buildExportState(x) {
   const delayBeats = DELAY_BEATS[delayId] || 0;
   const pumpLabel = (PUMPS.find(([id]) => id === x.pump) || [])[1] || x.pump;
   const bassVoiceName = (BASS_VOICES.find(([id]) => id === x.bassVoice) || [])[1] || x.bassVoice;
-  const padVoiceName = (PAD_VOICES.find(([id]) => id === x.padId) || [])[1] || (x.padId || null);
+  /* The chord track's texture layer — what was a Pad track before it became a menu on the chords.
+     Named by the voice lists of all three textures, since a stab or a pluck is not in PAD_VOICES. */
+  const texVoices = Object.values(TEXTURE_VOICES).flat();
+  const texVoiceName = id => (texVoices.find(([v]) => v === id) || [])[1] || id || null;
+  const padVoiceName = texVoiceName(x.padId) || (PAD_VOICES.find(([id]) => id === x.padId) || [])[1] || (x.padId || null);
+  const texName = id => TEXTURE_NAME[id] || "Pad";
 
   const describeSection = s => ({
     section_key: s.key,
@@ -274,10 +279,15 @@ function buildExportState(x) {
     bass: !s.bass ? { playing: false, source: "no bass in this section" }
       : { ...describeSource(s.bass, BASS, ""), voice: bassVoiceName },
     percussion: describeSource(s.perc, { ...DRUMS, ...PERCS }, "no percussion layer in this section"),
-    pad: !s.padVoiceId && !s.padBeat ? { playing: false, source: "no pad in this section" }
+    chord_texture: !s.padVoiceId && !s.padBeat
+      ? { playing: false, source: "no chord texture in this section" }
       : { playing: true,
-          voice: (PAD_VOICES.find(([id]) => id === s.padVoiceId) || [])[1] || s.padVoiceId || padVoiceName || "Strings",
-          rhythm: s.padBeat ? describeSource(s.padBeat, null, "") : { source: "held under each chord" } },
+          texture: texName(s.chordTex),
+          articulation: s.chordTex === "stab" ? "short chord hits"
+            : s.chordTex === "pluck" ? "the voicing rolled across and left to ring"
+            : "the voicing held on to the next hit",
+          voice: texVoiceName(s.padVoiceId) || padVoiceName || "Strings",
+          rhythm: s.padBeat ? describeSource(s.padBeat, null, "") : { source: "one hit under each chord" } },
     section_move: s.move && MOVES[s.move] ? {
       name: MOVES[s.move].name,
       meaning: "an automation preset run across this whole section (filter sweeps, risers, impacts)",
@@ -375,7 +385,8 @@ function buildExportState(x) {
       chord_instrument: describeInstrument(x.instr),
       default_melody_instrument: describeInstrument(x.melInstr),
       bass_voice: x.bassVoice ? { id: x.bassVoice, name: bassVoiceName } : null,
-      pad_voice: x.padId ? { id: x.padId, name: padVoiceName } : null,
+      chord_texture: { id: x.chordTex || "pad", name: texName(x.chordTex),
+        voice: x.padId ? { id: x.padId, name: padVoiceName } : null },
       drum_kit: x.kit,
       percussion_voicing: x.percKit,
       real_samples_enabled: !!x.realSounds,
@@ -387,7 +398,7 @@ function buildExportState(x) {
       global_drum_pattern: DRUMS[x.drum] && DRUMS[x.drum].pattern
         ? { name: DRUMS[x.drum].name, steps: DRUMS[x.drum].pattern.join(".") } : { name: "No drums" },
       drum_kit: x.kit,
-      note: "each section's resolved drum/bass/perc/pad source is listed with that section",
+      note: "each section's resolved drum/bass/perc/chord-texture source is listed with that section",
     },
     track_effects: {
       note: "per-track versions of the part controls (level, filter, drive, LFOs, sends); only tracks with non-default settings are listed",
