@@ -1,6 +1,29 @@
 # Changelog
 
 ## Unreleased
+- **Fixed: an extra track added on the Sketch tab had no menu at all.** Press **＋ 2nd drums** on a
+  section card and the new track opens with its own style and kit menus; press it on the *groove*
+  and it opened with a blank grid and nothing to choose from — the one place in the app where
+  adding a track left you with only a paintbrush. The groove's extra tracks now carry their own
+  pattern and kit (drums, percussion), pattern and voice (bass) and voice (the chord texture),
+  written straight onto the track. They deliberately have no "as the song" option: the song's
+  drums, bass and percussion belong to the *first* track, and an extra one only ever plays what it
+  is given, which is exactly how the scheduler and the exporters already resolved them.
+- **The Pad / Stab / Pluck menu now sits on the chord track itself.** It was one bar lower, inside
+  the Chord texture panel, which is the right home for its voice and its rhythm grid but the wrong
+  one for the question "how are these chords played?" — so the choice is now on the **🎹 Chords**
+  header too, where it is looked for. Both menus write the same setting.
+- **Fixed: a section with its chords switched out still played chords in the exported MIDI and
+  Live Set.** The app's playback and its audio render both read `secQuiet` — chords out for this
+  pass — but the file writers never did, so a DJ intro, a filtered drop and an outro that were
+  silent on the wheel arrived in Ableton with the chord track playing straight through them. The
+  chords were the only track it happened to: the drums, bass, percussion and chord texture all
+  resolve through helpers that already consulted their own mutes, and the chord track resolved
+  through none. Exporting the same nine-section house arrangement now writes the chord track only
+  where the arrangement says it plays — bars 17–128 of 144 rather than 1–144 — and the MIDI,
+  the per-track MIDI zip and the Live project get the same correction, since all four read the
+  one resolver. `npm test` holds it: a muted bar writes no chord notes, and the bars either side
+  keep their own timing.
 - **The Pad track is gone; the chord track has a texture instead — Pad, Stab or Pluck.** The pad
   played the same chords as the chord track, at the same time, off its own bus — one musical idea
   wearing two tracks, and a menu ("Pad voice") that answered only half the question anybody was

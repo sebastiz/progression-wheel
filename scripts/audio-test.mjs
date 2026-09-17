@@ -239,6 +239,26 @@ for (const kit of ["acoustic", "909", "808"]) {
     const kick = [...bytes].some((b, i) => b === 0x99 && bytes[i + 1] === M.DRUM_MIDI.K);
     if (!kick) problems.push("the unedited bar lost its catalogue pattern in the export");
   }
+  /* A section with its chords switched out has to reach the file silent. The app's own playback
+     and its audio render read `secQuiet`; the MIDI writer and the Live Set reach the same answer
+     through `meta.chordRhythm` — a bar of cleared steps — and used to receive nothing at all for
+     a muted pass, so an exported set played chords through every DJ intro, drop and outro the
+     arrangement had taken them out of. */
+  {
+    const two = [{ chord: { root: 0, quality: "min" } }, { chord: { root: 5, quality: "maj" } }];
+    const silent = Array.from({ length: M.beatSteps(4) }, () => "");
+    const noteOns = b => [...b].filter((x, i) => x === 0x90 && b[i + 1] > 0 && b[i + 2] > 0).length;
+    const both = M.midiBytes(120, 4, two, () => null, [], "acoustic", 4, null, {});
+    const one = M.midiBytes(120, 4, two, () => null, [], "acoustic", 4, null, { chordRhythm: [null, silent] });
+    if (noteOns(one) >= noteOns(both))
+      problems.push(`chords out: a muted bar wrote ${noteOns(one)} chord notes against ${noteOns(both)} for two sounding bars`);
+    const none = M.midiBytes(120, 4, two, () => null, [], "acoustic", 4, null, { chordRhythm: [silent, silent] });
+    if (noteOns(none) !== 0)
+      problems.push(`chords out: a song with every bar muted still wrote ${noteOns(none)} chord notes`);
+    // and the bars either side of a muted one keep their own timing rather than sliding forward
+    if (noteOns(one) * 2 !== noteOns(both))
+      problems.push(`chords out: one of two bars muted wrote ${noteOns(one)} notes, expected half of ${noteOns(both)}`);
+  }
   // a section's bars survive the trip to a link and back, joined form and all
   {
     const beats = { C1: [M.beatToggle(M.blankBeat(16), 0, "K"), M.blankBeat(16)] };
