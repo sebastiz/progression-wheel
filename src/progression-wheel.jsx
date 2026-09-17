@@ -5811,9 +5811,19 @@ export default function ProgressionWheel() {
       const rel = (tonic + MODES[effMode].rel) % 12;
       const mtr = METER_BY_ID[curMeter] || METERS[0];
       /* The chord track's rhythm, bar by bar: a pass's own chord grid where one is written,
-         null (a plain whole-bar chord) elsewhere — the file plays what the song plays. */
+         null (a plain whole-bar chord) elsewhere — the file plays what the song plays.
+         …including where it plays nothing. `secQuiet` — chords out for this pass — was the one
+         track mute the exported files never read: the drums, bass, perc and chord texture all
+         resolve through helpers that consult theirs (`drumForBarL`, `bassSrcOf`, `percSrcOf`,
+         `padVoiceOf`), but the chord track resolved through none, so a DJ intro, a filtered drop
+         and an outro arrived in Live and in the MIDI with the chords playing straight through
+         them while the app's own playback and its audio render had them silent. It needs no new
+         field to carry: a bar of cleared steps is what both writers already treat as deliberate
+         silence, so a mute is simply a rhythm that says "nothing here". */
+      const CHORD_SILENT = Array.from({ length: beatSteps(barBeats) }, () => "");
       const chordRhythm = bars.map((b, bi) => {
         const key = b.inst != null ? b.inst : "L1";
+        if (b.inst != null && effQuiet({ key: b.inst, base: b.base })) return CHORD_SILENT;
         let own = secChordBeat[key], loop = false;
         if (!own || !own.length) {                      // a pass with nothing of its own follows the groove sketch
           const g = secChordBeat[GROOVE];
