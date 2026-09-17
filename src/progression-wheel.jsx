@@ -906,15 +906,26 @@ export default function ProgressionWheel() {
      it by taking the first N, or lengthens it with diatonic degrees the progression has not used
      yet — so a four-chord axis grown to six gains a ii and a iii rather than just repeating. It
      sits in front of the whole pipeline, so per-chord edits, inserts and removals still layer on
-     top of the result. */
+     top of the result.
+     One is a real choice, not a degenerate case: most dance music has no progression at all — a
+     house or techno track is a groove over one chord held for the whole loop, and the movement is
+     in the filter, the bass and the arrangement rather than in the harmony. So 1 does not mean
+     "the first chord of the progression", which for a loop that opens away from home (the ii of a
+     ii–V–I, the IV of a future-bass swell) would vamp on a chord that never resolves: it means the
+     home chord — the tonic degree the loaded loop already uses, so a blues vamps on I7 rather than
+     on a plain I, and anything else falls back to its mode family's own i or I. */
   const CHORD_POOL_MAJOR = ["I", "IV", "V", "vi", "ii", "iii", "bVII"];
   const CHORD_POOL_MINOR = ["i", "iv", "v", "VI", "bVII", "bIII", "ii"];
-  const CHORDS_MIN = 2, CHORDS_MAX = 8;
+  const CHORDS_MIN = 1, CHORDS_MAX = 8;
   const natLen = prog.numerals.length;
   const nChords = (nChordsSt.key === progId && nChordsSt.val) ? nChordsSt.val : natLen;
+  const homeNumeral = useMemo(() =>
+    prog.numerals.find(n => numDefs[n] && numDefs[n][0] === 0)
+      || (modeFamily(prog.mode) === "minor" ? "i" : "I"), [prog, numDefs]);
   const numeralsNow = useMemo(() => {
     const base = prog.numerals;
     if (nChords === base.length) return base;
+    if (nChords === 1) return [homeNumeral];
     if (nChords < base.length) return base.slice(0, Math.max(1, nChords));
     const pool = (modeFamily(prog.mode) === "minor" ? CHORD_POOL_MINOR : CHORD_POOL_MAJOR)
       .filter(n => !base.includes(n) && numDefs[n]);
@@ -922,7 +933,7 @@ export default function ProgressionWheel() {
     while (out.length < nChords)
       out.push(pool.length ? pool[(out.length - base.length) % pool.length] : base[out.length % base.length]);
     return out;
-  }, [prog, nChords, numDefs]);
+  }, [prog, nChords, numDefs, homeNumeral]);
 
   const chords = useMemo(() => {
     const base = numeralsNow.map((n, bi) => {
@@ -1175,7 +1186,10 @@ export default function ProgressionWheel() {
     const half = Math.ceil(pool.length / 2);
     if (nums === "LOOP") return pool;
     if (nums === "HALF1") return pool.slice(0, half);
-    if (nums === "HALF2") return pool.slice(half);
+    // a one-chord loop has no second half to take — its halves are both the chord, and a section
+    // resolved to nothing would be a zero-bar hole in the arrangement (the dance templates lean on
+    // HALF2 for their breakdowns, which is exactly where a one-chord vamp ends up)
+    if (nums === "HALF2") return pool.length > half ? pool.slice(half) : pool.slice(0, 1);
     if (nums === "HOLD1") return [pool[0]];
     return nums.map(n => {
       const [off, q0] = numDefs[n], r = (tonic + off) % 12, q = seventh(q0, n);
@@ -9478,7 +9492,9 @@ export default function ProgressionWheel() {
             <label className="selwrap" style={{ flex:"0 0 74px" }}>
               <span className="lbl" style={{ margin:0 }}>Chords</span>
               <select value={nChords} onChange={e => setNChordsSt({ key: progId, val: +e.target.value })}
-                title="How many chords the loop has. Fewer takes the first few; more adds diatonic chords the progression hasn't used yet. An odd number still plays as an even phrase — the last chord holds an extra bar.">
+                title={"How many chords the loop has. Fewer takes the first few; more adds diatonic chords the progression hasn't used yet. "
+                  + "An odd number still plays as an even phrase — the last chord holds an extra bar. "
+                  + "1 is a one-chord vamp on the home chord — most dance music has no progression at all, and the movement is in the groove."}>
                 {Array.from({ length: CHORDS_MAX - CHORDS_MIN + 1 }, (_, i) => CHORDS_MIN + i).map(n =>
                   <option key={n} value={n}>{n}{n === natLen ? " ·" : ""}</option>)}
               </select>

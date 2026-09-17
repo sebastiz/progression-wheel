@@ -2167,6 +2167,45 @@ console.log(`drum patterns: ${drum16} at sixteenths`);
   console.log(`  per genre: ${counts[0]} at least, ${counts[counts.length >> 1]} typical, ${counts[counts.length - 1]} at most`);
 }
 
+/* ---- the one-chord vamp ----
+   Most dance music has no progression: the loop is one chord and the movement is in the groove, so
+   the Chords menu goes down to 1. What that has to resolve to is the *home* chord — a vamp on the
+   ii of a ii–V–I would be a loop that never lands — and the arrangement has to survive a pool of
+   one, which the dance templates immediately test by asking for the loop's second half. */
+{
+  // the component's rule, mirrored: the tonic degree the loop already uses, else the family's own
+  const homeOf = p => {
+    const defs = M.modeFamily(p.mode) === "minor" ? M.MINOR_NUM : M.MAJOR_NUM;
+    return p.numerals.find(n => defs[n] && defs[n][0] === 0)
+      || (M.modeFamily(p.mode) === "minor" ? "i" : "I");
+  };
+  let fromLoop = 0;
+  for (const [id, p] of Object.entries(M.PROGRESSIONS)) {
+    const defs = M.modeFamily(p.mode) === "minor" ? M.MINOR_NUM : M.MAJOR_NUM;
+    const home = homeOf(p);
+    if (!defs[home]) problems.push(`one chord: ${id} vamps on "${home}", which its mode has no chord for`);
+    else if (defs[home][0] !== 0) problems.push(`one chord: ${id} vamps on "${home}", which is not the tonic`);
+    if (p.numerals.includes(home)) fromLoop++;
+  }
+  // a one-chord pool still has to fill every section token the structures use
+  const pool = ["Cm"], half = Math.ceil(pool.length / 2);
+  const resolved = {
+    LOOP: pool, HALF1: pool.slice(0, half),
+    HALF2: pool.length > half ? pool.slice(half) : pool.slice(0, 1), HOLD1: [pool[0]],
+  };
+  for (const [tok, cs] of Object.entries(resolved))
+    if (!cs.length || cs.some(c => !c)) problems.push(`one chord: "${tok}" resolves to an empty section`);
+  // and the source has to offer it, and resolve it the same way
+  if (!/const CHORDS_MIN = 1,/.test(code))
+    problems.push("progression-wheel.jsx: the Chords menu no longer goes down to one chord");
+  if (!/if \(nChords === 1\) return \[homeNumeral\];/.test(code))
+    problems.push("progression-wheel.jsx: a one-chord loop no longer vamps on the home chord");
+  if (!/HALF2"\) return pool\.length > half \? pool\.slice\(half\) : pool\.slice\(0, 1\)/.test(code))
+    problems.push("progression-wheel.jsx: the second half of a one-chord loop is empty again");
+  console.log(`one-chord vamp: ${Object.keys(M.PROGRESSIONS).length} loops resolve to a home chord `
+    + `(${fromLoop} of them one the loop already plays), all 4 section tokens stay non-empty`);
+}
+
 /* ---- song structures are well-formed, and the dance ones phrase properly ---- */
 {
   const TOKENS = ["LOOP", "HALF1", "HALF2", "HOLD1"];

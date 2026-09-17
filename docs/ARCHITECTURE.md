@@ -49,6 +49,13 @@ are checked by `npm test`, because both surface at runtime as a blank screen.
 
 Everything flows from one `useMemo` producing `chords`, the live loop:
 
+0. **Length** (`nChords` → `numeralsNow`): the loop's own length by default; fewer takes the first
+   N, more appends diatonic degrees the progression has not used. The floor is **1**, because most
+   dance music has no progression — a house or techno track is a groove over one chord, and the
+   movement is in the filter, the bass and the arrangement. One chord does *not* mean "the first
+   chord of the loop" (a ii–V–I would vamp on its ii): it resolves to `homeNumeral` — the tonic
+   degree the loaded loop already uses, so the blues vamps on `I7` rather than a plain `I`, falling
+   back to the mode family's own `i`/`I` for a loop that never states its tonic.
 1. **Base**: the selected progression's numerals resolved in the current tonic.
 2. **Overrides** (`edits.map`): user swaps keyed by the chord's *triad base name*; the replacement is
    reverse-looked-up to a numeral where possible (for function colour and labels).
@@ -91,7 +98,9 @@ genre.
 resolved against a chord pool. `resolveWith(nums, pool)` + `poolFor(sectionLetter)` implement
 contrast loops (a second progression assigned to C/B/V sections). Sections are letter-coded via
 `letterFor()` for the shorthand write-out; odd-length phrases are padded even by holding the last
-chord a bar.
+chord a bar. A one-chord pool has no second half to take, so `HALF2` falls back to the chord itself
+— resolving it to nothing would put a zero-bar section in the arrangement, and the dance templates
+reach for `HALF2` in exactly the breakdowns a one-chord vamp ends up in.
 
 ### Editing the arrangement
 

@@ -134,10 +134,18 @@ genre, and worth trying on a song you already like.
 
 ## Rhythm
 
-**Chords** sits next to Key: how many chords the loop has, from two to eight. Fewer takes the first
+**Chords** sits next to Key: how many chords the loop has, from one to eight. Fewer takes the first
 few of the progression; more adds diatonic chords it hasn't used yet, so a four-chord axis grown to
 six gains a ii and a iii rather than just repeating itself. The dot marks the progression's own
 length. An odd number still plays as an even phrase — the last chord simply holds an extra bar.
+
+**One chord** is a real setting, not a broken progression. Most dance music has no progression at
+all: a house or techno track is a groove over a single chord, and everything that moves is the
+filter, the bass, the percussion and the arrangement. Picking **1** vamps on the *home* chord rather
+than on whatever the loop happened to start with — load the ii–V–I turnaround, ask for one chord and
+you get the I, not the ii — and a blues keeps its I7. Everything else still works over it: the
+structures, the dance arrangement templates, the melody grid and the exports all treat the held
+chord as the loop.
 
 **Time** sits at the front of the rhythm row: **4/4**, **3/4**, **6/8** or **5/4**. Everything in
 that row is filtered to the meter you pick, and changing it moves you to a strum pattern and a kit

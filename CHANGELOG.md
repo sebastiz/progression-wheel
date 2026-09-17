@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- **One chord is now a choice in the Chords menu.** Most dance music has no progression: a house or
+  techno track is a groove over a single chord, and everything that moves is the filter, the bass,
+  the percussion and the arrangement — but the chord count started at two, so the one thing most of
+  the genres in the Dance & electronic list actually do could only be reached by loading a loop and
+  deleting chords off it. The menu now goes down to **1**, and it vamps on the *home* chord rather
+  than on whatever the loop happened to open with: ask the ii–V–I turnaround for one chord and you
+  get the I, not a ii that never resolves; the 12-bar blues keeps its I7; a loop that never states
+  its own tonic (the future-bass swell) falls back to its mode's i or I. Everything downstream is
+  unchanged by it — the structures, the dance arrangement templates, the melody grid, the stave and
+  every export treat the held chord as the loop.
+- **Fixed: a section asking for the second half of the loop came out empty on a one-chord loop.**
+  `HALF2` — which the tech-house, trance and progressive templates use for their breakdowns — took
+  everything after the midpoint, and on a pool of one there is nothing after the midpoint, so the
+  section resolved to zero bars. It now falls back to the chord itself, so a one-chord vamp under
+  *Tech House* writes its full 72 bars with the breakdown intact.
 - **The drums are arranged now, not looped.** Press **Write the template** and
   every section used to play the identical bar of the identical kit from the first bar of the track
   to the last: the only thing an arrangement row could ever say about its drums was *off*, *no
