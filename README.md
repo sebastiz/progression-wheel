@@ -24,6 +24,9 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   the right hand, chord voicing in the left); **Guitar** draws a treble lead sheet with the melody
   and a fret-numbered tab staff. Follows the chosen song structure or the loop, and redraws live
 - **Chord colour** — Triads / 7ths / 9ths switch re-voices the whole app by rule
+- **One chord to eight** — the **Chords** menu sets the loop's length, and it goes down to one:
+  most dance music has no progression, just a groove over a held chord. One chord vamps on the
+  *home* chord of the loaded loop, not on whatever it happened to start with
 - **Colour moves** — secondary dominants, parallel swaps, borrowed chords, chromatic mediants and
   tritone substitutions, each with reference songs that use the move
 - **Song structures** — choose a form and the whole song writes out in shorthand
