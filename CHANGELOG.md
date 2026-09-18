@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- **An Acid Techno running order, and a bassline of techno's own.** The bass catalogue had the
+  trance engine (*Rolling offbeats*) and the 303 (*Acid 303 line*) but nothing that was simply
+  techno: a line that interlocks with a four-on-the-floor kick rather than doubling it, and turns
+  the bar over instead of repeating it. **Techno roll** (`-RRR-RRR-RRR-RRO`) is that — every
+  sixteenth the kick does not own, with the octave landing on the last one. Against the
+  *Techno · driving 16ths* kit it never lands on a kick in the bar. It sits in every bass **Style**
+  menu and in the groove's **starts from**, per section as well as per song, and paints onto the
+  bass grid like any other pattern.
+  And the arrangement catalogue now holds **Acid Techno** (97 running orders), the one style where
+  the filter and the resonance do what a layer does everywhere else: the kick locks in bar one and
+  never moves, the 303 opens across eight sections, the kick is pulled out from under the squelch
+  for the one subtraction, and the rebuild switches the bass to the new Techno roll. It carries the
+  acid bass voice with its resonance and drive already set, so it squelches on the first play rather
+  than after a trip to the Sound tab. **Acid techno** is a one-click overall style on the Sketch tab
+  too (techno 16ths, the 303 line, a glass pad).
 - **Fixed: an extra track added on the Sketch tab had no menu at all.** Press **＋ 2nd drums** on a
   section card and the new track opens with its own style and kit menus; press it on the *groove*
   and it opened with a blank grid and nothing to choose from — the one place in the app where

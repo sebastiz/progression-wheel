@@ -303,7 +303,7 @@ Leave the grid alone and the texture plays one hit a bar, which is usually what 
 ### Typical arrangements — a genre's running order over your sketch
 
 At the bottom of the Sketch tab, beside **✍ Write to Arrange**, is **🗺 Typical arrangement**: all
-96 running orders in the catalogue, grouped by genre — Chicago House, Liquid D&B, Psytrance, the
+97 running orders in the catalogue, grouped by genre — Chicago House, Liquid D&B, Psytrance, the
 storyteller's form, the trailer cue. Picking one fills the draft below with that genre's sections,
 lengths and section-by-section allocation, played by **your** sketch: your drums, your bass, your
 chords and their texture, your melody parts, distributed the way the genre distributes them, with

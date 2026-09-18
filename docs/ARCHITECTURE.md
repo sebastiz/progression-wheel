@@ -243,7 +243,7 @@ being reshaped and re-committed.
 #### A genre's running order, laid over the sketch
 
 The draft starts empty, which is the right tool when you know the shape and the wrong one when you
-want a genre's — and the catalogue already holds 96 of them. **🗺 Typical arrangement**
+want a genre's — and the catalogue already holds 97 of them. **🗺 Typical arrangement**
 (`applySketchTemplate`, beside ✍ Write to Arrange) reads one straight into `sketchArr`, grouped in
 the menu by `FAMILY_OF`/`FAMILY_ORDER`, the same family tree the Arrange tab's reference table
 draws.

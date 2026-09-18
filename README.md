@@ -42,7 +42,7 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   **Pad** holds the voicing on to the next hit, **Stab** is a short chord hit, **Pluck** rolls the
   notes across and lets them ring. Per song and per section, with a voice list that follows the
   texture — strings and warm pads, or house stab and clav, or pizzicato and music box
-- **Pick a typical arrangement** — the Sketch tab's draft can be filled from any of the 96 running
+- **Pick a typical arrangement** — the Sketch tab's draft can be filled from any of the 97 running
   orders in the catalogue, listed by genre, laid over *your* groove: the shape and the
   section-by-section allocation come from the genre, every sound stays yours. It is still a draft —
   re-tick any cell — and **✍ Write to Arrange** puts it on the Arrange tab
