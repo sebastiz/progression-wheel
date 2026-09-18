@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+- **The Chord texture track is gone; the texture is part of the chord track now.** Folding the Pad
+  track into the chords answered the musical question and left the structural one alone: what
+  arrived was a *renamed* track — a 🌫️ Chord texture bar in every section card, a menu pair on the
+  Sound tab, a row in the sketch matrix, an automation lane of its own, a Session track type — so
+  the app still had two entries in every list for one layer of one track, and the Pad/Stab/Pluck
+  menu sat on the chords while everything it governed sat somewhere else.
+  None of those exist any more. **🎹 Chords** asks how the chords are played — **Pad**, **Stab** or
+  **Pluck**, on its own header, song-wide on the groove and per pass on a section — and the rest of
+  the layer is in that same panel, under the chord grid: its **voice**, a **▸ rhythm** toggle over
+  the grid it always had, and its own insert rack. Nothing else in the app offers a "chord
+  texture": no bar to open, no track to add, no second pair of menus on the Sound tab.
+  Nothing saved changes and nothing sounds different. Every map, bus, stem, export track and
+  template field keeps the id `pad`, so saved songs, share links, presets and running orders all go
+  on meaning exactly what they meant — the controls moved, the layer did not. Two mixer-side
+  surfaces are deliberately kept, because an audible layer still has to be mixable and mutable: the
+  Sound tab's track rows, reading **Chords · texture**, and the Arrange strip's per-section mute
+  lane, which every track has. A texture filter lane drawn before this keeps its row (playback
+  reads that lane directly, so hiding it would leave a sweep with no ✕ to clear it); nothing new can
+  start one.
 - **An Acid Techno running order, and a bassline of techno's own.** The bass catalogue had the
   trance engine (*Rolling offbeats*) and the 303 (*Acid 303 line*) but nothing that was simply
   techno: a line that interlocks with a four-on-the-floor kick rather than doubling it, and turns

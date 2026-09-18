@@ -447,13 +447,15 @@ const TRACK_LVL = { k:"lvl", name:"Level", kind:"amt", dflt:100, max:100, unit:"
   tip:"This track's level in the mix." };
 const TRACK_MODS = [TRACK_LVL, ...["cut","res","hp","drive","wob","wobRate","trem","tremRate",
   "pan","apan","apanRate","send","verb","duck"].map(k => MOD_BY_KEY[k])];
-/* The Pad track is gone: it played the same chords as the chord track, at the same time, off its
-   own bus — one idea wearing two tracks. What it did is the chord track's *texture* now (Pad /
-   Stab / Pluck, see CHORD_TEXTURES in audio.js), so the bus keeps its id — every saved song,
-   template and preset still means what it meant — and reads "Chord texture" everywhere, sitting
-   next to the chords rather than apart from them. */
+/* The Pad track is gone, and so is the "Chord texture" track that briefly replaced it: both played
+   the same chords as the chord track, at the same time, and appeared as a second entry in every
+   list for what is one layer of one track. What it does is the chord track's *texture* (Pad /
+   Stab / Pluck, see CHORD_TEXTURES in audio.js), chosen on the Chords panel itself, and the only
+   place it is still named apart from the chords is here — the mixer, where an audible layer needs
+   its own level, tone and inserts, so it reads "Chords · texture" rather than as a track of its
+   own. The bus keeps its id, so every saved song, template and preset still means what it meant. */
 const TRACKS_FX = [["drums", "Drums", "🥁"], ["perc", "Percussion", "🪘"],
-  ["bass", "Bass", "🎸"], ["chords", "Chords", "🎹"], ["pad", "Chord texture", "🌫️"]];
+  ["bass", "Bass", "🎸"], ["chords", "Chords", "🎹"], ["pad", "Chords · texture", "🌫️"]];
 // a draft holds as many rows as a plan does (MAX_ROWS in arrange.js) — a running order longer
 // than this is a different kind of document
 const MAX_DRAFT_ROWS = 24;
@@ -6062,7 +6064,7 @@ export default function ProgressionWheel() {
       note: "was " + bassVoice + (bass && BASS[bass] ? " · pattern: " + BASS[bass].name : "")
         + " — drop a bass synth on this" });
     // the pad: the held upper voicings
-    if (padTrack) tracks.push({ name: "Chord texture", color: ALS_COLORS.pad, vol: 0.8, instrument: true,
+    if (padTrack) tracks.push({ name: "Chords · texture", color: ALS_COLORS.pad, vol: 0.8, instrument: true,
       notes: padTrack.notes, end: bars.length * B, note: "drop a pad synth on this" });
     /* Extra tracks (#1, #2, …) — one more Live track per extra drums/perc/bass/pad track the song
        carries, named the way the MIDI writer names them, so a set opened beside an exported MIDI
@@ -6098,7 +6100,7 @@ export default function ProgressionWheel() {
         note: "was " + bassVoice + " — drop a bass synth on this" });
     });
     padExtra.forEach((spec, i) => {
-      if (spec && spec.notes.length) tracks.push({ name: extraName("Chord texture", i), color: ALS_COLORS.pad,
+      if (spec && spec.notes.length) tracks.push({ name: extraName("Chords · texture", i), color: ALS_COLORS.pad,
         vol: 0.8, instrument: true, notes: spec.notes, end: bars.length * B, note: "drop a pad synth on this" });
     });
     // melody parts: grid columns merged into held notes, the same way the MIDI writer merges them
@@ -7324,7 +7326,6 @@ export default function ProgressionWheel() {
             const beatOpen = !!openBeats[d.key];
             const percOpen = !!openPercs[d.key];
             const bassOpen = !!openBass[d.key];
-            const padGOpen = !!openPads[d.key];
             const chordGOpen = !!openChordGrids[d.key];
             const optsOpen = !!openOpts[d.key];
             // Drums/Chords/Bass/Perc/Pad/Shape moved into their own instrument panels below — each
@@ -7394,13 +7395,13 @@ export default function ProgressionWheel() {
               </label>
             );
             /* Pad / Stab / Pluck — the character the chord track's texture layer is struck in.
-               Drawn twice: on the Chords panel's own header row, where the question belongs, and
-               again beside the texture's voice and grid. Both write the same state — song-wide on
+               Drawn once, on the Chords panel's own header row, which is where "how are these
+               chords played" is looked for and the only place this is asked any more. Song-wide on
                the groove (there is one groove, and it is the song's starting point), per pass on a
                section card, with "as the song" naming what that would be. */
             const texPicker = sec => view.groove
               ? (<label className="secopt"
-                   title="How the chord track's texture layer is struck: Pad holds the voicing on to the next hit, Stab is a short chord hit, Pluck rolls the notes across and lets them ring. The same chords either way — only the articulation changes. Its voice and rhythm are in the Chord texture bar below.">
+                   title="How the chord track's texture layer is struck: Pad holds the voicing on to the next hit, Stab is a short chord hit, Pluck rolls the notes across and lets them ring. The same chords either way — only the articulation changes. Its voice and its rhythm are in this panel, under the chord grid.">
                   <span className="optlbl"><span aria-hidden="true">🌫️</span> texture</span>
                   <select value={chordTex} onChange={e => setChordTexSt({ key: progId, val: e.target.value })}>
                     {CHORD_TEXTURES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
@@ -7417,6 +7418,118 @@ export default function ProgressionWheel() {
                     {CHORD_TEXTURES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
                   </select>
                 </label>);
+            /* ---- the chord track's texture, inside the chord track ----
+               It was a track: its own 🌫️ bar in every section card, its own voice menu on the
+               Sound tab, its own row in the sketch matrix, its own Session track type — a second
+               entry in every list for what is one layer of the chord track, played the way the
+               texture menu on this panel's own header says. So it is not a list entry any more.
+               It is the bottom half of the Chords panel: the same voice picker, the same rhythm
+               grid, the same per-section insert rack, reached by opening the chords rather than by
+               opening a track of its own. Every map behind it is untouched (`secPadVoice`,
+               `secPadBeat`, `secPad`, the `pad` bus and its stems and exports), which is what lets
+               every saved song, template and preset go on meaning exactly what it meant and
+               sounding exactly as it sounded. */
+            const textureBlock = d => {
+              const qLayer = activeLayerOf("pad", d.key);
+              const dl = layered(d, qLayer);
+              const bars = padGridBars(dl);
+              const n = bars[0].length, cols = n * d.nbars;
+              const own = !!secPadBeat[dl.key];
+              const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
+              const gOpen = !!openPads[d.key];
+              return (
+                <div className="texsub">
+                  <div className="row gridhdr">
+                    <span className="gridname">🌫️ {(TEXTURE_NAME[chordTexOf(d)] || "Pad").toLowerCase()} layer ·{" "}
+                      {own ? `${who}'s own rhythm${qLayer ? " · " + LAYER_NAMES[qLayer] : ""}`
+                        : (padBeatOf(dl) || {}).loop ? "following the groove"
+                        : padOnOf(dl) ? "one hit a bar — its natural state"
+                        : "not playing — pick a voice or paint a rhythm"}</span>
+                    {trackTabStrip("pad", d)}
+                    {!view.groove && fallbackPicker(dl, "Voice", null, secPadVoice, setSecPadVoice,
+                      id => id === "off" ? "no texture" : (TEX_VOICE_NAME[id] || (voices.find(v => v.id === id) || {}).name || id),
+                      (<>{(TEXTURE_VOICES[chordTexOf(dl)] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                        {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</>),
+                      // no onPick: the voice is a timbre, independent of whatever rhythm the
+                      // texture's grid already holds — picking one plays immediately either
+                      // way, with nothing painted here to overwrite
+                      "The texture layer's voice for this " + d.word.toLowerCase() + (qLayer ? "'s " + LAYER_NAMES[qLayer] + " track" : "") + " alone — the chord's upper voicing again, reverbed and barely pumped. It carries breakdowns and sits out of DJ intros.",
+                      "No texture")}
+                    {view.groove && qLayer === 0 && <label className="secopt" title="What the chord track's texture layer is played with — the chord's upper voicing again, struck the way the texture menu on this panel's header says.">
+                      <span className="optlbl">voice</span>
+                      <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}>
+                        <option value="">No texture layer</option>
+                        <optgroup label={TEXTURE_NAME[chordTex] + " voices"}>
+                          {(TEXTURE_VOICES[chordTex] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                        </optgroup>
+                        <optgroup label="Style presets">
+                          {STYLE_PRESETS.filter(([, , p]) => PAD_VOICES.some(([vid]) => vid === p.pad)).map(([id, name, p]) =>
+                            <option key={"st" + id} value={p.pad}>{name} · {(PAD_VOICES.find(([vid]) => vid === p.pad) || [])[1]}</option>)}
+                        </optgroup>
+                        <optgroup label="Every voice">
+                          {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                          {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                        </optgroup>
+                      </select>
+                    </label>}
+                    {view.groove && qLayer > 0 && layerPicker(dl, "voice", secPadVoice, setSecPadVoice,
+                      (TEXTURE_VOICES[chordTexOf(dl)] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>),
+                      "The voice this extra texture track plays with. It has no song-level voice behind it — only the first track does — so picking one here is what makes it sound; write its rhythm on the grid below.",
+                      "No texture")}
+                    <button className="mini" onClick={() => setOpenPads({ ...openPads, [d.key]: !gOpen })}
+                      title="The rhythm this layer plays the chords on — when it holds, when it stabs. Closed, it plays one hit a bar, which is what a pad does anyway.">
+                      {gOpen ? "▾ rhythm" : "▸ rhythm"}{own ? " ●" : ""}</button>
+                    {view.groove && qLayer === 0 && wholeSongBtn("pad")}
+                    {own && <button className="mini" onClick={() => resetPadBeat(dl.key)}
+                      title="Back to the texture's one-hit-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
+                    {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(dl, sameRole.map(o => layered(o, qLayer)))}
+                      title={"Put this texture rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
+                        + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
+                  </div>
+                  {gOpen && (<>
+                    <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
+                      <div className="mline" style={{ gap:beatGap,
+                          gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                        <span />
+                        {d.cs.map((c, bi) => (
+                          <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
+                            background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
+                        ))}
+                      </div>
+                      {PAD_ROWS.map(([tok, name, tip, ink]) => (
+                        <div key={tok} className="mline" style={{ gap:beatGap,
+                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
+                          <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
+                          {Array.from({ length: cols }, (_, c) => {
+                            const bar = Math.floor(c / n), step = c % n;
+                            const on = bars[bar][step] === tok;
+                            return (
+                              <div key={c} data-qk={dl.key} data-bar={bar} data-step={step} data-tok={tok}
+                                onPointerDown={e => padDown(e, dl, bar, step, tok)}
+                                onClick={() => {
+                                  if (skipClickRef.current) { skipClickRef.current = false; return; }
+                                  tapPad(dl, bar, step, tok);
+                                }}
+                                style={on ? { background: ink, borderColor: ink } : null}
+                                className={"mcell dcell" + (on ? " on" : "")
+                                  + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                    {trackFxRow("pad", secFxCtx)}
+                    {tips && <p className="keytag" style={{ marginTop:5 }}>
+                      This layer plays whatever chord each bar holds — the grid says when. A Hold
+                      rings on to the next hit; a Stab is short. One Hold on the downbeat is what
+                      it does anyway; hits off the beat turn it into house piano. The texture menu
+                      on the header above decides what a Hold is worth: a Pad rings, a Stab never
+                      does, a Pluck rolls the notes and lets them decay.
+                    </p>}
+                  </>)}
+                </div>
+              );
+            };
             /* A section's own copy of one bus's insert rack. Drums, Perc, Bass and Pad each get
                this as the FX tab inside their own trackFxRow (see the `secCtx` argument there) —
                nested with their Mix/Tone/Movement/Space settings rather than being a sibling of
@@ -8127,8 +8240,11 @@ export default function ProgressionWheel() {
                 })()}
                 {gridBar("🎹", "Chords", chordGOpen,
                   () => setOpenChordGrids({ ...openChordGrids, [d.key]: !chordGOpen }),
-                  (secChordBeat[d.key] || secQuiet[d.key] != null || secChordPat[d.key] || secChordInstr[d.key]) ? "●" : "",
-                  "The chord rhythm — accents, downstrokes and upstrokes on the strum's own vocabulary")}
+                  (secChordBeat[d.key] || secQuiet[d.key] != null || secChordPat[d.key] || secChordInstr[d.key]
+                    // the texture layer lives in this panel now, so its own markings light this
+                    // bar's dot too — otherwise a section with its own texture read as untouched
+                    || secPadBeat[d.key] || secPadVoice[d.key] || secChordTex[d.key]) ? "●" : "",
+                  "The chord rhythm — accents, downstrokes and upstrokes on the strum's own vocabulary — and the texture layer underneath it")}
                 {chordGOpen && (() => {
                   const bars = chordGridBars(d);
                   const n = bars[0].length, cols = n * d.nbars;
@@ -8214,115 +8330,12 @@ export default function ProgressionWheel() {
                           </div>
                         ))}
                       </div>
+                      {textureBlock(d)}
                       {trackFxRow("chords", secFxCtx)}
                       {tips && <p className="keytag" style={{ marginTop:5 }}>
                         The chord track's rhythm for these bars alone, on the strum's own vocabulary:
                         Accent is the big hit, Down a full strum, Up the light answer. It replaces the
                         song's pattern here — the bassline's "with the chords" mode follows it too.
-                      </p>}
-                    </div>
-                  );
-                })()}
-                {/* The chord track's texture layer — what used to be a Pad track of its own.
-                    It sits directly under the chord rhythm because it is the same chords: the
-                    menu below only decides how they are struck. */}
-                {gridBar("🌫️", "Chord texture · " + (TEXTURE_NAME[chordTexOf(d)] || "Pad"), padGOpen,
-                  () => setOpenPads({ ...openPads, [d.key]: !padGOpen }),
-                  (secPadBeat[d.key] || secPadVoice[d.key] || secChordTex[d.key]) ? "●" : "",
-                  "The chord track's second layer — the same chords held (pad), struck short (stab) or rolled (pluck) — and the rhythm it plays them on")}
-                {padGOpen && (() => {
-                  const qLayer = activeLayerOf("pad", d.key);
-                  const dl = layered(d, qLayer);
-                  const bars = padGridBars(dl);
-                  const n = bars[0].length, cols = n * d.nbars;
-                  const own = !!secPadBeat[dl.key];
-                  const sameRole = sections.insts.filter(o => o.base === d.base && o.key !== d.key);
-                  return (
-                    <div style={{ marginTop:6 }}>
-                      <div className="row gridhdr">
-                        <span className="gridname">🌫️ {own ? `${who}'s own texture rhythm${qLayer ? " · " + LAYER_NAMES[qLayer] : ""}`
-                          : (padBeatOf(dl) || {}).loop ? "following the groove"
-                          : padOnOf(dl) ? "one hit a bar — the texture's natural state"
-                          : "no texture here — pick a voice or paint a rhythm"}</span>
-                        {trackTabStrip("pad", d)}
-                        {/* the same chooser the Chords panel above carries, on the same setting —
-                            it is one layer, and this is the other end of it */}
-                        {(!view.groove || qLayer === 0) && texPicker(d)}
-                        {!view.groove && fallbackPicker(dl, "Voice", null, secPadVoice, setSecPadVoice,
-                          id => id === "off" ? "no texture" : (TEX_VOICE_NAME[id] || (voices.find(v => v.id === id) || {}).name || id),
-                          (<>{(TEXTURE_VOICES[chordTexOf(dl)] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                            {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</>),
-                          // no onPick: the voice is a timbre, independent of whatever rhythm the
-                          // texture's grid already holds — picking one plays immediately either
-                          // way, with nothing painted here to overwrite
-                          "The chord texture's voice for this " + d.word.toLowerCase() + (qLayer ? "'s " + LAYER_NAMES[qLayer] + " track" : "") + " alone — the upper voicing again, reverbed and barely pumped. It carries breakdowns and sits out of DJ intros.",
-                          "No texture")}
-                        {view.groove && qLayer === 0 && <label className="secopt" title="The chord texture's voice — the chord's upper voicing again, played the way the texture menu beside this says. Write its rhythm on this grid.">
-                          <span className="optlbl">voice</span>
-                          <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}>
-                            <option value="">No texture layer</option>
-                            <optgroup label={TEXTURE_NAME[chordTex] + " voices"}>
-                              {(TEXTURE_VOICES[chordTex] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                            </optgroup>
-                            <optgroup label="Style presets">
-                              {STYLE_PRESETS.filter(([, , p]) => PAD_VOICES.some(([vid]) => vid === p.pad)).map(([id, name, p]) =>
-                                <option key={"st" + id} value={p.pad}>{name} · {(PAD_VOICES.find(([vid]) => vid === p.pad) || [])[1]}</option>)}
-                            </optgroup>
-                            <optgroup label="Every voice">
-                              {PAD_VOICES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                              {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                            </optgroup>
-                          </select>
-                        </label>}
-                        {view.groove && qLayer > 0 && layerPicker(dl, "voice", secPadVoice, setSecPadVoice,
-                          (TEXTURE_VOICES[chordTexOf(dl)] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>),
-                          "The voice this extra texture track plays with. It has no song-level voice behind it — only the first track does — so picking one here is what makes it sound; write its rhythm on the grid below.",
-                          "No texture")}
-                        {view.groove && qLayer === 0 && wholeSongBtn("pad")}
-                        {own && <button className="mini" onClick={() => resetPadBeat(dl.key)}
-                          title="Back to the texture's one-hit-a-bar — the grid goes on showing it, unwritten">↺ Reset</button>}
-                        {sameRole.length > 0 && <button className="mini" onClick={() => copyPadBeat(dl, sameRole.map(o => layered(o, qLayer)))}
-                          title={"Put this texture rhythm on the other " + sameRole.length + " " + d.word.toLowerCase()
-                            + (sameRole.length > 1 ? "s" : "")}>copy to every {d.word.toLowerCase()}</button>}
-                      </div>
-                      <div className="mscroll" data-sync={d.key} onScroll={syncScroll}>
-                        <div className="mline" style={{ gap:beatGap,
-                            gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                          <span />
-                          {d.cs.map((c, bi) => (
-                            <span key={bi} className="mbar" style={{ gridColumn:`span ${n}`,
-                              background: FN_COLOR[c.func || "T"], color: FN_TEXT[c.func || "T"] }}>{c.name}</span>
-                          ))}
-                        </div>
-                        {PAD_ROWS.map(([tok, name, tip, ink]) => (
-                          <div key={tok} className="mline" style={{ gap:beatGap,
-                              gridTemplateColumns:`${GRID_GUT + 4 - beatGap}px repeat(${cols}, minmax(${beatCell}px,1fr))` }}>
-                            <span className="mnote dname" title={tip} style={{ borderRightColor: ink }}>{name}</span>
-                            {Array.from({ length: cols }, (_, c) => {
-                              const bar = Math.floor(c / n), step = c % n;
-                              const on = bars[bar][step] === tok;
-                              return (
-                                <div key={c} data-qk={dl.key} data-bar={bar} data-step={step} data-tok={tok}
-                                  onPointerDown={e => padDown(e, dl, bar, step, tok)}
-                                  onClick={() => {
-                                    if (skipClickRef.current) { skipClickRef.current = false; return; }
-                                    tapPad(dl, bar, step, tok);
-                                  }}
-                                  style={on ? { background: ink, borderColor: ink } : null}
-                                  className={"mcell dcell" + (on ? " on" : "")
-                                    + (step === 0 && c > 0 ? " b0" : step % 4 === 0 ? " bt" : "")} />
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                      {trackFxRow("pad", secFxCtx)}
-                      {tips && <p className="keytag" style={{ marginTop:5 }}>
-                        The texture plays whatever chord each bar holds — this grid says when. A Hold
-                        rings on to the next hit; a Stab is short. One Hold on the downbeat is what
-                        it does anyway; hits off the beat turn it into house piano. The texture menu
-                        above decides what a Hold is worth: a Pad rings, a Stab never does, a Pluck
-                        rolls the notes and lets them decay.
                       </p>}
                     </div>
                   );
@@ -8365,8 +8378,10 @@ export default function ProgressionWheel() {
     });
     if (bassSrcOf(grooveInst)) rows.push({ id: "bass", name: "Bass" });
     rows.push({ id: "chords", name: "Chords" });
-    // the chord track's texture layer, named by the character it is set to play in
-    if (padOnOf(grooveInst)) rows.push({ id: "pad", name: TEXTURE_NAME[chordTex] || "Pad" });
+    /* No row for the chord track's texture layer. It is not a track — it is the bottom half of the
+       chord track, switched on and off by its own voice menu inside the Chords panel — and a row
+       of its own here was the matrix claiming otherwise. Taking it out of a *section* is still the
+       Arrange strip's own mute lane, which every track has. */
     if (percSrcOf(grooveInst)) rows.push({ id: "perc", name: "Perc" });
     if ((secBeat[GROOVE] && secBeat[GROOVE].length) || (DRUMS[drum] || {}).pattern) rows.push({ id: "drums", name: "Drums" });
     return rows;
@@ -8945,8 +8960,13 @@ export default function ProgressionWheel() {
                 tip: "Draw the chords track's own brightness across the song — the classic disco/house move: chords filtered shut in the intro, opened at the drop." },
               ...(percAnywhere ? [{ id: "cutperc", name: "Perc filter",
                 tip: "Draw the percussion layer's own brightness across the song — open it through a build, shut it for a verse." }] : []),
-              ...(padAnywhere ? [{ id: "cutpad", name: "Chord texture filter",
-                tip: "Draw the chord texture's own brightness across the song — the classic move is a slow bloom across the whole build." }] : []),
+              /* The chord track's texture layer gets no lane of its own to *start*: it is not a
+                 track, and the chords' own lane above is what anybody reaching for "open the
+                 chords across the build" wants. But a song that already has one drawn keeps it —
+                 playback reads the lane data directly (see applyFx / "cutpad"), so hiding the row
+                 outright would leave an automation sweeping away with nothing to clear it. */
+              ...((auto.key === planKey && (auto.cutpad || []).length) ? [{ id: "cutpad", name: "Chords · texture filter",
+                tip: "A texture-layer filter drawn before the layer was folded into the chord track. It still plays; the ✕ clears it for good." }] : []),
               ...Array.from({ length: nParts }, (_, i) => ({ id: autoPartId(i),
                 name: LAYER_NAMES[i] + " filter",
                 tip: `Draw part ${LAYER_NAMES[i]}'s own brightness across the song — this part opens or darkens while the rest of the mix stays put. Where it is drawn it overrides the part's Low-pass knob.` }))];
@@ -9488,6 +9508,10 @@ export default function ProgressionWheel() {
         /* one header shape for both grids, so they stack rather than sit next to each other */
         .gridhdr { gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0 2px; }
         .gridname { font-size:var(--fs-sm); color:var(--muted); }
+        /* The chord track's texture layer, nested inside the Chords panel rather than wearing a
+           collapsible bar of its own. The rule and the indent are what say "still the chords". */
+        .texsub { margin-top:8px; padding:2px 0 0 10px; border-top:1px solid var(--line-2);
+          border-left:2px solid var(--line-2); }
         /* The Sketch tab's collapsible bars — one full-width bar per grid, named for what the
            grid holds. The note on the right is the "something is written here" mark. */
         .gridbar { display:flex; align-items:center; gap:7px; width:100%; margin-top:7px;
@@ -10127,30 +10151,12 @@ export default function ProgressionWheel() {
                 {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </label>
-            {/* The chord track's texture — what the Pad track used to be. Two menus, because the
-                question it answers is two: how the chords are struck, and what they are struck
-                with. They sit together, next to the other tracks' sounds. */}
-            <label className="selwrap" style={{ minWidth:130 }}>
-              <span className="lbl" style={{ margin:0 }}>Chord texture</span>
-              <select value={chordTex} onChange={e => setChordTexSt({ key: progId, val: e.target.value })}
-                title="How the chord track's texture layer is struck: Pad holds the voicing on to the next hit, Stab is a short chord hit, Pluck rolls the notes across and lets them ring. The same chords either way — only the articulation changes.">
-                {CHORD_TEXTURES.map(([id, name, tip]) => <option key={id} value={id} title={tip}>{name}</option>)}
-              </select>
-            </label>
-            <label className="selwrap" style={{ minWidth:140 }}>
-              <span className="lbl" style={{ margin:0 }}>Texture sound</span>
-              <select value={pad} onChange={e => setPadSt({ key: progId, val: e.target.value })}
-                title="The song's default voice for that texture — what a section's '— as the song —' plays. Each section can still pick its own, or none.">
-                <option value="">No texture — sections choose</option>
-                <optgroup label={(TEXTURE_NAME[chordTex] || "Pad") + " voices"}>
-                  {(TEXTURE_VOICES[chordTex] || PAD_VOICES).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                </optgroup>
-                <optgroup label="Every voice">
-                  {PAD_VOICES.map(([id, name]) => <option key={"a" + id} value={id}>{name}</option>)}
-                  {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </optgroup>
-              </select>
-            </label>
+            {/* No "Chord texture" menus here. The texture is one layer of the chord track, and
+                both questions it answers — how the chords are struck, and what the layer is
+                struck with — are on the 🎹 Chords panel itself (Sketch tab, and per section on
+                Arrange), which is where "how are these chords played" is looked for. Its level,
+                tone and insert rack stay in the track rows below, under "Chords · texture",
+                because an audible layer still has to be mixable. */}
           </div>
           {tips && <p className="keytag" style={{ marginTop:4 }}>
             The sounds live here; the patterns live on the sections in the Arrange tab — each pass
@@ -10518,7 +10524,7 @@ export default function ProgressionWheel() {
                 edits exactly the way a section does on the Arrange tab, just detached from any one
                 place in the song.</p>
               <div className="row" style={{ gap:6, flexWrap:"wrap", margin:"8px 0" }}>
-                {TRACK_TYPES.map(tt => (
+                {TRACK_TYPES.filter(tt => !tt.legacy).map(tt => (
                   <button key={tt.id} className="mini" title={tt.tip} onClick={() => addSessionTrack(tt.id)}>
                     {tt.icon} + {tt.name}</button>
                 ))}

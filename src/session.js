@@ -18,7 +18,11 @@ const TRACK_TYPES = [
   { id: "bass",   name: "Bass",   icon: "🎸", tip: "The bass line. Each clip is its own written grid." },
   { id: "perc",   name: "Perc",   icon: "🪘", tip: "A second, independent percussion grid. Each clip is its own pattern." },
   { id: "chords", name: "Chords", icon: "🎼", tip: "The strum rhythm over the song's own progression. Each clip is its own written rhythm." },
-  { id: "pad",    name: "Chord texture", icon: "🌫", tip: "The chord track's second layer — the same chords held (pad), struck short (stab) or rolled (pluck), as the Sketch tab's texture menu says. Each clip is its own written grid." },
+  /* The chord track's texture layer. `legacy` keeps it out of the "+ a track" row — it is not a
+     track of its own any more, it is the bottom half of the chord track (see textureBlock in the
+     component) — while leaving its name, icon and tip here so a session saved with one goes on
+     naming and drawing it exactly as it did. */
+  { id: "pad",    name: "Chords · texture", icon: "🌫", legacy: true, tip: "The chord track's texture layer — the same chords held (pad), struck short (stab) or rolled (pluck), as the texture menu on the Chords panel says. Each clip is its own written grid." },
   { id: "audio",  name: "Audio",  icon: "🎧", tip: "A real sound file — drop a .wav or .mp3 into a clip and launch it beat-matched to the song's tempo. Sound files live for this browser session only; they are not in saves or share links." },
 ];
 const TRACK_TYPE_BY_ID = Object.fromEntries(TRACK_TYPES.map(t => [t.id, t]));
