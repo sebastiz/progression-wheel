@@ -226,8 +226,10 @@ The tab's second half is a **draft arrangement** (`sketchArr`), deliberately not
 rows the writer adds (`{sec, reps, on}`), where `on` is that row's fills — which of the groove's
 tracks and melody parts the section plays. A new section arrives empty and every instrument is
 clicked in, so the matrix is read the way the record is heard. Its rows run top to bottom as a
-mixer reads — melody parts, bass, chords, the chord texture, perc, drums at the floor — and the Arrange strip's
-lanes sort the same way. The draft's row operations are plain array transforms (no remapping,
+mixer reads — melody parts, bass, chords, perc, drums at the floor — and the Arrange strip's
+lanes sort the same way. The chord track's texture layer gets no row of its own: it is not a track,
+it is the bottom half of the chord track (see below), switched on by its voice menu in the Chords
+panel and muted per section on the Arrange strip's own lane. The draft's row operations are plain array transforms (no remapping,
 because nothing is an instance yet — a row carries its fills with it), and nothing in it is heard
 until **✍ Write to Arrange** commits it. The commit turns rows into a custom plan of `LOOP`
 sections, resolves it with `planInsts` (the click runs before React has re-rendered `sections`),
@@ -877,6 +879,18 @@ and the only real difference between them was how long a hit rang for. So the tr
 difference is a menu on the chords: `CHORD_TEXTURES` (`src/audio.js`) — **pad** holds the voicing on
 to the next hit, **stab** is a short chord hit, **pluck** rolls the notes across and lets them ring.
 
+It first landed as a *renamed* track — a 🌫️ Chord texture bar in every section card, a menu pair on
+the Sound tab, a row in the sketch matrix, an automation lane, a Session track type — which is the
+same two-entries-for-one-layer problem in different words. So none of those exist now. The whole
+layer is `textureBlock` (`src/progression-wheel.jsx`), rendered *inside* the Chords panel under the
+chord grid: the voice picker, the `▸ rhythm` toggle over the same grid, the layer's per-section
+insert rack. Choosing the character (`texPicker`) is drawn once, on the Chords panel's header. The
+two places it is still named apart from the chords are both mixer-side and deliberate — the Sound
+tab's track rows (`TRACKS_FX`, reading "Chords · texture", since an audible layer needs a level, a
+filter and inserts) and the Arrange strip's per-section mute lane, which every track has. A
+`cutpad` automation lane drawn before this is still offered *if a song already has one*, because
+playback reads the lane data directly; nothing new can start one.
+
 Nothing underneath moved. The bus, the maps (`secPadVoice`, `secPadBeat`, `secPad`, `trackFx.pad`,
 `fxRack.pad`), the `#N` layer suffixes and every template field keep the id `pad`, which is what
 lets every saved song, shared link, arrangement template and track preset go on meaning exactly
@@ -887,7 +901,7 @@ offset. The grid's vocabulary is unchanged — H rings to the next hit, S is sho
 decides what a hold is *worth*; `textureHit("pad", …)` reproduces the old pad note for note, which
 is why songs saved before this sound the way they were saved. `TEXTURE_VOICES` narrows the voice
 menu to the sounds each texture is made of (every id is still a `LEAD_SPECS` voice, so a voice
-borrowed from another texture's list plays fine), and `TEXTURE_NAME` is what the lanes, rows, tabs
+borrowed from another texture's list plays fine), and `TEXTURE_NAME` is what the lanes, tabs
 and stems read instead of "Pad". A row of an arrangement template can name a `chordTex` like any
 other voicing field.
 

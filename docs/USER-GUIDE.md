@@ -11,12 +11,12 @@ The app is in five tabs, under the transport bar:
 - **Sound** — the instruments, the time signature, the strum pattern, the drums and kit, and the
   feel controls (delay, pump, swing, humanise).
 - **Sketch** — the subtractive workflow on one page, kept apart from the song until you commit it.
-  Build the **full groove** as a single looping section (drum, perc, bass and chord grids, the
-  chord texture, melody parts and every track's settings; ▶ 🔁 loops the full stack, whatever the
-  song is doing).
+  Build the **full groove** as a single looping section (drum, perc, bass and chord grids — the
+  chord track carrying its texture layer — melody parts and every track's settings; ▶ 🔁 loops the
+  full stack, whatever the song is doing).
   Underneath, draft the **arrangement**: add intro, build, drop and breakdown — each section
   arrives silent — then click the cells to fill it with the groove's instruments: drums alone for
-  the intro, bass and the chord texture with no kick for the build, everything for the drop. Or
+  the intro, bass and chords with no kick for the build, everything for the drop. Or
   take a genre's shape whole from **🗺 Typical arrangement** at the bottom (see below). Nothing is
   heard until **✍ Write to Arrange**: the draft becomes the song's arrangement, every section
   playing exactly what you filled in, ready to refine pass by pass on the Arrange tab. Sections keep following the groove until you give them something of their own,
@@ -290,15 +290,21 @@ chords, because it was always the same chords either way. Pick how they are stru
 - **Pluck** — the notes are rolled across, one after another, and left to ring. Harp, pizzicato,
   the arpeggiated guitar figure.
 
-Next to it, **Texture sound** picks what plays it, offering the voices that texture is made of —
-strings, glass and warm pads for a Pad; house stab, clav, EP and brass for a Stab; pluck,
-pizzicato, music box and bell for a Pluck — plus every other voice and anything you built in the
-voice editor. Both are on the Sound tab for the whole song and inside each section's own
-**🌫️ Chord texture** bar for one pass alone, so a breakdown can hold a pad where the drop stabs.
+Everything about it lives **inside the 🎹 Chords panel** — there is no separate Chord texture
+track, bar or menu anywhere in the app, because it is not a separate track. The menu above is on
+the Chords panel's own header (song-wide on the Sketch tab's groove, per pass on a section card in
+Arrange, so a breakdown can hold a pad where the drop stabs), and under the chord grid is the rest
+of it: a **voice** — the voices that texture is made of, strings, glass and warm pads for a Pad;
+house stab, clav, EP and brass for a Stab; pluck, pizzicato, music box and bell for a Pluck, plus
+every other voice and anything you built in the voice editor — and a **▸ rhythm** toggle.
 
-The grid under it says *when*: a **Hold** rings until the next hit, a **Stab** is short. The
+That rhythm grid says *when*: a **Hold** rings until the next hit, a **Stab** is short. The
 texture decides what a Hold is worth — a Pad rings, a Stab never does, a Pluck rolls and decays.
 Leave the grid alone and the texture plays one hit a bar, which is usually what you want.
+
+The layer still has its own level, tone, movement and insert effects, under **Chords · texture**
+in the Sound tab's track rows — the one place it is still named apart from the chords, because an
+audible layer has to be mixable — and its own mute lane on the Arrange strip, like every track.
 
 ### Typical arrangements — a genre's running order over your sketch
 
@@ -388,7 +394,7 @@ squelches like an acid line. **Level** rides the overall volume — fades, and t
 near-silence right before a drop.
 
 Below those is a **filter lane per melody part** (*A filter*, *B filter*, …): that one part's
-brightness across the song, so the chord texture can open through a build while the bass stays dark.
+brightness across the song, so the chords can open through a build while the bass stays dark.
 Wherever a part's lane is drawn it overrides that part's **Low-pass** knob; clear the lane and the
 knob is back in charge.
 
