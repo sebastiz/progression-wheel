@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **A chromatic push on the bass grid, and the pattern built on it.** The bass grid spoke three
+  notes — Root, Fifth, Octave — all of them *in* the chord, so the commonest move in an acid or
+  hard-techno line could not be drawn at all: the last sixteenth of the loop lifted a single
+  semitone, the push that turns the bar over instead of resolving it. There is a fourth row now,
+  **Push**, a semitone above whatever chord the bar holds. It is deliberately the odd one out —
+  not a chord tone, and no use held or repeated — and it shares the Fifth's ink because it plays
+  the Fifth's role, a note that moves the line rather than the floor it stands on.
+  **Techno roll · push** (`-RRR-RRR-RRR-RRP`) is the catalogue pattern: the rolling offbeats with
+  the last sixteenth pushed up a semitone rather than jumping to the octave. Like every bass
+  pattern it lands on none of a four-on-the-floor's kicks, and picking it paints it onto the grid,
+  where the push can be moved, removed or given only to the second bar of a two-bar loop.
+  Nothing else had to learn about it: playback, the MIDI export and the Live Set all read the one
+  interval table, so the new row sounds, exports and round-trips exactly like the three it joins.
 - **The Chord texture track is gone; the texture is part of the chord track now.** Folding the Pad
   track into the chords answered the musical question and left the structural one alone: what
   arrived was a *renamed* track — a 🌫️ Chord texture bar in every section card, a menu pair on the
