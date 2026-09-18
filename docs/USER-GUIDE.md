@@ -230,6 +230,20 @@ that way. *Driving eighths* and *rolling sixteenths* want a sixteenth **Pattern*
 on an eighth grid there is no room between the notes, so *driving eighths* writes quarters instead
 rather than pretending.
 
+### The bass grid's four rows
+
+The 🎸 Bass track's own grid holds one note a step, and every row is read against whatever chord
+that bar holds, so a painted line re-voices itself through the changes:
+
+- **Root** — the floor, the note the chord stands on.
+- **Push** — a semitone above the root. The only row that is not *in* the chord: it is a chromatic
+  lift, meant for the last sixteenth of a loop rather than for holding or repeating. *Techno roll ·
+  push* is the catalogue pattern built on it — the rolling offbeats with the bar's last sixteenth
+  pushed up a semitone instead of jumping to the octave, which is the tension acid and hard techno
+  use where house bounces.
+- **Fifth** — the passing note that walks the line round.
+- **Octave** — the line jumping up; the top of an octave bounce.
+
 **✦ Riff the holes** (on the bass *grid*, groove and per-section alike) goes one further: it reads
 the section's own resolved drums and writes a riff — offbeat pump, tresillo, two-step, funk holes,
 rolling sixteenths — into the sixteenths the kick *doesn't* own, dropping any onset that would

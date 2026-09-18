@@ -2322,13 +2322,17 @@ export default function ProgressionWheel() {
   };
   /* ---- the perc and bass grids — the drum grid's machinery pointed at the new tracks ----
      Perc bars are the same array-of-step-strings the drum grid edits, painted with the same kit
-     rows. Bass bars hold one token a step — R root, F fifth, O octave — because a bassline is a
+     rows. Bass bars hold one token a step — R root, P push, F fifth, O octave — because a bassline is a
      line: tapping a different row moves the note rather than stacking one on top. Each grid opens
      showing what the section is already playing (its menu choice laid onto the sixteenth grid),
      so you edit what you hear, not a blank bar beside it. */
+  /* Four rows, three inks, the app's usual register reading: blue is the top of the line, gold the
+     notes that move it, orange the floor. Push shares the fifth's ink because it plays the fifth's
+     role — a passing note — and not the root's, however close to the root it sits. */
   const BASS_ROWS = [
     ["O", "Octave", "the line jumping up — the top of an octave bounce", "#7FB4D8"],
     ["F", "Fifth", "the passing note that walks the line round", "#E0B85A"],
+    ["P", "Push", "a semitone above the root — the chromatic lift, for the last sixteenth of a loop rather than for holding", "#E0B85A"],
     ["R", "Root", "the floor — the note the chord stands on", "#E8794F"],
   ];
   const percSeed = d => {
@@ -8109,7 +8113,7 @@ export default function ProgressionWheel() {
                 {gridBar("🎸", "Bass", bassOpen,
                   () => setOpenBass({ ...openBass, [d.key]: !bassOpen }),
                   (secBassBeat[d.key] || secBassPat[d.key] || secBassVoice[d.key]) ? "●" : "",
-                  "The bassline — root, fifth and octave of whatever chord each bar holds, so the line follows the changes by itself")}
+                  "The bassline — root, push, fifth and octave of whatever chord each bar holds, so the line follows the changes by itself")}
                 {bassOpen && (() => {
                   const bLayer = activeLayerOf("bass", d.key);
                   const dl = layered(d, bLayer);
@@ -8230,7 +8234,7 @@ export default function ProgressionWheel() {
                       </div>
                       {trackFxRow("bass", secFxCtx)}
                       {tips && <p className="keytag" style={{ marginTop:5 }}>
-                        One note a step — root, fifth or octave of whatever chord that bar holds, so
+                        One note a step — root, push, fifth or octave of whatever chord that bar holds, so
                         the line follows the changes by itself. A note rings until the next one, so a
                         single Root at the bar start is a held sub and a step on every offbeat is the
                         house bounce. Tap a different row to move a note; tap it again to clear it.

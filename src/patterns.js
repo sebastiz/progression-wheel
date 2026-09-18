@@ -134,9 +134,11 @@ const BPM_DEFAULT = { axis:96, axisMinor:84, three:140, blues:92, doowop:66, jaz
 /* ===== bass patterns =====
    The bassline used to be the chord voice's lowest note, glued to the strum: it could not have a
    rhythm of its own, and it vanished whenever a section dropped its chords. These are the track's
-   own bars. Tokens are degrees of the current chord — R the root, F the fifth, O the root an
-   octave up — over sixteen steps of 4/4, and a note holds until the next hit, so a lone R is a
-   held sub. "follow" has no pattern: it plays the root under the strum pattern's hits, which is
+   own bars. Tokens are degrees of the current chord — R the root, P a semitone above it, F the
+   fifth, O the root an octave up — over sixteen steps of 4/4, and a note holds until the next hit,
+   so a lone R is a held sub. P is the odd one out and deliberately so: it is the only token that
+   is not *in* the chord, a chromatic push that exists to lift the last sixteenth of a loop into
+   the next bar rather than to be held or repeated. "follow" has no pattern: it plays the root under the strum pattern's hits, which is
    exactly the note the chords used to carry, made separable. */
 const BASS = {};
 [
@@ -146,6 +148,7 @@ const BASS = {};
 ["offbeat", "Offbeat push", "--R---R---R---R-", "the bass answers the kick instead of doubling it — instant house"],
 ["rolloff", "Rolling offbeats", "-RRR-RRR-RRR-RRR", "every sixteenth the kick doesn't own — the trance engine"],
 ["techno", "Techno roll", "-RRR-RRR-RRR-RRO", "the rolling offbeats with the octave landing on the last sixteenth, so the bar turns over instead of simply repeating — techno's own line, interlocked with a four-on-the-floor kick rather than doubling it"],
+["technopush", "Techno roll · push", "-RRR-RRR-RRR-RRP", "the same roll lifted a semitone instead of an octave on the last sixteenth — the chromatic push out of the bar, which is the tension acid and hard techno use where house would bounce to the octave"],
 ["disco", "Disco walk", "R-O-R-O-R-O-F-O-", "the octave bounce with the fifth walking it round — disco and nu-disco"],
 ["funk16", "Funk syncopation", "R--R--O--R-F--R-", "pushed and skipped sixteenths — the holes are the funk"],
 ["subhold", "Held sub", "R---------------", "one long note a bar — trap, dubstep and every half-time drop"],
@@ -154,7 +157,7 @@ const BASS = {};
 ].forEach(([id, name, pat, desc]) =>
   BASS[id] = { name, pattern: pat ? pat.split("") : null, desc });
 // token → semitones above the chord root, in the octave below the chord voicing
-const BASS_IV = { R: 0, F: 7, O: 12 };
+const BASS_IV = { R: 0, P: 1, F: 7, O: 12 };
 
 const DRUMS = {};
 [
