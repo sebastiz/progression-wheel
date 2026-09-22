@@ -42,10 +42,17 @@ songs, colour moves, song structures, a playable rhythm section and a melody gri
   **Pad** holds the voicing on to the next hit, **Stab** is a short chord hit, **Pluck** rolls the
   notes across and lets them ring. Per song and per section, with a voice list that follows the
   texture — strings and warm pads, or house stab and clav, or pizzicato and music box
-- **Pick a typical arrangement** — the Sketch tab's draft can be filled from any of the 97 running
-  orders in the catalogue, listed by genre, laid over *your* groove: the shape and the
-  section-by-section allocation come from the genre, every sound stays yours. It is still a draft —
-  re-tick any cell — and **✍ Write to Arrange** puts it on the Arrange tab
+- **One shape under all of them** — *Any dance track* sits at the top of both arrangement menus,
+  ahead of every genre: intro · groove · build · drop · groove · breakdown · build · drop · outro,
+  sixteen bars each and 128 in total. It is not a seventieth style, it is the other sixty-nine with
+  the genre taken out — the shape you get when you classify every row of every dance template by
+  what it *does* rather than what it is called. Pick it when the track is simply "dance", or to
+  hear what a genre template is a deviation from
+- **Pick a typical arrangement** — the Sketch tab's draft can be filled from any of the 98 running
+  orders in the catalogue — the universal shape first, then the rest listed by genre — laid over
+  *your* groove: the shape and the section-by-section allocation come from the template, every
+  sound stays yours. It is still a draft — re-tick any cell — and **✍ Write to Arrange** puts it
+  on the Arrange tab
 - **Layered drums that arrange themselves** — every style declares its own drum stack, so
   **Write the template** hands back a track whose drums climb and collapse with the arrangement
   rather than looping one bar for four minutes: a DJ intro on the kit and a thin shaker, a groove

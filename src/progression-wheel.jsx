@@ -14,7 +14,7 @@ import { makeZip, safeName } from "./zip.js";
 import { buildExportState } from "./export-state.js";
 import { AUTO_LANES, autoAt, autoDel, autoDraw, autoPartId, autoSet, planAdd, planDel, planDup, planInsts, planMove, planReps, remapKeyed, remapSecs, transCues } from "./arrange.js";
 import { SESSION_PREFIX, TRACK_TYPES, TRACK_TYPE_BY_ID, newClip, newTrack, nextClipNum, sessionKey } from "./session.js";
-import { BAND_IDS, DANCE_TEMPLATES, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
+import { BAND_IDS, DANCE_TEMPLATES, FAMILY_OF, FAMILY_ORDER, PARTS, UNIVERSAL_IDS, drumAmountOf, energyOf, resolveArrangement } from "./arrange-templates.js";
 import { TRACK_PRESETS } from "./track-presets.js";
 import { resolveGenreEmotionStyle } from "./genre-emotion-presets.js";
 // The Progression Wheel — v3 (slim)
@@ -8632,11 +8632,13 @@ export default function ProgressionWheel() {
   const sketchDraft = () => {
     const rows = sketchTracks();
     const total = sketchArr.reduce((n, r) => n + (r.reps || 1), 0);
-    /* The genre running-order picker. The same 96 arrangements the Arrange tab's structure menu
-       offers, grouped by the family tree, but doing something different here: there, picking one
-       replaces the song's tempo, instruments and sounds with the style's; here it takes only the
-       *shape* — the running order and which of your tracks each section plays — and leaves every
-       sound in this sketch exactly as you built it. */
+    /* The genre running-order picker. Every arrangement the Arrange tab's structure menu offers,
+       grouped by the family tree — with the universal dance shape as its own first group, since
+       "a dance track" is a perfectly good answer to which running order you want — but doing
+       something different here: there, picking one replaces the song's tempo, instruments and
+       sounds with the style's; here it takes only the *shape* — the running order and which of
+       your tracks each section plays — and leaves every sound in this sketch exactly as you
+       built it. */
     const tplPicker = () => (
       <label className="secopt" title="A typical running order for a genre — intro, build, drop, breakdown and the rest — laid over THIS sketch: your drums, your bass, your chords, your melody, allocated across the sections the way that genre allocates them. It fills the draft below; nothing is heard until ✍ Write to Arrange.">
         <span className="optlbl"><span aria-hidden="true">🗺</span> Typical arrangement</span>
@@ -8743,14 +8745,22 @@ export default function ProgressionWheel() {
     <select value={selStruct.startsWith(progId + ":") ? selStruct : ""} onChange={e => pickStruct(e.target.value)}
       title="A structure is a running order. An arrangement template is a running order plus what plays in each section — which drop the drums, which lose the chords, where the filter opens and what happens at every seam.">
       <option value="">No structure — just the loop</option>
-      {/* First, because they are the ones that arrive arranged: everything below sets the
+      {/* First of the first: the shape every dance template below is a variation of. It is here
+          on its own rather than filed under a genre because picking a genre in order to get the
+          generic shape is the wrong way round — and because it is the useful answer when the
+          track is "dance" and nothing more specific has been decided yet. */}
+      <optgroup label="The shape under all of them">
+        {DANCE_TEMPLATES.map((t, i) => UNIVERSAL_IDS.has(t.id)
+          ? <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option> : null)}
+      </optgroup>
+      {/* Then the rest, because they are the ones that arrive arranged: everything below sets the
           order of the sections and then plays every element through all of them. */}
       <optgroup label="Band & song-form arrangement templates — arranged, not just ordered">
         {DANCE_TEMPLATES.map((t, i) => BAND_IDS.has(t.id)
           ? <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option> : null)}
       </optgroup>
       <optgroup label="Dance arrangement templates — arranged, not just ordered">
-        {DANCE_TEMPLATES.map((t, i) => BAND_IDS.has(t.id)
+        {DANCE_TEMPLATES.map((t, i) => (BAND_IDS.has(t.id) || UNIVERSAL_IDS.has(t.id))
           ? null : <option key={"t"+i} value={progId + ":t:" + i}>{t.name}</option>)}
       </optgroup>
       {(STRUCTURES[progId] || []).length > 0 && (
@@ -10283,10 +10293,12 @@ export default function ProgressionWheel() {
             drop and breakdown — each section arrives <i>silent</i> — then click the cells to fill
             it with the groove's instruments: drums alone for the intro, bass and texture with no
             kick for the build, everything for the drop. Or skip the building and take a
-            <b> typical arrangement</b> from the menu at the bottom: 96 running orders grouped by
-            genre, each one laid over <i>this</i> sketch — your drums, your bass, your chords, your
-            melody, allocated across the sections the way that genre allocates them — and still a
-            draft, so every cell can be re-ticked after. When the shape is right, press
+            <b> typical arrangement</b> from the menu at the bottom: the universal dance shape
+            first — intro, groove, build, drop, groove, breakdown, build, drop, outro, which is
+            what all the rest are variations of — and then 97 running orders grouped by genre, each
+            one laid over <i>this</i> sketch — your drums, your bass, your chords, your melody,
+            allocated across the sections the way that genre allocates them — and still a draft,
+            so every cell can be re-ticked after. When the shape is right, press
             <b> ✍ Write to Arrange</b>: the draft becomes the song's arrangement, every section
             playing exactly what you filled in, and each pass can then be refined on the Arrange
             tab — its own grids, melodies, transitions and sweeps.

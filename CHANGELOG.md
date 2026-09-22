@@ -1,6 +1,35 @@
 # Changelog
 
 ## Unreleased
+- **One arrangement that fits all dance tracks, because there is one.** The catalogue had grown to
+  sixty-nine dance running orders, and a fair objection to it is that it looks like sixty-nine
+  answers to a question that mostly has one. Classify every row of every dance template by what it
+  *does* — what it silences, where it parks the filter, which pass the hook is withheld until —
+  rather than by what the row is called, and the same nine steps come back out of nearly all of
+  them: **intro · groove · build · drop · groove · breakdown · build · drop · outro**, sixteen bars
+  each, eight for the builds, 128 in total. That is four minutes at 128 BPM, which is the length a
+  twelve-inch was cut at because that is how long a mix takes.
+  **Any dance track** is that shape as a template you can pick, first in the Arrange tab's
+  structure menu and first in the Sketch tab's **🗺 Typical arrangement** menu, in a group of its
+  own ahead of every genre. It is not a seventieth style — it is the other sixty-nine with the
+  style taken out, which is why its sound is deliberately neutral (a plain four-on-the-floor, a
+  warm pad for the harmony, 124 BPM, the middle of the dance range): the sound is exactly the part
+  a genre decides, and what its rows say is the part that does not vary. It reads as a branch of
+  one in the family tree rather than a seventh category, for the same reason.
+  Two ways to use it: pick it when the track is simply "dance" and no genre has been settled, or
+  pick it, listen, and then pick the genre you *are* writing — every template in the list is
+  legible as a deviation from this one, and the deviation is the genre. The differences that do
+  turn up are real and named in the user guide: whether the drop adds the harmony or removes it,
+  how far the breakdown collapses, what the payload is, how long a section runs. None of them
+  change the order, because the order is not taste — it is what a DJ mix, a phrase grid and a
+  dancer's memory between one section and the next will each tolerate.
+  Nothing saved moves. The new entry is appended to the end of the catalogue array, exactly as the
+  band half was, so every `pid:t:index` in a saved song, a share link or a track preset goes on
+  pointing at the template it always did; where it appears in the menus is the family order's job.
+  It climbs the same drum ladder as everything else, on a generic stack (an offbeat rim over the
+  kit, a sixteenth hat at full size, a shaker holding the bar where the kit is cut) — which is the
+  ladder making the same point in miniature: what climbs is universal, what it climbs with is the
+  style.
 - **A chromatic push on the bass grid, and the pattern built on it.** The bass grid spoke three
   notes — Root, Fifth, Octave — all of them *in* the chord, so the commonest move in an acid or
   hard-techno line could not be drawn at all: the last sixteenth of the loop lifted a single

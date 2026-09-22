@@ -1409,16 +1409,73 @@ const DEFS = [
 
 ];
 
+/* ---- the one arrangement underneath all of them ----
+   A fair complaint about the catalogue above is that it is sixty-nine answers to a question that
+   might only have one. It mostly does. Classify every row of every dance template by what it
+   *does* rather than what it is called, and the same nine-step shape comes back out:
+
+     intro · groove · build · drop · groove · breakdown · build · drop · outro
+
+   Sixteen bars each, eight for the builds, and the whole thing 128 bars — four minutes at 128 BPM,
+   the length a twelve-inch was cut at because that is how long a mix takes. Every genre above is
+   that shape with different constants: how long the breakdown runs, whether the drop adds the
+   harmony or removes it, whether the payload is a lead, a bassline or a kick. The *order* barely
+   moves, because it is not stylistic — it is what a mix, a phrase grid and a dancer's memory
+   between one section and the next will each tolerate.
+
+   So the shape gets an entry of its own — first in every menu, though last in the array; see the
+   note on `DANCE_TEMPLATES` below for why those are different — written in the plain vocabulary
+   rather than any style's: the arrangement to reach for when the track is "dance" and nothing more
+   specific, and the baseline the sixty-nine above are legible as deviations from. It is not a
+   seventieth genre. It is the other sixty-nine with the genre taken out.
+
+   Three things it deliberately does not take a position on: the drums are a plain four-on-the-floor
+   rather than a style's kit, the harmony is a pad rather than a stab or a sustain, and the tempo is
+   the middle of the dance range. Those are the constants a style sets. Everything the rows below
+   say — what is silenced, where the filter sits, which pass the hook is withheld until — is the
+   part that does not vary, and is what makes it an arrangement rather than a running order. */
+const UNIVERSAL_DEFS = [
+
+["universal", "Any dance track — the universal shape", "The shape underneath every style in this list: sixteen-bar sections, a drop that is bigger only because the breakdown emptied the bar before it, and the hook withheld until the first drop and then answered at the second. 128 bars — four minutes, and a DJ can mix in and out of both ends. Reach for this when the track is simply 'dance', or to hear what a genre template is a deviation from.",
+ { bpm: 124, drum: "four", kit: "909", pump: "classic", pat: "house16", bass: "offbeat", bassVoice: "sub", pad:"warmpad", percKit:"hand", delay:"8d", swing:0.08, instr:"electric_piano_1", melInstr:"pluck", humanise:0.12, narrative:"wave", vary:0.6, sync:1 }, [
+ ["Intro|LOOP|4|sixteen bars of clock and one percussion layer, filtered low — long enough for a DJ to mix through, and nothing has been spent yet",
+  { chords: 0, bass: 0, parts: "", filter: [0.3, 0.45] }],
+ ["Groove|LOOP|4|foundation and harmony arrive and the filter keeps climbing. This is the track's argument, stated at three-quarter size",
+  { parts: "", filter: [0.45, 0.72] }],
+ ["Build|HALF1|4|eight bars: the filter finishes opening and a riser comes up under the fill. A build is a promise, so it must stay smaller than what it promises",
+  { parts: "", move: "riser" }],
+ ["Drop|LOOP|4|the hook, over the full stack, for the first time. Everything withheld so far arrives in one bar",
+  { parts: "A", trans: "slam" }],
+ ["Groove|LOOP|4|step back down. The second drop cannot be bigger than the first unless something in between is smaller than both",
+  { parts: "A", filter: [0.85, 0.85] }],
+ ["Breakdown|LOOP|4|clock and foundation out, hook left alone over the swell. The largest single event in a dance record is a subtraction",
+  { drums: "off", bass: 0, parts: "A", move: "swell", trans: "closeto" }],
+ ["Build|HALF1|4|the tops come back first, the bass stays away, and the kick is withheld until the very last bar — the hole is what the drop lands into",
+  { drums: "nokick", bass: 0, parts: "A", move: "riser", hp: [0, 0.5] }],
+ ["Drop|LOOP|4|the same drop, plus the one counter-part that has not been heard yet. New material, not more volume, is what makes it bigger",
+  { parts: "AB", trans: "fulldrop" }],
+ ["Outro|LOOP|4|back to the clock, filtering down — the mix-out, and the reason the intro was drums as well",
+  { chords: 0, bass: 0, parts: "", filter: [1, 0.3] }],
+]],
+
+];
+
 /* ---- the family tree the catalogue is drawn from ----
    The six branches are the dance-music family tree's own top-level categories — not something
    invented for this app. Every template above traces back to exactly one of them, in the order the
-   tree lists them, so a reference view can group the 68 styles the way the tree itself does rather
-   than by catalogue-insertion order. */
-const FAMILY_ORDER = ["House / Disco", "Techno / Electro / EBM", "Trance", "Breakbeat / Jungle / D&B",
-  "Hardcore / Hardstyle", "Garage / Bass / Dubstep", ...BAND_FAMILIES.map(([fam]) => fam)];
+   tree lists them, so a reference view can group the styles the way the tree itself does rather
+   than by catalogue-insertion order. The universal shape sits in front of the six as a branch of
+   its own, because it is not a style and filing it under one would be the wrong claim. */
+const UNIVERSAL_FAMILY = "Any dance track";
+const FAMILY_ORDER = [UNIVERSAL_FAMILY, "House / Disco", "Techno / Electro / EBM", "Trance",
+  "Breakbeat / Jungle / D&B", "Hardcore / Hardstyle", "Garage / Bass / Dubstep",
+  ...BAND_FAMILIES.map(([fam]) => fam)];
 const FAMILY_OF = {};
 [
  ...BAND_FAMILIES,
+ // a branch of one, and deliberately not a seventh branch of the tree: the tree's six categories
+ // are styles, and this is what is left when the style is taken out
+ [UNIVERSAL_FAMILY, ["universal"]],
  ["House / Disco", ["disco", "balearic", "postdisco", "italodisco", "hinrg", "house", "acidhouse",
    "deephouse", "brokenbeat", "afrohouse", "amapiano", "gqom", "tribalhouse", "filterhouse", "nudisco",
    "techhouse", "deeptech", "organichouse", "proghouse", "electrohouse", "bigroom", "basshouse",
@@ -1534,6 +1591,12 @@ const bandRungOf = a => {
    by people rather than programmed. `rung` is the family's reading of a row (see `rungOf` and
    `bandRungOf`), so each half of the catalogue is asked the question it can actually answer. */
 const FAMILY_LADDER = {
+  /* The generic stack, for the generic shape: an offbeat rim over the kit, a sixteenth hat above
+     that at full size, and a shaker holding the bar where the kit is cut. Every family below is a
+     re-voicing of these same five rungs — which is the ladder making the catalogue's own point,
+     that what climbs is universal and what it climbs with is the style. */
+  [UNIVERSAL_FAMILY]: { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"tamb",
+    top:"topsrim", peak:"tops16", fill:"riseroll" },
   "House / Disco": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"tamb",
     top:"topsrim", peak:"tops16", fill:"riseroll" },
   "Techno / Electro / EBM": { rung: rungOf, percThin:"shakeroff", perc:"shaker16", percPeak:"woodskip",
@@ -1678,7 +1741,11 @@ const withLadder = (id, rows) => {
    keeps pointing at the template it always did. `DANCE_TEMPLATES` keeps its name because it is
    what thirty call sites and the test suite know the catalogue by; `BAND_IDS` is how a caller tells
    the two halves apart. */
-const DANCE_TEMPLATES = [...DEFS, ...BAND_DEFS].map(([id, name, tip, sound, rows]) => {
+/* …and the universal shape goes on the *end* of the array for the same reason the band half did:
+   a saved song, a shared link or a TRACK_PRESETS lookup names a template by its index, so anything
+   inserted ahead of an existing entry silently repoints it at a different style. Where it appears
+   in the menus is FAMILY_ORDER's job, and there it is first. */
+const DANCE_TEMPLATES = [...DEFS, ...BAND_DEFS, ...UNIVERSAL_DEFS].map(([id, name, tip, sound, rows]) => {
   const laddered = withLadder(id, rows);
   const lad = ladderFor(id);
   return {
@@ -1693,6 +1760,7 @@ const DANCE_TEMPLATES = [...DEFS, ...BAND_DEFS].map(([id, name, tip, sound, rows
   };
 });
 const BAND_IDS = new Set(BAND_DEFS.map(([id]) => id));
+const UNIVERSAL_IDS = new Set(UNIVERSAL_DEFS.map(([id]) => id));
 
 /* ---- resolving a template onto a song ----
    The plan says what the sections are; `insts` says what they became once the progression had its
@@ -1819,4 +1887,4 @@ const energyOf = ({ drums, chords, parts, filter, level, bass, perc, pad, tops }
    arrangement's half-measure — the tops left running while the floor is taken away. */
 const drumAmountOf = pat => !pat || !pat.length ? 0 : (pat.some(st => /[KB]/.test(st || "")) ? 1 : 0.5);
 
-export { BAND_IDS, DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, drumAmountOf, energyOf, ladderFor, resolveArrangement };
+export { BAND_IDS, DANCE_TEMPLATES, ENERGY_W, FAMILY_OF, FAMILY_ORDER, PARTS, UNIVERSAL_IDS, drumAmountOf, energyOf, ladderFor, resolveArrangement };
