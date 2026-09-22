@@ -142,9 +142,39 @@ Four minutes exactly, and a shape that a DJ can mix in and out of.
 
 The largest single event in that track is at bar 64, and it is a subtraction.
 
+## That example is not an example
+
+The obvious objection to a catalogue of sixty-nine genre templates is that it looks like sixty-nine
+answers to a question that might only have one. It mostly is one. Classify every row of every dance
+template in the app by what it *does* — what it silences, where it parks the filter, which pass the
+hook is withheld until — rather than by what the row happens to be called, and the table above
+comes back out of almost all of them, with one extra step:
+
+> intro · groove · build · drop · groove · breakdown · build · drop · outro
+
+The extra step is the groove after the first drop, and it is there for the reason the corollary
+above gives: the second drop cannot be bigger than the first unless something between them is
+smaller than both. Sixteen bars each, eight for the builds, 128 in total.
+
+That shape is in the app as **Any dance track**, first in the structure picker and first in the
+Sketch tab's **🗺 Typical arrangement** menu, ahead of every genre. It is not a seventieth style —
+it is the other sixty-nine with the style taken out. Its sound is deliberately neutral (a
+four-on-the-floor kit, a warm pad, 124 BPM, the middle of the dance range) because the sound is
+exactly the part a genre decides. What its rows say is the part that does not vary.
+
+Why the order does not vary is worth stating, because it is not taste. Sixteen-bar sections and
+drums at both ends exist because a DJ mixes two records together over about that long. The phrase
+grid exists because entries off it are audible to a dancer. And the collapse exists because energy
+is relative: after four minutes of accumulation there is nothing left to add, so the only way to
+make the second half bigger than the first is to empty the bar before it. Those three constraints
+are the same in a Chicago house record and a psytrance record, so the shape they force is too.
+
 ## Genre calibration
 
-The framework holds across styles; the constants change.
+The framework holds across styles; what changes is the constants, and it is worth reading the list
+below as the *deviations from the shape above* rather than as six separate forms. The ones that
+matter most are: whether the drop adds the harmony or removes it, how far the breakdown collapses,
+what the payload at the drop actually is, and how long a section runs before something changes.
 
 - **House / tech house (120–128)** — the drop is the groove returning, not an addition. Four to six
   roles at once, and changes are textural swaps more than entries.
@@ -181,6 +211,7 @@ Each idea above has a control that does it.
 | Idea | Where |
 | --- | --- |
 | Subtraction as the workflow itself | The **Sketch tab** — build the full groove as one looping section (drums, perc, bass, pad, chords and melody, grids and settings together), draft the running order underneath (each section arrives silent; click the cells to fill it with the groove's instruments), then **✍ Write to Arrange** commits the lot as the song's arrangement. Every section inherits the groove until it is given something of its own |
+| The shape itself, before any genre | **Any dance track**, first in the structure picker and first in the Sketch tab's **🗺 Typical arrangement** menu — the nine steps above as an arrangement you can pick, with a deliberately neutral sound. Pick it when the track is simply "dance"; or pick it, listen, then pick the genre you are actually writing and hear what changed |
 | The whole framework, applied at once | The **arrangement templates** at the top of the structure picker — the dance forms that set what each section plays, not just the order: drums out here, chords out there, the filter opening across the build, and the drum stack climbing and collapsing with them. The strip's **Energy** lane draws the resulting staircase as a stepped red line |
 | The stack itself, arranged | Each dance template's **drum ladder** — the kit is one track and the style's own top layer (offbeat rim, skipping rim, sixteenth hats, ride) is a second, with a third and a second percussion track arriving only at full size. A DJ intro gets the kit and a thin shaker; a groove adds the top and the groove's own percussion; a drop adds both peak layers; a build cuts the kit and rolls a fill in; a breakdown takes the lot back off and leaves hand percussion holding the bar. Everything it writes is an ordinary **＋ 2nd drums** track on the section afterwards |
 | The staircase of sections | The **structure** chooser, and the arrangement strip's rows and reps — *make the drop twice as long* is a reps edit |

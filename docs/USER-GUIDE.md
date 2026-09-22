@@ -130,7 +130,9 @@ The structure menu at the top of **Song & melody** is grouped: structures writte
 progression, then **Song forms**, **Dance & electronic** and **Club edits** — fifty in all.
 
 The dance ones are phrased the way dance music actually is, in 8- and 16-bar groups, and most open
-and close on a sixteen-bar section a DJ can mix over. **Club edits** are the same song at three
+and close on a sixteen-bar section a DJ can mix over. Above all of them, in a group of its own, is
+**Any dance track** — the shape the whole genre catalogue is a set of variations on; see
+[Any dance track](#any-dance-track--the-one-shape-under-all-of-them). **Club edits** are the same song at three
 lengths — *Radio edit*, *Club mix*, *Extended mix* — which is a different decision from picking a
 genre, and worth trying on a song you already like.
 
@@ -323,16 +325,61 @@ audible layer has to be mixable — and its own mute lane on the Arrange strip, 
 ### Typical arrangements — a genre's running order over your sketch
 
 At the bottom of the Sketch tab, beside **✍ Write to Arrange**, is **🗺 Typical arrangement**: all
-97 running orders in the catalogue, grouped by genre — Chicago House, Liquid D&B, Psytrance, the
-storyteller's form, the trailer cue. Picking one fills the draft below with that genre's sections,
-lengths and section-by-section allocation, played by **your** sketch: your drums, your bass, your
-chords and their texture, your melody parts, distributed the way the genre distributes them, with
-its own filter sweeps, moves and seam transitions across the sections.
+98 running orders in the catalogue. The first group holds one entry — **Any dance track**, the
+universal shape described below — and the rest are grouped by genre: Chicago House, Liquid D&B,
+Psytrance, the storyteller's form, the trailer cue. Picking one fills the draft below with that
+template's sections, lengths and section-by-section allocation, played by **your** sketch: your
+drums, your bass, your chords and their texture, your melody parts, distributed the way the
+template distributes them, with its own filter sweeps, moves and seam transitions across the
+sections.
 
 It changes nothing else — not the tempo, not an instrument, not a pattern. (That is the difference
 from picking the same style on the Arrange tab, which replaces the lot.) And it is still a draft:
 move, stretch, copy or remove sections and re-tick any cell before pressing **✍ Write to Arrange**,
 which is what puts it on the Arrange tab as the song's arrangement.
+
+### Any dance track — the one shape under all of them
+
+The catalogue is sixty-nine answers to a question that mostly has one. Classify every row of every
+dance template in it by what it *does* — what it silences, where it parks the filter, which pass
+the hook is withheld until — rather than by what the row is called, and the same nine steps come
+back out of almost all of them:
+
+> intro · groove · build · drop · groove · breakdown · build · drop · outro
+
+Sixteen bars each, eight for the builds, 128 bars in total: four minutes at 128 BPM, which is the
+length a twelve-inch was cut at because that is how long a mix takes. **Any dance track** is that
+shape, and it sits first in both arrangement menus — the Arrange tab's structure picker and the
+Sketch tab's **🗺 Typical arrangement** — ahead of every genre.
+
+It is not a seventieth style. It is the other sixty-nine with the genre taken out, which is why the
+rows are written in plain vocabulary and the sound is deliberately neutral: a four-on-the-floor
+kit, a warm pad for the harmony, 124 BPM, the middle of the dance range. Those are the constants a
+*style* sets. What the rows say is the part that does not vary between styles, and it is the part
+that makes it an arrangement rather than a running order: the intro spends nothing, the first drop
+is the first time everything plays at once, the groove after it steps back down so the second drop
+has somewhere to come from, the breakdown takes the clock and the foundation out, the build
+withholds the kick to the last bar, and the second drop adds new material rather than volume.
+
+Two ways to use it. Pick it when the track is simply "dance" and no genre has been decided yet —
+it is a better starting point than guessing at a style you are not writing. Or pick it first,
+listen, then pick the genre you *are* writing and listen to what changed: every genre template in
+the list is legible as a deviation from this one, and the deviation is the genre.
+
+The differences that do turn up between styles are real, and they are worth knowing as differences
+rather than as nine separate running orders:
+
+| What varies | Examples |
+| --- | --- |
+| Whether the drop *adds* the harmony or *removes* it | Future Bass drops onto the chords; Dubstep, Brostep, Riddim and Neurofunk take them out and let the mid-range bass replace them |
+| How much collapses at the breakdown | Uplifting Trance empties almost to nothing; Tech House and Minimal Techno barely dip at all |
+| Whether there is a collapse | Dub Techno dissolves into echo and reforms; Acid Techno and EBM change the line, not the stack |
+| What the payload is | A lead (Trance), a bassline (Bassline, Jump-Up), a kick (Hardstyle, Gabber), or the groove simply returning (House, Filter House) |
+| Section length | Eight bars in Grime, thirty-two in Tech House and Progressive Psytrance |
+| Whether the seams are swept or torn | Risers and filter sweeps almost everywhere; Digital Hardcore and Breakcore only ever slam |
+
+None of those change the order. That is the point: the order is not stylistic, it is what a mix, a
+phrase grid and a dancer's memory between one section and the next will each tolerate.
 
 ### 🎛 The voice editor
 
